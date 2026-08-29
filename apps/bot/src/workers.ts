@@ -1,0 +1,88 @@
+import cron from "node-cron";
+import { prisma } from "@nutri-bot/db";
+import { enqueueDueReminders, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { sendText } from "./whatsapp";
+import { env } from "./env";
+import { logger } from "./logger";
+
+const MAX_ATTEMPTS = 5;
+let outboxRunning = false;
+
+/** Consume la tabla OutboundMessage y envía por WhatsApp. */
+export function startOutboxConsumer(): void {
+  setInterval(() => void tick(), env.pollIntervalMs);
+}
+
+async function tick(): Promise<void> {
+  if (outboxRunning) return;
+  outboxRunning = true;
+  try {
+    const pending = await prisma.outboundMessage.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      take: 5,
+    });
+
+    for (const msg of pending) {
+      try {
+        await sendText(msg.toJid, msg.body);
+        await prisma.outboundMessage.update({
+          where: { id: msg.id },
+          data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 }, lastError: null },
+        });
+        logger.info({ id: msg.id, kind: msg.kind, to: msg.toJid }, "Mensaje enviado");
+        await new Promise((r) => setTimeout(r, 800));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "error desconocido";
+        if (message.includes("no está conectado")) {
+          logger.warn("WhatsApp no conectado; se pausa el envío hasta reconectar");
+          break;
+        }
+        const attempts = msg.attempts + 1;
+        await prisma.outboundMessage.update({
+          where: { id: msg.id },
+          data: {
+            status: attempts >= MAX_ATTEMPTS ? "FAILED" : "PENDING",
+            attempts,
+            lastError: message.slice(0, 300),
+          },
+        });
+        logger.warn({ id: msg.id, attempts }, "Fallo al enviar mensaje");
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, "Error en el consumidor de outbox");
+  } finally {
+    outboxRunning = false;
+  }
+}
+
+export function startCron(): void {
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const n = await enqueueDueReminders();
+      if (n > 0) logger.info({ n }, "Recordatorios encolados");
+    } catch (err) {
+      logger.error({ err }, "Error encolando recordatorios");
+    }
+  });
+
+  cron.schedule("* * * * *", async () => {
+    try {
+      const res = await syncGoogleCalendar();
+      if (res.processed > 0 || res.error) logger.info(res, "Sync Google Calendar");
+    } catch (err) {
+      logger.error({ err }, "Error en sync de Google Calendar");
+    }
+  });
+}
+
+/** Barre pendientes al arrancar, sin esperar al primer tick del cron. */
+export async function runStartupJobs(): Promise<void> {
+  try {
+    await enqueueDueReminders();
+    await syncGoogleCalendar();
+  } catch (err) {
+    logger.error({ err }, "Error en tareas de arranque");
+  }
+}

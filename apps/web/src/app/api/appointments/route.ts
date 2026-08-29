@@ -1,0 +1,49 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@nutri-bot/db";
+import { auth } from "@/auth";
+
+export async function GET(req: Request) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  // FullCalendar envía `start` / `end`; aceptamos también `from` / `to`.
+  const from = new Date(searchParams.get("start") ?? searchParams.get("from") ?? "");
+  const to = new Date(searchParams.get("end") ?? searchParams.get("to") ?? "");
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return NextResponse.json({ error: "rango inválido" }, { status: 400 });
+  }
+
+  const appts = await prisma.appointment.findMany({
+    where: {
+      startsAt: { gte: from, lt: to },
+      status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] },
+    },
+    include: { patient: true, service: true },
+    orderBy: { startsAt: "asc" },
+  });
+
+  const statusColor: Record<string, string> = {
+    COMPLETED: "#16a34a",
+    NO_SHOW: "#dc2626",
+  };
+
+  const events = appts.map((a) => ({
+    id: a.id,
+    title: `${a.patient.name ?? a.patient.phone} · ${a.service.name}`,
+    start: a.startsAt.toISOString(),
+    end: a.endsAt.toISOString(),
+    backgroundColor: statusColor[a.status] ?? a.service.color,
+    borderColor: statusColor[a.status] ?? a.service.color,
+    extendedProps: {
+      status: a.status,
+      patientName: a.patient.name,
+      patientPhone: a.patient.phone,
+      serviceName: a.service.name,
+      price: a.priceSnapshot.toString(),
+      googleSynced: Boolean(a.googleEventId),
+    },
+  }));
+
+  return NextResponse.json(events);
+}

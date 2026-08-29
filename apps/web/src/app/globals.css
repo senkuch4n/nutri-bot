@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}
+
+/* Ajustes de FullCalendar para que combine con el panel */
+.fc {
+  --fc-border-color: theme("colors.slate.200");
+  --fc-today-bg-color: theme("colors.blue.50");
+  font-size: 0.875rem;
+}
+.fc .fc-button-primary {
+  @apply bg-brand border-brand text-white;
+}
+.fc .fc-button-primary:hover {
+  @apply bg-brand-dark border-brand-dark;
+}
+.fc .fc-button-primary:disabled {
+  @apply bg-slate-300 border-slate-300;
+}

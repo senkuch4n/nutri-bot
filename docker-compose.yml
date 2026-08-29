@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nutri
+      POSTGRES_PASSWORD: nutri
+      POSTGRES_DB: nutribot
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nutri -d nutribot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- Servicios de despliegue ---
+  # En desarrollo local NO se usan: se levanta solo `db` y se corren
+  # `npm run dev` / `npm run dev:bot` en la máquina. Para desplegar en un VPS:
+  #   docker compose --profile deploy up -d --build
+  #   docker compose run --rm web npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+
+  web:
+    profiles: ["deploy"]
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nutri:nutri@db:5432/nutribot
+    depends_on:
+      db: { condition: service_healthy }
+    ports:
+      - "3000:3000"
+
+  bot:
+    profiles: ["deploy"]
+    build: { context: ., dockerfile: apps/bot/Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nutri:nutri@db:5432/nutribot
+      WHATSAPP_AUTH_DIR: /app/.whatsapp-auth
+    depends_on:
+      db: { condition: service_healthy }
+    volumes:
+      - whatsapp-auth:/app/.whatsapp-auth
+
+volumes:
+  pgdata:
+  whatsapp-auth:
