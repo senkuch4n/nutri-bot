@@ -13,8 +13,7 @@ export function SettingsForm({
     timezone: string;
     currency: string;
     reminderLeadHours: number;
-    googleCalendarId: string;
-    phoneJid: string;
+    phone: string;
   };
 }) {
   const [state, action, pending] = useActionState(saveSettingsAction, initial);
@@ -27,7 +26,7 @@ export function SettingsForm({
       <Field label="Moneda" hint="Código ISO de 3 letras, ej: ARS">
         <Input name="currency" defaultValue={defaults.currency} maxLength={3} required />
       </Field>
-      <Field label="Aviso previo (horas)" hint="Cuántas horas antes se envía el recordatorio">
+      <Field label="Aviso previo del recordatorio (horas)" hint="Cuántas horas antes del turno se envía el recordatorio">
         <Input
           name="reminderLeadHours"
           type="number"
@@ -37,19 +36,27 @@ export function SettingsForm({
           required
         />
       </Field>
-      <Field label="WhatsApp de la profesional (JID)" hint="Para alertas. Ej: 549XXXXXXXXXX@s.whatsapp.net">
-        <Input name="phoneJid" defaultValue={defaults.phoneJid} placeholder="549...@s.whatsapp.net" />
-      </Field>
-      <Field label="Google Calendar ID" hint="'primary' o el ID de un calendario específico">
-        <Input name="googleCalendarId" defaultValue={defaults.googleCalendarId} placeholder="primary" />
+      <Field
+        label="Tu WhatsApp (para las alertas)"
+        hint="Con código de país, solo números. El bot te avisa acá cuando un paciente saca o cancela un turno."
+      >
+        <Input
+          name="phone"
+          type="tel"
+          inputMode="tel"
+          defaultValue={defaults.phone}
+          placeholder="549XXXXXXXXXX"
+        />
       </Field>
 
-      <div className="sm:col-span-2 flex items-center gap-3">
+      <div className="flex items-center gap-3 sm:col-span-2">
         <Button type="submit" disabled={pending}>
           {pending ? "Guardando…" : "Guardar ajustes"}
         </Button>
-        {state.error ? <span className="text-sm text-red-600">{state.error}</span> : null}
-        {state.ok ? <span className="text-sm text-green-600">Guardado.</span> : null}
+        {state.error ? <span className="reveal text-sm text-red-600">{state.error}</span> : null}
+        {state.ok ? (
+          <span className="reveal text-sm font-medium text-leaf-deep">✓ Guardado</span>
+        ) : null}
       </div>
     </form>
   );

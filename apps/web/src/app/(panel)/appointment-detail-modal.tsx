@@ -133,7 +133,7 @@ export function AppointmentDetailModal({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <span className="text-slate-400">{label}</span>
+      <span className="text-ink-faint">{label}</span>
       <span className="text-right font-medium capitalize">{value}</span>
     </div>
   );

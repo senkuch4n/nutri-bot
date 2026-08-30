@@ -26,8 +26,12 @@ export function PatientForm({
         <Button type="submit" disabled={pending}>
           {pending ? "Guardando…" : "Guardar"}
         </Button>
-        {state.error ? <span className="text-sm text-red-600">{state.error}</span> : null}
-        {state.ok ? <span className="text-sm text-green-600">Guardado.</span> : null}
+        {state.error ? (
+          <span className="reveal text-sm text-red-600">{state.error}</span>
+        ) : null}
+        {state.ok ? (
+          <span className="reveal text-sm font-medium text-leaf-deep">✓ Guardado</span>
+        ) : null}
       </div>
     </form>
   );

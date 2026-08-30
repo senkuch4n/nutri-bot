@@ -120,13 +120,13 @@ export function NewAppointmentModal({
         </div>
 
         <div>
-          <span className="mb-2 block text-sm font-medium text-slate-700">Horario</span>
+          <span className="mb-2 block text-sm font-medium text-ink">Horario</span>
           {!serviceId ? (
-            <p className="text-sm text-slate-400">Elegí un servicio y un día.</p>
+            <p className="text-sm text-ink-faint">Elegí un servicio y un día.</p>
           ) : loadingSlots ? (
-            <p className="text-sm text-slate-400">Buscando horarios…</p>
+            <p className="text-sm text-ink-faint">Buscando horarios…</p>
           ) : slots.length === 0 ? (
-            <p className="text-sm text-slate-400">No hay horarios disponibles ese día.</p>
+            <p className="text-sm text-ink-faint">No hay horarios disponibles ese día.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {slots.map((s) => (
@@ -135,10 +135,10 @@ export function NewAppointmentModal({
                   key={s}
                   onClick={() => setSlot(s)}
                   className={
-                    "rounded-lg border px-3 py-1.5 text-sm " +
+                    "border-2 px-3 py-1.5 text-sm font-medium transition-colors " +
                     (slot === s
-                      ? "border-brand bg-brand text-white"
-                      : "border-slate-300 hover:bg-slate-50")
+                      ? "border-leaf bg-leaf text-white"
+                      : "border-line text-ink hover:border-ink")
                   }
                 >
                   {formatInTimeZone(new Date(s), tz, "HH:mm")}

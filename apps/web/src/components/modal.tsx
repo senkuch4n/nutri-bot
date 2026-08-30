@@ -23,13 +23,20 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" role="dialog" aria-modal="true">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{title}</h3>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 backdrop-blur-sm sm:p-8"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="w-full max-w-lg rounded-card border border-line bg-paper p-7 shadow-lift"
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <h3 className="font-display text-xl font-bold tracking-tight text-ink">{title}</h3>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="-mr-1 -mt-1 p-1.5 text-ink-faint transition-colors hover:bg-mint hover:text-ink"
             aria-label="Cerrar"
           >
             ✕

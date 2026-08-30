@@ -8,18 +8,27 @@ export function BotToggle({ paused }: { paused: boolean }) {
   const [pending, start] = useTransition();
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <Button
         variant={paused ? "primary" : "secondary"}
         disabled={pending}
         onClick={() => start(() => setBotPausedAction(!paused))}
       >
-        {pending ? "…" : paused ? "Reactivar el bot" : "Pausar el bot"}
+        {pending ? "Guardando…" : paused ? "Reactivar el bot" : "Pausar el bot"}
       </Button>
-      <span className="text-sm text-slate-500">
+      <span
+        className={
+          "inline-flex items-center gap-2 text-sm " +
+          (paused ? "font-medium text-red-600" : "text-ink-soft")
+        }
+      >
+        <span
+          className={"h-2 w-2 rounded-full " + (paused ? "bg-red-500" : "bg-leaf")}
+          aria-hidden
+        />
         {paused
-          ? "El bot NO está respondiendo ningún mensaje."
-          : "El bot responde solo cuando alguien escribe una palabra clave (turno, menú…)."}
+          ? "El bot no está respondiendo ningún mensaje."
+          : "El bot responde solo ante palabras clave (turno, menú…)."}
       </span>
     </div>
   );

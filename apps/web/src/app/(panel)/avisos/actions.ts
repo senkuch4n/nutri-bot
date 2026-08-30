@@ -10,3 +10,11 @@ export async function retryMessageAction(id: string) {
   });
   revalidatePath("/avisos");
 }
+
+export async function retryAllFailedAction() {
+  await prisma.outboundMessage.updateMany({
+    where: { status: "FAILED" },
+    data: { status: "PENDING", lastError: null },
+  });
+  revalidatePath("/avisos");
+}

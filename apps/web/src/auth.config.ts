@@ -12,7 +12,7 @@ export const allowedEmails = (process.env.ALLOWED_EMAILS ?? "")
  */
 export const authConfig = {
   trustHost: true,
-  pages: { signIn: "/login" },
+  pages: { signIn: "/inicio" },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,

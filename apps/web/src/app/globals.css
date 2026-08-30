@@ -4,24 +4,125 @@
 
 :root {
   color-scheme: light;
+  --ink: #14181f;
+  --mint: #eef4ec;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-mint font-sans text-ink antialiased;
 }
 
-/* Ajustes de FullCalendar para que combine con el panel */
+/* Tipografía display para títulos */
+.font-display {
+  font-feature-settings: "ss01";
+  letter-spacing: -0.02em;
+}
+
+/* --- Movimiento (sutil, respeta prefers-reduced-motion) --- */
+
+/* Feedback de presión en botones: solo transform */
+.press {
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+/* Aparición suave de un bloque al montarse (ocasional, no en cada interacción) */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.reveal {
+  animation: reveal 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press,
+  .press:active {
+    transition: none;
+    transform: none;
+  }
+  .reveal {
+    animation: none;
+  }
+}
+
+@layer components {
+  /* Botones estilo Spring: rectos, borde grueso, mayúsculas, relleno al hover */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 border-2 px-6 py-3 text-sm font-semibold
+      uppercase tracking-[0.08em] transition-colors duration-150 disabled:pointer-events-none
+      disabled:opacity-50;
+  }
+  .btn-solid {
+    @apply btn border-ink bg-ink text-white hover:bg-transparent hover:text-ink;
+  }
+  .btn-outline {
+    @apply btn border-ink bg-transparent text-ink hover:bg-ink hover:text-white;
+  }
+  .btn-leaf {
+    @apply btn border-leaf bg-leaf text-white hover:bg-leaf-deep hover:border-leaf-deep;
+  }
+}
+
+/* FullCalendar afinado al sistema Spring-inspired */
 .fc {
-  --fc-border-color: theme("colors.slate.200");
-  --fc-today-bg-color: theme("colors.blue.50");
-  font-size: 0.875rem;
+  --fc-border-color: theme("colors.line");
+  --fc-today-bg-color: theme("colors.leaf.tint");
+  --fc-now-indicator-color: theme("colors.red.500");
+  --fc-page-bg-color: theme("colors.paper");
+  font-size: 0.8125rem;
 }
+.fc .fc-toolbar-title {
+  @apply font-display text-xl font-bold tracking-tight text-ink;
+}
+.fc .fc-col-header-cell-cushion {
+  @apply py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft;
+}
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-list-day-text {
+  @apply text-ink-faint;
+}
+/* Botones rectos con borde, estilo Spring */
 .fc .fc-button-primary {
-  @apply bg-brand border-brand text-white;
+  @apply border-2 border-ink bg-transparent px-3 py-1.5 text-xs font-semibold uppercase
+    tracking-[0.06em] text-ink shadow-none transition-colors;
 }
-.fc .fc-button-primary:hover {
-  @apply bg-brand-dark border-brand-dark;
+.fc .fc-button-primary:hover,
+.fc .fc-button-primary:not(:disabled):active,
+.fc .fc-button-primary:not(:disabled).fc-button-active {
+  @apply border-ink bg-ink text-white;
+}
+.fc .fc-button-primary:focus {
+  @apply shadow-none outline-none ring-2 ring-leaf/25;
 }
 .fc .fc-button-primary:disabled {
-  @apply bg-slate-300 border-slate-300;
+  @apply border-line bg-transparent text-ink-faint;
+}
+.fc .fc-daygrid-event,
+.fc .fc-timegrid-event {
+  @apply rounded-none border-0 px-1.5 py-0.5 text-[11px] font-medium;
+}
+/* Horas fuera del horario de atención: fondo tenue */
+.fc .fc-non-business {
+  background: repeating-linear-gradient(
+    -45deg,
+    theme("colors.leaf.tint"),
+    theme("colors.leaf.tint") 6px,
+    #f1f6ee 6px,
+    #f1f6ee 12px
+  );
+}
+.fc .fc-timegrid-now-indicator-arrow {
+  display: none;
+}
+.fc .fc-event:focus {
+  @apply outline-none ring-2 ring-ink/30;
 }

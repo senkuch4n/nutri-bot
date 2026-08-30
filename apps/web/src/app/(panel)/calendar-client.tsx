@@ -6,23 +6,46 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import type { EventClickArg, DateSelectArg } from "@fullcalendar/core";
-import { Button } from "@/components/ui";
+import { Button, PageHeader, StatTile } from "@/components/ui";
 import { NewAppointmentModal, type ServiceOption } from "./new-appointment-modal";
 import { AppointmentDetailModal, type SelectedAppointment } from "./appointment-detail-modal";
 
+interface BusinessHours {
+  daysOfWeek: number[];
+  startTime: string;
+  endTime: string;
+}
+
+interface Summary {
+  today: number;
+  week: number;
+  next: { time: string; label: string } | null;
+}
+
 export function CalendarClient({
   services,
+  legend,
   tz,
   currency,
+  summary,
+  businessHours,
+  slotMin,
+  slotMax,
 }: {
   services: ServiceOption[];
+  legend: { name: string; color: string }[];
   tz: string;
   currency: string;
+  summary: Summary;
+  businessHours: BusinessHours[];
+  slotMin: string;
+  slotMax: string;
 }) {
   const calRef = useRef<FullCalendar>(null);
   const [creating, setCreating] = useState(false);
   const [initialDate, setInitialDate] = useState<string | undefined>();
   const [selected, setSelected] = useState<SelectedAppointment | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const refetch = useCallback(() => {
     calRef.current?.getApi().refetchEvents();
@@ -51,18 +74,47 @@ export function CalendarClient({
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
-        <Button
-          onClick={() => {
-            setInitialDate(undefined);
-            setCreating(true);
-          }}
-        >
-          + Nuevo turno
-        </Button>
+      <PageHeader
+        title="Calendario"
+        description="Turnos confirmados, completados y ausencias."
+        action={
+          <Button
+            onClick={() => {
+              setInitialDate(undefined);
+              setCreating(true);
+            }}
+          >
+            + Nuevo turno
+          </Button>
+        }
+      />
+
+      {/* Resumen */}
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <StatTile label="Turnos hoy" value={summary.today} />
+        <StatTile label="Esta semana" value={summary.week} />
+        <StatTile label="Próximo turno">
+          {summary.next ? (
+            <p className="mt-1 truncate text-sm text-ink">
+              <span className="font-display font-bold">{summary.next.time}</span>
+              <span className="mx-1.5 text-ink-faint">·</span>
+              {summary.next.label}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-ink-faint">Sin turnos próximos</p>
+          )}
+        </StatTile>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      {/* Calendario */}
+      <div className="relative overflow-hidden rounded-card border border-line bg-paper p-4 shadow-card">
+        {loading ? (
+          <span
+            className="absolute inset-x-0 top-0 z-10 h-[3px] animate-pulse bg-leaf"
+            role="status"
+            aria-label="Cargando turnos"
+          />
+        ) : null}
         <FullCalendar
           ref={calRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -76,13 +128,18 @@ export function CalendarClient({
           firstDay={1}
           nowIndicator
           allDaySlot={false}
-          slotMinTime="07:00:00"
-          slotMaxTime="22:00:00"
+          slotDuration="00:30:00"
+          slotMinTime={slotMin}
+          slotMaxTime={slotMax}
+          businessHours={businessHours}
+          expandRows
           height="auto"
           timeZone={tz}
+          dayMaxEvents={3}
           selectable
           select={onSelect}
           eventClick={onEventClick}
+          loading={setLoading}
           events={{
             url: "/api/appointments",
             method: "GET",
@@ -91,6 +148,21 @@ export function CalendarClient({
           buttonText={{ today: "Hoy", month: "Mes", week: "Semana", day: "Día" }}
         />
       </div>
+
+      {/* Leyenda de servicios */}
+      {legend.length > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+            Servicios
+          </span>
+          {legend.map((s) => (
+            <span key={s.name} className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
+              <span className="h-2.5 w-2.5" style={{ background: s.color }} />
+              {s.name}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <NewAppointmentModal
         open={creating}
