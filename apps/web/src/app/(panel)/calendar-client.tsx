@@ -10,6 +10,21 @@ import { Button, PageHeader, StatTile } from "@/components/ui";
 import { NewAppointmentModal, type ServiceOption } from "./new-appointment-modal";
 import { AppointmentDetailModal, type SelectedAppointment } from "./appointment-detail-modal";
 
+// Referencias estables: si se crean inline en el render, FullCalendar cree que
+// la config cambió y vuelve a pedir los eventos → loop infinito con `loading`.
+const PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
+const HEADER_TOOLBAR = {
+  left: "prev,next today",
+  center: "title",
+  right: "dayGridMonth,timeGridWeek,timeGridDay",
+} as const;
+const BUTTON_TEXT = { today: "Hoy", month: "Mes", week: "Semana", day: "Día" } as const;
+const EVENT_SOURCE = {
+  url: "/api/appointments",
+  method: "GET" as const,
+  failure: () => console.error("No se pudieron cargar los turnos"),
+};
+
 interface BusinessHours {
   daysOfWeek: number[];
   startTime: string;
@@ -117,13 +132,9 @@ export function CalendarClient({
         ) : null}
         <FullCalendar
           ref={calRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          plugins={PLUGINS}
           initialView="timeGridWeek"
-          headerToolbar={{
-            left: "prev,next today",
-            center: "title",
-            right: "dayGridMonth,timeGridWeek,timeGridDay",
-          }}
+          headerToolbar={HEADER_TOOLBAR}
           locale="es"
           firstDay={1}
           nowIndicator
@@ -140,12 +151,8 @@ export function CalendarClient({
           select={onSelect}
           eventClick={onEventClick}
           loading={setLoading}
-          events={{
-            url: "/api/appointments",
-            method: "GET",
-            failure: () => console.error("No se pudieron cargar los turnos"),
-          }}
-          buttonText={{ today: "Hoy", month: "Mes", week: "Semana", day: "Día" }}
+          events={EVENT_SOURCE}
+          buttonText={BUTTON_TEXT}
         />
       </div>
 
