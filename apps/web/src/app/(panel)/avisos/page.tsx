@@ -1,9 +1,10 @@
 import { prisma } from "@nutri-bot/db";
 import { formatInTimeZone } from "@nutri-bot/core";
-import { PageHeader } from "@/components/ui";
+import { Card, PageHeader, SectionLabel } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { jidToPhone } from "@/lib/patients";
 import { AvisosView, type MessageRow } from "./avisos-view";
+import { BroadcastForm } from "./broadcast-form";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,11 @@ const kindLabel: Record<string, string> = {
 };
 
 export default async function AvisosPage() {
-  const [pro, messages, grouped] = await Promise.all([
+  const [pro, messages, grouped, patientCount] = await Promise.all([
     getProfessional(),
     prisma.outboundMessage.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
     prisma.outboundMessage.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.patient.count(),
   ]);
 
   const counts = { PENDING: 0, SENT: 0, FAILED: 0 };
@@ -41,6 +43,15 @@ export default async function AvisosPage() {
         title="Avisos"
         description="Cola de mensajes que envía el bot: confirmaciones, cancelaciones y recordatorios."
       />
+      <Card className="mb-6">
+        <SectionLabel>Comunicado a todos los pacientes</SectionLabel>
+        <p className="mb-4 text-sm text-ink-soft">
+          Para avisos generales (cambio de horario, vacaciones, saludos). Se manda por WhatsApp a
+          todos los pacientes cargados, no a uno en particular.
+        </p>
+        <BroadcastForm patientCount={patientCount} />
+      </Card>
+
       <AvisosView rows={rows} counts={counts} intervalSeconds={8} />
     </div>
   );

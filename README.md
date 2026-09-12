@@ -142,6 +142,17 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Paciente: descargar el PDF de su plan | Portal → plan → "Descargar PDF" |
 | Profesional: pedirle a una IA una propuesta de plan desde la ficha del paciente | Panel → plan vacío → "Generar propuesta con IA" |
 | Profesional: consultarle a una IA datos de agenda o de un paciente puntual | Panel `/asistente` |
+| Profesional: enviar un aviso a todos los pacientes a la vez | Panel `/avisos` → "Comunicado a todos los pacientes" |
+
+Con esto se completó el backlog de `docs/historias-usuario-nutridesk.md`.
+
+### Datos de ejemplo para mostrar el sistema
+
+`npm run seed:demo --workspace packages/db` agrega 5 pacientes ficticios con ficha clínica,
+evolución (para que los gráficos tengan datos), turnos en distintos estados (confirmado,
+completado, cancelado, ausente), un plan activo cada uno y algún pago — para tener algo real que
+mostrar sin usar los datos de pacientes de verdad. Se puede correr de nuevo sin duplicar pacientes
+(hace upsert por teléfono), pero si se corre de nuevo sí duplica turnos/evolución/planes.
 
 ### Asistente con IA (DeepSeek)
 
