@@ -39,6 +39,12 @@ export function addEvolutionEntry(
     tricepsSkinfoldMm?: number | null;
     subscapularSkinfoldMm?: number | null;
     abdominalSkinfoldMm?: number | null;
+    bodyFatPercent?: number | null;
+    muscleMassKg?: number | null;
+    bodyWaterPercent?: number | null;
+    visceralFatLevel?: number | null;
+    boneMassKg?: number | null;
+    basalMetabolicRateKcal?: number | null;
   },
 ) {
   return prisma.evolutionEntry.create({

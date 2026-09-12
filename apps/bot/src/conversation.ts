@@ -71,11 +71,15 @@ function parseChoice(text: string, max: number): number | null {
   return n - 1;
 }
 
+// \b de JS no trata vocales acentuadas como caracteres de palabra, así que
+// "sí" (la forma en que el bot mismo pide responder) no matcheaba contra
+// \b. Se usa (?!\p{L}) en su lugar: sigue exigiendo que no venga pegado a
+// otra letra (para no confundir "si" con "sino"), pero sí funciona con tildes.
 function isYes(text: string): boolean {
-  return /^(s[ií]|si|dale|ok|confirmo|listo|obvio)\b/i.test(text.trim());
+  return /^(s[ií]|si|dale|ok|confirmo|listo|obvio)(?!\p{L})/iu.test(text.trim());
 }
 function isNo(text: string): boolean {
-  return /^(no|n|nel|mejor no)\b/i.test(text.trim());
+  return /^(no|n|nel|mejor no)(?!\p{L})/iu.test(text.trim());
 }
 export async function handleIncoming(jid: string, text: string, send: Send): Promise<void> {
   const pro = await getProfessional();

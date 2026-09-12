@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { computeBmi, computeWaistHipRatio } from "@nutri-bot/core";
 import { Button, Field, Input, Textarea } from "@/components/ui";
 import { EvolutionChart } from "@/components/evolution-chart";
+import { ComparativeChart } from "@/components/comparative-chart";
 import {
   addEvolutionEntryAction,
   deleteEvolutionEntryAction,
@@ -24,7 +25,26 @@ export interface EvolutionRow {
   tricepsSkinfoldMm: number | null;
   subscapularSkinfoldMm: number | null;
   abdominalSkinfoldMm: number | null;
+  bodyFatPercent: number | null;
+  muscleMassKg: number | null;
+  bodyWaterPercent: number | null;
+  visceralFatLevel: number | null;
+  boneMassKg: number | null;
+  basalMetabolicRateKcal: number | null;
   note: string | null;
+}
+
+const BIOIMPEDANCE_FIELDS = [
+  "bodyFatPercent",
+  "muscleMassKg",
+  "bodyWaterPercent",
+  "visceralFatLevel",
+  "boneMassKg",
+  "basalMetabolicRateKcal",
+] as const satisfies readonly (keyof EvolutionRow)[];
+
+function hasAnyValue(entries: EvolutionRow[], fields: readonly (keyof EvolutionRow)[]): boolean {
+  return entries.some((e) => fields.some((f) => e[f] !== null));
 }
 
 const initial: ActionState = { ok: false };
@@ -38,14 +58,59 @@ export function EvolutionSection({
 }) {
   const [state, action, pending] = useActionState(addEvolutionEntryAction, initial);
   const [showMore, setShowMore] = useState(false);
+  const [showBio, setShowBio] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
+
+  const hasBioimpedance = hasAnyValue(entries, BIOIMPEDANCE_FIELDS);
+  const hasWeightAndFat = entries.some((e) => e.weightKg !== null) && entries.some((e) => e.bodyFatPercent !== null);
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Chart entries={entries} field="weightKg" label="Peso (kg)" unit="kg" color="#3c7a24" />
-        <Chart entries={entries} field="waistCm" label="Cintura (cm)" unit="cm" color="#2563eb" />
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">
+          Antropometría
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Chart entries={entries} field="weightKg" label="Peso (kg)" unit="kg" color="#3c7a24" />
+          <Chart entries={entries} field="waistCm" label="Cintura (cm)" unit="cm" color="#2563eb" />
+        </div>
       </div>
+
+      {hasBioimpedance ? (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">
+            Bioimpedancia
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Chart entries={entries} field="bodyFatPercent" label="Grasa corporal (%)" unit="%" color="#d97706" />
+            <Chart entries={entries} field="muscleMassKg" label="Masa muscular (kg)" unit="kg" color="#7c3aed" />
+          </div>
+        </div>
+      ) : null}
+
+      {hasWeightAndFat ? (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">
+            Comparativa · peso vs. grasa corporal
+          </p>
+          <div className="border border-line bg-paper p-4">
+            <ComparativeChart
+              left={{
+                label: "Peso",
+                unit: "kg",
+                color: "#3c7a24",
+                points: entries.map((e) => ({ date: new Date(e.recordedAtISO), value: e.weightKg })),
+              }}
+              right={{
+                label: "Grasa corporal",
+                unit: "%",
+                color: "#d97706",
+                points: entries.map((e) => ({ date: new Date(e.recordedAtISO), value: e.bodyFatPercent })),
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <form action={action} className="space-y-3">
         <input type="hidden" name="patientId" value={patientId} />
@@ -64,13 +129,23 @@ export function EvolutionSection({
           </Button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowMore((v) => !v)}
-          className="text-xs font-semibold uppercase tracking-[0.06em] text-leaf-deep"
-        >
-          {showMore ? "− Ocultar medidas antropométricas" : "+ Agregar medidas antropométricas"}
-        </button>
+        <div className="flex flex-wrap gap-4">
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            className="text-xs font-semibold uppercase tracking-[0.06em] text-leaf-deep"
+          >
+            {showMore ? "− Ocultar medidas antropométricas" : "+ Agregar medidas antropométricas"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBio((v) => !v)}
+            className="text-xs font-semibold uppercase tracking-[0.06em] text-leaf-deep"
+          >
+            {showBio ? "− Ocultar datos de bioimpedancia" : "+ Agregar datos de bioimpedancia"}
+          </button>
+        </div>
 
         {showMore ? (
           <div className="grid gap-3 border border-dashed border-line p-4 sm:grid-cols-4">
@@ -103,6 +178,29 @@ export function EvolutionSection({
             </Field>
           </div>
         ) : null}
+
+        {showBio ? (
+          <div className="grid gap-3 border border-dashed border-line p-4 sm:grid-cols-4">
+            <Field label="Grasa corporal (%)">
+              <Input type="number" step="0.1" min="0" name="bodyFatPercent" placeholder="22.5" />
+            </Field>
+            <Field label="Masa muscular (kg)">
+              <Input type="number" step="0.1" min="0" name="muscleMassKg" placeholder="55" />
+            </Field>
+            <Field label="Agua corporal (%)">
+              <Input type="number" step="0.1" min="0" name="bodyWaterPercent" placeholder="55" />
+            </Field>
+            <Field label="Grasa visceral (nivel)">
+              <Input type="number" step="0.1" min="0" name="visceralFatLevel" placeholder="8" />
+            </Field>
+            <Field label="Masa ósea (kg)">
+              <Input type="number" step="0.1" min="0" name="boneMassKg" placeholder="2.8" />
+            </Field>
+            <Field label="Metabolismo basal (kcal)">
+              <Input type="number" step="1" min="0" name="basalMetabolicRateKcal" placeholder="1500" />
+            </Field>
+          </div>
+        ) : null}
       </form>
       {state.error ? <p className="reveal text-sm text-red-600">{state.error}</p> : null}
 
@@ -127,6 +225,12 @@ export function EvolutionSection({
               e.abdominalSkinfoldMm !== null ? `Pliegue abdominal ${e.abdominalSkinfoldMm} mm` : null,
               bmi !== null ? `IMC ${bmi}` : null,
               whr !== null ? `ICC ${whr}` : null,
+              e.bodyFatPercent !== null ? `Grasa ${e.bodyFatPercent}%` : null,
+              e.muscleMassKg !== null ? `Masa muscular ${e.muscleMassKg} kg` : null,
+              e.bodyWaterPercent !== null ? `Agua ${e.bodyWaterPercent}%` : null,
+              e.visceralFatLevel !== null ? `Grasa visceral ${e.visceralFatLevel}` : null,
+              e.boneMassKg !== null ? `Masa ósea ${e.boneMassKg} kg` : null,
+              e.basalMetabolicRateKcal !== null ? `MB ${e.basalMetabolicRateKcal} kcal` : null,
             ].filter((v): v is string => v !== null);
 
             return (

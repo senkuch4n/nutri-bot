@@ -130,8 +130,18 @@ export function cancelDone(params: { serviceName: string; startsAt: Date; tz: st
   )}. Cuando quieras sacás otro escribiendo *menú*.`;
 }
 
+export function formatInsuranceList(insurances?: string | null): string[] {
+  return (insurances ?? "")
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export function pricesMessage(serviceLines: string, insurances?: string | null): string {
-  const insuranceLine = insurances ? `\n\n🏥 Obras sociales: ${insurances}` : "";
+  const items = formatInsuranceList(insurances);
+  const insuranceLine = items.length
+    ? `\n\n🏥 Obras sociales:\n${items.map((i) => `• ${i}`).join("\n")}`
+    : "";
   return `💲 *Precios*\n\n${serviceLines}${insuranceLine}\n\nEscribí *menú* para volver.`;
 }
 

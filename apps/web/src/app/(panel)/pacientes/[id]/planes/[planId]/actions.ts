@@ -129,6 +129,8 @@ async function buildAndSavePdf(planId: string) {
     logo: logoRow?.logoData && logoRow.logoMimeType ? { data: logoRow.logoData, mimeType: logoRow.logoMimeType } : null,
     meals: toMealView(plan.meals),
     generatedAtLabel: new Intl.DateTimeFormat("es-AR", { dateStyle: "medium" }).format(new Date()),
+    accentColor: pro.pdfAccentColor,
+    footerText: pro.pdfFooterText,
   });
 
   const fileName = `plan-${plan.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}.pdf`;

@@ -43,6 +43,12 @@ const evolutionEntrySchema = z.object({
   tricepsSkinfoldMm: optionalMeasure,
   subscapularSkinfoldMm: optionalMeasure,
   abdominalSkinfoldMm: optionalMeasure,
+  bodyFatPercent: optionalMeasure,
+  muscleMassKg: optionalMeasure,
+  bodyWaterPercent: optionalMeasure,
+  visceralFatLevel: optionalMeasure,
+  boneMassKg: optionalMeasure,
+  basalMetabolicRateKcal: optionalMeasure,
   note: z.string().trim().max(2000).optional().or(z.literal("")),
 });
 
@@ -57,6 +63,12 @@ const MEASURE_FIELDS = [
   "tricepsSkinfoldMm",
   "subscapularSkinfoldMm",
   "abdominalSkinfoldMm",
+  "bodyFatPercent",
+  "muscleMassKg",
+  "bodyWaterPercent",
+  "visceralFatLevel",
+  "boneMassKg",
+  "basalMetabolicRateKcal",
 ] as const;
 
 function parseMeasure(raw: string | undefined): number | null | undefined {

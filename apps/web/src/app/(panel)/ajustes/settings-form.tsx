@@ -15,6 +15,8 @@ export function SettingsForm({
     reminderLeadHours: number;
     phone: string;
     acceptedInsurances: string;
+    pdfAccentColor: string;
+    pdfFooterText: string;
   };
 }) {
   const [state, action, pending] = useActionState(saveSettingsAction, initial);
@@ -53,9 +55,27 @@ export function SettingsForm({
       <div className="sm:col-span-2">
         <Field
           label="Obras sociales"
-          hint='Texto libre que el bot muestra al mostrar precios, ej: "OSDE, Swiss Medical, Galeno. También atiendo particular."'
+          hint='Una por línea o separadas por coma — el bot las muestra como lista al mostrar precios. Ej: "OSDE, Swiss Medical, Galeno, Particular"'
         >
           <Textarea name="acceptedInsurances" rows={2} defaultValue={defaults.acceptedInsurances} />
+        </Field>
+      </div>
+
+      <Field label="Color de acento del PDF" hint="Se usa en los títulos y separadores del PDF del plan">
+        <input
+          type="color"
+          name="pdfAccentColor"
+          defaultValue={defaults.pdfAccentColor || "#3c7a24"}
+          className="h-10 w-20 cursor-pointer border border-line bg-paper p-1"
+        />
+      </Field>
+
+      <div className="sm:col-span-2">
+        <Field
+          label="Pie de página del PDF"
+          hint='Reemplaza el texto default ("Generado el ... · NutriBot"). Ej: "Lic. en Nutrición · Mat. 1234 · +54 9 11 XXXX-XXXX"'
+        >
+          <Textarea name="pdfFooterText" rows={2} defaultValue={defaults.pdfFooterText} />
         </Field>
       </div>
 

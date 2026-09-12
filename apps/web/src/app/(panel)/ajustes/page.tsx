@@ -71,6 +71,8 @@ export default async function AjustesPage() {
             reminderLeadHours: pro.reminderLeadHours,
             phone: pro.phoneJid?.split("@")[0] ?? "",
             acceptedInsurances: pro.acceptedInsurances ?? "",
+            pdfAccentColor: pro.pdfAccentColor ?? "",
+            pdfFooterText: pro.pdfFooterText ?? "",
           }}
         />
       </Card>

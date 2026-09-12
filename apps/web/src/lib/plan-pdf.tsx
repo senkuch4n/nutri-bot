@@ -3,23 +3,27 @@ import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from "@
 import { sumMacros, type Macros } from "@nutri-bot/core";
 import type { MealView } from "@/components/meals-editor";
 
-const styles = StyleSheet.create({
-  page: { padding: 32, fontSize: 10, color: "#1a1a1a" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  logo: { width: 48, height: 48, objectFit: "contain" },
-  title: { fontSize: 18, fontWeight: 700, marginBottom: 2 },
-  subtitle: { fontSize: 10, color: "#555" },
-  section: { marginTop: 14 },
-  mealTitle: { fontSize: 12, fontWeight: 700, marginBottom: 6, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: "#ddd" },
-  itemRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
-  itemName: { flex: 1 },
-  itemQty: { width: 60, textAlign: "right", color: "#555" },
-  itemNote: { fontSize: 9, color: "#777", marginTop: 1 },
-  totals: { marginTop: 18, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#333", flexDirection: "row", gap: 16 },
-  totalItem: { fontSize: 10 },
-  notes: { marginTop: 14, fontSize: 9, color: "#555" },
-  footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 8, color: "#999", textAlign: "center" },
-});
+const DEFAULT_ACCENT = "#3c7a24";
+
+function buildStyles(accentColor: string) {
+  return StyleSheet.create({
+    page: { padding: 32, fontSize: 10, color: "#1a1a1a" },
+    header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+    logo: { width: 48, height: 48, objectFit: "contain" },
+    title: { fontSize: 18, fontWeight: 700, marginBottom: 2, color: accentColor },
+    subtitle: { fontSize: 10, color: "#555" },
+    section: { marginTop: 14 },
+    mealTitle: { fontSize: 12, fontWeight: 700, marginBottom: 6, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: accentColor },
+    itemRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
+    itemName: { flex: 1 },
+    itemQty: { width: 60, textAlign: "right", color: "#555" },
+    itemNote: { fontSize: 9, color: "#777", marginTop: 1 },
+    totals: { marginTop: 18, paddingTop: 10, borderTopWidth: 1, borderTopColor: accentColor, flexDirection: "row", gap: 16 },
+    totalItem: { fontSize: 10 },
+    notes: { marginTop: 14, fontSize: 9, color: "#555" },
+    footer: { position: "absolute", bottom: 24, left: 32, right: 32, fontSize: 8, color: "#999", textAlign: "center" },
+  });
+}
 
 function macrosLine(m: Macros): string {
   return `${m.kcal} kcal · P ${m.protein}g · C ${m.carbs}g · G ${m.fat}g`;
@@ -33,6 +37,8 @@ export interface PlanPdfInput {
   logo: { data: Buffer; mimeType: string } | null;
   meals: MealView[];
   generatedAtLabel: string;
+  accentColor?: string | null;
+  footerText?: string | null;
 }
 
 export function PlanDocument({ input }: { input: PlanPdfInput }) {
@@ -41,6 +47,8 @@ export function PlanDocument({ input }: { input: PlanPdfInput }) {
   const logoSrc = input.logo
     ? `data:${input.logo.mimeType};base64,${input.logo.data.toString("base64")}`
     : null;
+  const styles = buildStyles(input.accentColor || DEFAULT_ACCENT);
+  const footerText = input.footerText || `Generado el ${input.generatedAtLabel} · NutriBot`;
 
   return (
     <Document>
@@ -76,7 +84,7 @@ export function PlanDocument({ input }: { input: PlanPdfInput }) {
 
         {input.planNotes ? <Text style={styles.notes}>{input.planNotes}</Text> : null}
 
-        <Text style={styles.footer}>Generado el {input.generatedAtLabel} · NutriBot</Text>
+        <Text style={styles.footer}>{footerText}</Text>
       </Page>
     </Document>
   );

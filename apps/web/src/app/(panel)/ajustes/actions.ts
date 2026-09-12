@@ -12,6 +12,13 @@ const generalSchema = z.object({
   reminderLeadHours: z.coerce.number().int().min(1).max(168),
   phone: z.string().trim().optional().or(z.literal("")),
   acceptedInsurances: z.string().trim().max(500).optional().or(z.literal("")),
+  pdfAccentColor: z
+    .string()
+    .trim()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Color inválido")
+    .optional()
+    .or(z.literal("")),
+  pdfFooterText: z.string().trim().max(300).optional().or(z.literal("")),
 });
 
 export async function saveSettingsAction(
@@ -38,6 +45,8 @@ export async function saveSettingsAction(
       reminderLeadHours: parsed.data.reminderLeadHours,
       phoneJid: digits ? `${digits}@s.whatsapp.net` : null,
       acceptedInsurances: parsed.data.acceptedInsurances || null,
+      pdfAccentColor: parsed.data.pdfAccentColor || null,
+      pdfFooterText: parsed.data.pdfFooterText || null,
     },
   });
 

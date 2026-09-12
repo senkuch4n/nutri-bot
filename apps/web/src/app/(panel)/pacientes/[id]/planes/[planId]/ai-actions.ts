@@ -52,9 +52,16 @@ export async function generateAiPlanAction(
     };
   }
 
-  const [clinicalRecord, latestEntry, foods] = await Promise.all([
+  const [clinicalRecord, latestWeightEntry, latestHeightEntry, foods] = await Promise.all([
     prisma.clinicalRecord.findUnique({ where: { patientId } }),
-    prisma.evolutionEntry.findFirst({ where: { patientId }, orderBy: { recordedAt: "desc" } }),
+    prisma.evolutionEntry.findFirst({
+      where: { patientId, weightKg: { not: null } },
+      orderBy: { recordedAt: "desc" },
+    }),
+    prisma.evolutionEntry.findFirst({
+      where: { patientId, heightCm: { not: null } },
+      orderBy: { recordedAt: "desc" },
+    }),
     listFoods({ activeOnly: true }),
   ]);
 
@@ -72,8 +79,8 @@ export async function generateAiPlanAction(
   const paciente = {
     objetivo: clinicalRecord?.goals ?? null,
     antecedentes: clinicalRecord?.background ?? null,
-    peso_kg: latestEntry?.weightKg ? Number(latestEntry.weightKg) : null,
-    talla_cm: latestEntry?.heightCm ? Number(latestEntry.heightCm) : null,
+    peso_kg: latestWeightEntry?.weightKg ? Number(latestWeightEntry.weightKg) : null,
+    talla_cm: latestHeightEntry?.heightCm ? Number(latestHeightEntry.heightCm) : null,
     instrucciones_adicionales: instructions || null,
   };
 

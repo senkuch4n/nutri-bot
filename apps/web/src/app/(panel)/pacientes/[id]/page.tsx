@@ -129,6 +129,12 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
               e.subscapularSkinfoldMm !== null ? Number(e.subscapularSkinfoldMm) : null,
             abdominalSkinfoldMm:
               e.abdominalSkinfoldMm !== null ? Number(e.abdominalSkinfoldMm) : null,
+            bodyFatPercent: e.bodyFatPercent !== null ? Number(e.bodyFatPercent) : null,
+            muscleMassKg: e.muscleMassKg !== null ? Number(e.muscleMassKg) : null,
+            bodyWaterPercent: e.bodyWaterPercent !== null ? Number(e.bodyWaterPercent) : null,
+            visceralFatLevel: e.visceralFatLevel !== null ? Number(e.visceralFatLevel) : null,
+            boneMassKg: e.boneMassKg !== null ? Number(e.boneMassKg) : null,
+            basalMetabolicRateKcal: e.basalMetabolicRateKcal,
             note: e.note,
           }))}
         />

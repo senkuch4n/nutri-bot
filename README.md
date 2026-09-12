@@ -98,6 +98,7 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 | `npm run test` | Tests de `packages/core` |
 | `npm run typecheck` | `tsc` en todos los workspaces |
 | `npm run build` | Build de `core` + `web` + `bot` |
+| `npm run test:confirm-flow --workspace apps/bot` | Simula sin WhatsApp real el flujo de confirmación de turno (sí/no) y las recomendaciones previas a un estudio; crea y borra sus propios datos de prueba |
 
 ## Despliegue (VPS con Docker)
 
@@ -149,11 +150,12 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Profesional: ver el diario alimentario del paciente (últimas 24 hs) | Panel → paciente → "Diario alimentario (portal)" |
 | Profesional: indicar las obras sociales con las que trabaja | Panel `/ajustes` → "Obras sociales" (el bot lo muestra al listar precios; también visible en el portal) |
 | Profesional: mandar recomendaciones automáticas antes de un estudio (antropometría, bioimpedancia) | Panel `/servicios` → "Mandar recomendaciones antes del turno" (se envía por WhatsApp X horas antes) |
+| Profesional: registrar datos de bioimpedancia (grasa, masa muscular, agua, grasa visceral, masa ósea, metabolismo basal) | Panel → paciente → "Evolución" → "Agregar datos de bioimpedancia" |
+| Profesional: ver gráficos separados por tipo de estudio (antropometría vs. bioimpedancia) y un comparativo peso vs. grasa corporal | Panel → paciente → "Evolución" (solo muestra los grupos que tienen datos cargados) |
+| Profesional: personalizar el PDF del plan (color de acento y pie de página) | Panel `/ajustes` → "Color de acento del PDF" / "Pie de página del PDF" |
 
-Quedan pendientes de un próximo paso: gráficos comparativos por tipo de estudio clínico (bioimpedancia,
-antropometría) con datos específicos de cada uno, plantilla de informes personalizable (colores/logo/
-textos sobre el PDF actual) y reservas por Instagram (requiere una app de Meta for Developers y una
-página de Facebook vinculada, que todavía no existen).
+Queda pendiente reservas por Instagram, bloqueado por no tener todavía una app de Meta for
+Developers ni una página de Facebook vinculada.
 
 Con esto se completó el backlog de `docs/historias-usuario-nutridesk.md`.
 

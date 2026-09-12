@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@nutri-bot/db";
-import { formatDateTime, formatPrice } from "@nutri-bot/core";
+import { formatDateTime, formatPrice, messages } from "@nutri-bot/core";
 import { Badge, Card, SectionLabel } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
@@ -23,7 +23,7 @@ export default async function PortalHomePage() {
       orderBy: { updatedAt: "desc" },
     }),
     prisma.evolutionEntry.findFirst({
-      where: { patientId: patient.id },
+      where: { patientId: patient.id, weightKg: { not: null } },
       orderBy: { recordedAt: "desc" },
     }),
   ]);
@@ -35,9 +35,20 @@ export default async function PortalHomePage() {
           Hola{patient.name ? `, ${patient.name}` : ""} 👋
         </h1>
         <p className="mt-1 text-sm text-ink-soft">Este es tu espacio con {pro.name}.</p>
-        {pro.acceptedInsurances ? (
-          <p className="mt-1 text-xs text-ink-faint">🏥 {pro.acceptedInsurances}</p>
-        ) : null}
+        {(() => {
+          const insurances = messages.formatInsuranceList(pro.acceptedInsurances);
+          if (insurances.length === 0) return null;
+          return (
+            <div className="mt-2 text-xs text-ink-faint">
+              <p className="font-semibold uppercase tracking-[0.06em]">🏥 Obras sociales</p>
+              <ul className="mt-1 space-y-0.5">
+                {insurances.map((i) => (
+                  <li key={i}>· {i}</li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
       </div>
 
       <Card>

@@ -37,7 +37,10 @@ export default async function PlanDetailPage({
 
   const [patient, latestEntry] = await Promise.all([
     prisma.patient.findUniqueOrThrow({ where: { id } }),
-    prisma.evolutionEntry.findFirst({ where: { patientId: id }, orderBy: { recordedAt: "desc" } }),
+    prisma.evolutionEntry.findFirst({
+      where: { patientId: id, weightKg: { not: null } },
+      orderBy: { recordedAt: "desc" },
+    }),
   ]);
   const meals = toMealView(plan.meals);
   const totals = sumMacros(meals.flatMap((m) => m.items.map((i) => i.macros).filter((m) => m !== null)));

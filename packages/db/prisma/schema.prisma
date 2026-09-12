@@ -18,6 +18,8 @@ model Professional {
   acceptedInsurances String?
   logoData           Bytes?
   logoMimeType       String?
+  pdfAccentColor     String? // color de acento (hex, ej "#3c7a24") para el PDF del plan; null = default
+  pdfFooterText      String? // texto de pie de página del PDF; null = texto default del código
   reminderLeadHours  Int      @default(24)
   /// Si está en true, el bot no responde ningún mensaje entrante.
   botPaused          Boolean  @default(false)
@@ -82,6 +84,12 @@ model EvolutionEntry {
   tricepsSkinfoldMm    Decimal? @db.Decimal(5, 2)
   subscapularSkinfoldMm Decimal? @db.Decimal(5, 2)
   abdominalSkinfoldMm  Decimal? @db.Decimal(5, 2)
+  bodyFatPercent          Decimal? @db.Decimal(4, 1)  // % de grasa corporal (bioimpedancia)
+  muscleMassKg            Decimal? @db.Decimal(5, 2)  // masa muscular en kg (bioimpedancia)
+  bodyWaterPercent        Decimal? @db.Decimal(4, 1)  // % de agua corporal (bioimpedancia)
+  visceralFatLevel        Decimal? @db.Decimal(4, 1)  // nivel de grasa visceral (bioimpedancia)
+  boneMassKg              Decimal? @db.Decimal(4, 2)  // masa ósea en kg (bioimpedancia)
+  basalMetabolicRateKcal  Int?                        // metabolismo basal en kcal (bioimpedancia)
   note       String?
   createdAt  DateTime @default(now())
 
