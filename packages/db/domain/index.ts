@@ -10,3 +10,5 @@ export * from "./nutritionPlans";
 export * from "./planTemplates";
 export * from "./professionalAssets";
 export * from "./payments";
+export * from "./patientAuth";
+export * from "./diary";

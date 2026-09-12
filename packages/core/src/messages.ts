@@ -5,6 +5,7 @@ export const MENU = `¡Hola! 👋 Soy el asistente de turnos. ¿Qué necesitás?
 1️⃣ Sacar un turno
 2️⃣ Cancelar un turno
 3️⃣ Ver precios
+4️⃣ Ver mi portal (plan, turnos, evolución)
 0️⃣ Hablar con la nutricionista
 
 Respondé con el número de la opción.`;
@@ -20,6 +21,10 @@ export function welcomeBack(name: string): string {
 }
 
 export const NOT_UNDERSTOOD = `No entendí esa respuesta. Escribí *menú* para ver las opciones.`;
+
+export function portalLink(url: string): string {
+  return `🌐 Accedé a tu portal acá (válido por 15 minutos):\n${url}\n\nDesde ahí podés ver tu plan, tu próximo turno, tu evolución y anotar tu comida del día.`;
+}
 
 export const DORMANT_BYE = `¡Listo! Cuando necesites un turno escribime *turno* y te ayudo. 👋`;
 

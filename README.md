@@ -136,6 +136,17 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Paciente: pagar una seña para confirmar la reserva | Bot → link de pago de Mercado Pago tras reservar (solo servicios con seña) |
 | Profesional: configurar seña por servicio | Panel `/servicios` → "Requiere seña" |
 | Profesional: ver pagos pendientes y facturación del mes | Panel `/pagos` |
+| Paciente: acceder a un portal web sin instalar nada | Bot → opción 4 del menú ("Ver mi portal") → link mágico |
+| Paciente: ver su plan, próximo turno y evolución | Portal `/portal`, `/portal/plan`, `/portal/evolucion` |
+| Paciente: diario alimentario con fotos | Portal `/portal/diario` |
+| Paciente: descargar el PDF de su plan | Portal → plan → "Descargar PDF" |
+
+### Portal del paciente
+
+Acceso sin cuenta ni contraseña: el paciente pide el portal por WhatsApp (opción 4 del menú, o
+escribiendo "portal"), el bot manda un link firmado que vale 15 minutos, y al abrirlo queda
+logueado en el portal por 30 días (cookie propia, separada del login de la profesional). No usa
+Auth.js — es un token HMAC con `AUTH_SECRET` sin estado en el servidor.
 
 ### Mercado Pago (cobros)
 

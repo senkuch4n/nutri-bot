@@ -39,6 +39,19 @@ model Patient {
   nutritionPlans NutritionPlan[]
   clinicalRecord ClinicalRecord?
   evolutionEntries EvolutionEntry[]
+  diaryEntries DiaryEntry[]
+}
+
+model DiaryEntry {
+  id             String   @id @default(cuid())
+  patient        Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId      String
+  note           String?
+  photoData      Bytes?
+  photoMimeType  String?
+  createdAt      DateTime @default(now())
+
+  @@index([patientId, createdAt])
 }
 
 model ClinicalRecord {

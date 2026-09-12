@@ -4,6 +4,7 @@ import {
   cancelAppointment,
   createAppointment,
   createDepositCheckout,
+  createPatientToken,
   findOrCreatePatientByJid,
   getProfessional,
 } from "@nutri-bot/db/domain";
@@ -204,6 +205,14 @@ async function handleMenu(jid: string, text: string, send: Send): Promise<void> 
         ),
       ),
     );
+    return;
+  }
+
+  if (choice === "4") {
+    const patient = await prisma.patient.findUniqueOrThrow({ where: { whatsappJid: jid } });
+    const token = createPatientToken(patient.id, 15);
+    const url = `${process.env.AUTH_URL}/portal/login?token=${token}`;
+    await send(messages.portalLink(url));
     return;
   }
 
