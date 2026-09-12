@@ -140,6 +140,23 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Paciente: ver su plan, próximo turno y evolución | Portal `/portal`, `/portal/plan`, `/portal/evolucion` |
 | Paciente: diario alimentario con fotos | Portal `/portal/diario` |
 | Paciente: descargar el PDF de su plan | Portal → plan → "Descargar PDF" |
+| Profesional: pedirle a una IA una propuesta de plan desde la ficha del paciente | Panel → plan vacío → "Generar propuesta con IA" |
+| Profesional: consultarle a una IA datos de agenda o de un paciente puntual | Panel `/asistente` |
+
+### Asistente con IA (DeepSeek)
+
+Usa `deepseek-chat` vía `API_KEY_IA_DEEPSEEK` (formato compatible con la API de OpenAI). Dos usos:
+
+- **Generar plan**: en un plan vacío, arma una propuesta de comidas usando la ficha clínica y la
+  base de alimentos — la IA elige alimentos y cantidades, pero los macros los calcula el código
+  (no la IA), así que siempre son exactos. Es un borrador: la profesional lo revisa y ajusta antes
+  de mandarlo.
+- **`/asistente`**: preguntas en lenguaje natural sobre la agenda, un paciente puntual o la
+  facturación. Responde solo con datos reales consultados en el momento (nunca inventa turnos,
+  pacientes ni montos) y aclara cuando algo está fuera de lo que puede consultar.
+
+Ambos usos mandan datos del consultorio (y, en el resumen de paciente, antecedentes/objetivos
+clínicos) a la API de DeepSeek. Tenelo en cuenta para lo que cargues en la ficha clínica.
 
 ### Portal del paciente
 

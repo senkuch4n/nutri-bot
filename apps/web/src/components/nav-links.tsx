@@ -12,6 +12,7 @@ const links = [
   { href: "/alimentos", label: "Alimentos" },
   { href: "/plantillas", label: "Plantillas" },
   { href: "/pagos", label: "Pagos" },
+  { href: "/asistente", label: "Asistente" },
   { href: "/avisos", label: "Avisos" },
   { href: "/ajustes", label: "Ajustes" },
 ] as const;

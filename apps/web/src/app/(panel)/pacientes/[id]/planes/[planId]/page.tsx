@@ -11,6 +11,7 @@ import { toMealView } from "@/lib/meal-view";
 import { PlanMetaForm } from "./plan-meta-form";
 import { PlanPdfActions } from "./plan-pdf-actions";
 import { DeletePlanButton } from "./delete-plan-button";
+import { AiPlanForm } from "./ai-plan-form";
 import {
   addPlanMealAction,
   deletePlanMealAction,
@@ -72,6 +73,13 @@ export default async function PlanDetailPage({
           <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.fat} g</p>
         </div>
       </div>
+
+      {plan.meals.length === 0 ? (
+        <Card>
+          <SectionLabel>Armar con IA</SectionLabel>
+          <AiPlanForm planId={plan.id} patientId={id} />
+        </Card>
+      ) : null}
 
       <MealsEditor
         ownerId={plan.id}
