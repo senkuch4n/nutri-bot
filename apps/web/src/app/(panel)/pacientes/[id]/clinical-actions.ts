@@ -26,12 +26,42 @@ export async function updateClinicalRecordAction(
   return { ok: true };
 }
 
+const optionalMeasure = z.string().trim().optional().or(z.literal(""));
+
 const evolutionEntrySchema = z.object({
   patientId: z.string().min(1),
   recordedAt: z.string().min(1),
-  weightKg: z.string().trim().optional().or(z.literal("")),
+  weightKg: optionalMeasure,
+  heightCm: optionalMeasure,
+  waistCm: optionalMeasure,
+  hipCm: optionalMeasure,
+  armCm: optionalMeasure,
+  thighCm: optionalMeasure,
+  calfCm: optionalMeasure,
+  tricepsSkinfoldMm: optionalMeasure,
+  subscapularSkinfoldMm: optionalMeasure,
+  abdominalSkinfoldMm: optionalMeasure,
   note: z.string().trim().max(2000).optional().or(z.literal("")),
 });
+
+const MEASURE_FIELDS = [
+  "weightKg",
+  "heightCm",
+  "waistCm",
+  "hipCm",
+  "armCm",
+  "thighCm",
+  "calfCm",
+  "tricepsSkinfoldMm",
+  "subscapularSkinfoldMm",
+  "abdominalSkinfoldMm",
+] as const;
+
+function parseMeasure(raw: string | undefined): number | null | undefined {
+  if (!raw) return null;
+  const n = Number(raw.replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 export async function addEvolutionEntryAction(
   _prev: ActionState,
@@ -39,17 +69,21 @@ export async function addEvolutionEntryAction(
 ): Promise<ActionState> {
   const parsed = evolutionEntrySchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  const { patientId, recordedAt, weightKg, note } = parsed.data;
+  const { patientId, recordedAt, note } = parsed.data;
   const recordedDate = new Date(`${recordedAt}T12:00:00`);
   if (Number.isNaN(recordedDate.getTime())) return { ok: false, error: "Fecha inválida" };
-  const parsedWeight = weightKg ? Number(weightKg.replace(",", ".")) : undefined;
-  if (parsedWeight !== undefined && (Number.isNaN(parsedWeight) || parsedWeight <= 0)) {
-    return { ok: false, error: "Peso inválido" };
+
+  const measures: Record<string, number | null> = {};
+  for (const field of MEASURE_FIELDS) {
+    const value = parseMeasure(parsed.data[field]);
+    if (value === undefined) return { ok: false, error: "Alguna medida es inválida" };
+    measures[field] = value;
   }
+
   await addEvolutionEntry(patientId, {
     recordedAt: recordedDate,
-    weightKg: parsedWeight ?? null,
     note: note || null,
+    ...measures,
   });
   revalidatePath(`/pacientes/${patientId}`);
   return { ok: true };

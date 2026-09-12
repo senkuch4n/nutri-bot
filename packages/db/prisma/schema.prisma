@@ -57,6 +57,15 @@ model EvolutionEntry {
   patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recordedAt DateTime
   weightKg   Decimal? @db.Decimal(5, 2)
+  heightCm   Decimal? @db.Decimal(5, 2)
+  waistCm    Decimal? @db.Decimal(5, 2)
+  hipCm      Decimal? @db.Decimal(5, 2)
+  armCm      Decimal? @db.Decimal(5, 2)
+  thighCm    Decimal? @db.Decimal(5, 2)
+  calfCm     Decimal? @db.Decimal(5, 2)
+  tricepsSkinfoldMm    Decimal? @db.Decimal(5, 2)
+  subscapularSkinfoldMm Decimal? @db.Decimal(5, 2)
+  abdominalSkinfoldMm  Decimal? @db.Decimal(5, 2)
   note       String?
   createdAt  DateTime @default(now())
 

@@ -99,6 +99,17 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
             recordedAtISO: e.recordedAt.toISOString(),
             recordedAtLabel: formatDate(e.recordedAt, pro.timezone),
             weightKg: e.weightKg !== null ? Number(e.weightKg) : null,
+            heightCm: e.heightCm !== null ? Number(e.heightCm) : null,
+            waistCm: e.waistCm !== null ? Number(e.waistCm) : null,
+            hipCm: e.hipCm !== null ? Number(e.hipCm) : null,
+            armCm: e.armCm !== null ? Number(e.armCm) : null,
+            thighCm: e.thighCm !== null ? Number(e.thighCm) : null,
+            calfCm: e.calfCm !== null ? Number(e.calfCm) : null,
+            tricepsSkinfoldMm: e.tricepsSkinfoldMm !== null ? Number(e.tricepsSkinfoldMm) : null,
+            subscapularSkinfoldMm:
+              e.subscapularSkinfoldMm !== null ? Number(e.subscapularSkinfoldMm) : null,
+            abdominalSkinfoldMm:
+              e.abdominalSkinfoldMm !== null ? Number(e.abdominalSkinfoldMm) : null,
             note: e.note,
           }))}
         />

@@ -26,7 +26,20 @@ export function listEvolutionEntries(patientId: string) {
 
 export function addEvolutionEntry(
   patientId: string,
-  data: { recordedAt: Date; weightKg?: number | null; note?: string | null },
+  data: {
+    recordedAt: Date;
+    weightKg?: number | null;
+    note?: string | null;
+    heightCm?: number | null;
+    waistCm?: number | null;
+    hipCm?: number | null;
+    armCm?: number | null;
+    thighCm?: number | null;
+    calfCm?: number | null;
+    tricepsSkinfoldMm?: number | null;
+    subscapularSkinfoldMm?: number | null;
+    abdominalSkinfoldMm?: number | null;
+  },
 ) {
   return prisma.evolutionEntry.create({
     data: { patientId, ...data },

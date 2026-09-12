@@ -131,6 +131,8 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Profesional: plantillas de planes reutilizables | Panel `/plantillas` → "Aplicar plantilla" |
 | Profesional: PDF del plan con su logo | Panel → plan → "Generar PDF" (logo en `/ajustes`) |
 | Paciente: recibir el plan vigente | Panel → plan → "Enviar por WhatsApp" (como documento) |
+| Profesional: registrar medidas antropométricas (talla, cintura, cadera, pliegues) | Panel → paciente → "Evolución" → "Agregar medidas antropométricas" |
+| Profesional: ver evolución de las medidas e índices (IMC, ICC) | Panel → paciente → "Evolución" |
 
 Backlog de historias inspiradas en NutriDesk (competencia), con las épicas pendientes:
 [`docs/historias-usuario-nutridesk.md`](docs/historias-usuario-nutridesk.md).
