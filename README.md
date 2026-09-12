@@ -125,7 +125,7 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Profesional: enviar avisos | Recordatorios automáticos + "Enviar recordatorio ahora" |
 | Profesional: crear turno para un paciente | Panel → "Nuevo turno" |
 | Profesional: ficha clínica del paciente (antecedentes/objetivos) | Panel → paciente → "Ficha clínica" |
-| Profesional: registrar y graficar evolución del paciente | Panel → paciente → "Evolución" |
+| Profesional: registrar y graficar evolución del paciente | Panel → paciente → "Evolución" (gráficos con [MUI X Charts](https://mui.com/x/react-charts/)) |
 | Profesional: base de alimentos con macros | Panel `/alimentos` |
 | Profesional: armar plan alimenticio por comidas | Panel → paciente → "Planes nutricionales" |
 | Profesional: plantillas de planes reutilizables | Panel `/plantillas` → "Aplicar plantilla" |

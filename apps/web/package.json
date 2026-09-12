@@ -11,11 +11,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
     "@fullcalendar/core": "^6.1.15",
     "@fullcalendar/daygrid": "^6.1.15",
     "@fullcalendar/interaction": "^6.1.15",
     "@fullcalendar/react": "^6.1.15",
     "@fullcalendar/timegrid": "^6.1.15",
+    "@mui/material": "^9.4.0",
+    "@mui/system": "^9.4.0",
+    "@mui/x-charts": "^9.13.0",
     "@nutri-bot/core": "*",
     "@nutri-bot/db": "*",
     "@react-pdf/renderer": "^4.9.0",

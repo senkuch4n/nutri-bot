@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { computeBmi, computeWaistHipRatio } from "@nutri-bot/core";
 import { Button, Field, Input, Textarea } from "@/components/ui";
+import { EvolutionChart } from "@/components/evolution-chart";
 import {
   addEvolutionEntryAction,
   deleteEvolutionEntryAction,
@@ -42,8 +43,8 @@ export function EvolutionSection({
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Chart entries={entries} field="weightKg" label="Peso (kg)" unit="kg" />
-        <Chart entries={entries} field="waistCm" label="Cintura (cm)" unit="cm" />
+        <Chart entries={entries} field="weightKg" label="Peso (kg)" unit="kg" color="#3c7a24" />
+        <Chart entries={entries} field="waistCm" label="Cintura (cm)" unit="cm" color="#2563eb" />
       </div>
 
       <form action={action} className="space-y-3">
@@ -161,16 +162,18 @@ function Chart({
   field,
   label,
   unit,
+  color,
 }: {
   entries: EvolutionRow[];
   field: keyof EvolutionRow;
   label: string;
   unit: string;
+  color: string;
 }) {
   const points = entries
     .filter((e) => e[field] !== null)
-    .map((e) => ({ x: new Date(e.recordedAtISO).getTime(), y: e[field] as number }))
-    .sort((a, b) => a.x - b.x);
+    .map((e) => ({ date: new Date(e.recordedAtISO), value: e[field] as number }))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   if (points.length < 2) {
     return (
@@ -181,21 +184,6 @@ function Chart({
     );
   }
 
-  const width = 280;
-  const height = 120;
-  const padding = 12;
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys) - 1;
-  const maxY = Math.max(...ys) + 1;
-
-  const scaleX = (x: number) => padding + ((x - minX) / (maxX - minX || 1)) * (width - padding * 2);
-  const scaleY = (y: number) =>
-    height - padding - ((y - minY) / (maxY - minY || 1)) * (height - padding * 2);
-
-  const path = points.map((p) => `${scaleX(p.x)},${scaleY(p.y)}`).join(" ");
   const last = points[points.length - 1]!;
 
   return (
@@ -203,15 +191,10 @@ function Chart({
       <div className="mb-2 flex items-baseline justify-between">
         <p className="text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">{label}</p>
         <p className="text-sm font-semibold text-ink">
-          {last.y} {unit}
+          {last.value} {unit}
         </p>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={`Evolución de ${label}`}>
-        <polyline points={path} fill="none" stroke="currentColor" strokeWidth="2" className="text-leaf" />
-        {points.map((p, i) => (
-          <circle key={i} cx={scaleX(p.x)} cy={scaleY(p.y)} r="3" className="fill-leaf-deep" />
-        ))}
-      </svg>
+      <EvolutionChart points={points} seriesLabel={`${label} (${unit})`} color={color} />
     </div>
   );
 }
