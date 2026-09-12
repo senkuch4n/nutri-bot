@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueDueReminders, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueDueReminders, expireStalePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { env } from "./env";
 import { logger } from "./logger";
@@ -83,6 +83,15 @@ export function startCron(): void {
       logger.error({ err }, "Error en sync de Google Calendar");
     }
   });
+
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      const n = await expireStalePendingPayments();
+      if (n > 0) logger.info({ n }, "Reservas con seña vencida liberadas");
+    } catch (err) {
+      logger.error({ err }, "Error liberando reservas con seña vencida");
+    }
+  });
 }
 
 /** Barre pendientes al arrancar, sin esperar al primer tick del cron. */
@@ -90,6 +99,7 @@ export async function runStartupJobs(): Promise<void> {
   try {
     await enqueueDueReminders();
     await syncGoogleCalendar();
+    await expireStalePendingPayments();
   } catch (err) {
     logger.error({ err }, "Error en tareas de arranque");
   }

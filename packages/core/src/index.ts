@@ -5,3 +5,4 @@ export * from "./wake";
 export * as messages from "./messages";
 export * from "./nutrition";
 export * from "./anthropometry";
+export * from "./deposits";

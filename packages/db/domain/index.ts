@@ -9,3 +9,4 @@ export * from "./foods";
 export * from "./nutritionPlans";
 export * from "./planTemplates";
 export * from "./professionalAssets";
+export * from "./payments";

@@ -11,6 +11,7 @@ const links = [
   { href: "/pacientes", label: "Pacientes" },
   { href: "/alimentos", label: "Alimentos" },
   { href: "/plantillas", label: "Plantillas" },
+  { href: "/pagos", label: "Pagos" },
   { href: "/avisos", label: "Avisos" },
   { href: "/ajustes", label: "Ajustes" },
 ] as const;

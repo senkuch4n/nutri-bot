@@ -3,6 +3,7 @@ import {
   SlotUnavailableError,
   cancelAppointment,
   createAppointment,
+  createDepositCheckout,
   findOrCreatePatientByJid,
   getProfessional,
 } from "@nutri-bot/db/domain";
@@ -317,20 +318,19 @@ async function handleBookConfirm(
       prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } }),
       getProfessional(),
     ]);
-    await createAppointment({
+    const appointment = await createAppointment({
       patientId,
       serviceId: ctx.serviceId,
       startsAt: new Date(ctx.startsAt),
       createdBy: "PATIENT",
       notifyPatient: false,
     });
-    await send(
-      messages.bookingConfirmed({
-        serviceName: service.name,
-        startsAt: new Date(ctx.startsAt),
-        tz: pro.timezone,
-      }),
-    );
+    if (appointment.status === "AWAITING_PAYMENT") {
+      const checkout = await createDepositCheckout(appointment.id);
+      await send(messages.depositRequired({ serviceName: service.name, startsAt: appointment.startsAt, tz: pro.timezone, amount: checkout.amount, currency: pro.currency, checkoutUrl: checkout.checkoutUrl }));
+    } else {
+      await send(messages.bookingConfirmed({ serviceName: service.name, startsAt: appointment.startsAt, tz: pro.timezone }));
+    }
   } catch (err) {
     if (err instanceof SlotUnavailableError) {
       await send(messages.SLOT_TAKEN);

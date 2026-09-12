@@ -8,15 +8,28 @@ export function listServices(opts?: { activeOnly?: boolean }) {
   });
 }
 
-export function createService(data: {
-  name: string;
-  description?: string | null;
-  price: number;
-  durationMin: number;
-  color: string;
-}) {
+interface DepositFields {
+  requiresDeposit: boolean;
+  depositKind?: "FIXED" | "PERCENT" | null;
+  depositValue?: number | null;
+}
+
+export function createService(
+  data: {
+    name: string;
+    description?: string | null;
+    price: number;
+    durationMin: number;
+    color: string;
+  } & DepositFields,
+) {
+  const { depositValue, ...rest } = data;
   return prisma.service.create({
-    data: { ...data, price: new Prisma.Decimal(data.price) },
+    data: {
+      ...rest,
+      price: new Prisma.Decimal(data.price),
+      depositValue: depositValue != null ? new Prisma.Decimal(depositValue) : null,
+    },
   });
 }
 
@@ -29,11 +42,16 @@ export function updateService(
     durationMin: number;
     color: string;
     active: boolean;
-  },
+  } & DepositFields,
 ) {
+  const { depositValue, ...rest } = data;
   return prisma.service.update({
     where: { id },
-    data: { ...data, price: new Prisma.Decimal(data.price) },
+    data: {
+      ...rest,
+      price: new Prisma.Decimal(data.price),
+      depositValue: depositValue != null ? new Prisma.Decimal(depositValue) : null,
+    },
   });
 }
 

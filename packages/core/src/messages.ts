@@ -66,6 +66,35 @@ export function bookingConfirmed(params: { serviceName: string; startsAt: Date; 
 Si necesitás cancelar, escribí *menú* y elegí la opción 2.`;
 }
 
+export function depositRequired(params: {
+  serviceName: string;
+  startsAt: Date;
+  tz: string;
+  amount: number;
+  currency: string;
+  checkoutUrl: string;
+}): string {
+  return `🕐 Reserva iniciada
+
+📋 ${params.serviceName}
+🗓️ ${formatDateTime(params.startsAt, params.tz)} hs
+💲 Seña: ${formatPrice(params.amount, params.currency)}
+
+Para confirmar el turno, completá el pago desde este link:
+${params.checkoutUrl}
+
+La reserva se libera si no completás el pago en 15 minutos.`;
+}
+
+export function depositExpired(params: { serviceName: string; startsAt: Date; tz: string }): string {
+  return `La reserva de *${params.serviceName}* del ${formatDateTime(
+    params.startsAt,
+    params.tz,
+  )} hs se liberó porque no se completó el pago de la seña a tiempo.
+
+Si todavía querés un turno, escribí *turno* para volver a intentar.`;
+}
+
 export const SLOT_TAKEN = `Ese horario se acaba de ocupar. Escribí *menú* para elegir otro.`;
 
 export function askWhichToCancel(

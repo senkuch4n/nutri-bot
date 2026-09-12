@@ -45,6 +45,12 @@ export function ServiceCard({
             {service.durationMin} min
           </p>
 
+          {service.requiresDeposit ? (
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.06em] text-leaf-deep">
+              Requiere seña
+            </p>
+          ) : null}
+
           {service.description ? (
             <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-ink-soft">
               {service.description}

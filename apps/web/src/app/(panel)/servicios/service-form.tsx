@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Button, Field, Input, Textarea } from "@/components/ui";
+import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { saveServiceAction, type ServiceFormState } from "./actions";
 
 export interface EditableService {
@@ -12,6 +12,9 @@ export interface EditableService {
   durationMin: number;
   color: string;
   active: boolean;
+  requiresDeposit: boolean;
+  depositKind: "FIXED" | "PERCENT" | null;
+  depositValue: string | null;
 }
 
 const initial: ServiceFormState = { ok: false };
@@ -22,6 +25,7 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
   const [state, action, pending] = useActionState(saveServiceAction, initial);
   const formRef = useRef<HTMLFormElement>(null);
   const [color, setColor] = useState(editing?.color ?? PRESET_COLORS[0]!);
+  const [requiresDeposit, setRequiresDeposit] = useState(editing?.requiresDeposit ?? false);
 
   useEffect(() => {
     if (state.ok) {
@@ -85,6 +89,41 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
         <Field label="Descripción (opcional)">
           <Textarea name="description" rows={2} defaultValue={editing?.description ?? ""} />
         </Field>
+      </div>
+
+      <div className="sm:col-span-2 space-y-3 border-t border-line pt-4">
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            name="requiresDeposit"
+            value="true"
+            checked={requiresDeposit}
+            onChange={(e) => setRequiresDeposit(e.target.checked)}
+            className="h-4 w-4 accent-leaf"
+          />
+          Requiere seña para reservar por WhatsApp
+        </label>
+
+        {requiresDeposit ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tipo de seña">
+              <Select name="depositKind" defaultValue={editing?.depositKind ?? "PERCENT"}>
+                <option value="PERCENT">Porcentaje del precio</option>
+                <option value="FIXED">Monto fijo</option>
+              </Select>
+            </Field>
+            <Field label="Valor">
+              <Input
+                name="depositValue"
+                type="number"
+                min={0}
+                step="0.01"
+                defaultValue={editing?.depositValue ?? ""}
+                required={requiresDeposit}
+              />
+            </Field>
+          </div>
+        ) : null}
       </div>
 
       {editing ? (

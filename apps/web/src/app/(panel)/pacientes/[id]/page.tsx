@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 const statusMeta = {
   CONFIRMED: { tone: "blue", label: "Confirmado" },
+  AWAITING_PAYMENT: { tone: "amber", label: "Esperando pago" },
   COMPLETED: { tone: "green", label: "Completado" },
   CANCELLED: { tone: "slate", label: "Cancelado" },
   NO_SHOW: { tone: "red", label: "Ausente" },

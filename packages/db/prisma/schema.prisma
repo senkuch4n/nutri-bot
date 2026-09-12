@@ -77,6 +77,9 @@ model Service {
   name         String
   description  String?
   price        Decimal       @db.Decimal(12, 2)
+  requiresDeposit Boolean     @default(false)
+  depositKind  DepositKind?
+  depositValue Decimal?      @db.Decimal(12, 2)
   durationMin  Int
   color        String        @default("#2563eb")
   active       Boolean       @default(true)
@@ -115,6 +118,7 @@ model AvailabilityException {
 
 enum AppointmentStatus {
   CONFIRMED
+  AWAITING_PAYMENT
   CANCELLED
   COMPLETED
   NO_SHOW
@@ -123,6 +127,24 @@ enum AppointmentStatus {
 enum Actor {
   PATIENT
   PROFESSIONAL
+}
+
+enum DepositKind {
+  FIXED
+  PERCENT
+}
+
+enum PaymentKind {
+  DEPOSIT
+  FULL
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
 }
 
 model Appointment {
@@ -144,6 +166,7 @@ model Appointment {
   updatedAt       DateTime          @updatedAt
 
   messages OutboundMessage[]
+  payments Payment[]
 
   @@index([startsAt])
   @@index([status, startsAt])
@@ -157,6 +180,27 @@ enum MessageKind {
   PROFESSIONAL_ALERT
   AD_HOC
   PLAN_PDF
+  PAYMENT_LINK
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointmentId String
+  kind          PaymentKind
+  amount        Decimal       @db.Decimal(12, 2)
+  status        PaymentStatus @default(PENDING)
+  provider      String        @default("mercadopago")
+  externalId    String?
+  preferenceId  String?
+  checkoutUrl   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  paidAt        DateTime?
+
+  @@index([appointmentId])
+  @@index([preferenceId])
+  @@index([externalId])
 }
 
 enum MessageStatus {

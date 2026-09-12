@@ -26,6 +26,7 @@ export async function createAppointment(params: {
   ]);
 
   const endsAt = new Date(params.startsAt.getTime() + service.durationMin * 60_000);
+  const awaitingPayment = params.createdBy === "PATIENT" && service.requiresDeposit;
 
   const appointment = await prisma.$transaction(async (tx) => {
     const ok = await checkSlotAvailable({ serviceId: params.serviceId, startsAt: params.startsAt });
@@ -37,7 +38,7 @@ export async function createAppointment(params: {
         serviceId: params.serviceId,
         startsAt: params.startsAt,
         endsAt,
-        status: "CONFIRMED",
+        status: awaitingPayment ? "AWAITING_PAYMENT" : "CONFIRMED",
         createdBy: params.createdBy,
         priceSnapshot: service.price,
         needsGoogleSync: true,
@@ -45,7 +46,7 @@ export async function createAppointment(params: {
     });
   });
 
-  if (params.notifyPatient !== false) {
+  if (!awaitingPayment && params.notifyPatient !== false) {
     await enqueueMessage({
       toJid: patient.whatsappJid,
       kind: "CONFIRMATION",
@@ -59,7 +60,7 @@ export async function createAppointment(params: {
   }
 
   // Aviso a la profesional cuando el turno lo saca el paciente.
-  if (params.createdBy === "PATIENT" && pro.phoneJid) {
+  if (!awaitingPayment && params.createdBy === "PATIENT" && pro.phoneJid) {
     await enqueueMessage({
       toJid: pro.phoneJid,
       kind: "PROFESSIONAL_ALERT",

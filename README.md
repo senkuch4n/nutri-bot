@@ -133,6 +133,23 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Paciente: recibir el plan vigente | Panel → plan → "Enviar por WhatsApp" (como documento) |
 | Profesional: registrar medidas antropométricas (talla, cintura, cadera, pliegues) | Panel → paciente → "Evolución" → "Agregar medidas antropométricas" |
 | Profesional: ver evolución de las medidas e índices (IMC, ICC) | Panel → paciente → "Evolución" |
+| Paciente: pagar una seña para confirmar la reserva | Bot → link de pago de Mercado Pago tras reservar (solo servicios con seña) |
+| Profesional: configurar seña por servicio | Panel `/servicios` → "Requiere seña" |
+| Profesional: ver pagos pendientes y facturación del mes | Panel `/pagos` |
+
+### Mercado Pago (cobros)
+
+Para que funcione de verdad, completá `MERCADOPAGO_ACCESS_TOKEN` en `.env` (credenciales de prueba
+mientras se testea, de producción para cobrar). Con el token vacío, reservar un servicio con seña
+por WhatsApp falla al intentar generar el link de pago — no rompe el resto del bot.
+
+El webhook de Mercado Pago pega contra `${AUTH_URL}/api/webhooks/mercadopago`: en producción
+`AUTH_URL` ya es una URL pública, pero en desarrollo local (`localhost`) Mercado Pago no puede
+llegar a notificar el pago — para probar el flujo completo en local hace falta exponer el panel
+con algo como `ngrok` y setear `AUTH_URL` a esa URL pública mientras se prueba.
+
+Una reserva con seña queda en estado "Esperando pago" (no se confirma ni bloquea el turno en la
+agenda visible) y se libera sola a los 15 minutos si no se completa el pago.
 
 Backlog de historias inspiradas en NutriDesk (competencia), con las épicas pendientes:
 [`docs/historias-usuario-nutridesk.md`](docs/historias-usuario-nutridesk.md).

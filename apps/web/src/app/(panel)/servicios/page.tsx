@@ -22,6 +22,9 @@ export default async function ServiciosPage() {
       durationMin: s.durationMin,
       color: s.color,
       active: s.active,
+      requiresDeposit: s.requiresDeposit,
+      depositKind: s.depositKind,
+      depositValue: s.depositValue?.toString() ?? null,
     },
   });
 

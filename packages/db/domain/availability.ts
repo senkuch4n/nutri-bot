@@ -50,7 +50,7 @@ async function loadBusy(
 ): Promise<BusyInterval[]> {
   const appts = await prisma.appointment.findMany({
     where: {
-      status: "CONFIRMED",
+      status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] },
       startsAt: { lt: to },
       endsAt: { gt: from },
       ...(excludeAppointmentId ? { id: { not: excludeAppointmentId } } : {}),
