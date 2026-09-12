@@ -1,10 +1,14 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@nutri-bot/db";
-import { formatInTimeZone, formatPrice } from "@nutri-bot/core";
+import { formatDate, formatInTimeZone, formatPrice } from "@nutri-bot/core";
+import { listPatientPlans, listTemplates } from "@nutri-bot/db/domain";
 import { Badge, Card, SectionLabel, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { PatientForm } from "./patient-form";
+import { ClinicalRecordForm } from "./clinical-record-form";
+import { EvolutionSection } from "./evolution-section";
+import { PlansSection } from "./plans-section";
 
 export const dynamic = "force-dynamic";
 
@@ -17,12 +21,18 @@ const statusMeta = {
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [pro, patient] = await Promise.all([
+  const [pro, patient, plans, templates] = await Promise.all([
     getProfessional(),
     prisma.patient.findUnique({
       where: { id },
-      include: { appointments: { include: { service: true }, orderBy: { startsAt: "desc" } } },
+      include: {
+        appointments: { include: { service: true }, orderBy: { startsAt: "desc" } },
+        clinicalRecord: true,
+        evolutionEntries: { orderBy: { recordedAt: "desc" } },
+      },
     }),
+    listPatientPlans(id),
+    listTemplates(),
   ]);
   if (!patient) notFound();
 
@@ -66,6 +76,46 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
       <Card>
         <SectionLabel>Datos</SectionLabel>
         <PatientForm patient={{ id: patient.id, name: patient.name, notes: patient.notes }} />
+      </Card>
+
+      <Card>
+        <SectionLabel>Ficha clínica</SectionLabel>
+        <ClinicalRecordForm
+          patientId={patient.id}
+          record={
+            patient.clinicalRecord
+              ? { background: patient.clinicalRecord.background, goals: patient.clinicalRecord.goals }
+              : null
+          }
+        />
+      </Card>
+
+      <Card>
+        <SectionLabel>Evolución</SectionLabel>
+        <EvolutionSection
+          patientId={patient.id}
+          entries={patient.evolutionEntries.map((e) => ({
+            id: e.id,
+            recordedAtISO: e.recordedAt.toISOString(),
+            recordedAtLabel: formatDate(e.recordedAt, pro.timezone),
+            weightKg: e.weightKg !== null ? Number(e.weightKg) : null,
+            note: e.note,
+          }))}
+        />
+      </Card>
+
+      <Card>
+        <SectionLabel>Planes nutricionales</SectionLabel>
+        <PlansSection
+          patientId={patient.id}
+          plans={plans.map((p) => ({
+            id: p.id,
+            title: p.title,
+            status: p.status,
+            updatedAtLabel: formatDate(p.updatedAt, pro.timezone),
+          }))}
+          templates={templates.map((t) => ({ id: t.id, title: t.title }))}
+        />
       </Card>
 
       <Card>

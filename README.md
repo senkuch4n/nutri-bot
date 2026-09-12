@@ -124,3 +124,13 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Profesional: crear/editar servicio | Panel `/servicios` |
 | Profesional: enviar avisos | Recordatorios automáticos + "Enviar recordatorio ahora" |
 | Profesional: crear turno para un paciente | Panel → "Nuevo turno" |
+| Profesional: ficha clínica del paciente (antecedentes/objetivos) | Panel → paciente → "Ficha clínica" |
+| Profesional: registrar y graficar evolución del paciente | Panel → paciente → "Evolución" |
+| Profesional: base de alimentos con macros | Panel `/alimentos` |
+| Profesional: armar plan alimenticio por comidas | Panel → paciente → "Planes nutricionales" |
+| Profesional: plantillas de planes reutilizables | Panel `/plantillas` → "Aplicar plantilla" |
+| Profesional: PDF del plan con su logo | Panel → plan → "Generar PDF" (logo en `/ajustes`) |
+| Paciente: recibir el plan vigente | Panel → plan → "Enviar por WhatsApp" (como documento) |
+
+Backlog de historias inspiradas en NutriDesk (competencia), con las épicas pendientes:
+[`docs/historias-usuario-nutridesk.md`](docs/historias-usuario-nutridesk.md).

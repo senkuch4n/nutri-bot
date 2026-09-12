@@ -4,3 +4,8 @@ export * from "./outbox";
 export * from "./patients";
 export * from "./reminders";
 export * from "./gcal";
+export * from "./clinical";
+export * from "./foods";
+export * from "./nutritionPlans";
+export * from "./planTemplates";
+export * from "./professionalAssets";

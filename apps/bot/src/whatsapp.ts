@@ -115,6 +115,15 @@ export async function sendText(jid: string, text: string): Promise<void> {
   await sock.sendPresenceUpdate("paused", jid).catch(() => {});
 }
 
+export async function sendDocument(jid: string, buffer: Buffer, fileName: string): Promise<void> {
+  if (!sock) throw new Error("WhatsApp no está conectado");
+  await sock.sendMessage(jid, {
+    document: buffer,
+    fileName,
+    mimetype: "application/pdf",
+  });
+}
+
 export function isConnected(): boolean {
   return sock !== null;
 }

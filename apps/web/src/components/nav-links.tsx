@@ -9,6 +9,8 @@ const links = [
   { href: "/servicios", label: "Servicios" },
   { href: "/disponibilidad", label: "Disponibilidad" },
   { href: "/pacientes", label: "Pacientes" },
+  { href: "/alimentos", label: "Alimentos" },
+  { href: "/plantillas", label: "Plantillas" },
   { href: "/avisos", label: "Avisos" },
   { href: "/ajustes", label: "Ajustes" },
 ] as const;

@@ -71,3 +71,37 @@ export async function setBotPausedAction(paused: boolean) {
   await prisma.professional.update({ where: { id: 1 }, data: { botPaused: paused } });
   revalidatePath("/ajustes");
 }
+
+const ALLOWED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+
+export async function uploadLogoAction(
+  _prev: SettingsState,
+  formData: FormData,
+): Promise<SettingsState> {
+  const file = formData.get("logo");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Elegí una imagen" };
+  }
+  if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+    return { ok: false, error: "Formato inválido (usá PNG, JPG o WEBP)" };
+  }
+  if (file.size > MAX_LOGO_BYTES) {
+    return { ok: false, error: "La imagen pesa más de 2 MB" };
+  }
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await prisma.professional.update({
+    where: { id: 1 },
+    data: { logoData: buffer, logoMimeType: file.type },
+  });
+  revalidatePath("/ajustes");
+  return { ok: true };
+}
+
+export async function removeLogoAction(): Promise<void> {
+  await prisma.professional.update({
+    where: { id: 1 },
+    data: { logoData: null, logoMimeType: null },
+  });
+  revalidatePath("/ajustes");
+}

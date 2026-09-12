@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
 import { enqueueDueReminders, syncGoogleCalendar } from "@nutri-bot/db/domain";
-import { sendText } from "./whatsapp";
+import { sendDocument, sendText } from "./whatsapp";
 import { env } from "./env";
 import { logger } from "./logger";
 
@@ -21,11 +21,19 @@ async function tick(): Promise<void> {
       where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
       take: 5,
+      include: { plan: { select: { pdfData: true, pdfFileName: true } } },
     });
 
     for (const msg of pending) {
       try {
-        await sendText(msg.toJid, msg.body);
+        if (msg.kind === "PLAN_PDF") {
+          if (!msg.plan?.pdfData) {
+            throw new Error(`El plan no tiene PDF generado: ${msg.planId ?? msg.id}`);
+          }
+          await sendDocument(msg.toJid, msg.plan.pdfData, msg.plan.pdfFileName ?? "plan-alimentario.pdf");
+        } else {
+          await sendText(msg.toJid, msg.body);
+        }
         await prisma.outboundMessage.update({
           where: { id: msg.id },
           data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 }, lastError: null },

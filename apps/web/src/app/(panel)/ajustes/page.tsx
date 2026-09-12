@@ -6,14 +6,16 @@ import { getProfessional } from "@/lib/professional";
 import { SettingsForm } from "./settings-form";
 import { GoogleCalendarForm } from "./google-calendar-form";
 import { BotToggle } from "./bot-toggle";
+import { LogoForm } from "./logo-form";
 import { disconnectGoogleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function AjustesPage() {
-  const [pro, botStatus] = await Promise.all([
+  const [pro, botStatus, logo] = await Promise.all([
     getProfessional(),
     prisma.botStatus.findUnique({ where: { id: 1 } }),
+    prisma.professional.findUnique({ where: { id: 1 }, select: { logoData: true } }),
   ]);
   const googleConnected = Boolean(pro.googleRefreshToken);
   const botConnected = botStatus?.connected ?? false;
@@ -48,6 +50,15 @@ export default async function AjustesPage() {
           clave como <em>turno</em>, <em>turnos</em> o <em>menú</em>. Igual podés apagarlo del todo.
         </p>
         <BotToggle paused={pro.botPaused} />
+      </Card>
+
+      {/* Marca */}
+      <Card>
+        <SectionLabel>Marca</SectionLabel>
+        <p className="mb-4 text-sm text-ink-soft">
+          Este logo aparece en los PDFs de los planes alimentarios que le enviás a tus pacientes.
+        </p>
+        <LogoForm hasLogo={Boolean(logo?.logoData)} />
       </Card>
 
       {/* General */}

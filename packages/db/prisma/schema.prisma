@@ -15,6 +15,8 @@ model Professional {
   phoneJid           String?
   timezone           String   @default("America/Argentina/Buenos_Aires")
   currency           String   @default("ARS")
+  logoData           Bytes?
+  logoMimeType       String?
   reminderLeadHours  Int      @default(24)
   /// Si está en true, el bot no responde ningún mensaje entrante.
   botPaused          Boolean  @default(false)
@@ -34,6 +36,31 @@ model Patient {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   appointments Appointment[]
+  nutritionPlans NutritionPlan[]
+  clinicalRecord ClinicalRecord?
+  evolutionEntries EvolutionEntry[]
+}
+
+model ClinicalRecord {
+  id        String   @id @default(cuid())
+  patientId String   @unique
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  background String?
+  goals      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EvolutionEntry {
+  id         String   @id @default(cuid())
+  patientId  String
+  patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  recordedAt DateTime
+  weightKg   Decimal? @db.Decimal(5, 2)
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([patientId, recordedAt])
 }
 
 model Service {
@@ -120,6 +147,7 @@ enum MessageKind {
   REMINDER
   PROFESSIONAL_ALERT
   AD_HOC
+  PLAN_PDF
 }
 
 enum MessageStatus {
@@ -140,12 +168,130 @@ model OutboundMessage {
   lastError     String?
   appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
   appointmentId String?
+  plan          NutritionPlan? @relation(fields: [planId], references: [id])
+  planId        String?
   sentAt        DateTime?
   createdAt     DateTime      @default(now())
 
   // Evita duplicar confirmaciones / recordatorios para un mismo turno.
   @@unique([appointmentId, kind])
   @@index([status, createdAt])
+}
+
+enum FoodGroup {
+  CEREALES
+  LACTEOS
+  CARNES_Y_HUEVOS
+  FRUTAS
+  VERDURAS
+  LEGUMBRES
+  GRASAS
+  AZUCARES_Y_DULCES
+  BEBIDAS
+  OTROS
+}
+
+model Food {
+  id            String    @id @default(cuid())
+  name          String
+  group         FoodGroup
+  kcalPer100    Decimal   @db.Decimal(6, 2)
+  proteinPer100 Decimal   @db.Decimal(5, 2)
+  carbsPer100   Decimal   @db.Decimal(5, 2)
+  fatPer100     Decimal   @db.Decimal(5, 2)
+  unitHint      String?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  planItems     PlanMealItem[]
+  templateItems TemplateMealItem[]
+
+  @@index([group])
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model NutritionPlan {
+  id             String            @id @default(cuid())
+  patient        Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId      String
+  title          String
+  notes          String?
+  status         PlanStatus        @default(DRAFT)
+  pdfData        Bytes?
+  pdfFileName    String?
+  pdfGeneratedAt DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  meals          PlanMeal[]
+  messages       OutboundMessage[]
+
+  @@index([patientId, status])
+}
+
+model PlanMeal {
+  id     String @id @default(cuid())
+  plan   NutritionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId String
+  name   String
+  order  Int
+  items  PlanMealItem[]
+
+  @@index([planId, order])
+}
+
+model PlanMealItem {
+  id            String    @id @default(cuid())
+  meal          PlanMeal  @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  mealId        String
+  food          Food?     @relation(fields: [foodId], references: [id])
+  foodId        String?
+  customLabel   String?
+  quantityGrams Decimal?  @db.Decimal(7, 2)
+  notes         String?
+  order         Int
+
+  @@index([mealId, order])
+}
+
+model PlanTemplate {
+  id        String   @id @default(cuid())
+  title     String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  meals     TemplateMeal[]
+}
+
+model TemplateMeal {
+  id         String @id @default(cuid())
+  template   PlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId String
+  name       String
+  order      Int
+  items      TemplateMealItem[]
+
+  @@index([templateId, order])
+}
+
+model TemplateMealItem {
+  id            String       @id @default(cuid())
+  meal          TemplateMeal @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  mealId        String
+  food          Food?        @relation(fields: [foodId], references: [id])
+  foodId        String?
+  customLabel   String?
+  quantityGrams Decimal?     @db.Decimal(7, 2)
+  notes         String?
+  order         Int
+
+  @@index([mealId, order])
 }
 
 /// Máquina de estados de la conversación del bot, por paciente.
