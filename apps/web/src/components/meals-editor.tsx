@@ -14,7 +14,7 @@ export interface MealItemView {
   customLabel: string | null;
   quantityGrams: string | null;
   notes: string | null;
-  macros: { kcal: number; protein: number; carbs: number; fat: number } | null;
+  macros: { kcal: number; protein: number; carbs: number; fat: number; fiber: number } | null;
 }
 
 export interface MealView {
@@ -89,7 +89,7 @@ export function MealsEditor({
                     {showMacros && item.macros ? (
                       <p className="mt-0.5 text-xs text-ink-faint">
                         {item.macros.kcal} kcal · P {item.macros.protein}g · C {item.macros.carbs}g · G{" "}
-                        {item.macros.fat}g
+                        {item.macros.fat}g · Fibra {item.macros.fiber}g
                       </p>
                     ) : null}
                   </div>

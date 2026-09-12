@@ -31,6 +31,7 @@ const STEP = {
   BOOK_CONFIRM: "BOOK_CONFIRM",
   CANCEL_PICK: "CANCEL_PICK",
   CANCEL_CONFIRM: "CANCEL_CONFIRM",
+  CONFIRM_ATTENDANCE: "CONFIRM_ATTENDANCE",
 } as const;
 
 /** Tras este tiempo de inactividad, una conversación abierta vuelve a DORMANT. */
@@ -145,6 +146,8 @@ export async function handleIncoming(jid: string, text: string, send: Send): Pro
       return handleCancelPick(jid, text, ctx, send);
     case STEP.CANCEL_CONFIRM:
       return handleCancelConfirm(jid, text, ctx, send);
+    case STEP.CONFIRM_ATTENDANCE:
+      return handleConfirmAttendance(jid, text, ctx, send);
     default:
       await save(jid, STEP.MENU);
       await send(messages.MENU);
@@ -203,6 +206,7 @@ async function handleMenu(jid: string, text: string, send: Send): Promise<void> 
           })),
           pro.currency,
         ),
+        pro.acceptedInsurances,
       ),
     );
     return;
@@ -413,4 +417,39 @@ async function handleCancelConfirm(jid: string, text: string, ctx: Ctx, send: Se
     await send("Ese turno ya no estaba activo.");
   }
   await save(jid, STEP.MENU);
+}
+
+async function handleConfirmAttendance(jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
+  if (!ctx.apptId) {
+    await save(jid, STEP.MENU);
+    await send(messages.MENU);
+    return;
+  }
+  const appt = await prisma.appointment.findUnique({ where: { id: ctx.apptId }, include: { service: true } });
+  if (!appt || appt.status !== "CONFIRMED") {
+    await save(jid, STEP.MENU);
+    return;
+  }
+  const pro = await getProfessional();
+
+  if (isYes(text)) {
+    await prisma.appointment.update({
+      where: { id: appt.id },
+      data: { confirmationResponse: true, confirmationRespondedAt: new Date() },
+    });
+    await send(messages.attendanceConfirmedThanks({ serviceName: appt.service.name, startsAt: appt.startsAt, tz: pro.timezone }));
+    await save(jid, STEP.MENU);
+    return;
+  }
+  if (isNo(text)) {
+    await prisma.appointment.update({
+      where: { id: appt.id },
+      data: { confirmationResponse: false, confirmationRespondedAt: new Date() },
+    });
+    await cancelAppointment({ id: appt.id, by: "PATIENT", reason: "Avisó que no puede asistir", notifyPatient: false });
+    await send(messages.attendanceDeclinedNotice({ serviceName: appt.service.name, startsAt: appt.startsAt, tz: pro.timezone }));
+    await save(jid, STEP.MENU);
+    return;
+  }
+  await send("Respondé *sí* si vas a poder venir, o *no* si no vas a poder.");
 }

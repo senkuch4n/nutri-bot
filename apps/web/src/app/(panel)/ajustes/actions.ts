@@ -11,6 +11,7 @@ const generalSchema = z.object({
   currency: z.string().trim().length(3).toUpperCase(),
   reminderLeadHours: z.coerce.number().int().min(1).max(168),
   phone: z.string().trim().optional().or(z.literal("")),
+  acceptedInsurances: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
 export async function saveSettingsAction(
@@ -36,6 +37,7 @@ export async function saveSettingsAction(
       currency: parsed.data.currency,
       reminderLeadHours: parsed.data.reminderLeadHours,
       phoneJid: digits ? `${digits}@s.whatsapp.net` : null,
+      acceptedInsurances: parsed.data.acceptedInsurances || null,
     },
   });
 

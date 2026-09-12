@@ -14,6 +14,7 @@ export interface FoodDefaults {
   proteinPer100: string;
   carbsPer100: string;
   fatPer100: string;
+  fiberPer100: string;
   unitHint: string;
 }
 
@@ -45,7 +46,7 @@ export function FoodForm({
         </Field>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-5">
         <Field label="Kcal /100g">
           <Input
             type="number"
@@ -84,6 +85,15 @@ export function FoodForm({
             name="fatPer100"
             defaultValue={defaults.fatPer100}
             required
+          />
+        </Field>
+        <Field label="Fibra /100g" hint="Opcional">
+          <Input
+            type="number"
+            step="0.1"
+            min="0"
+            name="fiberPer100"
+            defaultValue={defaults.fiberPer100}
           />
         </Field>
       </div>

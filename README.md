@@ -143,6 +143,17 @@ El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
 | Profesional: pedirle a una IA una propuesta de plan desde la ficha del paciente | Panel → plan vacío → "Generar propuesta con IA" |
 | Profesional: consultarle a una IA datos de agenda o de un paciente puntual | Panel `/asistente` |
 | Profesional: enviar un aviso a todos los pacientes a la vez | Panel `/avisos` → "Comunicado a todos los pacientes" |
+| Paciente: confirmar o avisar que no asiste a un turno 3 días antes | Automático (cron) → WhatsApp pide confirmación; "no" cancela el turno |
+| Profesional: marcar antecedentes de riesgo (alergias/enfermedades) | Panel → paciente → "Ficha clínica" → "Marcar como antecedente de riesgo" (banner de alerta en la ficha) |
+| Profesional: ver la edad del paciente y la fibra del plan | Panel → paciente → fecha de nacimiento en "Datos"; edad y fibra en "Planes nutricionales" y en el PDF/portal |
+| Profesional: ver el diario alimentario del paciente (últimas 24 hs) | Panel → paciente → "Diario alimentario (portal)" |
+| Profesional: indicar las obras sociales con las que trabaja | Panel `/ajustes` → "Obras sociales" (el bot lo muestra al listar precios; también visible en el portal) |
+| Profesional: mandar recomendaciones automáticas antes de un estudio (antropometría, bioimpedancia) | Panel `/servicios` → "Mandar recomendaciones antes del turno" (se envía por WhatsApp X horas antes) |
+
+Quedan pendientes de un próximo paso: gráficos comparativos por tipo de estudio clínico (bioimpedancia,
+antropometría) con datos específicos de cada uno, plantilla de informes personalizable (colores/logo/
+textos sobre el PDF actual) y reservas por Instagram (requiere una app de Meta for Developers y una
+página de Facebook vinculada, que todavía no existen).
 
 Con esto se completó el backlog de `docs/historias-usuario-nutridesk.md`.
 

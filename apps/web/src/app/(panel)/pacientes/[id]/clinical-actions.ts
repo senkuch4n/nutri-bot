@@ -10,6 +10,7 @@ const clinicalRecordSchema = z.object({
   patientId: z.string().min(1),
   background: z.string().trim().max(4000).optional().or(z.literal("")),
   goals: z.string().trim().max(4000).optional().or(z.literal("")),
+  riskFlag: z.coerce.boolean().optional(),
 });
 
 export async function updateClinicalRecordAction(
@@ -21,6 +22,7 @@ export async function updateClinicalRecordAction(
   await upsertClinicalRecord(parsed.data.patientId, {
     background: parsed.data.background || null,
     goals: parsed.data.goals || null,
+    riskFlag: parsed.data.riskFlag ?? false,
   });
   revalidatePath(`/pacientes/${parsed.data.patientId}`);
   return { ok: true };

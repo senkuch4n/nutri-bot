@@ -46,7 +46,7 @@ export default async function PortalPlanPage() {
         {plan.notes ? <p className="mt-1 text-sm text-ink-soft">{plan.notes}</p> : null}
       </div>
 
-      <div className="grid grid-cols-4 gap-2 text-center">
+      <div className="grid grid-cols-5 gap-2 text-center">
         <div className="border border-line bg-paper px-2 py-3">
           <p className="text-[10px] uppercase tracking-wide text-ink-faint">Kcal</p>
           <p className="font-display text-lg font-bold text-ink">{totals.kcal}</p>
@@ -62,6 +62,10 @@ export default async function PortalPlanPage() {
         <div className="border border-line bg-paper px-2 py-3">
           <p className="text-[10px] uppercase tracking-wide text-ink-faint">Grasas</p>
           <p className="font-display text-lg font-bold text-ink">{totals.fat}g</p>
+        </div>
+        <div className="border border-line bg-paper px-2 py-3">
+          <p className="text-[10px] uppercase tracking-wide text-ink-faint">Fibra</p>
+          <p className="font-display text-lg font-bold text-ink">{totals.fiber}g</p>
         </div>
       </div>
 

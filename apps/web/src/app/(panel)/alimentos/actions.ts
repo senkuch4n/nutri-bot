@@ -15,6 +15,7 @@ const foodSchema = z.object({
   proteinPer100: z.coerce.number().min(0).max(999),
   carbsPer100: z.coerce.number().min(0).max(999),
   fatPer100: z.coerce.number().min(0).max(999),
+  fiberPer100: z.coerce.number().min(0).max(999).optional().or(z.literal("")),
   unitHint: z.string().trim().max(120).optional().or(z.literal("")),
 });
 
@@ -27,6 +28,7 @@ export async function createFoodAction(
   const food = await createFood({
     ...parsed.data,
     group: parsed.data.group as never,
+    fiberPer100: parsed.data.fiberPer100 === "" ? null : (parsed.data.fiberPer100 ?? null),
     unitHint: parsed.data.unitHint || null,
   });
   revalidatePath("/alimentos");
@@ -43,6 +45,7 @@ export async function updateFoodAction(
   await updateFood(id, {
     ...parsed.data,
     group: parsed.data.group as never,
+    fiberPer100: parsed.data.fiberPer100 === "" ? null : (parsed.data.fiberPer100 ?? null),
     unitHint: parsed.data.unitHint || null,
   });
   revalidatePath("/alimentos");

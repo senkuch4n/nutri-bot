@@ -1,14 +1,16 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@nutri-bot/db";
-import { formatDate, formatInTimeZone, formatPrice } from "@nutri-bot/core";
-import { listPatientPlans, listTemplates } from "@nutri-bot/db/domain";
+import { formatDate, formatDateTime, formatInTimeZone, formatPrice } from "@nutri-bot/core";
+import { listPatientPlans, listTemplates, listDiaryEntries } from "@nutri-bot/db/domain";
 import { Badge, Card, SectionLabel, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { PatientForm } from "./patient-form";
 import { ClinicalRecordForm } from "./clinical-record-form";
+import { ClinicalAlert } from "./clinical-alert";
 import { EvolutionSection } from "./evolution-section";
 import { PlansSection } from "./plans-section";
+import { DiarySection } from "./diary-section";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,7 @@ const statusMeta = {
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [pro, patient, plans, templates] = await Promise.all([
+  const [pro, patient, plans, templates, diaryEntries] = await Promise.all([
     getProfessional(),
     prisma.patient.findUnique({
       where: { id },
@@ -34,6 +36,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     }),
     listPatientPlans(id),
     listTemplates(),
+    listDiaryEntries(id),
   ]);
   if (!patient) notFound();
 
@@ -67,6 +70,10 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
+      {patient.clinicalRecord?.riskFlag && patient.clinicalRecord.background ? (
+        <ClinicalAlert background={patient.clinicalRecord.background} />
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-4">
         <StatTile label="Turnos totales" value={appts.length} />
         <StatTile label="Completados" value={count("COMPLETED")} />
@@ -76,7 +83,14 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
 
       <Card>
         <SectionLabel>Datos</SectionLabel>
-        <PatientForm patient={{ id: patient.id, name: patient.name, notes: patient.notes }} />
+        <PatientForm
+          patient={{
+            id: patient.id,
+            name: patient.name,
+            notes: patient.notes,
+            birthDateISO: patient.birthDate ? patient.birthDate.toISOString().slice(0, 10) : null,
+          }}
+        />
       </Card>
 
       <Card>
@@ -85,7 +99,11 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
           patientId={patient.id}
           record={
             patient.clinicalRecord
-              ? { background: patient.clinicalRecord.background, goals: patient.clinicalRecord.goals }
+              ? {
+                  background: patient.clinicalRecord.background,
+                  goals: patient.clinicalRecord.goals,
+                  riskFlag: patient.clinicalRecord.riskFlag,
+                }
               : null
           }
         />
@@ -112,6 +130,19 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
             abdominalSkinfoldMm:
               e.abdominalSkinfoldMm !== null ? Number(e.abdominalSkinfoldMm) : null,
             note: e.note,
+          }))}
+        />
+      </Card>
+
+      <Card>
+        <SectionLabel>Diario alimentario (portal)</SectionLabel>
+        <DiarySection
+          entries={diaryEntries.map((e) => ({
+            id: e.id,
+            createdAtLabel: formatDateTime(e.createdAt, pro.timezone),
+            isRecent: Date.now() - e.createdAt.getTime() < 24 * 60 * 60 * 1000,
+            note: e.note,
+            hasPhoto: Boolean(e.photoData),
           }))}
         />
       </Card>

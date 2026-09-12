@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, Textarea } from "@/components/ui";
 import { saveSettingsAction, type SettingsState } from "./actions";
 
 const initial: SettingsState = { ok: false };
@@ -14,6 +14,7 @@ export function SettingsForm({
     currency: string;
     reminderLeadHours: number;
     phone: string;
+    acceptedInsurances: string;
   };
 }) {
   const [state, action, pending] = useActionState(saveSettingsAction, initial);
@@ -48,6 +49,15 @@ export function SettingsForm({
           placeholder="549XXXXXXXXXX"
         />
       </Field>
+
+      <div className="sm:col-span-2">
+        <Field
+          label="Obras sociales"
+          hint='Texto libre que el bot muestra al mostrar precios, ej: "OSDE, Swiss Medical, Galeno. También atiendo particular."'
+        >
+          <Textarea name="acceptedInsurances" rows={2} defaultValue={defaults.acceptedInsurances} />
+        </Field>
+      </div>
 
       <div className="flex items-center gap-3 sm:col-span-2">
         <Button type="submit" disabled={pending}>

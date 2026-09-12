@@ -8,6 +8,7 @@ interface RawFood {
   proteinPer100: unknown;
   carbsPer100: unknown;
   fatPer100: unknown;
+  fiberPer100: unknown;
 }
 
 interface RawItem {
@@ -39,6 +40,7 @@ export function toMealView(meals: RawMeal[]): MealView[] {
                 proteinPer100: Number(item.food.proteinPer100),
                 carbsPer100: Number(item.food.carbsPer100),
                 fatPer100: Number(item.food.fatPer100),
+                fiberPer100: Number(item.food.fiberPer100 ?? 0),
               },
               quantityGrams,
             )

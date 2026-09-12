@@ -18,6 +18,7 @@ export function createFood(data: {
   proteinPer100: number;
   carbsPer100: number;
   fatPer100: number;
+  fiberPer100?: number | null;
   unitHint?: string | null;
 }) {
   return prisma.food.create({ data });
@@ -32,6 +33,7 @@ export function updateFood(
     proteinPer100: number;
     carbsPer100: number;
     fatPer100: number;
+    fiberPer100?: number | null;
     unitHint: string | null;
     active: boolean;
   }>,

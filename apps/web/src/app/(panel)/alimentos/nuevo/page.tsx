@@ -22,6 +22,7 @@ export default function NuevoAlimentoPage() {
             proteinPer100: "",
             carbsPer100: "",
             fatPer100: "",
+            fiberPer100: "",
             unitHint: "",
           }}
           submitLabel="Crear alimento"

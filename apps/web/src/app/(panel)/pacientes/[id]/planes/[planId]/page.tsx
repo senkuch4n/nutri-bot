@@ -8,6 +8,7 @@ import { formatDateTime } from "@nutri-bot/core";
 import { Card, PageHeader, SectionLabel } from "@/components/ui";
 import { MealsEditor } from "@/components/meals-editor";
 import { toMealView } from "@/lib/meal-view";
+import { calculateAge } from "@/lib/age";
 import { PlanMetaForm } from "./plan-meta-form";
 import { PlanPdfActions } from "./plan-pdf-actions";
 import { DeletePlanButton } from "./delete-plan-button";
@@ -34,9 +35,14 @@ export default async function PlanDetailPage({
   ]);
   if (!plan || plan.patientId !== id) notFound();
 
-  const patient = await prisma.patient.findUniqueOrThrow({ where: { id } });
+  const [patient, latestEntry] = await Promise.all([
+    prisma.patient.findUniqueOrThrow({ where: { id } }),
+    prisma.evolutionEntry.findFirst({ where: { patientId: id }, orderBy: { recordedAt: "desc" } }),
+  ]);
   const meals = toMealView(plan.meals);
   const totals = sumMacros(meals.flatMap((m) => m.items.map((i) => i.macros).filter((m) => m !== null)));
+  const age = patient.birthDate ? calculateAge(patient.birthDate) : null;
+  const latestWeight = latestEntry?.weightKg ? Number(latestEntry.weightKg) : null;
 
   return (
     <div className="space-y-6">
@@ -45,6 +51,11 @@ export default async function PlanDetailPage({
           ← Volver a {patient.name ?? "paciente"}
         </Link>
         <PageHeader title={plan.title} action={<DeletePlanButton planId={plan.id} patientId={id} />} />
+        <p className="text-sm text-ink-soft">
+          {patient.name ?? patient.phone}
+          {age !== null ? ` · ${age} años` : ""}
+          {latestWeight !== null ? ` · ${latestWeight} kg` : ""}
+        </p>
       </div>
 
       <Card>
@@ -55,7 +66,7 @@ export default async function PlanDetailPage({
         />
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-5">
         <div className="border border-line bg-paper px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Kcal totales</p>
           <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.kcal}</p>
@@ -71,6 +82,10 @@ export default async function PlanDetailPage({
         <div className="border border-line bg-paper px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Grasas</p>
           <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.fat} g</p>
+        </div>
+        <div className="border border-line bg-paper px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Fibra</p>
+          <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.fiber} g</p>
         </div>
       </div>
 

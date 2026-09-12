@@ -8,7 +8,7 @@ export function getClinicalRecord(patientId: string) {
 
 export function upsertClinicalRecord(
   patientId: string,
-  data: { background?: string | null; goals?: string | null },
+  data: { background?: string | null; goals?: string | null; riskFlag?: boolean },
 ) {
   return prisma.clinicalRecord.upsert({
     where: { patientId },

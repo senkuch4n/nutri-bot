@@ -51,6 +51,12 @@ export function ServiceCard({
             </p>
           ) : null}
 
+          {service.prepInstructions ? (
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.06em] text-link">
+              Manda recomendaciones previas
+            </p>
+          ) : null}
+
           {service.description ? (
             <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-ink-soft">
               {service.description}

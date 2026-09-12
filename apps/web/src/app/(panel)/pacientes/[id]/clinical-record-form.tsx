@@ -11,7 +11,7 @@ export function ClinicalRecordForm({
   record,
 }: {
   patientId: string;
-  record: { background: string | null; goals: string | null } | null;
+  record: { background: string | null; goals: string | null; riskFlag: boolean } | null;
 }) {
   const [state, action, pending] = useActionState(updateClinicalRecordAction, initial);
 
@@ -21,6 +21,16 @@ export function ClinicalRecordForm({
       <Field label="Antecedentes" hint="Patologías, alergias, medicación, cirugías previas…">
         <Textarea name="background" rows={4} defaultValue={record?.background ?? ""} />
       </Field>
+      <label className="flex items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          name="riskFlag"
+          value="true"
+          defaultChecked={record?.riskFlag ?? false}
+          className="h-4 w-4 accent-leaf"
+        />
+        Marcar como antecedente de riesgo (alergia o enfermedad a tener en cuenta al armar el plan)
+      </label>
       <Field label="Objetivos" hint="Qué busca lograr el paciente con el tratamiento.">
         <Textarea name="goals" rows={3} defaultValue={record?.goals ?? ""} />
       </Field>

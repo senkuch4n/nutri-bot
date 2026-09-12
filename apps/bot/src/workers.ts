@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueDueReminders, expireStalePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, expireStalePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { env } from "./env";
 import { logger } from "./logger";
@@ -75,6 +75,24 @@ export function startCron(): void {
     }
   });
 
+  cron.schedule("*/30 * * * *", async () => {
+    try {
+      const n = await enqueueAttendanceConfirmations();
+      if (n > 0) logger.info({ n }, "Confirmaciones de asistencia encoladas");
+    } catch (err) {
+      logger.error({ err }, "Error encolando confirmaciones de asistencia");
+    }
+  });
+
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const n = await enqueuePrepInstructions();
+      if (n > 0) logger.info({ n }, "Instrucciones previas encoladas");
+    } catch (err) {
+      logger.error({ err }, "Error encolando instrucciones previas");
+    }
+  });
+
   cron.schedule("* * * * *", async () => {
     try {
       const res = await syncGoogleCalendar();
@@ -98,6 +116,8 @@ export function startCron(): void {
 export async function runStartupJobs(): Promise<void> {
   try {
     await enqueueDueReminders();
+    await enqueueAttendanceConfirmations();
+    await enqueuePrepInstructions();
     await syncGoogleCalendar();
     await expireStalePendingPayments();
   } catch (err) {

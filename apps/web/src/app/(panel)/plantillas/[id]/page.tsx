@@ -44,7 +44,7 @@ export default async function TemplateDetailPage({
         <TemplateMetaForm action={boundUpdate} defaults={{ title: template.title, notes: template.notes ?? "" }} />
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-5">
         <div className="border border-line bg-paper px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Kcal totales</p>
           <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.kcal}</p>
@@ -60,6 +60,10 @@ export default async function TemplateDetailPage({
         <div className="border border-line bg-paper px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Grasas</p>
           <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.fat} g</p>
+        </div>
+        <div className="border border-line bg-paper px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Fibra</p>
+          <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.fiber} g</p>
         </div>
       </div>
 

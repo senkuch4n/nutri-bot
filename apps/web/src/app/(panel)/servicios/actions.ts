@@ -19,6 +19,8 @@ const schema = z
     requiresDeposit: z.coerce.boolean().optional(),
     depositKind: z.enum(["FIXED", "PERCENT"]).optional(),
     depositValue: z.coerce.number().positive().optional(),
+    prepInstructions: z.string().trim().max(1000).optional().or(z.literal("")),
+    prepLeadHours: z.coerce.number().int().min(1).max(168).optional(),
   })
   .refine((v) => !v.requiresDeposit || (v.depositKind && v.depositValue), {
     message: "Si el servicio requiere seña, indicá el tipo y el monto",
@@ -35,13 +37,24 @@ export async function saveServiceAction(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
-  const { id, description, requiresDeposit, depositKind, depositValue, ...rest } = parsed.data;
+  const {
+    id,
+    description,
+    requiresDeposit,
+    depositKind,
+    depositValue,
+    prepInstructions,
+    prepLeadHours,
+    ...rest
+  } = parsed.data;
   const payload = {
     ...rest,
     description: description || null,
     requiresDeposit: requiresDeposit ?? false,
     depositKind: requiresDeposit ? (depositKind ?? null) : null,
     depositValue: requiresDeposit ? (depositValue ?? null) : null,
+    prepInstructions: prepInstructions || null,
+    prepLeadHours: prepInstructions ? (prepLeadHours ?? null) : null,
   };
 
   try {

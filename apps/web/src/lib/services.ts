@@ -14,6 +14,11 @@ interface DepositFields {
   depositValue?: number | null;
 }
 
+interface PrepFields {
+  prepInstructions?: string | null;
+  prepLeadHours?: number | null;
+}
+
 export function createService(
   data: {
     name: string;
@@ -21,7 +26,8 @@ export function createService(
     price: number;
     durationMin: number;
     color: string;
-  } & DepositFields,
+  } & DepositFields &
+    PrepFields,
 ) {
   const { depositValue, ...rest } = data;
   return prisma.service.create({
@@ -42,7 +48,8 @@ export function updateService(
     durationMin: number;
     color: string;
     active: boolean;
-  } & DepositFields,
+  } & DepositFields &
+    PrepFields,
 ) {
   const { depositValue, ...rest } = data;
   return prisma.service.update({

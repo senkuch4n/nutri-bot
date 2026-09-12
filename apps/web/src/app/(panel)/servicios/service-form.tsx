@@ -15,6 +15,8 @@ export interface EditableService {
   requiresDeposit: boolean;
   depositKind: "FIXED" | "PERCENT" | null;
   depositValue: string | null;
+  prepInstructions: string | null;
+  prepLeadHours: number | null;
 }
 
 const initial: ServiceFormState = { ok: false };
@@ -26,6 +28,7 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
   const formRef = useRef<HTMLFormElement>(null);
   const [color, setColor] = useState(editing?.color ?? PRESET_COLORS[0]!);
   const [requiresDeposit, setRequiresDeposit] = useState(editing?.requiresDeposit ?? false);
+  const [hasPrep, setHasPrep] = useState(Boolean(editing?.prepInstructions));
 
   useEffect(() => {
     if (state.ok) {
@@ -120,6 +123,43 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
                 step="0.01"
                 defaultValue={editing?.depositValue ?? ""}
                 required={requiresDeposit}
+              />
+            </Field>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="sm:col-span-2 space-y-3 border-t border-line pt-4">
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={hasPrep}
+            onChange={(e) => setHasPrep(e.target.checked)}
+            className="h-4 w-4 accent-leaf"
+          />
+          Mandar recomendaciones antes del turno (ej: estudios de antropometría o bioimpedancia)
+        </label>
+
+        {hasPrep ? (
+          <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+            <Field label="Recomendaciones" hint="Se manda por WhatsApp antes del turno.">
+              <Textarea
+                name="prepInstructions"
+                rows={2}
+                defaultValue={editing?.prepInstructions ?? ""}
+                required={hasPrep}
+                placeholder="Ej: Vení en ayunas de 4hs y sin haber entrenado ese día."
+              />
+            </Field>
+            <Field label="Horas antes">
+              <Input
+                name="prepLeadHours"
+                type="number"
+                min={1}
+                max={168}
+                defaultValue={editing?.prepLeadHours ?? 24}
+                required={hasPrep}
+                className="w-24"
               />
             </Field>
           </div>

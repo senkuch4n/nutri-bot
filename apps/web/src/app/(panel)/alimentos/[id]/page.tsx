@@ -54,6 +54,7 @@ export default async function EditarAlimentoPage({
             proteinPer100: food.proteinPer100.toString(),
             carbsPer100: food.carbsPer100.toString(),
             fatPer100: food.fatPer100.toString(),
+            fiberPer100: food.fiberPer100?.toString() ?? "",
             unitHint: food.unitHint ?? "",
           }}
           submitLabel="Guardar cambios"

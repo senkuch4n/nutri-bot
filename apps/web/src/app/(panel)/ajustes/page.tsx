@@ -70,6 +70,7 @@ export default async function AjustesPage() {
             currency: pro.currency,
             reminderLeadHours: pro.reminderLeadHours,
             phone: pro.phoneJid?.split("@")[0] ?? "",
+            acceptedInsurances: pro.acceptedInsurances ?? "",
           }}
         />
       </Card>

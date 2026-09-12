@@ -130,8 +130,25 @@ export function cancelDone(params: { serviceName: string; startsAt: Date; tz: st
   )}. Cuando quieras sacás otro escribiendo *menú*.`;
 }
 
-export function pricesMessage(serviceLines: string): string {
-  return `💲 *Precios*\n\n${serviceLines}\n\nEscribí *menú* para volver.`;
+export function pricesMessage(serviceLines: string, insurances?: string | null): string {
+  const insuranceLine = insurances ? `\n\n🏥 Obras sociales: ${insurances}` : "";
+  return `💲 *Precios*\n\n${serviceLines}${insuranceLine}\n\nEscribí *menú* para volver.`;
+}
+
+export function confirmAttendanceRequest(params: { serviceName: string; startsAt: Date; tz: string }): string {
+  return `¿Vas a poder venir a tu turno?\n\n📋 ${params.serviceName}\n🗓️ ${formatDateTime(params.startsAt, params.tz)} hs\n\nRespondé *sí* si vas a venir o *no* si no vas a poder.`;
+}
+
+export function attendanceConfirmedThanks(params: { serviceName: string; startsAt: Date; tz: string }): string {
+  return `✅ ¡Gracias por confirmar!\n\nTe esperamos el ${formatDateTime(params.startsAt, params.tz)} hs para tu turno de ${params.serviceName}.`;
+}
+
+export function attendanceDeclinedNotice(params: { serviceName: string; startsAt: Date; tz: string }): string {
+  return `Listo, liberé tu turno de *${params.serviceName}* del ${formatDateTime(params.startsAt, params.tz)} hs porque no vas a poder venir.\n\nCuando quieras sacar otro, escribí *turno*.`;
+}
+
+export function prepInstructionsMessage(params: { serviceName: string; startsAt: Date; tz: string; instructions: string }): string {
+  return `📋 Recordatorio para tu turno de ${params.serviceName}\n🗓️ ${formatDateTime(params.startsAt, params.tz)} hs\n\nAntes de venir:\n${params.instructions}`;
 }
 
 // --- Avisos salientes ---

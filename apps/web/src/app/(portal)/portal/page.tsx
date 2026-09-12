@@ -35,6 +35,9 @@ export default async function PortalHomePage() {
           Hola{patient.name ? `, ${patient.name}` : ""} 👋
         </h1>
         <p className="mt-1 text-sm text-ink-soft">Este es tu espacio con {pro.name}.</p>
+        {pro.acceptedInsurances ? (
+          <p className="mt-1 text-xs text-ink-faint">🏥 {pro.acceptedInsurances}</p>
+        ) : null}
       </div>
 
       <Card>

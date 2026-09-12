@@ -71,6 +71,81 @@ Estado de NutriBot hoy: agenda/turnos vía WhatsApp + panel. **Todo lo demás ab
 - Yo como profesional necesito consultarle a un asistente datos de mi agenda o de un paciente
   puntual para poder resolver dudas rápidas sin recorrer el panel.
 
+## Épica 8 — Confirmación de turno 3 días antes
+
+- Yo como profesional necesito mandar un aviso automático pidiendo confirmar el turno con 3 días
+  de anticipación para poder gestionar mi agenda (reprogramar si no confirman).
+
+**Ya existe parcialmente:** hoy el bot manda un *recordatorio* informativo (`REMINDER_LEAD_HOURS`,
+24hs por defecto) — no pide confirmación ni hace nada si el paciente no responde. Esta historia
+extiende eso: el aviso de 3 días antes pide una respuesta sí/no, y si no confirma (o dice que no)
+se avisa a la profesional para que decida (liberar el horario, llamar, etc.).
+
+## Épica 9 — Estudios clínicos (antropometría, bioimpedancia) con gráficos relevantes
+
+- Yo como profesional necesito ver la historia clínica de mis pacientes para ver sus avances y
+  mostrárselos cuando vienen al consultorio.
+- Yo como profesional necesito un gráfico comparativo de los estudios de antropometría y
+  bioimpedancia de mis pacientes.
+
+Criterios de aceptación:
+- Gráficos por cada tipo de estudio que se haya hecho (bioimpedancia, antropometría, etc.).
+- Cada gráfico muestra solo los datos relevantes de ESE estudio (un estudio de bioimpedancia no
+  mezcla datos que no le corresponden).
+
+**Ya existe parcialmente:** la ficha clínica (antecedentes/objetivos) y la evolución
+(peso/perímetros/pliegues, con gráficos) de la Épica 1/3. Lo que falta es modelar **tipos de
+estudio** con sus propios campos (ej. bioimpedancia: % grasa, % músculo, agua corporal, tasa
+metabólica basal — antropometría ya cubierta) y graficar cada uno por separado, más una vista
+comparativa.
+
+## Épica 10 — Vista de dieta con datos clínicos para la profesional
+
+- Yo como profesional necesito ver la dieta de mis pacientes para agilizar mis consultas.
+
+Criterios de aceptación:
+- En la dieta debe verse: kcal, edad del paciente, peso, hidratos de carbono, fibra.
+
+**Ya existe parcialmente:** el plan ya muestra kcal/proteínas/carbohidratos/grasas totales. Falta:
+fibra (no está en la base de alimentos hoy), edad del paciente (el modelo de paciente no tiene
+fecha de nacimiento) y mostrar el peso más reciente junto al plan.
+
+## Épica 11 — Alerta de enfermedades y alergias
+
+- Yo como profesional necesito saber si mis pacientes presentan alguna enfermedad para no darles
+  alimentos que les hagan daño.
+
+**Ya existe parcialmente:** "Antecedentes" en la ficha clínica es texto libre. Falta destacarlo
+visualmente (alerta) justo donde se arma el plan, para que no pase desapercibido armando comidas.
+
+## Épica 12 — Diario del paciente visible para la profesional
+
+- Yo como profesional necesito saber qué viene comiendo mi paciente cada 24hs.
+
+**Ya existe parcialmente:** el diario alimentario con fotos existe desde la Épica 5, pero hoy solo
+lo ve el paciente en el portal. Falta mostrarlo en la ficha del paciente dentro del panel.
+
+## Épica 13 — Obras sociales
+
+- Yo como profesional necesito que mis pacientes sepan con qué obras sociales trabajo, para no
+  tener que recordarles el precio particular o con obra social en cada consulta.
+
+## Épica 14 — Mensajes automáticos de preparación por estudio
+
+- Yo como profesional necesito que, al agendar ciertos estudios (antropometría, bioimpedancia),
+  se le manden al paciente recomendaciones automáticas antes del turno para que el estudio sea lo
+  más exacto posible.
+
+## Épica 15 — Plantilla propia de informes
+
+- Yo como profesional necesito poder subir mi propia plantilla de informes para tener control de
+  lo que les entrego a mis pacientes.
+
+## Épica 16 — Reservas por Instagram
+
+- Yo como profesional necesito que las personas puedan agendarme turnos por Instagram, no solo
+  por WhatsApp, porque tengo gente que me escribe por ahí para sacar turno.
+
 ## Notas de alcance / dependencias externas
 
 - Cobros (Épica 4) requiere credenciales de Mercado Pago (o el proveedor que se defina).
@@ -81,3 +156,9 @@ Estado de NutriBot hoy: agenda/turnos vía WhatsApp + panel. **Todo lo demás ab
 - Historia clínica (Épica 1) y Antropometría (Épica 3) son la base de datos sobre la que se
   apoyan Planes (Épica 2) y el Portal (Épica 5) — conviene implementarlas primero si se van a
   encarar esas épicas.
+- Reservas por Instagram (Épica 16) requiere una cuenta de Instagram profesional vinculada a una
+  página de Facebook, una app en Meta for Developers, y permisos de la API de mensajería de
+  Instagram — es un desarrollo del tamaño del bot de WhatsApp actual, no una extensión chica.
+- Plantilla propia de informes (Épica 15) tiene alcances muy distintos según qué tan literal sea
+  "subir mi plantilla": desde elegir colores/logo/textos del PDF actual, hasta subir un
+  Word/PDF propio y que el sistema rellene los datos ahí adentro (mucho más complejo).
