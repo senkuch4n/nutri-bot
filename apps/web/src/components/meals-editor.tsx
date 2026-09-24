@@ -1,6 +1,7 @@
-import { Plus, Trash2, UtensilsCrossed } from "lucide-react";
+import { Plus, UtensilsCrossed } from "lucide-react";
 import { formatMacrosLine } from "@nutri-bot/core";
 import { Card, EmptyState, Field, Input, Quantity, Select, Textarea } from "@/components/ui";
+import { DeleteMealButton } from "@/components/delete-meal-button";
 import { NumberInput } from "@/components/number-input";
 import { SubmitButton } from "@/components/submit-button";
 import { FOOD_GROUP_LABELS, FOOD_GROUPS } from "@/lib/food-groups";
@@ -78,20 +79,14 @@ export function MealsEditor({
               : `${meal.items.length} alimento${meal.items.length === 1 ? "" : "s"}`
           }
           actions={
-            <form action={deleteMealAction}>
-              <input type="hidden" name="mealId" value={meal.id} />
-              <input type="hidden" name={ownerField} value={ownerId} />
-              <SubmitButton
-                variant="ghost"
-                size="sm"
-                pendingLabel="Borrando…"
-                aria-label={`Borrar comida ${meal.name}`}
-                className="text-destructive hover:bg-destructive-muted hover:text-destructive"
-              >
-                <Trash2 aria-hidden />
-                Borrar comida
-              </SubmitButton>
-            </form>
+            <DeleteMealButton
+              mealId={meal.id}
+              mealName={meal.name}
+              itemCount={meal.items.length}
+              ownerField={ownerField}
+              ownerId={ownerId}
+              deleteMealAction={deleteMealAction}
+            />
           }
         >
           {meal.items.length > 0 ? (
