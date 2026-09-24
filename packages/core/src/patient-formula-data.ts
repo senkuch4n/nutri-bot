@@ -258,3 +258,23 @@ export function formatSignedIntEs(value: number): string {
   const rounded = Math.round(value);
   return `${signPrefix(rounded)}${signedIntFormat.format(Math.abs(rounded))}`;
 }
+
+// ── HU-006: decimales fijos ──
+/** Decimales fijos es-AR: (71, 1) → "71,0"; (2.8, 2) → "2,80"; (-0.04, 2) → "-0,04".
+ *  Un valor que redondea a cero se muestra sin signo ("0,00", nunca "-0,00"). */
+export function formatFixedEs(value: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  const rounded = Math.round(value * factor) / factor;
+  const normalized = rounded === 0 ? 0 : rounded;
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(normalized);
+}
+
+/** Con signo U+2212 / "+": (−9.5, 1) → "−9,5"; (1.2, 1) → "+1,2"; (0, 1) → "0,0". */
+export function formatSignedFixedEs(value: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  const rounded = Math.round(value * factor) / factor;
+  return `${signPrefix(rounded)}${formatFixedEs(Math.abs(rounded), decimals)}`;
+}

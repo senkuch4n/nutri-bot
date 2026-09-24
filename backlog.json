@@ -234,8 +234,8 @@
       "titulo": "Antropometría ISAK completa, composición corporal (Kerr/Lee/Rocha), somatotipo e índices",
       "origen": "Épicas 44 y 45",
       "notas": "Métodos de ISAKMetry; validar local contra docs/ISAKMetry_* (gitignored). Depende de HU-003.",
-      "estado": "implementando",
-      "intentos_revision": 0,
+      "estado": "aprobada",
+      "intentos_revision": 1,
       "hu": "docs/hu-antropometria-isak.md",
       "sdd": "Refactorizaciones/antropometria-isak.md",
       "rama": "hu-006-antropometria-isak",
@@ -249,7 +249,9 @@
         "ui-ux-pro-max",
         "ui-styling",
         "web-design-guidelines"
-      ]
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-006.md"
     },
     {
       "id": "HU-007",

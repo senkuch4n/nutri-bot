@@ -28,6 +28,17 @@ function m(partial: Partial<MeasurementValues>): MeasurementValues {
     tricepsSkinfoldMm: null,
     subscapularSkinfoldMm: null,
     abdominalSkinfoldMm: null,
+    sittingHeightCm: null,
+    armSpanCm: null,
+    bicepsSkinfoldMm: null,
+    iliacCrestSkinfoldMm: null,
+    supraspinaleSkinfoldMm: null,
+    thighSkinfoldMm: null,
+    calfSkinfoldMm: null,
+    armFlexedCm: null,
+    humerusBreadthCm: null,
+    bistyloidBreadthCm: null,
+    femurBreadthCm: null,
     bodyFatPercent: null,
     muscleMassKg: null,
     bodyWaterPercent: null,
@@ -52,6 +63,10 @@ describe("measurementKinds", () => {
 
   it("solo peso → antropometría", () => {
     expect(measurementKinds(m({ weightKg: 70 }))).toEqual({ anthropometry: true, bioimpedance: false });
+  });
+
+  it("HU-006: solo diámetros → antropometría (no bioimpedancia)", () => {
+    expect(measurementKinds(m({ femurBreadthCm: 9.7 }))).toEqual({ anthropometry: true, bioimpedance: false });
   });
 
   it("todo null (solo nota) → antropometría", () => {

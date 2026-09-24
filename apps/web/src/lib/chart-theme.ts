@@ -30,3 +30,11 @@ export const chartMetricColors = {
   boneMassKg: "#65635D",
   basalMetabolicRateKcal: "#37352F",
 } as const;
+
+/** Tejidos del estudio ISAK (HU-006). Hex ya existentes en este archivo: sin colores nuevos. */
+export const isakTissueColors = {
+  adipose: "#B37D19", // ámbar (chartSeriesColors[2])
+  muscle: "#396F51", // verde (chartSeriesColors[1])
+  bone: "#65635D", // gris (chartStudyColors[1])
+  residual: "#7959A6", // violeta (chartSeriesColors[3])
+} as const;

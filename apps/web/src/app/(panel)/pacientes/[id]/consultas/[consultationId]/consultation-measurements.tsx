@@ -1,8 +1,9 @@
 "use client";
 
 import { useActionState, useId, useState, useTransition } from "react";
+import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
-import { computeBmi, computeWaistHipRatio, measurementKinds } from "@nutri-bot/core";
+import { ISAK_TEXT, computeBmi, computeWaistHipRatio, measurementKinds } from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
 import { Button, Card, EmptyState, FormError, Quantity } from "@/components/ui";
 import { notify, useActionToast } from "@/lib/notify";
@@ -59,7 +60,8 @@ export function ConsultationMeasurements({
   const formId = useId();
   const grouped = entries.map((e) => ({ entry: e, kinds: measurementKinds(e) }));
   const anthropometry = grouped.filter((g) => g.kinds.anthropometry);
-  const bioimpedance = grouped.filter((g) => g.kinds.bioimpedance);
+  // HU-006: el estudio ISAK se resume en Antropometría (una línea con enlace); nunca en Bioimpedancia.
+  const bioimpedance = grouped.filter((g) => g.kinds.bioimpedance && g.entry.study !== "ISAK");
 
   return (
     <Card
@@ -130,6 +132,20 @@ function MeasurementGroup({
       <h3 className="mb-3 text-sm font-semibold text-foreground">{title}</h3>
       <div className="space-y-3">
         {blocks.map(({ entry, items }) => {
+          if (entry.study === "ISAK") {
+            return (
+              <div key={entry.id} className="rounded-lg border p-4 text-sm">
+                <span className="font-medium">{ISAK_TEXT.measurementRow}</span>
+                <span className="text-muted-foreground"> · </span>
+                <Link
+                  href={`/pacientes/${patientId}/consultas/${consultationId}/antropometria`}
+                  className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {ISAK_TEXT.measurementRowLink}
+                </Link>
+              </div>
+            );
+          }
           const shown = items.filter((i) => i.value !== null);
           return (
             <div key={entry.id} className="rounded-lg border p-4">

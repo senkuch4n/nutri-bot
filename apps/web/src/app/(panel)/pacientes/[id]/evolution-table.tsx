@@ -12,9 +12,9 @@ import type { EvolutionRow } from "./evolution-types";
 /** El resto de las medidas que no tienen columna propia, con los mismos textos de siempre. */
 function detailText(e: EvolutionRow): string {
   return [
-    e.armCm !== null ? `Brazo ${e.armCm} cm` : null,
-    e.thighCm !== null ? `Muslo ${e.thighCm} cm` : null,
-    e.calfCm !== null ? `Pantorrilla ${e.calfCm} cm` : null,
+    e.armCm !== null ? `Brazo relajado ${e.armCm} cm` : null,
+    e.thighCm !== null ? `Muslo medio ${e.thighCm} cm` : null,
+    e.calfCm !== null ? `Pierna ${e.calfCm} cm` : null,
     e.tricepsSkinfoldMm !== null ? `Pliegue tríceps ${e.tricepsSkinfoldMm} mm` : null,
     e.subscapularSkinfoldMm !== null ? `Pliegue subescapular ${e.subscapularSkinfoldMm} mm` : null,
     e.abdominalSkinfoldMm !== null ? `Pliegue abdominal ${e.abdominalSkinfoldMm} mm` : null,

@@ -17,6 +17,18 @@ export interface EvolutionRow {
   tricepsSkinfoldMm: number | null;
   subscapularSkinfoldMm: number | null;
   abdominalSkinfoldMm: number | null;
+  // HU-006: perfil restringido ISAK (la pestaña Evolución no las grafica: épica 9).
+  sittingHeightCm: number | null;
+  armSpanCm: number | null;
+  bicepsSkinfoldMm: number | null;
+  iliacCrestSkinfoldMm: number | null;
+  supraspinaleSkinfoldMm: number | null;
+  thighSkinfoldMm: number | null;
+  calfSkinfoldMm: number | null;
+  armFlexedCm: number | null;
+  humerusBreadthCm: number | null;
+  bistyloidBreadthCm: number | null;
+  femurBreadthCm: number | null;
   bodyFatPercent: number | null;
   muscleMassKg: number | null;
   bodyWaterPercent: number | null;
@@ -24,14 +36,16 @@ export interface EvolutionRow {
   boneMassKg: number | null;
   basalMetabolicRateKcal: number | null;
   note: string | null;
+  /** HU-006: "ISAK" = la fila es el estudio antropométrico ISAK de la consulta. */
+  study: "ISAK" | null;
 }
 
 export const PERIMETER_MEASURES = [
   { key: "waistCm", label: "Cintura" },
   { key: "hipCm", label: "Cadera" },
-  { key: "armCm", label: "Brazo" },
-  { key: "thighCm", label: "Muslo" },
-  { key: "calfCm", label: "Pantorrilla" },
+  { key: "armCm", label: "Brazo relajado" },
+  { key: "thighCm", label: "Muslo medio" },
+  { key: "calfCm", label: "Pierna (pantorrilla)" },
 ] as const satisfies readonly { key: keyof EvolutionRow; label: string }[];
 
 export const SKINFOLD_MEASURES = [

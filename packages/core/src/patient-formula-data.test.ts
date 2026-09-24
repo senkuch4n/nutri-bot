@@ -14,6 +14,8 @@ import {
   computeAgeYears,
   effectiveBodyFrame,
   formatDecimalEs,
+  formatFixedEs,
+  formatSignedFixedEs,
   formatSignedIntEs,
   formatSignedPercentEs,
   goalAdjustmentRange,
@@ -235,5 +237,22 @@ describe("HU-004: rangos de ajuste y formatos con signo", () => {
     expect(formatSignedIntEs(-0.4)).toBe("0");
     // kcal con separador de miles es-AR (decisión del orquestador)
     expect(formatSignedIntEs(1200)).toBe("+1.200");
+  });
+});
+
+describe("HU-006: decimales fijos", () => {
+  it("formatFixedEs", () => {
+    expect(formatFixedEs(71, 1)).toBe("71,0");
+    expect(formatFixedEs(2.8, 2)).toBe("2,80");
+    expect(formatFixedEs(-0.04, 2)).toBe("-0,04");
+    expect(formatFixedEs(-0.001, 2)).toBe("0,00");
+    expect(formatFixedEs(98, 0)).toBe("98");
+  });
+
+  it("formatSignedFixedEs (U+2212)", () => {
+    expect(formatSignedFixedEs(-9.5, 1)).toBe("−9,5");
+    expect(formatSignedFixedEs(1.2, 1)).toBe("+1,2");
+    expect(formatSignedFixedEs(0, 1)).toBe("0,0");
+    expect(formatSignedFixedEs(-0.92, 2)).toBe("−0,92");
   });
 });

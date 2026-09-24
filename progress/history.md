@@ -178,3 +178,27 @@
   autónomo).
 - **Arreglo directo al cierre:** `seed-demo.ts` busca solo alimentos propios (nombres repetidos
   con SARA 2).
+
+---
+
+## 2026-09-24 — HU-006 `antropometria-isak` — APROBADA (2ª ronda) · Épicas 44 y 45
+
+- **Qué:** estudio ISAK completo por consulta: masa, talla, talla sentado, envergadura, 8
+  pliegues, 6 perímetros y 3 diámetros. Son columnas nullable en `EvolutionEntry` con
+  `study = ISAK`, una por consulta. Se calculan al vuelo:
+  - puntuación Z contra el Phantom;
+  - fraccionamiento molecular (Durnin-Womersley) y tisular (Kerr, Lee, Rocha, residual);
+  - distribución adiposo-muscular;
+  - IAM, IMO con categorías;
+  - sumatorias, perímetros corregidos, proporcionalidad;
+  - somatotipo de Heath-Carter con somatocarta (Recharts);
+  - índices de salud, reusando la HU-004.
+
+  Página `.../consultas/[id]/antropometria`, con comparación mínima con el estudio anterior.
+- **Validación:** `isak:validate` contra las dos exportaciones de ISAKMetry: 100 OK, 2 tolerados
+  y 3 diferencias conocidas (D5, D6, D7). En el navegador, el caso A coincidió en todo. Los
+  archivos de ISAKMetry no se versionan y `--check-leaks` no encuentra fugas.
+- **Ronda 1:** `onDone` durante el render (reviewer) y la `key` que remontaba el formulario
+  (encontrado por el orquestador en el navegador).
+- **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
+  autónomo).

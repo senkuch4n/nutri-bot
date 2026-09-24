@@ -15,3 +15,4 @@ export * from "./payments";
 export * from "./patientAuth";
 export * from "./diary";
 export * from "./prescriptions";
+export * from "./isak";

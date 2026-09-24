@@ -16,3 +16,6 @@ export * from "./food-nutrients";
 export * from "./food-search";
 export * from "./es-ar-number";
 export * from "./ai-food-catalog";
+export * from "./isak";
+export * from "./isak-study";
+export * from "./isak-form";

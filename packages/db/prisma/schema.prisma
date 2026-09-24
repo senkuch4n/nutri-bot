@@ -89,6 +89,19 @@ model EvolutionEntry {
   tricepsSkinfoldMm    Decimal? @db.Decimal(5, 2)
   subscapularSkinfoldMm Decimal? @db.Decimal(5, 2)
   abdominalSkinfoldMm  Decimal? @db.Decimal(5, 2)
+  // ── HU-006: perfil restringido ISAK (lado derecho, valor final: D3, D4) ──
+  // armCm = brazo relajado, thighCm = muslo medio, calfCm = pierna (D2: solo cambian las etiquetas).
+  sittingHeightCm        Decimal? @db.Decimal(5, 2) // talla sentado
+  armSpanCm              Decimal? @db.Decimal(5, 2) // envergadura de brazos
+  bicepsSkinfoldMm       Decimal? @db.Decimal(5, 2)
+  iliacCrestSkinfoldMm   Decimal? @db.Decimal(5, 2) // cresta ilíaca
+  supraspinaleSkinfoldMm Decimal? @db.Decimal(5, 2) // supraespinal
+  thighSkinfoldMm        Decimal? @db.Decimal(5, 2) // muslo anterior
+  calfSkinfoldMm         Decimal? @db.Decimal(5, 2) // pierna medial
+  armFlexedCm            Decimal? @db.Decimal(5, 2) // brazo flexionado y contraído
+  humerusBreadthCm       Decimal? @db.Decimal(5, 2) // húmero (biepicondilar)
+  bistyloidBreadthCm     Decimal? @db.Decimal(5, 2) // biestiloideo (muñeca)
+  femurBreadthCm         Decimal? @db.Decimal(5, 2) // fémur (bicondilar)
   bodyFatPercent          Decimal? @db.Decimal(4, 1)  // % de grasa corporal (bioimpedancia)
   muscleMassKg            Decimal? @db.Decimal(5, 2)  // masa muscular en kg (bioimpedancia)
   bodyWaterPercent        Decimal? @db.Decimal(4, 1)  // % de agua corporal (bioimpedancia)
@@ -98,10 +111,15 @@ model EvolutionEntry {
   note       String?
   consultationId String?
   consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+  /// HU-006 (D1): ISAK = esta fila es el estudio antropométrico ISAK de la consulta.
+  study          MeasurementStudy?
   createdAt  DateTime @default(now())
 
   @@index([patientId, recordedAt])
   @@index([consultationId])
+  /// Un solo estudio ISAK por consulta (D1). En Postgres los NULL son distintos entre sí: las
+  /// mediciones comunes (study NULL) y las filas sin consulta no chocan.
+  @@unique([consultationId, study])
 }
 
 /// Una visita del paciente (HU-003). Viene de un turno (appointmentId, único) o es "Sin turno".
@@ -211,6 +229,12 @@ model AvailabilityRule {
 enum BiologicalSex {
   FEMALE
   MALE
+}
+
+/// Tipo de estudio de una medición (HU-006). null = medición común (la de siempre).
+/// La épica 9 puede sumar valores (p. ej. BIOIMPEDANCE); agregar un valor es aditivo.
+enum MeasurementStudy {
+  ISAK
 }
 
 enum ActivityLevel {

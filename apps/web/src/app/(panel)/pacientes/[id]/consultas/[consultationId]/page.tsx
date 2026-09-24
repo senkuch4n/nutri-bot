@@ -3,6 +3,8 @@ import { CalendarDays } from "lucide-react";
 import {
   CONSULTATION_TEXT,
   buildAnthropometricDiagnosis,
+  buildIsakStudy,
+  buildIsakSummary,
   canDeleteConsultation,
   computeAgeYears,
   dayKeyInTz,
@@ -14,9 +16,11 @@ import {
 } from "@nutri-bot/core";
 import {
   getConsultation,
+  getPreviousIsakStudy,
   getReferencePrescription,
   getRequirementContextForConsultation,
   listPatientPlans,
+  toIsakMeasures,
   toPrescriptionSnapshot,
 } from "@nutri-bot/db/domain";
 import { Separator } from "@/components/primitives/separator";
@@ -29,6 +33,7 @@ import { ConsultationMeasurements } from "./consultation-measurements";
 import { ConsultationNotes } from "./consultation-notes";
 import { ConsultationPlan, type PlanOption } from "./consultation-plan";
 import { DeleteConsultationButton } from "./delete-consultation-button";
+import { IsakCard } from "./isak-card";
 import type { CalculatorProps } from "./requirement-calculator";
 import { RequirementSection } from "./requirement-section";
 
@@ -39,10 +44,12 @@ const planStatusRank = { ACTIVE: 0, DRAFT: 1, ARCHIVED: 2 } as const;
 /** Detalle de una consulta (HU-003): mediciones, diagnóstico y requerimiento (HU-004), plan indicado y notas. */
 export default async function ConsultationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; consultationId: string }>;
+  searchParams: Promise<{ isak?: string | string[] }>;
 }) {
-  const { id, consultationId } = await params;
+  const [{ id, consultationId }, { isak }] = await Promise.all([params, searchParams]);
   const [consultation, pro, plans] = await Promise.all([
     getConsultation(consultationId),
     getProfessional(),
@@ -128,6 +135,37 @@ export default async function ConsultationPage({
       }
     : null;
 
+  // ── HU-006: estudio antropométrico ISAK de la consulta (una fila de EvolutionEntry con study) ──
+  const isakEntry = consultation.evolutionEntries.find((e) => e.study === "ISAK") ?? null;
+  let isakStudy: Parameters<typeof IsakCard>[0]["study"] = null;
+  if (isakEntry) {
+    const values = toIsakMeasures(isakEntry);
+    const result = buildIsakStudy({ measures: values, sex: patient.sex, ageYears: age });
+    const previousEntry = await getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt });
+    const previousAt = previousEntry?.consultation?.consultedAt ?? null;
+    const previous =
+      previousEntry && previousAt
+        ? {
+            result: buildIsakStudy({
+              measures: toIsakMeasures(previousEntry),
+              sex: patient.sex,
+              ageYears: patient.birthDate ? computeAgeYears(patient.birthDate, previousAt, tz) : null,
+            }),
+            dateLabel: dateLabel(previousAt),
+          }
+        : null;
+    isakStudy = { entryId: isakEntry.id, values, summary: buildIsakSummary(result, previous) };
+  }
+  // Precarga del alta: el peso y la talla más recientes de las mediciones comunes de la consulta.
+  const commonByNewest = consultation.evolutionEntries
+    .filter((e) => e.study !== "ISAK")
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const latestOf = (key: "weightKg" | "heightCm") => {
+    const found = commonByNewest.find((e) => e[key] !== null)?.[key];
+    return found == null ? null : Number(found);
+  };
+  const isakPrefill = { weightKg: latestOf("weightKg"), heightCm: latestOf("heightCm") };
+
   // listPatientPlans viene por createdAt desc; el sort es estable, así que cada grupo lo conserva.
   const planOptions: PlanOption[] = [...plans]
     .sort((a, b) => planStatusRank[a.status] - planStatusRank[b.status])
@@ -180,6 +218,13 @@ export default async function ConsultationPage({
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
         <div className="space-y-6">
           <ConsultationMeasurements patientId={id} consultationId={consultation.id} entries={entries} />
+          <IsakCard
+            patientId={id}
+            consultationId={consultation.id}
+            study={isakStudy}
+            prefill={isakPrefill}
+            startEditing={isak === "editar"}
+          />
           <AnthropometricDiagnosisCard
             diagnosis={diagnosis}
             consultationDateLabel={dateLabel(consultation.consultedAt)}

@@ -83,3 +83,5 @@ orquestador, para que las revise a la mañana:
 - **HU-005 aprobada** (épica 20). Siguiente: HU-006 (ISAK, épicas 44/45).
 - HU-006 afinada y validada (D1–D21 según las recomendaciones) → `en_arquitectura`.
 - HU-006: SDD lista → `implementando` (Opus).
+- HU-006: reviewer CHANGES_REQUESTED (onDone llamado durante el render en isak-form.tsx) → ronda 1 (Opus).
+- **HU-006 aprobada** (épicas 44/45). Siguiente: HU-007 (informe PDF, épica 46).

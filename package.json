@@ -20,7 +20,8 @@
     "dev:all": "npm run db:generate && concurrently -n web,bot -c blue,green \"npm:dev\" \"npm:dev:bot\"",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspace packages/core"
+    "test": "npm run test --workspace packages/core",
+    "isak:validate": "tsx packages/core/scripts/validate-isakmetry.ts"
   },
   "engines": {
     "node": ">=20"

@@ -78,13 +78,13 @@ export function MeasurementFields({ leading, submit }: { leading?: ReactNode; su
           <Field label="Cadera">
             <NumberInput unit="cm" step="0.1" min="0" name="hipCm" placeholder="100" />
           </Field>
-          <Field label="Brazo">
+          <Field label="Brazo relajado">
             <NumberInput unit="cm" step="0.1" min="0" name="armCm" />
           </Field>
-          <Field label="Muslo">
+          <Field label="Muslo medio">
             <NumberInput unit="cm" step="0.1" min="0" name="thighCm" />
           </Field>
-          <Field label="Pantorrilla">
+          <Field label="Pierna (pantorrilla)">
             <NumberInput unit="cm" step="0.1" min="0" name="calfCm" />
           </Field>
           <Field label="Pliegue tricipital">

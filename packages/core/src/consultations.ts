@@ -16,6 +16,18 @@ export const ANTHROPOMETRY_MEASURE_KEYS = [
   "tricepsSkinfoldMm",
   "subscapularSkinfoldMm",
   "abdominalSkinfoldMm",
+  // HU-006: perfil restringido ISAK.
+  "sittingHeightCm",
+  "armSpanCm",
+  "bicepsSkinfoldMm",
+  "iliacCrestSkinfoldMm",
+  "supraspinaleSkinfoldMm",
+  "thighSkinfoldMm",
+  "calfSkinfoldMm",
+  "armFlexedCm",
+  "humerusBreadthCm",
+  "bistyloidBreadthCm",
+  "femurBreadthCm",
 ] as const;
 export const BIOIMPEDANCE_MEASURE_KEYS = [
   "bodyFatPercent",
