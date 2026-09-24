@@ -300,6 +300,17 @@
       ],
       "modelo_reviewer": "opus",
       "review": "progress/review_HU-008.md"
+    },
+    {
+      "id": "HU-009",
+      "slug": "mercadopago-sandbox-seña",
+      "titulo": "Seña con Mercado Pago funcionando (sandbox primero): conciliación por consulta periódica + webhook con firma",
+      "origen": "Épicas 4 y 51; pedido del usuario 2026-09-24",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null,
+      "notas": "Borrador acordado: (1) cron del bot que cada minuto consulta a la API de MP las señas PENDING (sirve en redes privadas, sin túnel, y como respaldo del webhook); (2) excluir /api/webhooks del middleware y validar x-signature con MERCADOPAGO_WEBHOOK_SECRET; (3) URL de notificación en una variable propia (MERCADOPAGO_NOTIFICATION_URL), no AUTH_URL; (4) reactivar la seña de $10.000 en los servicios reales; (5) prueba de punta a punta en sandbox con el número del usuario. Necesita del usuario: el Access Token de prueba (TEST-...) en el .env. La URL de la app de MP puede ser de relleno."
     }
   ]
 }

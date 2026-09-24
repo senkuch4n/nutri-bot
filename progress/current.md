@@ -112,7 +112,7 @@ orquestador, para que las revise a la mañana:
     previo: `backup-antes-servicios-reales.sql`;
   - ~~arreglar `test-confirm-attendance.ts`~~ **hecho**: los crons aceptan
     `scope.patientIds` y el script los acota al paciente de prueba (5/5 OK, la cola sigue en 4);
-  - webhook de Mercado Pago bloqueado por el middleware y sin validar la firma;
+  - webhook de Mercado Pago → pasa a la **HU-009** (no_afinada) en backlog.json, con el borrador acordado;
   - cargar título y matrícula en /ajustes;
   - probar a mano los flujos que escriben (completar un turno, guardar una prescripción, generar
     el informe PDF);
