@@ -37,6 +37,10 @@ model Patient {
   name         String?
   birthDate    DateTime? @db.Date
   notes        String?
+  sex           BiologicalSex?
+  activityLevel ActivityLevel?
+  nutritionGoal NutritionGoal?
+  bodyFrame     BodyFrame?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   appointments Appointment[]
@@ -123,6 +127,32 @@ model AvailabilityRule {
   active    Boolean @default(true)
 
   @@index([weekday])
+}
+
+enum BiologicalSex {
+  FEMALE
+  MALE
+}
+
+enum ActivityLevel {
+  SEDENTARY
+  LIGHT
+  MODERATE
+  INTENSE
+  VERY_INTENSE
+}
+
+enum NutritionGoal {
+  LOSE_WEIGHT
+  MAINTAIN
+  GAIN_WEIGHT
+  GAIN_MUSCLE
+}
+
+enum BodyFrame {
+  SMALL
+  MEDIUM
+  LARGE
 }
 
 enum ExceptionType {

@@ -1,3 +1,4 @@
+import type { ActivityLevel, BiologicalSex, BodyFrame, NutritionGoal } from "@prisma/client";
 import { prisma } from "../index";
 
 /** Normaliza un teléfono a JID de WhatsApp: solo dígitos + sufijo. */
@@ -26,5 +27,25 @@ export async function findOrCreatePatientByJid(jid: string) {
     where: { whatsappJid: jid },
     update: {},
     create: { whatsappJid: jid, phone: digits },
+  });
+}
+
+export interface PatientFormulaDataInput {
+  sex: BiologicalSex | null;
+  activityLevel: ActivityLevel | null;
+  nutritionGoal: NutritionGoal | null;
+  bodyFrame: BodyFrame | null;
+}
+
+/** Sobrescribe los 4 datos para cálculos (null borra). Solo toca esos 4 campos del paciente. */
+export function updatePatientFormulaData(patientId: string, data: PatientFormulaDataInput) {
+  return prisma.patient.update({
+    where: { id: patientId },
+    data: {
+      sex: data.sex,
+      activityLevel: data.activityLevel,
+      nutritionGoal: data.nutritionGoal,
+      bodyFrame: data.bodyFrame,
+    },
   });
 }

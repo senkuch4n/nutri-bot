@@ -1,0 +1,19 @@
+MODO ARQUITECTO DE REFACTORIZACIÓN
+REGLA ESTRICTA: NO modifiques, borres ni crees ningún archivo de código fuente todavía. Tu única tarea es analizar y planificar.
+
+Contexto y Objetivo:
+Quiero refactorizar el siguiente aspecto del sistema: [Explicar la idea. Ej: "Pasar el estado global de este módulo de React Context a Zustand para mejorar el rendimiento", o "Separar este controlador gigante en tres servicios distintos"].
+
+Tu Tarea:
+
+Buscá y leé (solo lectura) los archivos actuales involucrados en esta lógica.
+
+Generá un archivo llamado REFACTOR_PLAN.md en la raíz del proyecto.
+
+El archivo debe contener:
+
+Diagnóstico: Qué está mal o es mejorable hoy.
+
+Radio de Impacto: Lista exacta de qué archivos van a ser modificados.
+
+Checklist de Ejecución ([ ]): Pasos atómicos y secuenciales para hacer el refactor sin romper el sistema en el medio.

@@ -1,7 +1,15 @@
 import "server-only";
 import { prisma } from "@nutri-bot/db";
-import { listApprovedPaymentsInRange } from "@nutri-bot/db/domain";
-import { normalize, formatDateTime, formatPrice } from "@nutri-bot/core";
+import { getLatestFormulaMeasurements, listApprovedPaymentsInRange } from "@nutri-bot/db/domain";
+import {
+  activityLevelOption,
+  computeAgeYears,
+  formatDateTime,
+  formatPrice,
+  normalize,
+  nutritionGoalLabel,
+  sexLabel,
+} from "@nutri-bot/core";
 import { getProfessional } from "./professional";
 
 export async function buscarPaciente(query: string) {
@@ -18,14 +26,11 @@ export async function buscarPaciente(query: string) {
 
 export async function resumenPaciente(patientId: string) {
   const pro = await getProfessional();
-  const [patient, record, lastEntry, lastWeightEntry, plansCount, activePlan, nextAppt] = await Promise.all([
+  const [patient, record, lastEntry, m, plansCount, activePlan, nextAppt] = await Promise.all([
     prisma.patient.findUnique({ where: { id: patientId } }),
     prisma.clinicalRecord.findUnique({ where: { patientId } }),
     prisma.evolutionEntry.findFirst({ where: { patientId }, orderBy: { recordedAt: "desc" } }),
-    prisma.evolutionEntry.findFirst({
-      where: { patientId, weightKg: { not: null } },
-      orderBy: { recordedAt: "desc" },
-    }),
+    getLatestFormulaMeasurements(patientId),
     prisma.nutritionPlan.count({ where: { patientId } }),
     prisma.nutritionPlan.findFirst({ where: { patientId, status: "ACTIVE" } }),
     prisma.appointment.findFirst({
@@ -36,12 +41,20 @@ export async function resumenPaciente(patientId: string) {
   ]);
   if (!patient) return { error: "Paciente no encontrado" };
 
+  const act = activityLevelOption(patient.activityLevel);
   return {
     nombre: patient.name,
     telefono: patient.phone,
     antecedentes: record?.background ?? null,
     objetivos: record?.goals ?? null,
-    ultimo_peso_kg: lastWeightEntry?.weightKg ? Number(lastWeightEntry.weightKg) : null,
+    sexo: sexLabel(patient.sex),
+    edad_anios: patient.birthDate
+      ? computeAgeYears(patient.birthDate, new Date(), pro.timezone)
+      : null,
+    actividad_fisica: act ? `${act.label}: ${act.description}` : null,
+    factor_actividad: act?.factor ?? null,
+    objetivo_nutricional: nutritionGoalLabel(patient.nutritionGoal),
+    ultimo_peso_kg: m.weightKg?.value ?? null,
     fecha_ultimo_registro: lastEntry ? formatDateTime(lastEntry.recordedAt, pro.timezone) : null,
     plan_activo: activePlan?.title ?? null,
     cantidad_planes: plansCount,

@@ -3,8 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
-import { listFoods, addMeal, addMealItem, getPlan } from "@nutri-bot/db/domain";
+import {
+  listFoods,
+  addMeal,
+  addMealItem,
+  getPlan,
+  getLatestFormulaMeasurements,
+} from "@nutri-bot/db/domain";
+import {
+  activityLevelOption,
+  computeAgeYears,
+  nutritionGoalLabel,
+  sexLabel,
+} from "@nutri-bot/core";
 import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
+import { getProfessional } from "@/lib/professional";
 
 export type AiPlanState = { ok: boolean; error?: string };
 
@@ -52,16 +65,14 @@ export async function generateAiPlanAction(
     };
   }
 
-  const [clinicalRecord, latestWeightEntry, latestHeightEntry, foods] = await Promise.all([
+  const [pro, p, clinicalRecord, m, foods] = await Promise.all([
+    getProfessional(),
+    prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { birthDate: true, sex: true, activityLevel: true, nutritionGoal: true },
+    }),
     prisma.clinicalRecord.findUnique({ where: { patientId } }),
-    prisma.evolutionEntry.findFirst({
-      where: { patientId, weightKg: { not: null } },
-      orderBy: { recordedAt: "desc" },
-    }),
-    prisma.evolutionEntry.findFirst({
-      where: { patientId, heightCm: { not: null } },
-      orderBy: { recordedAt: "desc" },
-    }),
+    getLatestFormulaMeasurements(patientId),
     listFoods({ activeOnly: true }),
   ]);
 
@@ -76,11 +87,17 @@ export async function generateAiPlanAction(
     kcalPer100g: Number(f.kcalPer100),
   }));
 
+  const act = activityLevelOption(p?.activityLevel ?? null);
   const paciente = {
     objetivo: clinicalRecord?.goals ?? null,
+    objetivo_nutricional: nutritionGoalLabel(p?.nutritionGoal ?? null),
+    sexo: sexLabel(p?.sex ?? null),
+    edad_anios: p?.birthDate ? computeAgeYears(p.birthDate, new Date(), pro.timezone) : null,
+    actividad_fisica: act ? `${act.label}: ${act.description}` : null,
+    factor_actividad: act?.factor ?? null,
     antecedentes: clinicalRecord?.background ?? null,
-    peso_kg: latestWeightEntry?.weightKg ? Number(latestWeightEntry.weightKg) : null,
-    talla_cm: latestHeightEntry?.heightCm ? Number(latestHeightEntry.heightCm) : null,
+    peso_kg: m.weightKg?.value ?? null,
+    talla_cm: m.heightCm?.value ?? null,
     instrucciones_adicionales: instructions || null,
   };
 

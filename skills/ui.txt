@@ -1,0 +1,15 @@
+Actuá como un Diseñador UI/UX Senior. > Ya definí las necesidades y objetivos UX para mi nuevo módulo y necesito trasladarlos a un prototipo de baja fidelidad en Figma para validarlo con los usuarios finales.
+Mi stack frontend utiliza Next.js con componentes orientados a Shadcn/UI (tablas, modales, sheets, cards).
+
+Entrada (Resultados de la Fase 1): > [Pegar aquí la lista de Necesidades y Objetivos UX que generamos en el paso anterior]
+
+Tu Tarea:
+No escribas código bajo ninguna circunstancia. Generá un listado estructurado de las pantallas que debo dibujar en Figma. Para cada pantalla, detallá:
+
+Nombre de la vista (Ej: Dashboard de Dictámenes).
+
+Estructura base (Ej: Layout con Sidebar izquierdo, Header con buscador global).
+
+Componentes clave (Ej: DataTable con filtros por estado, Modal (Dialog) para confirmar la carga, Toast para notificaciones de éxito).
+
+Enfocate en que la estructura resuelva exactamente los objetivos UX proporcionados.
