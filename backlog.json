@@ -184,10 +184,15 @@
       "titulo": "Calculadora de requerimiento energético y diagnóstico antropométrico (adultos)",
       "origen": "docs/historias-usuario-nutridesk.md — Épicas 18 y 19",
       "notas": "Depende de HU-001 y HU-003. TMB con las 4 fórmulas lado a lado; peso ideal y ajustado; IMC, cintura, ICC, Deurenberg.",
-      "estado": "no_afinada",
+      "estado": "en_arquitectura",
       "intentos_revision": 0,
-      "hu": null,
-      "sdd": null
+      "hu": "docs/hu-calculadora-requerimiento.md",
+      "sdd": "Refactorizaciones/calculadora-requerimiento.md",
+      "rama": "hu-004-calculadora-requerimiento",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ]
     },
     {
       "id": "HU-005",
