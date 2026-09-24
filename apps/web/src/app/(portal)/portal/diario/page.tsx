@@ -1,7 +1,8 @@
-import Link from "next/link";
+import { NotebookPen, Trash2 } from "lucide-react";
 import { listDiaryEntries } from "@nutri-bot/db/domain";
 import { formatDateTime } from "@nutri-bot/core";
-import { Card } from "@/components/ui";
+import { Card, EmptyState } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
 import { DiaryForm } from "./diary-form";
@@ -17,52 +18,59 @@ export default async function PortalDiaryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/portal" className="text-sm text-ink-soft transition-colors hover:text-ink">
-          ← Volver
-        </Link>
-        <h1 className="mt-2 font-display text-2xl font-bold text-ink">Diario alimentario</h1>
-        <p className="mt-1 text-sm text-ink-soft">Anotá lo que comiste, con foto si querés.</p>
-      </div>
+      <header>
+        <h1 className="text-balance text-2xl font-semibold tracking-tight">Diario alimentario</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Anotá lo que comiste, con foto si querés.</p>
+      </header>
 
-      <Card>
+      <Card title="Nuevo registro">
         <DiaryForm />
       </Card>
 
       {entries.length === 0 ? (
-        <p className="text-sm text-ink-faint">Todavía no cargaste ningún registro.</p>
+        <Card>
+          <EmptyState icon={NotebookPen} title="Todavía no cargaste ningún registro." />
+        </Card>
       ) : (
-        <div className="space-y-4">
-          {entries.map((e) => (
-            <Card key={e.id}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.06em] text-ink-faint">
-                    {formatDateTime(e.createdAt, pro.timezone)} hs
+        <section aria-labelledby="diario-registros" className="space-y-4">
+          <h2 id="diario-registros" className="text-base font-semibold">
+            Tus registros
+          </h2>
+          {entries.map((e) => {
+            const fecha = formatDateTime(e.createdAt, pro.timezone);
+            return (
+              <Card key={e.id}>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm text-muted-foreground first-letter:uppercase">
+                    <time dateTime={e.createdAt.toISOString()}>{fecha} hs</time>
                   </p>
-                  {e.note ? <p className="text-sm text-ink">{e.note}</p> : null}
-                  {e.photoData ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={`/portal/diario/photo/${e.id}`}
-                      alt="Foto de la comida"
-                      className="max-h-64 max-w-full rounded object-cover"
-                    />
-                  ) : null}
+                  <form action={deleteDiaryEntryAction}>
+                    <input type="hidden" name="id" value={e.id} />
+                    <SubmitButton
+                      variant="ghost"
+                      size="lg"
+                      pendingLabel="Borrando…"
+                      aria-label={`Borrar registro del ${fecha}`}
+                      className="-mr-3 -mt-3 text-destructive hover:bg-destructive-muted hover:text-destructive"
+                    >
+                      <Trash2 aria-hidden />
+                      Borrar
+                    </SubmitButton>
+                  </form>
                 </div>
-                <form action={deleteDiaryEntryAction}>
-                  <input type="hidden" name="id" value={e.id} />
-                  <button
-                    type="submit"
-                    className="shrink-0 text-xs font-semibold text-ink-faint transition-colors hover:text-red-600"
-                  >
-                    Borrar
-                  </button>
-                </form>
-              </div>
-            </Card>
-          ))}
-        </div>
+                {e.note ? <p className="mt-2 text-sm">{e.note}</p> : null}
+                {e.photoData ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`/portal/diario/photo/${e.id}`}
+                    alt="Foto de la comida"
+                    className="mt-3 max-h-64 w-auto max-w-full rounded-md border object-cover"
+                  />
+                ) : null}
+              </Card>
+            );
+          })}
+        </section>
       )}
     </div>
   );

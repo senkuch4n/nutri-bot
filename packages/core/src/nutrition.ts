@@ -37,3 +37,32 @@ export function sumMacros(items: Macros[]): Macros {
     fiber: roundToOne(items.reduce((sum, item) => sum + item.fiber, 0)),
   };
 }
+
+// ─── Formato de macros (es-AR) ─────────────────────────────────────────────────
+
+const NBSP = " ";
+const kcalFormat = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0, useGrouping: true });
+const gramsFormat = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1, useGrouping: true });
+
+/**
+ * Cantidad de un macro en es-AR con espacio duro antes de la unidad.
+ * kcal sin decimales ("1.846 kcal"); gramos con hasta 1 decimal ("92,5 g", "61 g").
+ */
+export function formatMacroAmount(value: number, unit: "kcal" | "g"): string {
+  return (unit === "kcal" ? kcalFormat : gramsFormat).format(value) + NBSP + unit;
+}
+
+/**
+ * Línea de totales del plan: "1.846 kcal · P 92,5 g · C 210,3 g · G 61 g".
+ * Con `includeFiber`, suma " · Fibra 25,2 g" al final.
+ */
+export function formatMacrosLine(m: Macros, options?: { includeFiber?: boolean }): string {
+  const parts = [
+    formatMacroAmount(m.kcal, "kcal"),
+    `P ${formatMacroAmount(m.protein, "g")}`,
+    `C ${formatMacroAmount(m.carbs, "g")}`,
+    `G ${formatMacroAmount(m.fat, "g")}`,
+  ];
+  if (options?.includeFiber) parts.push(`Fibra ${formatMacroAmount(m.fiber, "g")}`);
+  return parts.join(" · ");
+}

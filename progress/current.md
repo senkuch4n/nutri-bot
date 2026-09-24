@@ -66,5 +66,6 @@ orquestador, para que las revise a la mañana:
   Antes del push, revisar el remoto.
 - **Condición de parada:** ninguna HU pendiente en `backlog.json`, más las épicas priorizadas
   (18/19, 20, 30, 44–46 y 56) convertidas en HU y cerradas.
-- HU-002d: SDD lista; el orquestador acepta D-d1..D-d8 (modo autónomo) → `implementando` (Opus). Pendiente directo después: confirmación en "Borrar comida" (O-d1).
+- HU-002d: SDD lista; el orquestador acepta D-d1..D-d8 (modo autónomo) → aprobada (ver history). Pendiente directo después: confirmación en "Borrar comida" (O-d1).
 - Backlog: se sumaron HU-004 (18/19), HU-005 (20), HU-006 (44/45), HU-007 (46) y HU-008 (56).
+- **HU-002d aprobada**: el rediseño completo (002a–d) quedó cerrado. Rutas `prueba-*` borradas.

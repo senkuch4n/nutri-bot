@@ -183,18 +183,29 @@ export function CalendarClient({
         />
       </div>
 
-      {/* Leyenda de servicios (el color es un dato del servicio) */}
-      {legend.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Servicios</span>
-          {legend.map((s) => (
-            <span key={s.name} className="inline-flex items-center gap-1.5">
-              <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
-              {s.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {/* Leyenda: color del servicio (dato) y de los estados cerrados */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+        {legend.length > 0 ? (
+          <>
+            <span className="font-medium text-foreground">Servicios</span>
+            {legend.map((s) => (
+              <span key={s.name} className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
+                {s.name}
+              </span>
+            ))}
+          </>
+        ) : null}
+        <span className="font-medium text-foreground">Estados</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="h-2.5 w-2.5 rounded-sm bg-success" />
+          Completado
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="h-2.5 w-2.5 rounded-sm bg-destructive" />
+          No asistió
+        </span>
+      </div>
 
       <NewAppointmentModal
         open={creating}

@@ -2,7 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { Document, Font, Image, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
-import { sumMacros, type Macros } from "@nutri-bot/core";
+import { formatMacrosLine, sumMacros, type Macros } from "@nutri-bot/core";
 import type { MealView } from "@/components/meals-editor";
 import { DEFAULT_PDF_ACCENT, pdfColors } from "@/lib/pdf-theme";
 
@@ -103,10 +103,6 @@ function buildStyles(accentColor: string) {
   });
 }
 
-function macrosLine(m: Macros): string {
-  return `${m.kcal} kcal · P ${m.protein}g · C ${m.carbs}g · G ${m.fat}g`;
-}
-
 export interface PlanPdfInput {
   planTitle: string;
   planNotes: string | null;
@@ -169,7 +165,7 @@ export function PlanDocument({ input }: { input: PlanPdfInput }) {
 
           <View style={styles.totals} wrap={false}>
             <Text style={styles.totalsLabel}>Total del plan</Text>
-            <Text style={styles.totalsLine}>{macrosLine(totals)}</Text>
+            <Text style={styles.totalsLine}>{formatMacrosLine(totals)}</Text>
           </View>
 
           {input.planNotes ? (

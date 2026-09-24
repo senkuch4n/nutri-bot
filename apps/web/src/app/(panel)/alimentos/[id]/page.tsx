@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { prisma } from "@nutri-bot/db";
-import { Badge, Button, Card, PageHeader } from "@/components/ui";
+import { Alert, Badge, Card, PageHeader } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
+import { FOOD_GROUP_LABELS } from "@/lib/food-groups";
 import { FoodForm } from "../food-form";
 import { updateFoodAction, setFoodActiveAction } from "../actions";
 
@@ -23,28 +24,32 @@ export default async function EditarAlimentoPage({
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/alimentos" className="text-sm text-ink-soft transition-colors hover:text-ink">
-          ← Volver a alimentos
-        </Link>
-        <PageHeader
-          title={food.name}
-          action={
-            <div className="flex items-center gap-3">
-              <Badge tone={food.active ? "green" : "slate"}>
-                {food.active ? "Activo" : "Inactivo"}
-              </Badge>
-              <form action={toggleActive}>
-                <Button type="submit" variant="secondary" size="sm">
-                  {food.active ? "Desactivar" : "Activar"}
-                </Button>
-              </form>
-            </div>
-          }
-        />
-      </div>
-      <Card>
+    <div>
+      <PageHeader
+        title={food.name}
+        description={FOOD_GROUP_LABELS[food.group]}
+        back={{ href: "/alimentos", label: "Volver a alimentos" }}
+        action={
+          <div className="flex items-center gap-3">
+            <Badge tone={food.active ? "success" : "neutral"}>{food.active ? "Activo" : "Inactivo"}</Badge>
+            <form action={toggleActive}>
+              <SubmitButton
+                variant="secondary"
+                size="sm"
+                pendingLabel={food.active ? "Desactivando…" : "Activando…"}
+              >
+                {food.active ? "Desactivar" : "Activar"}
+              </SubmitButton>
+            </form>
+          </div>
+        }
+      />
+      {food.active ? null : (
+        <Alert tone="info" className="mb-6 max-w-3xl">
+          Este alimento está inactivo: no aparece al armar planes ni plantillas.
+        </Alert>
+      )}
+      <Card className="max-w-3xl">
         <FoodForm
           action={boundUpdate}
           defaults={{

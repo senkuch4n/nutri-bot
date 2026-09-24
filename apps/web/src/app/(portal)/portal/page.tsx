@@ -1,7 +1,7 @@
-import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
 import { formatDateTime, formatPrice, messages } from "@nutri-bot/core";
-import { Badge, Card, SectionLabel } from "@/components/ui";
+import { Badge, ButtonLink, Card, Quantity } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
 
@@ -28,90 +28,90 @@ export default async function PortalHomePage() {
     }),
   ]);
 
+  const insurances = messages.formatInsuranceList(pro.acceptedInsurances);
+  const cardLink = "mt-4 w-full sm:w-auto";
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-ink">
+      <header>
+        <h1 className="text-balance text-2xl font-semibold tracking-tight">
           Hola{patient.name ? `, ${patient.name}` : ""} 👋
         </h1>
-        <p className="mt-1 text-sm text-ink-soft">Este es tu espacio con {pro.name}.</p>
-        {(() => {
-          const insurances = messages.formatInsuranceList(pro.acceptedInsurances);
-          if (insurances.length === 0) return null;
-          return (
-            <div className="mt-2 text-xs text-ink-faint">
-              <p className="font-semibold uppercase tracking-[0.06em]">🏥 Obras sociales</p>
-              <ul className="mt-1 space-y-0.5">
-                {insurances.map((i) => (
-                  <li key={i}>· {i}</li>
-                ))}
-              </ul>
-            </div>
-          );
-        })()}
-      </div>
+        <p className="mt-1 text-sm text-muted-foreground">Este es tu espacio con {pro.name}.</p>
+      </header>
 
-      <Card>
-        <SectionLabel>Tu próximo turno</SectionLabel>
-        {nextAppointment ? (
-          <div>
-            <p className="text-sm font-medium text-ink">
-              {nextAppointment.service.name}
-              <span className="mx-1.5 text-ink-faint">·</span>
-              {formatDateTime(nextAppointment.startsAt, pro.timezone)} hs
-            </p>
-            <p className="mt-1 text-sm text-ink-soft">
-              {formatPrice(nextAppointment.priceSnapshot.toString(), pro.currency)}
-            </p>
-          </div>
-        ) : (
-          <p className="text-sm text-ink-faint">
-            No tenés turnos próximos. Escribile a tu nutricionista por WhatsApp para sacar uno.
-          </p>
-        )}
-      </Card>
-
-      <Card>
-        <SectionLabel>Tu plan vigente</SectionLabel>
-        {latestPlan ? (
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-sm font-medium text-ink">{latestPlan.title}</p>
-            <Link href="/portal/plan" className="text-sm font-semibold text-leaf-deep hover:underline">
-              Ver plan →
-            </Link>
-          </div>
-        ) : (
-          <p className="text-sm text-ink-faint">Todavía no tenés un plan activo.</p>
-        )}
-      </Card>
-
-      <Card>
-        <SectionLabel>Tu evolución</SectionLabel>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            {latestEntry?.weightKg ? (
-              <p className="text-sm text-ink-soft">
-                Último peso registrado: <Badge tone="green">{latestEntry.weightKg.toString()} kg</Badge>
+      <div className="space-y-4">
+        <Card title="Tu próximo turno">
+          {nextAppointment ? (
+            <div>
+              <p className="text-base font-medium first-letter:uppercase">
+                {formatDateTime(nextAppointment.startsAt, pro.timezone)} hs
               </p>
-            ) : (
-              <p className="text-sm text-ink-faint">Todavía no hay registros.</p>
-            )}
-          </div>
-          <Link href="/portal/evolucion" className="text-sm font-semibold text-leaf-deep hover:underline">
-            Ver evolución →
-          </Link>
-        </div>
-      </Card>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {nextAppointment.service.name} ·{" "}
+                {formatPrice(nextAppointment.priceSnapshot.toString(), pro.currency)}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No tenés turnos próximos. Escribile a tu nutricionista por WhatsApp para sacar uno.
+            </p>
+          )}
+        </Card>
 
-      <Card>
-        <SectionLabel>Diario alimentario</SectionLabel>
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-ink-soft">Anotá lo que comiste hoy, con foto si querés.</p>
-          <Link href="/portal/diario" className="text-sm font-semibold text-leaf-deep hover:underline">
-            Abrir diario →
-          </Link>
-        </div>
-      </Card>
+        <Card title="Tu plan vigente">
+          {latestPlan ? (
+            <div>
+              <p className="text-sm font-medium">{latestPlan.title}</p>
+              <ButtonLink href="/portal/plan" variant="secondary" size="lg" className={cardLink}>
+                Ver plan
+                <ChevronRight aria-hidden />
+              </ButtonLink>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Todavía no tenés un plan activo.</p>
+          )}
+        </Card>
+
+        <Card title="Tu evolución">
+          {latestEntry?.weightKg ? (
+            <div>
+              <p className="text-sm text-muted-foreground">Último peso registrado</p>
+              <Quantity
+                value={Number(latestEntry.weightKg)}
+                unit="kg"
+                className="mt-1 block text-2xl font-semibold"
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Todavía no hay registros.</p>
+          )}
+          <ButtonLink href="/portal/evolucion" variant="secondary" size="lg" className={cardLink}>
+            Ver evolución
+            <ChevronRight aria-hidden />
+          </ButtonLink>
+        </Card>
+
+        <Card title="Diario alimentario">
+          <p className="text-sm text-muted-foreground">Anotá lo que comiste hoy, con foto si querés.</p>
+          <ButtonLink href="/portal/diario" variant="secondary" size="lg" className={cardLink}>
+            Abrir diario
+            <ChevronRight aria-hidden />
+          </ButtonLink>
+        </Card>
+
+        {insurances.length > 0 ? (
+          <Card title="Obras sociales">
+            <ul className="flex flex-wrap gap-2">
+              {insurances.map((i) => (
+                <li key={i}>
+                  <Badge tone="neutral">{i}</Badge>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
+      </div>
     </div>
   );
 }

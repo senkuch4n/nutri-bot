@@ -4,7 +4,8 @@ import { getPlan, listFoods } from "@nutri-bot/db/domain";
 import { sumMacros } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { formatDateTime } from "@nutri-bot/core";
-import { Card, PageHeader, Quantity } from "@/components/ui";
+import { Card, PageHeader } from "@/components/ui";
+import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
 import { toMealView } from "@/lib/meal-view";
 import { calculateAge } from "@/lib/age";
@@ -56,14 +57,6 @@ export default async function PlanDetailPage({
     .filter(Boolean)
     .join(" · ");
 
-  const totalCells = [
-    { label: "Energía", value: totals.kcal, unit: "kcal", decimals: 0 },
-    { label: "Proteínas", value: totals.protein, unit: "g", decimals: 1 },
-    { label: "Carbohidratos", value: totals.carbs, unit: "g", decimals: 1 },
-    { label: "Grasas", value: totals.fat, unit: "g", decimals: 1 },
-    { label: "Fibra", value: totals.fiber, unit: "g", decimals: 1 },
-  ];
-
   return (
     <div>
       <PageHeader
@@ -75,21 +68,7 @@ export default async function PlanDetailPage({
 
       {/* Totales del plan: quedan a la vista mientras se editan las comidas. */}
       <div className="sticky top-14 z-10 -mx-6 mb-6 bg-background px-6 py-3 lg:top-0 lg:-mx-10 lg:px-10">
-        <dl className="grid grid-cols-2 divide-y rounded-lg border sm:grid-cols-5 sm:divide-x sm:divide-y-0">
-          {totalCells.map((cell) => (
-            <div key={cell.label} className="px-4 py-3">
-              <dt className="text-sm text-muted-foreground">{cell.label}</dt>
-              <dd className="mt-0.5">
-                <Quantity
-                  value={cell.value}
-                  unit={cell.unit}
-                  decimals={cell.decimals}
-                  className="text-lg font-semibold"
-                />
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <MacroTotals totals={totals} />
       </div>
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">

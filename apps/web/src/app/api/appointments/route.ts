@@ -23,9 +23,10 @@ export async function GET(req: Request) {
     orderBy: { startsAt: "asc" },
   });
 
+  // Estados cerrados con los tokens del sistema (FullCalendar los pone inline y var() se resuelve en :root).
   const statusColor: Record<string, string> = {
-    COMPLETED: "#16a34a",
-    NO_SHOW: "#dc2626",
+    COMPLETED: "hsl(var(--success))",
+    NO_SHOW: "hsl(var(--destructive))",
   };
 
   const events = appts.map((a) => ({

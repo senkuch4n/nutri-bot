@@ -12,8 +12,6 @@ export default {
     extend: {
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        // LEGACY (HU-002d la elimina): alias a la sans; Space Grotesk ya no existe.
-        display: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       colors: {
         border: token("border"),
@@ -37,25 +35,11 @@ export default {
         info: { DEFAULT: token("info"), muted: token("info-muted") },
         link: token("link"),
         sidebar: token("sidebar"),
-
-        // ── LEGACY: compatibilidad con el sistema "Spring" mientras 002b/c/d migran.
-        // HU-002d borra este bloque cuando `grep` no encuentre más usos.
-        ink: { DEFAULT: token("foreground"), soft: token("muted-foreground"), faint: token("muted-foreground") },
-        leaf: { DEFAULT: token("primary"), bright: token("primary"), deep: token("primary"), tint: token("accent") },
-        mint: token("muted"),
-        paper: token("card"),
-        line: token("border"),
-        brand: { DEFAULT: token("primary"), dark: token("primary") },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-        card: "var(--radius)", // LEGACY
-      },
-      boxShadow: {
-        card: "none", // LEGACY: el sistema nuevo no usa sombra en tarjetas
-        lift: "0 10px 30px -10px hsl(var(--foreground) / 0.18)", // LEGACY
       },
     },
   },

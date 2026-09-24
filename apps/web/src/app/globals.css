@@ -99,27 +99,6 @@
   }
 }
 
-/* LEGACY (sistema Spring): HU-002d lo borra cuando no haya usos */
-.press {
-  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.press:active {
-  transform: scale(0.97);
-}
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.reveal {
-  animation: reveal 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 /* ─── FullCalendar sobre los tokens ─── */
 .fc {
   --fc-border-color: hsl(var(--border));

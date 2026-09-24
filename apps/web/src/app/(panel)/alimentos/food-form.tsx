@@ -1,8 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Field, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, Input, Select } from "@/components/ui";
+import { NumberInput } from "@/components/number-input";
 import { FOOD_GROUP_LABELS, FOOD_GROUPS } from "@/lib/food-groups";
+import { useActionToast } from "@/lib/notify";
 import type { FoodState } from "./actions";
 
 const initial: FoodState = { ok: false };
@@ -28,9 +30,10 @@ export function FoodForm({
   submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, initial);
+  useActionToast(state, { success: "Alimento guardado" });
 
   return (
-    <form action={formAction} className="space-y-4">
+    <form action={formAction} className="space-y-8">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nombre">
           <Input name="name" defaultValue={defaults.name} required />
@@ -46,70 +49,72 @@ export function FoodForm({
         </Field>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-5">
-        <Field label="Kcal /100g">
-          <Input
-            type="number"
-            step="0.1"
-            min="0"
-            name="kcalPer100"
-            defaultValue={defaults.kcalPer100}
-            required
-          />
-        </Field>
-        <Field label="Proteínas /100g">
-          <Input
-            type="number"
-            step="0.1"
-            min="0"
-            name="proteinPer100"
-            defaultValue={defaults.proteinPer100}
-            required
-          />
-        </Field>
-        <Field label="Carbohidratos /100g">
-          <Input
-            type="number"
-            step="0.1"
-            min="0"
-            name="carbsPer100"
-            defaultValue={defaults.carbsPer100}
-            required
-          />
-        </Field>
-        <Field label="Grasas /100g">
-          <Input
-            type="number"
-            step="0.1"
-            min="0"
-            name="fatPer100"
-            defaultValue={defaults.fatPer100}
-            required
-          />
-        </Field>
-        <Field label="Fibra /100g" hint="Opcional">
-          <Input
-            type="number"
-            step="0.1"
-            min="0"
-            name="fiberPer100"
-            defaultValue={defaults.fiberPer100}
-          />
-        </Field>
-      </div>
+      <fieldset>
+        <legend className="mb-4 text-sm font-semibold">Composición cada 100 g</legend>
+        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          <Field label="Energía">
+            <NumberInput
+              unit="kcal"
+              step="0.1"
+              min="0"
+              name="kcalPer100"
+              defaultValue={defaults.kcalPer100}
+              required
+            />
+          </Field>
+          <Field label="Proteínas">
+            <NumberInput
+              unit="g"
+              step="0.1"
+              min="0"
+              name="proteinPer100"
+              defaultValue={defaults.proteinPer100}
+              required
+            />
+          </Field>
+          <Field label="Carbohidratos">
+            <NumberInput
+              unit="g"
+              step="0.1"
+              min="0"
+              name="carbsPer100"
+              defaultValue={defaults.carbsPer100}
+              required
+            />
+          </Field>
+          <Field label="Grasas">
+            <NumberInput
+              unit="g"
+              step="0.1"
+              min="0"
+              name="fatPer100"
+              defaultValue={defaults.fatPer100}
+              required
+            />
+          </Field>
+          <Field label="Fibra" hint="Opcional">
+            <NumberInput
+              unit="g"
+              step="0.1"
+              min="0"
+              name="fiberPer100"
+              defaultValue={defaults.fiberPer100}
+            />
+          </Field>
+        </div>
+      </fieldset>
 
-      <Field label="Equivalencia (opcional)" hint='Ej: "1 huevo mediano ≈ 50 g". Solo informativo.'>
+      <Field label="Equivalencia" hint='Opcional. Ej: "1 huevo mediano ≈ 50 g". Solo informativo.'>
         <Input name="unitHint" defaultValue={defaults.unitHint} />
       </Field>
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Guardando…" : submitLabel}
-        </Button>
-        {state.error ? <span className="reveal text-sm text-red-600">{state.error}</span> : null}
-        {state.ok ? (
-          <span className="reveal text-sm font-medium text-leaf-deep">✓ Guardado</span>
-        ) : null}
+      <div className="space-y-3 border-t pt-6">
+        <div className="flex items-center gap-3">
+          <Button type="submit" loading={pending}>
+            {pending ? "Guardando…" : submitLabel}
+          </Button>
+        </div>
+        <FormError message={state.error} />
       </div>
     </form>
   );

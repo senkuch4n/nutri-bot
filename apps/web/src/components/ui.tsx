@@ -320,12 +320,6 @@ const badgeTones = {
   danger: "bg-destructive-muted text-destructive",
   warning: "bg-warning-muted text-warning",
   info: "bg-info-muted text-info",
-  // LEGACY: alias de los tonos viejos (HU-002d los borra)
-  slate: "bg-secondary text-foreground",
-  green: "bg-success-muted text-success",
-  red: "bg-destructive-muted text-destructive",
-  amber: "bg-warning-muted text-warning",
-  blue: "bg-info-muted text-info",
 } as const;
 
 export function Badge({

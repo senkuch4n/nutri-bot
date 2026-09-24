@@ -99,3 +99,21 @@
 - **Pendientes:** confirmación para "Cancelar turno" y "Reintentar N fallidos" (O-c1); colores
   de COMPLETED/NO_SHOW fuera de los tokens (O-c2); cierre inesperado del panel si se cambia de
   turno mientras corre una acción (duda del reviewer).
+
+---
+
+## 2026-09-24 — HU-002d `rediseno-ui-nutricion-portal` — APROBADA (1ª ronda) · cierra el rediseño
+
+- **Qué:** alimentos en una tabla densa con el encabezado fijo; plantillas en tabla con un diálogo
+  de alta y `useConfirm` para borrar; editor de comidas y franja `MacroTotals`; portal completo en
+  tono cálido y mobile-first. Formato es-AR del total del PDF (`formatMacrosLine` en
+  `packages/core`, con tests). Colores de COMPLETED/NO_SHOW del calendario con tokens (O-c2).
+  **Se borraron los alias LEGACY** de `tailwind.config.ts`, `globals.css` y `Badge`: el sistema viejo
+  ya no existe.
+- **Modelos:** implementer Opus (se cortó por un límite de la API en la fase 10 y se retomó);
+  reviewer Opus. Validación de la HU, del orquestador (modo autónomo).
+- **Pendiente para el usuario:** reiniciar `npm run dev`, porque el dev no recarga
+  `tailwind.config.ts`, y mirar si algo perdió color o borde. También los iframes a 360 px y el
+  diario del portal.
+- **Pendientes directos:** confirmación en "Borrar comida" (O-d1) y en el borrado del diario del
+  portal (O-d2).

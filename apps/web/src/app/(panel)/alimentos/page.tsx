@@ -1,4 +1,5 @@
 import { listFoods } from "@nutri-bot/db/domain";
+import { Plus } from "lucide-react";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { FoodsList } from "./foods-list";
 
@@ -12,7 +13,12 @@ export default async function AlimentosPage() {
       <PageHeader
         title="Alimentos"
         description="Base de alimentos con macros por 100 g, usada para armar los planes."
-        action={<ButtonLink href="/alimentos/nuevo">Nuevo alimento</ButtonLink>}
+        action={
+          <ButtonLink href="/alimentos/nuevo">
+            <Plus aria-hidden />
+            Nuevo alimento
+          </ButtonLink>
+        }
       />
       <FoodsList
         foods={foods.map((f) => ({
