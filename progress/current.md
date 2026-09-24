@@ -72,3 +72,4 @@ orquestador, para que las revise a la mañana:
 - "Borrar comida" con confirmación (commit d5c87e5).
 - **HU-003** → `afinando`, en la rama `hu-003-consulta-entidad-central` (sale de la de la HU-002, encadenada).
 - HU-003 afinada; el orquestador valida D1–D11 según las recomendaciones (migración solo aditiva) → `en_arquitectura` (migracion-prisma + ui).
+- HU-003: SDD lista → `implementando` (Opus), con respaldo `pg_dump` antes de migrar.

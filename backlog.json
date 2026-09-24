@@ -158,7 +158,7 @@
       "slug": "consulta-entidad-central",
       "titulo": "La consulta como entidad central",
       "origen": "docs/historias-usuario-nutridesk.md — Épica 30",
-      "estado": "en_arquitectura",
+      "estado": "implementando",
       "intentos_revision": 0,
       "hu": "docs/hu-consulta-entidad-central.md",
       "sdd": "Refactorizaciones/consulta-entidad-central.md",
@@ -167,6 +167,13 @@
       "skills_sdd": [
         "migracion-prisma",
         "ui"
+      ],
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
       ]
     },
     {
