@@ -12,6 +12,7 @@ import {
 } from "@nutri-bot/db/domain";
 import {
   activityLevelOption,
+  buildAiFoodCatalog,
   computeAgeYears,
   nutritionGoalLabel,
   sexLabel,
@@ -35,7 +36,7 @@ const aiResponseSchema = z.object({
         items: z
           .array(
             z.object({
-              foodId: z.string().min(1),
+              ref: z.number().int().positive(),
               quantityGrams: z.number().positive().max(2000),
               note: z.string().trim().max(200).optional(),
             }),
@@ -80,12 +81,11 @@ export async function generateAiPlanAction(
     return { ok: false, error: "Todavía no hay alimentos cargados en la base." };
   }
 
-  const foodCatalog = foods.map((f) => ({
-    id: f.id,
-    nombre: f.name,
-    grupo: f.group,
-    kcalPer100g: Number(f.kcalPer100),
-  }));
+  // Formato compacto "ref|nombre|grupo|kcal" (HU-005, D10): con ~1000 alimentos el JSON con ids
+  // no entra razonablemente en el pedido. La IA responde con `ref`; acá se traduce al id.
+  const catalog = buildAiFoodCatalog(
+    foods.map((f) => ({ id: f.id, name: f.name, group: f.group, kcalPer100: Number(f.kcalPer100) })),
+  );
 
   const act = activityLevelOption(p?.activityLevel ?? null);
   const paciente = {
@@ -112,13 +112,20 @@ export async function generateAiPlanAction(
           content:
             "Sos un asistente de nutrición que arma un borrador de plan alimenticio para que una " +
             "nutricionista humana lo revise y ajuste antes de enviarlo. SOLO podés usar alimentos de " +
-            "la lista `alimentos` que te paso, referenciándolos por su `id` EXACTO — nunca inventes " +
-            "alimentos ni ids que no estén en la lista. Las cantidades van en gramos. Organizá el plan " +
+            "la lista `alimentos` que te paso, referenciándolos por su número `ref` EXACTO (la primera " +
+            "columna de cada línea de `alimentos`) — nunca inventes alimentos ni refs que no estén en la lista. Las cantidades van en gramos. Organizá el plan " +
             "en 3 a 5 comidas (por ejemplo Desayuno, Almuerzo, Merienda, Cena). Respondé ÚNICAMENTE un " +
             'JSON con esta forma exacta, sin texto adicional ni explicaciones: {"meals":[{"name":string,' +
-            '"items":[{"foodId":string,"quantityGrams":number,"note"?:string}]}]}',
+            '"items":[{"ref":number,"quantityGrams":number,"note"?:string}]}]}',
         },
-        { role: "user", content: JSON.stringify({ paciente, alimentos: foodCatalog }) },
+        {
+          role: "user",
+          content: JSON.stringify({
+            paciente,
+            formato_alimentos: "ref|nombre|grupo|kcal cada 100 g",
+            alimentos: catalog.text,
+          }),
+        },
       ],
     });
     raw = completion.choices[0]?.message?.content ?? null;
@@ -140,10 +147,13 @@ export async function generateAiPlanAction(
     return { ok: false, error: "La respuesta de la IA no tuvo el formato esperado" };
   }
 
-  const validFoodIds = new Set(foods.map((f) => f.id));
   let mealOrder = 0;
   for (const meal of result.data.meals) {
-    const validItems = meal.items.filter((item) => validFoodIds.has(item.foodId));
+    // ref inexistente → el ítem se descarta (igual que antes con ids inválidos).
+    const validItems = meal.items.flatMap((item) => {
+      const foodId = catalog.idsByRef[item.ref - 1];
+      return foodId ? [{ ...item, foodId }] : [];
+    });
     if (validItems.length === 0) continue;
     const createdMeal = await addMeal(planId, { name: meal.name, order: mealOrder++ });
     let itemOrder = 0;

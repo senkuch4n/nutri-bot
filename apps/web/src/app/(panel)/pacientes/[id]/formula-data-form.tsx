@@ -12,7 +12,8 @@ import {
   type NutritionGoal,
   type Sex,
 } from "@nutri-bot/core";
-import { Button, Field, Select } from "@/components/ui";
+import { Button, Field, FormError, Select } from "@/components/ui";
+import { useActionToast } from "@/lib/notify";
 import { updateFormulaDataAction, type PatientState } from "../actions";
 
 const initial: PatientState = { ok: false };
@@ -24,6 +25,7 @@ export interface FormulaDataValues {
   bodyFrame: BodyFrame | null;
 }
 
+/** Va dentro de FormulaDataSheet (una columna). Mismos `name` y la misma action que siempre. */
 export function FormulaDataForm({
   patientId,
   values,
@@ -32,11 +34,12 @@ export function FormulaDataForm({
   values: FormulaDataValues;
 }) {
   const [state, action, pending] = useActionState(updateFormulaDataAction, initial);
+  useActionToast(state, { success: "Datos para cálculos guardados" });
 
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="id" value={patientId} />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4">
         <Field
           label="Sexo (para fórmulas)"
           hint="Sexo biológico, lo usan las fórmulas de TMB y peso ideal."
@@ -85,14 +88,11 @@ export function FormulaDataForm({
         </Field>
       </div>
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" loading={pending}>
           {pending ? "Guardando…" : "Guardar"}
         </Button>
-        <span role="status" aria-live="polite" className="text-sm">
-          {state.error ? <span className="reveal text-red-600">{state.error}</span> : null}
-          {state.ok ? <span className="reveal font-medium text-leaf-deep">✓ Guardado</span> : null}
-        </span>
       </div>
+      <FormError message={state.error} />
     </form>
   );
 }

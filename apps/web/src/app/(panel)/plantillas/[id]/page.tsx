@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { getTemplate, listFoods } from "@nutri-bot/db/domain";
 import { sumMacros } from "@nutri-bot/core";
-import { Card, PageHeader, SectionLabel } from "@/components/ui";
+import { Card, PageHeader } from "@/components/ui";
+import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
 import { toMealView } from "@/lib/meal-view";
 import { TemplateMetaForm } from "./template-meta-form";
@@ -31,53 +31,39 @@ export default async function TemplateDetailPage({
   const boundUpdate = updateTemplateAction.bind(null, template.id);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/plantillas" className="text-sm text-ink-soft transition-colors hover:text-ink">
-          ← Volver a plantillas
-        </Link>
-        <PageHeader title={template.title} action={<DeleteTemplateButton id={template.id} />} />
-      </div>
-
-      <Card>
-        <SectionLabel>Datos de la plantilla</SectionLabel>
-        <TemplateMetaForm action={boundUpdate} defaults={{ title: template.title, notes: template.notes ?? "" }} />
-      </Card>
-
-      <div className="grid gap-3 sm:grid-cols-5">
-        <div className="border border-line bg-paper px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Kcal totales</p>
-          <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.kcal}</p>
-        </div>
-        <div className="border border-line bg-paper px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Proteínas</p>
-          <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.protein} g</p>
-        </div>
-        <div className="border border-line bg-paper px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Carbohidratos</p>
-          <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.carbs} g</p>
-        </div>
-        <div className="border border-line bg-paper px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Grasas</p>
-          <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.fat} g</p>
-        </div>
-        <div className="border border-line bg-paper px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Fibra</p>
-          <p className="mt-1 font-display text-2xl font-bold text-ink">{totals.fiber} g</p>
-        </div>
-      </div>
-
-      <MealsEditor
-        ownerId={template.id}
-        ownerField="templateId"
-        meals={meals}
-        foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group }))}
-        addMealAction={addTemplateMealAction}
-        deleteMealAction={deleteTemplateMealAction}
-        addItemAction={addTemplateMealItemAction}
-        deleteItemAction={deleteTemplateMealItemAction}
-        showMacros
+    <div>
+      <PageHeader
+        title={template.title}
+        description={`Plantilla · ${meals.length} comida${meals.length === 1 ? "" : "s"}`}
+        back={{ href: "/plantillas", label: "Volver a plantillas" }}
+        action={<DeleteTemplateButton id={template.id} />}
       />
+
+      {/* Totales de la plantilla: quedan a la vista mientras se editan las comidas. */}
+      <div className="sticky top-14 z-10 -mx-6 mb-6 bg-background px-6 py-3 lg:top-0 lg:-mx-10 lg:px-10">
+        <MacroTotals totals={totals} />
+      </div>
+
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+        <MealsEditor
+          ownerId={template.id}
+          ownerField="templateId"
+          meals={meals}
+          foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source }))}
+          addMealAction={addTemplateMealAction}
+          deleteMealAction={deleteTemplateMealAction}
+          addItemAction={addTemplateMealItemAction}
+          deleteItemAction={deleteTemplateMealItemAction}
+          showMacros
+        />
+
+        <Card
+          title="Datos de la plantilla"
+          description="El título y las notas se copian al plan cuando la aplicás a un paciente."
+        >
+          <TemplateMetaForm action={boundUpdate} defaults={{ title: template.title, notes: template.notes ?? "" }} />
+        </Card>
+      </div>
     </div>
   );
 }

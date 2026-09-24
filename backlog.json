@@ -46,26 +46,260 @@
       "review": "progress/review_HU-001.md"
     },
     {
-      "id": "HU-002",
-      "slug": "rediseno-ui-empresarial",
-      "titulo": "Rediseño completo de UX/UI: estilo empresarial y minimalista",
-      "origen": "Pedido del usuario 2026-09-23 (la nutricionista prefiere algo empresarial y minimalista)",
-      "estado": "no_afinada",
+      "id": "HU-002a",
+      "slug": "rediseno-ui-fundaciones",
+      "titulo": "Rediseño UI (1/4): fundaciones y shell (tokens, shadcn/ui, sidebar, layouts, login, estados)",
+      "origen": "HU-002 partida (D8)",
+      "estado": "aprobada",
+      "rama": "hu-002-rediseno-ui-empresarial",
+      "notas": "HU compartida con 002b-d; esta SDD cubre solo la fila HU-002a de la partición.",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
+      "intentos_revision": 1,
+      "sdd": "Refactorizaciones/rediseno-ui-fundaciones.md",
+      "skills_sdd": [
+        "refactor",
+        "ui"
+      ],
+      "modelo": "fable",
+      "skills": [
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "modelo_ronda2": "fable",
+      "skills_ronda2": [
+        "web-design-guidelines",
+        "ui-ux-pro-max",
+        "ui-styling"
+      ],
+      "review": "progress/review_HU-002a.md"
+    },
+    {
+      "id": "HU-002b",
+      "slug": "rediseno-ui-pacientes",
+      "titulo": "Rediseño UI (2/4): pacientes (ficha en pestañas, evolución con gráficos de barras, planes, diario, PDF)",
+      "origen": "HU-002 partida (D8)",
+      "estado": "aprobada",
+      "notas": "Incluye evaluar librería de gráficos (D14 bis) y PDF (D12).",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
+      "intentos_revision": 1,
+      "sdd": "Refactorizaciones/rediseno-ui-pacientes.md",
+      "skills_sdd": [
+        "refactor",
+        "ui"
+      ],
+      "rama": "hu-002-rediseno-ui-empresarial",
+      "modelo": "fable",
+      "skills": [
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "modelo_ronda2": "fable",
+      "skills_ronda2": [
+        "web-design-guidelines",
+        "ui-ux-pro-max",
+        "ui-styling"
+      ],
+      "review": "progress/review_HU-002b.md"
+    },
+    {
+      "id": "HU-002c",
+      "slug": "rediseno-ui-agenda-gestion",
+      "titulo": "Rediseño UI (3/4): agenda y gestión",
+      "origen": "HU-002 partida (D8)",
+      "estado": "aprobada",
+      "notas": " REGLA: nunca await confirm() dentro de <form action> ni startTransition (deadlock en React 19, ver review_HU-002b). Pasárselo al architect.",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
       "intentos_revision": 0,
-      "hu": null,
-      "sdd": null,
-      "notas": "Reemplaza el lenguaje 'Spring-inspired' actual. Hacer antes de sumar muchas pantallas nuevas. Skill de catálogo: ui."
+      "sdd": "Refactorizaciones/rediseno-ui-agenda-gestion.md",
+      "skills_sdd": [
+        "refactor",
+        "ui"
+      ],
+      "rama": "hu-002-rediseno-ui-empresarial",
+      "modelo": "fable",
+      "skills": [
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "review": "progress/review_HU-002c.md",
+      "modelo_reviewer": "opus"
+    },
+    {
+      "id": "HU-002d",
+      "slug": "rediseno-ui-nutricion-portal",
+      "titulo": "Rediseño UI (4/4): nutrición y portal (tono cálido)",
+      "origen": "HU-002 partida (D8)",
+      "estado": "aprobada",
+      "notas": " REGLA: nunca await confirm() dentro de <form action> ni startTransition (deadlock en React 19, ver review_HU-002b). Pasárselo al architect. INCLUIR (pedido del usuario 2026-09-24): formato es-AR del \"Total del plan\" en el PDF (lib/plan-pdf.tsx macrosLine: coma decimal, espacio duro antes de la unidad, kcal sin decimales). Cambia lo que recibe el paciente.",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
+      "intentos_revision": 0,
+      "sdd": "Refactorizaciones/rediseno-ui-nutricion-portal.md",
+      "skills_sdd": [
+        "refactor",
+        "ui"
+      ],
+      "rama": "hu-002-rediseno-ui-empresarial",
+      "modelo": "opus",
+      "skills": [
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-002d.md"
     },
     {
       "id": "HU-003",
       "slug": "consulta-entidad-central",
       "titulo": "La consulta como entidad central",
       "origen": "docs/historias-usuario-nutridesk.md — Épica 30",
-      "estado": "no_afinada",
+      "estado": "aprobada",
       "intentos_revision": 0,
-      "hu": null,
-      "sdd": null,
-      "notas": "El usuario decidió reestructurar antes de la calculadora (Épica 18)."
+      "hu": "docs/hu-consulta-entidad-central.md",
+      "sdd": "Refactorizaciones/consulta-entidad-central.md",
+      "notas": "El usuario decidió reestructurar antes de la calculadora (Épica 18). Épica 30.",
+      "rama": "hu-003-consulta-entidad-central",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ],
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-003.md"
+    },
+    {
+      "id": "HU-004",
+      "slug": "calculadora-requerimiento",
+      "titulo": "Calculadora de requerimiento energético y diagnóstico antropométrico (adultos)",
+      "origen": "docs/historias-usuario-nutridesk.md — Épicas 18 y 19",
+      "notas": "Depende de HU-001 y HU-003. TMB con las 4 fórmulas lado a lado; peso ideal y ajustado; IMC, cintura, ICC, Deurenberg.",
+      "estado": "aprobada",
+      "intentos_revision": 0,
+      "hu": "docs/hu-calculadora-requerimiento.md",
+      "sdd": "Refactorizaciones/calculadora-requerimiento.md",
+      "rama": "hu-004-calculadora-requerimiento",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ],
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-004.md"
+    },
+    {
+      "id": "HU-005",
+      "slug": "base-alimentos-sara2",
+      "titulo": "Base de alimentos argentina SARA 2 (importada del PDF) con kcal por Atwater",
+      "origen": "Épica 20",
+      "notas": "Importar del PDF con validaciones; reestructura Food y FoodGroup.",
+      "estado": "aprobada",
+      "intentos_revision": 0,
+      "hu": "docs/hu-base-alimentos-sara2.md",
+      "sdd": "Refactorizaciones/base-alimentos-sara2.md",
+      "rama": "hu-005-base-alimentos-sara2",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ],
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-005.md"
+    },
+    {
+      "id": "HU-006",
+      "slug": "antropometria-isak",
+      "titulo": "Antropometría ISAK completa, composición corporal (Kerr/Lee/Rocha), somatotipo e índices",
+      "origen": "Épicas 44 y 45",
+      "notas": "Métodos de ISAKMetry; validar local contra docs/ISAKMetry_* (gitignored). Depende de HU-003.",
+      "estado": "aprobada",
+      "intentos_revision": 1,
+      "hu": "docs/hu-antropometria-isak.md",
+      "sdd": "Refactorizaciones/antropometria-isak.md",
+      "rama": "hu-006-antropometria-isak",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ],
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-006.md"
+    },
+    {
+      "id": "HU-007",
+      "slug": "informe-antropometrico",
+      "titulo": "Informe antropométrico automático en PDF (actual vs anterior)",
+      "origen": "Épica 46",
+      "notas": "Depende de HU-006.",
+      "estado": "aprobada",
+      "intentos_revision": 0,
+      "hu": "docs/hu-informe-antropometrico.md",
+      "sdd": "Refactorizaciones/informe-antropometrico.md",
+      "rama": "hu-007-informe-antropometrico",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ],
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-007.md"
+    },
+    {
+      "id": "HU-008",
+      "slug": "pediatria-oms",
+      "titulo": "Pacientes pediátricos (5–18): OMS 2007 IMC/talla para la edad y Schofield",
+      "origen": "Épica 56",
+      "notas": "Depende de HU-004 y HU-006.",
+      "estado": "aprobada",
+      "intentos_revision": 0,
+      "hu": "docs/hu-pediatria-oms.md",
+      "sdd": "Refactorizaciones/pediatria-oms.md",
+      "rama": "hu-008-pediatria-oms",
+      "skills_sdd": [
+        "ui"
+      ],
+      "modelo": "opus",
+      "skills": [
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-008.md"
     }
   ]
 }

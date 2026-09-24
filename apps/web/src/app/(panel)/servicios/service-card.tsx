@@ -1,8 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, cn } from "@/components/ui";
-import { Modal } from "@/components/modal";
+import { Pencil } from "lucide-react";
+import { Label } from "@/components/primitives/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/primitives/sheet";
+import { Switch } from "@/components/primitives/switch";
+import { Badge, Button, Card, cn } from "@/components/ui";
 import { ServiceForm, type EditableService } from "./service-form";
 import { toggleServiceAction } from "./actions";
 
@@ -15,77 +24,72 @@ export function ServiceCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [pending, start] = useTransition();
+  const switchId = `activo-${service.id}`;
 
   return (
-    <div
-      className={cn(
-        "flex flex-col border border-line bg-paper shadow-card",
-        !service.active && "bg-mint/40",
-      )}
-    >
-      <div className="flex items-stretch gap-3">
-        <span
-          className="w-1.5 shrink-0"
-          style={{ background: service.color }}
-          title="Color con el que aparece en el calendario"
-        />
-        <div className="flex flex-1 flex-col p-5 pl-3.5">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="font-display text-lg font-bold leading-tight text-ink">{service.name}</h3>
-            {!service.active ? (
-              <span className="shrink-0 border border-line px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
-                Inactivo
-              </span>
-            ) : null}
-          </div>
+    <Card className={cn("flex flex-col", !service.active && "bg-muted/40")}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ background: service.color }}
+            title="Color en el calendario"
+          >
+            <span className="sr-only">Color en el calendario</span>
+          </span>
+          <h3 className="truncate text-base font-semibold">{service.name}</h3>
+        </div>
+        {!service.active ? <Badge tone="neutral">Inactivo</Badge> : null}
+      </div>
 
-          <p className="mt-2 text-sm text-ink-soft">
-            <span className="font-semibold text-ink">{priceLabel}</span>
-            <span className="mx-1.5 text-ink-faint">·</span>
-            {service.durationMin} min
-          </p>
+      <p className="mt-2 text-sm tabular-nums">
+        <span className="font-medium">{priceLabel}</span>
+        <span className="mx-1.5 text-muted-foreground">·</span>
+        {service.durationMin} min
+      </p>
 
-          {service.requiresDeposit ? (
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.06em] text-leaf-deep">
-              Requiere seña
-            </p>
-          ) : null}
+      {service.requiresDeposit || service.prepInstructions ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {service.requiresDeposit ? <Badge tone="neutral">Requiere seña</Badge> : null}
+          {service.prepInstructions ? <Badge tone="info">Manda recomendaciones previas</Badge> : null}
+        </div>
+      ) : null}
 
-          {service.prepInstructions ? (
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.06em] text-link">
-              Manda recomendaciones previas
-            </p>
-          ) : null}
+      {service.description ? (
+        <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{service.description}</p>
+      ) : null}
 
-          {service.description ? (
-            <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-ink-soft">
-              {service.description}
-            </p>
-          ) : null}
-
-          <div className="mt-auto flex items-center gap-1 pt-5">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-              Editar
-            </Button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => start(() => toggleServiceAction(service.id, !service.active))}
-              className="px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:text-ink disabled:opacity-50"
-            >
-              {pending
-                ? "Guardando…"
-                : service.active
-                  ? "Desactivar"
-                  : "Activar"}
-            </button>
-          </div>
+      <div className="mt-auto flex items-center justify-between pt-5">
+        <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+          <Pencil aria-hidden />
+          Editar
+        </Button>
+        <div className="flex items-center gap-2">
+          <Label htmlFor={switchId} className="text-sm text-muted-foreground">
+            Activo
+          </Label>
+          <Switch
+            id={switchId}
+            checked={service.active}
+            disabled={pending}
+            aria-busy={pending || undefined}
+            // `checked` es `!service.active` al tocarlo: misma llamada que antes.
+            onCheckedChange={(checked) => start(() => toggleServiceAction(service.id, checked))}
+          />
         </div>
       </div>
 
-      <Modal open={editing} onClose={() => setEditing(false)} title={`Editar · ${service.name}`}>
-        <ServiceForm editing={service} onDone={() => setEditing(false)} />
-      </Modal>
-    </div>
+      <Sheet open={editing} onOpenChange={setEditing}>
+        <SheetContent side="right" className="w-full sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>{`Editar · ${service.name}`}</SheetTitle>
+            <SheetDescription>Los cambios se ven en el bot y en el calendario.</SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <ServiceForm editing={service} onDone={() => setEditing(false)} />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </Card>
   );
 }

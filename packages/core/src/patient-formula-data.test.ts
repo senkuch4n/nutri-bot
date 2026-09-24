@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTIVITY_LEVELS,
+  ADJUSTMENT_RANGE_VALUES,
   ACTIVITY_LEVEL_VALUES,
   BODY_FRAMES,
   BODY_FRAME_VALUES,
@@ -10,9 +11,18 @@ import {
   SEX_VALUES,
   activityLevelOption,
   bodyFrameLabel,
+  PEDIATRIC_TEXT,
+  ageGroupOf,
+  ageMonthsLabel,
+  computeAgeMonths,
   computeAgeYears,
   effectiveBodyFrame,
   formatDecimalEs,
+  formatFixedEs,
+  formatSignedFixedEs,
+  formatSignedIntEs,
+  formatSignedPercentEs,
+  goalAdjustmentRange,
   getMissingFormulaData,
   isMinor,
   missingFormulaDataMessage,
@@ -189,5 +199,121 @@ describe("formatDecimalEs", () => {
     expect(formatDecimalEs(162)).toBe("162");
     expect(formatDecimalEs(1.375)).toBe("1,375");
     expect(formatDecimalEs(29.4)).toBe("29,4");
+  });
+});
+
+describe("HU-004: rangos de ajuste y formatos con signo", () => {
+  it("los rangos tienen key y shortLabel", () => {
+    expect(
+      NUTRITION_GOALS.map((g) => [g.value, g.adjustmentRanges.map((r) => [r.key, r.shortLabel, r.minPercent, r.maxPercent])]),
+    ).toEqual([
+      [
+        "LOSE_WEIGHT",
+        [
+          ["MODERATE_DEFICIT", "Déficit moderado", -25, -15],
+          ["AGGRESSIVE_DEFICIT", "Déficit agresivo", -30, -25],
+        ],
+      ],
+      ["MAINTAIN", [["MAINTENANCE", "Mantenimiento", 0, 0]]],
+      ["GAIN_WEIGHT", [["SURPLUS", "Superávit", 10, 20]]],
+      ["GAIN_MUSCLE", [["SURPLUS", "Superávit", 10, 20]]],
+    ]);
+    expect(ADJUSTMENT_RANGE_VALUES).toEqual(["MODERATE_DEFICIT", "AGGRESSIVE_DEFICIT", "MAINTENANCE", "SURPLUS"]);
+  });
+
+  it("goalAdjustmentRange", () => {
+    expect(goalAdjustmentRange("LOSE_WEIGHT", "AGGRESSIVE_DEFICIT")?.label).toBe("Déficit agresivo (con supervisión)");
+    expect(goalAdjustmentRange("GAIN_MUSCLE", "SURPLUS")?.minPercent).toBe(10);
+    expect(goalAdjustmentRange("LOSE_WEIGHT", "SURPLUS")).toBeNull();
+    expect(goalAdjustmentRange("MAINTAIN", "MODERATE_DEFICIT")).toBeNull();
+  });
+
+  it("formatSignedPercentEs (U+2212)", () => {
+    expect(formatSignedPercentEs(-20)).toBe("−20 %");
+    expect(formatSignedPercentEs(15)).toBe("+15 %");
+    expect(formatSignedPercentEs(0)).toBe("0 %");
+  });
+
+  it("formatSignedIntEs", () => {
+    expect(formatSignedIntEs(-119)).toBe("−119");
+    expect(formatSignedIntEs(50)).toBe("+50");
+    expect(formatSignedIntEs(0)).toBe("0");
+    expect(formatSignedIntEs(-0.4)).toBe("0");
+    // kcal con separador de miles es-AR (decisión del orquestador)
+    expect(formatSignedIntEs(1200)).toBe("+1.200");
+  });
+});
+
+describe("HU-006: decimales fijos", () => {
+  it("formatFixedEs", () => {
+    expect(formatFixedEs(71, 1)).toBe("71,0");
+    expect(formatFixedEs(2.8, 2)).toBe("2,80");
+    expect(formatFixedEs(-0.04, 2)).toBe("-0,04");
+    expect(formatFixedEs(-0.001, 2)).toBe("0,00");
+    expect(formatFixedEs(98, 0)).toBe("98");
+  });
+
+  it("formatSignedFixedEs (U+2212)", () => {
+    expect(formatSignedFixedEs(-9.5, 1)).toBe("−9,5");
+    expect(formatSignedFixedEs(1.2, 1)).toBe("+1,2");
+    expect(formatSignedFixedEs(0, 1)).toBe("0,0");
+    expect(formatSignedFixedEs(-0.92, 2)).toBe("−0,92");
+  });
+});
+
+// ── HU-008 ──
+describe("HU-008: ageGroupOf", () => {
+  it("null → ADULT; 4 → UNDER_5; 5 y 17 → PEDIATRIC; 18 → ADULT", () => {
+    expect(ageGroupOf(null)).toBe("ADULT");
+    expect(ageGroupOf(0)).toBe("UNDER_5");
+    expect(ageGroupOf(4)).toBe("UNDER_5");
+    expect(ageGroupOf(5)).toBe("PEDIATRIC");
+    expect(ageGroupOf(17)).toBe("PEDIATRIC");
+    expect(ageGroupOf(18)).toBe("ADULT");
+  });
+});
+
+describe("HU-008: computeAgeMonths", () => {
+  const tz = "America/Argentina/Buenos_Aires";
+  it("Tomás: nacido 15/03/2014, consulta 10/09/2026 → 149", () => {
+    expect(computeAgeMonths(new Date("2014-03-15"), new Date("2026-09-10T15:00:00Z"), tz)).toBe(149);
+  });
+  it("el día del cumple mensual ya cuenta → 150", () => {
+    expect(computeAgeMonths(new Date("2014-03-15"), new Date("2026-09-15T15:00:00Z"), tz)).toBe(150);
+  });
+  it("zona horaria: 10/09 02:00 UTC es 09/09 en AR → 149, no 150", () => {
+    expect(computeAgeMonths(new Date("2014-03-10"), new Date("2026-09-10T02:00:00Z"), tz)).toBe(149);
+  });
+  it("nacidos un 31: el 28/02 todavía no cumplieron el mes; el 01/03 sí", () => {
+    expect(computeAgeMonths(new Date("2020-01-31"), new Date("2020-02-28T15:00:00Z"), tz)).toBe(0);
+    expect(computeAgeMonths(new Date("2020-01-31"), new Date("2020-03-01T15:00:00Z"), tz)).toBe(1);
+  });
+  it("consistente con computeAgeYears (40 fechas)", () => {
+    const birth = new Date("2014-03-15");
+    for (let i = 0; i < 40; i++) {
+      const at = new Date(Date.UTC(2024, i, 5, 15));
+      const months = computeAgeMonths(birth, at, tz);
+      expect(Math.floor(months / 12)).toBe(computeAgeYears(birth, at, tz));
+    }
+  });
+});
+
+describe("HU-008: ageMonthsLabel", () => {
+  it.each([
+    [149, "12 años y 5 meses (149 meses)"],
+    [96, "8 años (96 meses)"],
+    [61, "5 años y 1 mes (61 meses)"],
+    [12, "1 año (12 meses)"],
+  ])("%s → %s", (m, text) => {
+    expect(ageMonthsLabel(m)).toBe(text);
+  });
+});
+
+describe("HU-008: PEDIATRIC_TEXT", () => {
+  it("textos exactos (U+2212 en las Z, U+2013 en el rango)", () => {
+    expect(PEDIATRIC_TEXT.bmiForAgeReference).toBe("Normal: Z −2 a +1");
+    expect(PEDIATRIC_TEXT.heightForAgeReference).toBe("Adecuada: Z ≥ −2");
+    expect(PEDIATRIC_TEXT.proteinGPerKgHint).toBe("0,85–0,95 g/kg (IDR)");
+    expect(PEDIATRIC_TEXT.under5).toBe("Menor de 5 años: el sistema no tiene referencias para esta edad.");
   });
 });

@@ -60,6 +60,11 @@ vez.** Si se cambia la forma de un modelo o la firma de una función de
   `migrate dev` cuando detecta drift.** Borra la base de desarrollo entera.
   Si aparece drift, parar y avisar — no resolverlo reseteando.
 - Nunca `prisma db push` contra una base que tenga migraciones.
+- **Nunca pasar la base de desarrollo (`DATABASE_URL`) como `--shadow-database-url`, ni correr
+  `prisma migrate diff --from-migrations` contra ella**: Prisma resetea la base shadow y la deja
+  vacía (incidente del 2026-09-24 en la HU-007; se restauró desde un `pg_dump`). Para comparar
+  schema contra migraciones, usar `migrate status` o una base shadow descartable.
+- Antes de aplicar una migración, respaldar con `pg_dump` fuera del repo.
 - Producción aplica con `prisma migrate deploy`. Una migración que agrega una
   columna `NOT NULL` a una tabla con filas necesita default o backfill en el
   mismo SQL.

@@ -65,5 +65,7 @@ export async function updateFormulaDataAction(
     bodyFrame: bodyFrame || null,
   });
   revalidatePath(`/pacientes/${id}`);
+  // "layout" también refresca el detalle de la consulta, desde donde se completa con el Sheet (HU-004).
+  revalidatePath(`/pacientes/${id}`, "layout");
   return { ok: true };
 }

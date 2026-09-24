@@ -1,8 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
 import {
   computeAgeYears,
+  consultationChips,
+  dayKeyInTz,
   formatDate,
   formatDateTime,
   formatInTimeZone,
@@ -10,39 +13,51 @@ import {
 } from "@nutri-bot/core";
 import {
   getLatestFormulaMeasurements,
+  listLatestPrescriptions,
+  listPatientConsultations,
   listPatientPlans,
   listTemplates,
   listDiaryEntries,
   type LatestMeasurement,
 } from "@nutri-bot/db/domain";
-import { Badge, Card, SectionLabel, StatTile } from "@/components/ui";
+import { Card, SectionLabel, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
-import { PatientForm } from "./patient-form";
-import { ClinicalRecordForm } from "./clinical-record-form";
-import { FormulaDataSection } from "./formula-data-section";
+import { toEvolutionRow } from "@/lib/evolution-rows";
+import { AppointmentsSection } from "./appointments-section";
 import { ClinicalAlert } from "./clinical-alert";
-import { EvolutionSection } from "./evolution-section";
-import { PlansSection } from "./plans-section";
+import { ClinicalRecordForm } from "./clinical-record-form";
+import { ConsultationsSection } from "./consultations-section";
 import { DiarySection } from "./diary-section";
+import { EvolutionSection } from "./evolution-section";
+import { EvolutionSummary } from "./evolution-summary";
+import { FormulaDataSection } from "./formula-data-section";
+import { RequirementSummaryCard } from "./requirement-summary-card";
+import { PatientForm } from "./patient-form";
+import { PatientHeader } from "./patient-header";
+import { PatientTabs } from "./patient-tabs";
+import { PlansSection } from "./plans-section";
 
 export const dynamic = "force-dynamic";
 
 const statusMeta = {
-  CONFIRMED: { tone: "blue", label: "Confirmado" },
-  AWAITING_PAYMENT: { tone: "amber", label: "Esperando pago" },
-  COMPLETED: { tone: "green", label: "Completado" },
-  CANCELLED: { tone: "slate", label: "Cancelado" },
-  NO_SHOW: { tone: "red", label: "Ausente" },
+  CONFIRMED: { tone: "info", label: "Confirmado" },
+  AWAITING_PAYMENT: { tone: "warning", label: "Esperando pago" },
+  COMPLETED: { tone: "success", label: "Completado" },
+  CANCELLED: { tone: "neutral", label: "Cancelado" },
+  NO_SHOW: { tone: "danger", label: "Ausente" },
 } as const;
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [pro, patient, plans, templates, diaryEntries, measurements] = await Promise.all([
+  const [pro, patient, plans, templates, diaryEntries, measurements, consultations, prescriptions] = await Promise.all([
     getProfessional(),
     prisma.patient.findUnique({
       where: { id },
       include: {
-        appointments: { include: { service: true }, orderBy: { startsAt: "desc" } },
+        appointments: {
+          include: { service: true, consultation: { select: { id: true } } },
+          orderBy: { startsAt: "desc" },
+        },
         clinicalRecord: true,
         evolutionEntries: { orderBy: { recordedAt: "desc" } },
       },
@@ -51,185 +66,221 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     listTemplates(),
     listDiaryEntries(id),
     getLatestFormulaMeasurements(id),
+    listPatientConsultations(id),
+    listLatestPrescriptions(id, 2),
   ]);
   if (!patient) notFound();
 
   const summaryMeasurement = (m: LatestMeasurement | null) =>
     m ? { value: m.value, dateLabel: formatInTimeZone(m.recordedAt, pro.timezone, "dd/MM/yyyy") } : null;
 
+  const now = new Date();
   const appts = patient.appointments;
   const count = (s: keyof typeof statusMeta) => appts.filter((a) => a.status === s).length;
+  const ageYears = patient.birthDate ? computeAgeYears(patient.birthDate, now, pro.timezone) : null;
+
+  // `appts` viene ordenado por startsAt desc: el próximo turno es el último de los futuros.
+  const next = appts
+    .filter((a) => (a.status === "CONFIRMED" || a.status === "AWAITING_PAYMENT") && a.startsAt >= now)
+    .at(-1);
+  const nextAppointment = next
+    ? {
+        label: formatDateTime(next.startsAt, pro.timezone),
+        serviceName: next.service.name,
+        awaitingPayment: next.status === "AWAITING_PAYMENT",
+      }
+    : null;
+  const riskBackground =
+    patient.clinicalRecord?.riskFlag && patient.clinicalRecord.background
+      ? patient.clinicalRecord.background
+      : null;
+
+  const evolutionRows = patient.evolutionEntries.map((e) => toEvolutionRow(e, pro.timezone));
+  // Hoy en la zona de la profesional (no en UTC: después de las 21 hs en ART ya sería mañana).
+  const todayKey = dayKeyInTz(now, pro.timezone);
+
+  const consultationRows = consultations.map((c) => ({
+    id: c.id,
+    consultedAtISO: c.consultedAt.toISOString(),
+    dateLabel: formatInTimeZone(c.consultedAt, pro.timezone, "dd/MM/yyyy"),
+    timeLabel: c.appointment ? formatInTimeZone(c.consultedAt, pro.timezone, "HH:mm") : null,
+    originLabel: c.appointment ? c.appointment.service.name : null,
+    chips: consultationChips({
+      measurements: c.evolutionEntries.map((e) => toEvolutionRow(e, pro.timezone)),
+      hasPrescription: c.prescription !== null,
+      hasPlan: c.planId !== null,
+      notes: c.notes,
+    }),
+  }));
+
+  const diaryRows = diaryEntries.map((e) => ({
+    id: e.id,
+    createdAtLabel: formatDateTime(e.createdAt, pro.timezone),
+    isRecent: Date.now() - e.createdAt.getTime() < 24 * 60 * 60 * 1000,
+    note: e.note,
+    hasPhoto: Boolean(e.photoData),
+  }));
+
+  const [latestPrescription, previousPrescription] = prescriptions;
+  const prescriptionDateLabel = (p: (typeof prescriptions)[number]) =>
+    formatInTimeZone(p.consultation.consultedAt, pro.timezone, "dd/MM/yyyy");
+
+  const formulaValues = {
+    sex: patient.sex,
+    activityLevel: patient.activityLevel,
+    nutritionGoal: patient.nutritionGoal,
+    bodyFrame: patient.bodyFrame,
+  };
 
   return (
-    <div className="space-y-8">
-      <div>
-        <Link
-          href="/pacientes"
-          className="text-sm text-ink-soft transition-colors hover:text-ink"
-        >
-          ← Volver a pacientes
-        </Link>
-        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
-              {patient.name ?? "Paciente sin nombre"}
-            </h1>
-            <p className="mt-1 text-sm text-ink-soft">WhatsApp · {patient.phone}</p>
-          </div>
-          <a
-            href={`https://wa.me/${patient.phone}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="press inline-flex items-center gap-2 border-2 border-ink px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-ink hover:text-white"
-          >
-            Abrir chat de WhatsApp
-          </a>
-        </div>
-      </div>
+    <div>
+      <Link
+        href="/pacientes"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Pacientes
+      </Link>
 
-      {patient.clinicalRecord?.riskFlag && patient.clinicalRecord.background ? (
-        <ClinicalAlert background={patient.clinicalRecord.background} />
-      ) : null}
-
-      <div className="grid gap-3 sm:grid-cols-4">
-        <StatTile label="Turnos totales" value={appts.length} />
-        <StatTile label="Completados" value={count("COMPLETED")} />
-        <StatTile label="Cancelados" value={count("CANCELLED")} />
-        <StatTile label="Ausencias" value={count("NO_SHOW")} />
-      </div>
-
-      <Card>
-        <SectionLabel>Datos</SectionLabel>
-        <PatientForm
-          patient={{
-            id: patient.id,
-            name: patient.name,
-            notes: patient.notes,
-            birthDateISO: patient.birthDate ? patient.birthDate.toISOString().slice(0, 10) : null,
-          }}
-        />
-      </Card>
-
-      <Card>
-        <SectionLabel>Datos para cálculos</SectionLabel>
-        <FormulaDataSection
-          patientId={patient.id}
-          values={{
-            sex: patient.sex,
-            activityLevel: patient.activityLevel,
-            nutritionGoal: patient.nutritionGoal,
-            bodyFrame: patient.bodyFrame,
-          }}
-          ageYears={
-            patient.birthDate ? computeAgeYears(patient.birthDate, new Date(), pro.timezone) : null
-          }
-          weight={summaryMeasurement(measurements.weightKg)}
-          height={summaryMeasurement(measurements.heightCm)}
-          bodyFat={summaryMeasurement(measurements.bodyFatPercent)}
-        />
-      </Card>
-
-      <Card>
-        <SectionLabel>Ficha clínica</SectionLabel>
-        <ClinicalRecordForm
-          patientId={patient.id}
-          record={
-            patient.clinicalRecord
-              ? {
-                  background: patient.clinicalRecord.background,
-                  goals: patient.clinicalRecord.goals,
-                  riskFlag: patient.clinicalRecord.riskFlag,
-                }
-              : null
-          }
-        />
-      </Card>
-
-      <Card>
-        <SectionLabel>Evolución</SectionLabel>
-        <EvolutionSection
-          patientId={patient.id}
-          entries={patient.evolutionEntries.map((e) => ({
-            id: e.id,
-            recordedAtISO: e.recordedAt.toISOString(),
-            recordedAtLabel: formatDate(e.recordedAt, pro.timezone),
-            weightKg: e.weightKg !== null ? Number(e.weightKg) : null,
-            heightCm: e.heightCm !== null ? Number(e.heightCm) : null,
-            waistCm: e.waistCm !== null ? Number(e.waistCm) : null,
-            hipCm: e.hipCm !== null ? Number(e.hipCm) : null,
-            armCm: e.armCm !== null ? Number(e.armCm) : null,
-            thighCm: e.thighCm !== null ? Number(e.thighCm) : null,
-            calfCm: e.calfCm !== null ? Number(e.calfCm) : null,
-            tricepsSkinfoldMm: e.tricepsSkinfoldMm !== null ? Number(e.tricepsSkinfoldMm) : null,
-            subscapularSkinfoldMm:
-              e.subscapularSkinfoldMm !== null ? Number(e.subscapularSkinfoldMm) : null,
-            abdominalSkinfoldMm:
-              e.abdominalSkinfoldMm !== null ? Number(e.abdominalSkinfoldMm) : null,
-            bodyFatPercent: e.bodyFatPercent !== null ? Number(e.bodyFatPercent) : null,
-            muscleMassKg: e.muscleMassKg !== null ? Number(e.muscleMassKg) : null,
-            bodyWaterPercent: e.bodyWaterPercent !== null ? Number(e.bodyWaterPercent) : null,
-            visceralFatLevel: e.visceralFatLevel !== null ? Number(e.visceralFatLevel) : null,
-            boneMassKg: e.boneMassKg !== null ? Number(e.boneMassKg) : null,
-            basalMetabolicRateKcal: e.basalMetabolicRateKcal,
-            note: e.note,
-          }))}
-        />
-      </Card>
-
-      <Card>
-        <SectionLabel>Diario alimentario (portal)</SectionLabel>
-        <DiarySection
-          entries={diaryEntries.map((e) => ({
-            id: e.id,
-            createdAtLabel: formatDateTime(e.createdAt, pro.timezone),
-            isRecent: Date.now() - e.createdAt.getTime() < 24 * 60 * 60 * 1000,
-            note: e.note,
-            hasPhoto: Boolean(e.photoData),
-          }))}
-        />
-      </Card>
-
-      <Card>
-        <SectionLabel>Planes nutricionales</SectionLabel>
-        <PlansSection
-          patientId={patient.id}
-          plans={plans.map((p) => ({
-            id: p.id,
-            title: p.title,
-            status: p.status,
-            updatedAtLabel: formatDate(p.updatedAt, pro.timezone),
-          }))}
-          templates={templates.map((t) => ({ id: t.id, title: t.title }))}
-        />
-      </Card>
-
-      <Card>
-        <SectionLabel>Historial de turnos</SectionLabel>
-        {appts.length === 0 ? (
-          <p className="text-sm text-ink-faint">Sin turnos registrados.</p>
-        ) : (
-          <ul className="divide-y divide-line text-sm">
-            {appts.map((a) => {
-              const meta = statusMeta[a.status];
-              return (
-                <li key={a.id} className="flex items-center justify-between gap-4 py-3">
-                  <span className="min-w-0 truncate text-ink">
-                    {formatInTimeZone(a.startsAt, pro.timezone, "dd/MM/yyyy · HH:mm")} hs
-                    <span className="mx-1.5 text-ink-faint">·</span>
-                    {a.service.name}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-3">
-                    <span className="text-ink-soft">
-                      {formatPrice(a.priceSnapshot.toString(), pro.currency)}
-                    </span>
-                    <Badge tone={meta.tone}>{meta.label}</Badge>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
+      <PatientTabs
+        header={
+          <PatientHeader
+            name={patient.name}
+            phone={patient.phone}
+            ageYears={ageYears}
+            nextAppointment={nextAppointment}
+            riskBackground={riskBackground}
+          />
+        }
+        counts={{
+          consultas: consultationRows.length,
+          evolucion: evolutionRows.length,
+          planes: plans.length,
+          diario: diaryRows.length,
+          turnos: appts.length,
+        }}
+        diaryHasRecent={diaryRows.some((e) => e.isRecent)}
+        panels={{
+          resumen: (
+            <div className="space-y-8">
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
+                <EvolutionSummary entries={evolutionRows} />
+                <div className="space-y-6">
+                  <FormulaDataSection
+                    patientId={patient.id}
+                    values={formulaValues}
+                    ageYears={ageYears}
+                    weight={summaryMeasurement(measurements.weightKg)}
+                    height={summaryMeasurement(measurements.heightCm)}
+                    bodyFat={summaryMeasurement(measurements.bodyFatPercent)}
+                  />
+                  <RequirementSummaryCard
+                    patientId={patient.id}
+                    latest={
+                      latestPrescription
+                        ? {
+                            consultationId: latestPrescription.consultation.id,
+                            dateLabel: prescriptionDateLabel(latestPrescription),
+                            prescribedVctKcal: latestPrescription.prescribedVctKcal,
+                            proteinG: latestPrescription.proteinG,
+                            fatG: latestPrescription.fatG,
+                            carbG: latestPrescription.carbG,
+                          }
+                        : null
+                    }
+                    previous={
+                      previousPrescription
+                        ? {
+                            prescribedVctKcal: previousPrescription.prescribedVctKcal,
+                            dateLabel: prescriptionDateLabel(previousPrescription),
+                          }
+                        : null
+                    }
+                  />
+                </div>
+              </div>
+              <section aria-labelledby="turnos-resumen">
+                <SectionLabel>
+                  <span id="turnos-resumen">Turnos</span>
+                </SectionLabel>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <StatTile label="Turnos totales" value={appts.length} />
+                  <StatTile label="Completados" value={count("COMPLETED")} />
+                  <StatTile label="Cancelados" value={count("CANCELLED")} />
+                  <StatTile label="Ausencias" value={count("NO_SHOW")} />
+                </div>
+              </section>
+            </div>
+          ),
+          consultas: (
+            <ConsultationsSection patientId={patient.id} todayKey={todayKey} consultations={consultationRows} />
+          ),
+          datos: (
+            <div>
+              {riskBackground ? (
+                <div className="mb-6">
+                  <ClinicalAlert background={riskBackground} />
+                </div>
+              ) : null}
+              <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+                <Card title="Datos del paciente">
+                  <PatientForm
+                    patient={{
+                      id: patient.id,
+                      name: patient.name,
+                      notes: patient.notes,
+                      birthDateISO: patient.birthDate ? patient.birthDate.toISOString().slice(0, 10) : null,
+                    }}
+                  />
+                </Card>
+                <Card title="Ficha clínica">
+                  <ClinicalRecordForm
+                    patientId={patient.id}
+                    record={
+                      patient.clinicalRecord
+                        ? {
+                            background: patient.clinicalRecord.background,
+                            goals: patient.clinicalRecord.goals,
+                            riskFlag: patient.clinicalRecord.riskFlag,
+                          }
+                        : null
+                    }
+                  />
+                </Card>
+              </div>
+            </div>
+          ),
+          evolucion: <EvolutionSection patientId={patient.id} entries={evolutionRows} todayKey={todayKey} />,
+          planes: (
+            <PlansSection
+              patientId={patient.id}
+              plans={plans.map((p) => ({
+                id: p.id,
+                title: p.title,
+                status: p.status,
+                updatedAtLabel: formatDate(p.updatedAt, pro.timezone),
+                consultationLabel: p.consultations[0]
+                  ? `Indicado en la consulta del ${formatInTimeZone(p.consultations[0].consultedAt, pro.timezone, "dd/MM")}`
+                  : null,
+              }))}
+              templates={templates.map((t) => ({ id: t.id, title: t.title }))}
+            />
+          ),
+          diario: <DiarySection entries={diaryRows} />,
+          turnos: (
+            <AppointmentsSection
+              appointments={appts.map((a) => ({
+                id: a.id,
+                startsAtLabel: `${formatInTimeZone(a.startsAt, pro.timezone, "dd/MM/yyyy · HH:mm")} hs`,
+                serviceName: a.service.name,
+                priceLabel: formatPrice(a.priceSnapshot.toString(), pro.currency),
+                status: statusMeta[a.status],
+                consultationHref: a.consultation ? `/pacientes/${patient.id}/consultas/${a.consultation.id}` : null,
+              }))}
+            />
+          ),
+        }}
+      />
     </div>
   );
 }

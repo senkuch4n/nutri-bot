@@ -54,8 +54,14 @@ export const ACTIVITY_LEVELS: ReadonlyArray<ActivityLevelOption> = [
 // ── Objetivo nutricional ── (sección 3 del documento de fórmulas; los rangos los usa la Épica 18)
 export const NUTRITION_GOAL_VALUES = ["LOSE_WEIGHT", "MAINTAIN", "GAIN_WEIGHT", "GAIN_MUSCLE"] as const;
 export type NutritionGoal = (typeof NUTRITION_GOAL_VALUES)[number];
+/** Tipos de ajuste por objetivo. Coinciden con el enum AdjustmentRange de Prisma (HU-004). */
+export const ADJUSTMENT_RANGE_VALUES = ["MODERATE_DEFICIT", "AGGRESSIVE_DEFICIT", "MAINTENANCE", "SURPLUS"] as const;
+export type AdjustmentRangeKey = (typeof ADJUSTMENT_RANGE_VALUES)[number];
 export interface GoalAdjustmentRange {
+  key: AdjustmentRangeKey;
   label: string;
+  /** Sin la aclaración entre paréntesis: "Déficit moderado" | "Déficit agresivo" | "Mantenimiento" | "Superávit". */
+  shortLabel: string;
   minPercent: number;
   maxPercent: number;
 }
@@ -69,24 +75,30 @@ export const NUTRITION_GOALS: ReadonlyArray<NutritionGoalOption> = [
     value: "LOSE_WEIGHT",
     label: "Bajar de peso",
     adjustmentRanges: [
-      { label: "Déficit moderado", minPercent: -25, maxPercent: -15 },
-      { label: "Déficit agresivo (con supervisión)", minPercent: -30, maxPercent: -25 },
+      { key: "MODERATE_DEFICIT", label: "Déficit moderado", shortLabel: "Déficit moderado", minPercent: -25, maxPercent: -15 },
+      {
+        key: "AGGRESSIVE_DEFICIT",
+        label: "Déficit agresivo (con supervisión)",
+        shortLabel: "Déficit agresivo",
+        minPercent: -30,
+        maxPercent: -25,
+      },
     ],
   },
   {
     value: "MAINTAIN",
     label: "Mantener",
-    adjustmentRanges: [{ label: "Mantenimiento", minPercent: 0, maxPercent: 0 }],
+    adjustmentRanges: [{ key: "MAINTENANCE", label: "Mantenimiento", shortLabel: "Mantenimiento", minPercent: 0, maxPercent: 0 }],
   },
   {
     value: "GAIN_WEIGHT",
     label: "Subir de peso",
-    adjustmentRanges: [{ label: "Superávit", minPercent: 10, maxPercent: 20 }],
+    adjustmentRanges: [{ key: "SURPLUS", label: "Superávit", shortLabel: "Superávit", minPercent: 10, maxPercent: 20 }],
   },
   {
     value: "GAIN_MUSCLE",
     label: "Ganar masa muscular",
-    adjustmentRanges: [{ label: "Superávit", minPercent: 10, maxPercent: 20 }],
+    adjustmentRanges: [{ key: "SURPLUS", label: "Superávit", shortLabel: "Superávit", minPercent: 10, maxPercent: 20 }],
   },
 ];
 
@@ -104,6 +116,12 @@ export const BODY_FRAMES: ReadonlyArray<BodyFrameOption> = [
   { value: "LARGE", label: "Grande", hamwiAdjustmentPercent: 10 },
 ];
 export const DEFAULT_BODY_FRAME: BodyFrame = "MEDIUM";
+
+/** Rango del objetivo con esa key, o null si no le corresponde (p. ej. SURPLUS en LOSE_WEIGHT). */
+export function goalAdjustmentRange(goal: NutritionGoal, key: AdjustmentRangeKey): GoalAdjustmentRange | null {
+  const option = NUTRITION_GOALS.find((g) => g.value === goal);
+  return option?.adjustmentRanges.find((r) => r.key === key) ?? null;
+}
 
 /** Contextura a usar en las fórmulas: si no está cargada, se asume Mediana. */
 export function effectiveBodyFrame(frame: BodyFrame | null): BodyFrame {
@@ -158,6 +176,69 @@ export function isMinor(ageYears: number | null): boolean {
 }
 
 export const MINOR_WARNING_TEXT = "Las fórmulas son para adultos.";
+
+// ── HU-008: grupos de edad y edad en meses ──
+export const PEDIATRIC_MIN_AGE_YEARS = 5;
+
+/** ADULT: ≥ 18 o sin fecha de nacimiento (HU-004, "se lo trata como adulto").
+ *  PEDIATRIC: 5 a 17. UNDER_5: 0 a 4. */
+export type AgeGroup = "ADULT" | "PEDIATRIC" | "UNDER_5";
+
+export function ageGroupOf(ageYears: number | null): AgeGroup {
+  if (ageYears === null || ageYears >= ADULT_AGE_YEARS) return "ADULT";
+  if (ageYears >= PEDIATRIC_MIN_AGE_YEARS) return "PEDIATRIC";
+  return "UNDER_5";
+}
+
+/**
+ * Meses cumplidos. Misma regla que computeAgeYears: el día de nacimiento se lee en UTC (columna
+ * @db.Date) y el "hoy" en `timeZone`.
+ * meses = 12·(año − añoNac) + (mes − mesNac) − (día < díaNac ? 1 : 0).
+ * Siempre vale Math.floor(computeAgeMonths(...) / 12) === computeAgeYears(...).
+ * Nacidos un 31: el 28/02 todavía no cumplieron el mes (día 28 < 31).
+ */
+export function computeAgeMonths(birthDate: Date, at: Date, timeZone: string): number {
+  const birthYear = birthDate.getUTCFullYear();
+  const birthMonth = birthDate.getUTCMonth() + 1;
+  const birthDay = birthDate.getUTCDate();
+  const [y, m, d] = formatInTimeZone(at, timeZone, "yyyy-MM-dd").split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  return 12 * (y - birthYear) + (m - birthMonth) - (d < birthDay ? 1 : 0);
+}
+
+/** 149 → "12 años y 5 meses (149 meses)"; 96 → "8 años (96 meses)"; 61 → "5 años y 1 mes (61 meses)";
+ *  12 → "1 año (12 meses)". */
+export function ageMonthsLabel(months: number): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const total = `(${plural(months, "mes", "meses")})`;
+  if (years === 0) return `${plural(rest, "mes", "meses")} ${total}`;
+  const yearsText = plural(years, "año", "años");
+  if (rest === 0) return `${yearsText} ${total}`;
+  return `${yearsText} y ${plural(rest, "mes", "meses")} ${total}`;
+}
+
+/** Textos de la HU-008 (D15), exactos. */
+export const PEDIATRIC_TEXT = {
+  formulaDataInfo:
+    "Paciente pediátrico: el diagnóstico usa la referencia OMS 2007 y la TMB, las ecuaciones de Schofield.",
+  diagnosisInfo: "Paciente pediátrico: referencia OMS 2007 (5 a 19 años).",
+  under5: "Menor de 5 años: el sistema no tiene referencias para esta edad.",
+  implausible: "Valor fuera de rango: revisá la medición.",
+  noReferenceForMeasurementAge: "Sin referencia OMS para la edad de esta medición",
+  bmiForAgeLabel: "IMC para la edad",
+  heightForAgeLabel: "Talla para la edad",
+  bmiForAgeReference: "Normal: Z \u22122 a +1",
+  heightForAgeReference: "Adecuada: Z \u2265 \u22122",
+  reportBmiForAgeLabel: "IMC para la edad (OMS 2007)",
+  reportHeightForAgeLabel: "Talla para la edad (OMS 2007)",
+  activityHint: "Factores de actividad de adultos: usalos como orientación.",
+  proteinGPerKgHint: "0,85\u20130,95 g/kg (IDR)",
+} as const;
 
 // ── Qué falta ──
 export type MissingFormulaDataKey =
@@ -218,4 +299,45 @@ export function missingFormulaDataMessage(
 /** 66.5 → "66,5"; 162 → "162"; 1.375 → "1,375". */
 export function formatDecimalEs(value: number, maxFractionDigits = 3): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: maxFractionDigits }).format(value);
+}
+
+const MINUS_SIGN = "\u2212";
+const signedIntFormat = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0, useGrouping: true });
+
+function signPrefix(value: number): string {
+  if (value < 0) return MINUS_SIGN;
+  if (value > 0) return "+";
+  return "";
+}
+
+/** −20 → "−20 %" (U+2212), 15 → "+15 %", 0 → "0 %". */
+export function formatSignedPercentEs(value: number): string {
+  return `${signPrefix(value)}${formatDecimalEs(Math.abs(value))} %`;
+}
+
+/** −119 → "−119" (U+2212), 50 → "+50", 0 → "0". Enteros (Math.round), con separador de miles
+ *  es-AR como el resto de las kcal ("+1.200"). */
+export function formatSignedIntEs(value: number): string {
+  const rounded = Math.round(value);
+  return `${signPrefix(rounded)}${signedIntFormat.format(Math.abs(rounded))}`;
+}
+
+// ── HU-006: decimales fijos ──
+/** Decimales fijos es-AR: (71, 1) → "71,0"; (2.8, 2) → "2,80"; (-0.04, 2) → "-0,04".
+ *  Un valor que redondea a cero se muestra sin signo ("0,00", nunca "-0,00"). */
+export function formatFixedEs(value: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  const rounded = Math.round(value * factor) / factor;
+  const normalized = rounded === 0 ? 0 : rounded;
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(normalized);
+}
+
+/** Con signo U+2212 / "+": (−9.5, 1) → "−9,5"; (1.2, 1) → "+1,2"; (0, 1) → "0,0". */
+export function formatSignedFixedEs(value: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  const rounded = Math.round(value * factor) / factor;
+  return `${signPrefix(rounded)}${formatFixedEs(Math.abs(rounded), decimals)}`;
 }

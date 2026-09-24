@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@nutri-bot/db";
+import { isConsultationEmpty } from "@nutri-bot/core";
 import { auth } from "@/auth";
 
 export async function GET(req: Request) {
@@ -19,13 +20,26 @@ export async function GET(req: Request) {
       startsAt: { gte: from, lt: to },
       status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] },
     },
-    include: { patient: true, service: true },
+    include: {
+      patient: true,
+      service: true,
+      consultation: {
+        select: {
+          id: true,
+          notes: true,
+          planId: true,
+          prescription: { select: { id: true } },
+          _count: { select: { evolutionEntries: true } },
+        },
+      },
+    },
     orderBy: { startsAt: "asc" },
   });
 
+  // Estados cerrados con los tokens del sistema (FullCalendar los pone inline y var() se resuelve en :root).
   const statusColor: Record<string, string> = {
-    COMPLETED: "#16a34a",
-    NO_SHOW: "#dc2626",
+    COMPLETED: "hsl(var(--success))",
+    NO_SHOW: "hsl(var(--destructive))",
   };
 
   const events = appts.map((a) => ({
@@ -42,6 +56,18 @@ export async function GET(req: Request) {
       serviceName: a.service.name,
       price: a.priceSnapshot.toString(),
       googleSynced: Boolean(a.googleEventId),
+      patientId: a.patientId,
+      consultation: a.consultation
+        ? {
+            id: a.consultation.id,
+            hasContent: !isConsultationEmpty({
+              measurementCount: a.consultation._count.evolutionEntries,
+              hasPrescription: a.consultation.prescription !== null,
+              hasPlan: a.consultation.planId !== null,
+              notes: a.consultation.notes,
+            }),
+          }
+        : null,
     },
   }));
 

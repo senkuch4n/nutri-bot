@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Field, Input, Textarea } from "@/components/ui";
+import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
+import { useActionToast } from "@/lib/notify";
 import type { TemplateState } from "../actions";
 
 const initial: TemplateState = { ok: false };
@@ -14,6 +15,7 @@ export function TemplateMetaForm({
   defaults: { title: string; notes: string };
 }) {
   const [state, formAction, pending] = useActionState(action, initial);
+  useActionToast(state, { success: "Plantilla guardada" });
 
   return (
     <form action={formAction} className="space-y-4">
@@ -21,15 +23,12 @@ export function TemplateMetaForm({
         <Input name="title" defaultValue={defaults.title} required />
       </Field>
       <Field label="Notas">
-        <Textarea name="notes" rows={2} defaultValue={defaults.notes} />
+        <Textarea name="notes" rows={3} defaultValue={defaults.notes} />
       </Field>
-      <div className="flex items-center gap-3">
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending ? "Guardando…" : "Guardar"}
-        </Button>
-        {state.error ? <span className="reveal text-sm text-red-600">{state.error}</span> : null}
-        {state.ok ? <span className="reveal text-sm font-medium text-leaf-deep">✓ Guardado</span> : null}
-      </div>
+      <Button type="submit" loading={pending}>
+        {pending ? "Guardando…" : "Guardar"}
+      </Button>
+      <FormError message={state.error} />
     </form>
   );
 }

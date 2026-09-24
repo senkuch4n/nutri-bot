@@ -25,6 +25,8 @@ Aplicar cuando la HU cambia `packages/db/prisma/schema.prisma`.
   detecta drift. Borra la base de desarrollo entera, con los datos del
   usuario.
 - `prisma db push`.
+- Pasar `DATABASE_URL` como `--shadow-database-url` o correr `prisma migrate diff
+  --from-migrations` contra la base de desarrollo: Prisma la resetea (incidente HU-007).
 - Editar una migración que ya está aplicada (en dev o en producción). Si
   hace falta corregirla, se crea una migración nueva.
 

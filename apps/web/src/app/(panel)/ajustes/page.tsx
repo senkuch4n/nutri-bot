@@ -1,9 +1,18 @@
-import Link from "next/link";
+import { QrCode } from "lucide-react";
+import { professionalSignature } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { signIn } from "@/auth";
-import { Badge, Button, Card, PageHeader, SectionLabel } from "@/components/ui";
+import { Separator } from "@/components/primitives/separator";
+import { Alert, Badge, Button, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
-import { SettingsForm } from "./settings-form";
+import { AjustesTabs } from "./ajustes-tabs";
+import {
+  SettingsFormProvider,
+  SettingsGeneralFields,
+  SettingsPdfFields,
+  SettingsSignatureFields,
+  type SettingsDefaults,
+} from "./settings-form";
 import { GoogleCalendarForm } from "./google-calendar-form";
 import { BotToggle } from "./bot-toggle";
 import { LogoForm } from "./logo-form";
@@ -20,107 +29,109 @@ export default async function AjustesPage() {
   const googleConnected = Boolean(pro.googleRefreshToken);
   const botConnected = botStatus?.connected ?? false;
 
-  return (
-    <div className="space-y-6">
-      <PageHeader title="Ajustes" description="Configuración del panel, el bot y las integraciones." />
+  const defaults: SettingsDefaults = {
+    timezone: pro.timezone,
+    currency: pro.currency,
+    reminderLeadHours: pro.reminderLeadHours,
+    phone: pro.phoneJid?.split("@")[0] ?? "",
+    acceptedInsurances: pro.acceptedInsurances ?? "",
+    pdfAccentColor: pro.pdfAccentColor ?? "",
+    pdfFooterText: pro.pdfFooterText ?? "",
+    title: pro.title ?? "",
+    licenseNumber: pro.licenseNumber ?? "",
+  };
 
-      {/* Bot de WhatsApp */}
-      <Card>
-        <SectionLabel>Bot de WhatsApp</SectionLabel>
+  const general = (
+    <Card title="General" description="Zona horaria, moneda, recordatorios y datos que usa el bot.">
+      <SettingsGeneralFields defaults={defaults} />
+    </Card>
+  );
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-ink-soft">Conexión:</span>
-            {botConnected ? (
-              <Badge tone="green">Conectado</Badge>
-            ) : (
-              <Badge tone="red">Desconectado</Badge>
-            )}
-          </div>
-          <Link
-            href="/ajustes/whatsapp"
-            className="text-sm font-medium text-ink transition-colors hover:text-leaf-deep"
-          >
-            Ver QR y vinculación →
-          </Link>
+  const whatsapp = (
+    <Card
+      title="Bot de WhatsApp"
+      description="El bot nunca contesta mensajes comunes: solo se activa cuando alguien escribe una palabra clave como turno, turnos o menú. Igual podés apagarlo del todo."
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Conexión</span>
+          {botConnected ? <Badge tone="success">Conectado</Badge> : <Badge tone="danger">Desconectado</Badge>}
         </div>
+        <ButtonLink variant="secondary" size="sm" href="/ajustes/whatsapp">
+          <QrCode aria-hidden />
+          Ver QR y vinculación
+        </ButtonLink>
+      </div>
+      <Separator className="my-4" />
+      <BotToggle paused={pro.botPaused} />
+    </Card>
+  );
 
-        <p className="mb-4 mt-4 text-sm leading-relaxed text-ink-soft">
-          El bot nunca contesta mensajes comunes: solo se activa cuando alguien escribe una palabra
-          clave como <em>turno</em>, <em>turnos</em> o <em>menú</em>. Igual podés apagarlo del todo.
-        </p>
-        <BotToggle paused={pro.botPaused} />
-      </Card>
+  const google = (
+    <Card
+      title="Google Calendar"
+      description="Sincroniza los turnos confirmados con tu calendario de Google."
+      actions={googleConnected ? <Badge tone="success">Conectado</Badge> : <Badge tone="warning">Sin conectar</Badge>}
+    >
+      {pro.googleSyncError ? (
+        <Alert tone="danger" title="Error de sincronización" className="mb-4">
+          {pro.googleSyncError}. Reconectá para renovar el permiso.
+        </Alert>
+      ) : null}
 
-      {/* Marca */}
-      <Card>
-        <SectionLabel>Marca</SectionLabel>
-        <p className="mb-4 text-sm text-ink-soft">
-          Este logo aparece en los PDFs de los planes alimentarios que le enviás a tus pacientes.
-        </p>
-        <LogoForm hasLogo={Boolean(logo?.logoData)} />
-      </Card>
-
-      {/* General */}
-      <Card>
-        <SectionLabel>General</SectionLabel>
-        <SettingsForm
-          defaults={{
-            timezone: pro.timezone,
-            currency: pro.currency,
-            reminderLeadHours: pro.reminderLeadHours,
-            phone: pro.phoneJid?.split("@")[0] ?? "",
-            acceptedInsurances: pro.acceptedInsurances ?? "",
-            pdfAccentColor: pro.pdfAccentColor ?? "",
-            pdfFooterText: pro.pdfFooterText ?? "",
+      <div className="flex flex-wrap gap-3">
+        <form
+          action={async () => {
+            "use server";
+            await signIn("google", { redirectTo: "/ajustes" });
           }}
-        />
-      </Card>
-
-      {/* Google Calendar */}
-      <Card>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <SectionLabel>Google Calendar</SectionLabel>
-            <p className="text-sm text-ink-soft">
-              Sincroniza los turnos confirmados con tu calendario de Google.
-            </p>
-          </div>
-          {googleConnected ? (
-            <Badge tone="green">Conectado</Badge>
-          ) : (
-            <Badge tone="amber">Sin conectar</Badge>
-          )}
-        </div>
-
-        {pro.googleSyncError ? (
-          <p className="mt-3 border-l-2 border-red-400 bg-red-50 px-3 py-2 text-sm text-red-700">
-            Error de sincronización: {pro.googleSyncError}. Reconectá para renovar el permiso.
-          </p>
-        ) : null}
-
-        <div className="mt-4 flex flex-wrap gap-3">
-          <form
-            action={async () => {
-              "use server";
-              await signIn("google", { redirectTo: "/ajustes" });
-            }}
-          >
-            <Button type="submit" variant="secondary">
-              {googleConnected ? "Reconectar" : "Conectar Google Calendar"}
+        >
+          <Button type="submit" variant="secondary">
+            {googleConnected ? "Reconectar" : "Conectar Google Calendar"}
+          </Button>
+        </form>
+        {googleConnected ? (
+          <form action={disconnectGoogleAction}>
+            <Button type="submit" variant="ghost">
+              Desconectar
             </Button>
           </form>
-          {googleConnected ? (
-            <form action={disconnectGoogleAction}>
-              <Button type="submit" variant="ghost">
-                Desconectar
-              </Button>
-            </form>
-          ) : null}
-        </div>
+        ) : null}
+      </div>
 
-        {googleConnected ? <GoogleCalendarForm defaultId={pro.googleCalendarId ?? ""} /> : null}
+      {googleConnected ? <GoogleCalendarForm defaultId={pro.googleCalendarId ?? ""} /> : null}
+    </Card>
+  );
+
+  const pdf = (
+    <div className="space-y-6">
+      <Card
+        title="Firma de los informes"
+        description="Tu título y matrícula aparecen al pie del informe antropométrico."
+      >
+        <SettingsSignatureFields
+          defaults={defaults}
+          signaturePreview={professionalSignature({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}
+        />
       </Card>
+      <Card
+        title="Logo"
+        description="Este logo aparece en los PDFs de los planes alimentarios que le enviás a tus pacientes."
+      >
+        <LogoForm hasLogo={Boolean(logo?.logoData)} />
+      </Card>
+      <Card title="Estilo del PDF" description="Color y pie de página del PDF del plan.">
+        <SettingsPdfFields defaults={defaults} />
+      </Card>
+    </div>
+  );
+
+  return (
+    <div>
+      <PageHeader title="Ajustes" description="Configuración del panel, el bot y las integraciones." />
+      <SettingsFormProvider>
+        <AjustesTabs panels={{ general, whatsapp, google, pdf }} />
+      </SettingsFormProvider>
     </div>
   );
 }

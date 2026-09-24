@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Button, SectionLabel } from "@/components/ui";
+import { Plus } from "lucide-react";
+import { Button, Card, PageHeader } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { AddBlockModal, WeeklySchedule, type Rule } from "./schedule";
 import { ExceptionForm, ExceptionsList, type ExceptionView } from "./exceptions";
@@ -20,37 +21,41 @@ export function DisponibilidadView({
 
   return (
     <div>
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Disponibilidad</h1>
-          <p className="mt-2 text-sm text-ink-soft">
-            Tu horario habitual y las excepciones · {timezone}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => setBlockModal({ weekday: 1, start: "09:00" })}>
-            + Bloque de horario
-          </Button>
-          <Button onClick={() => setExcOpen(true)}>+ Excepción</Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Disponibilidad"
+        description={`Tu horario habitual y las excepciones · ${timezone}`}
+        action={
+          <>
+            <Button variant="secondary" onClick={() => setBlockModal({ weekday: 1, start: "09:00" })}>
+              <Plus aria-hidden />
+              Bloque de horario
+            </Button>
+            <Button onClick={() => setExcOpen(true)}>
+              <Plus aria-hidden />
+              Excepción
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)] lg:items-start">
-        <section className="rounded-card border border-line bg-paper p-5 shadow-card">
-          <SectionLabel>Horario semanal</SectionLabel>
+        <Card
+          title="Horario semanal"
+          description="Tocá una franja vacía de un día para agregar un bloque."
+        >
           <WeeklySchedule
             rules={rules}
             onAddBlock={(weekday, start) => setBlockModal({ weekday, start })}
           />
-        </section>
+        </Card>
 
-        <section className="rounded-card border border-line bg-paper p-5 shadow-card lg:sticky lg:top-24">
-          <SectionLabel>Excepciones</SectionLabel>
-          <p className="mb-4 text-xs text-ink-faint">
-            Feriados, días libres y horarios especiales puntuales.
-          </p>
+        <Card
+          title="Excepciones"
+          description="Feriados, días libres y horarios especiales puntuales."
+          className="lg:sticky lg:top-8"
+        >
           <ExceptionsList exceptions={exceptions} />
-        </section>
+        </Card>
       </div>
 
       {blockModal ? (

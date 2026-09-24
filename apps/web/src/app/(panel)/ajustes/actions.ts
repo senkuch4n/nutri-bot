@@ -19,6 +19,9 @@ const generalSchema = z.object({
     .optional()
     .or(z.literal("")),
   pdfFooterText: z.string().trim().max(300).optional().or(z.literal("")),
+  // HU-007 (D1): firma del informe antropométrico.
+  title: z.string().trim().max(20).optional().or(z.literal("")),
+  licenseNumber: z.string().trim().max(40).optional().or(z.literal("")),
 });
 
 export async function saveSettingsAction(
@@ -47,6 +50,8 @@ export async function saveSettingsAction(
       acceptedInsurances: parsed.data.acceptedInsurances || null,
       pdfAccentColor: parsed.data.pdfAccentColor || null,
       pdfFooterText: parsed.data.pdfFooterText || null,
+      title: parsed.data.title || null,
+      licenseNumber: parsed.data.licenseNumber || null,
     },
   });
 

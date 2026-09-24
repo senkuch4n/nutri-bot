@@ -20,6 +20,10 @@ model Professional {
   logoMimeType       String?
   pdfAccentColor     String? // color de acento (hex, ej "#3c7a24") para el PDF del plan; null = default
   pdfFooterText      String? // texto de pie de página del PDF; null = texto default del código
+  /// HU-007 (D1): título que va antes del nombre en el pie del informe, p. ej. "Lic.". null = sin título.
+  title              String?
+  /// HU-007 (D1): matrícula, p. ej. "M.P. 852". null = no cargada (aviso en la página del informe).
+  licenseNumber      String?
   reminderLeadHours  Int      @default(24)
   /// Si está en true, el bot no responde ningún mensaje entrante.
   botPaused          Boolean  @default(false)
@@ -48,6 +52,7 @@ model Patient {
   clinicalRecord ClinicalRecord?
   evolutionEntries EvolutionEntry[]
   diaryEntries DiaryEntry[]
+  consultations Consultation[]
 }
 
 model DiaryEntry {
@@ -88,6 +93,19 @@ model EvolutionEntry {
   tricepsSkinfoldMm    Decimal? @db.Decimal(5, 2)
   subscapularSkinfoldMm Decimal? @db.Decimal(5, 2)
   abdominalSkinfoldMm  Decimal? @db.Decimal(5, 2)
+  // ── HU-006: perfil restringido ISAK (lado derecho, valor final: D3, D4) ──
+  // armCm = brazo relajado, thighCm = muslo medio, calfCm = pierna (D2: solo cambian las etiquetas).
+  sittingHeightCm        Decimal? @db.Decimal(5, 2) // talla sentado
+  armSpanCm              Decimal? @db.Decimal(5, 2) // envergadura de brazos
+  bicepsSkinfoldMm       Decimal? @db.Decimal(5, 2)
+  iliacCrestSkinfoldMm   Decimal? @db.Decimal(5, 2) // cresta ilíaca
+  supraspinaleSkinfoldMm Decimal? @db.Decimal(5, 2) // supraespinal
+  thighSkinfoldMm        Decimal? @db.Decimal(5, 2) // muslo anterior
+  calfSkinfoldMm         Decimal? @db.Decimal(5, 2) // pierna medial
+  armFlexedCm            Decimal? @db.Decimal(5, 2) // brazo flexionado y contraído
+  humerusBreadthCm       Decimal? @db.Decimal(5, 2) // húmero (biepicondilar)
+  bistyloidBreadthCm     Decimal? @db.Decimal(5, 2) // biestiloideo (muñeca)
+  femurBreadthCm         Decimal? @db.Decimal(5, 2) // fémur (bicondilar)
   bodyFatPercent          Decimal? @db.Decimal(4, 1)  // % de grasa corporal (bioimpedancia)
   muscleMassKg            Decimal? @db.Decimal(5, 2)  // masa muscular en kg (bioimpedancia)
   bodyWaterPercent        Decimal? @db.Decimal(4, 1)  // % de agua corporal (bioimpedancia)
@@ -95,9 +113,125 @@ model EvolutionEntry {
   boneMassKg              Decimal? @db.Decimal(4, 2)  // masa ósea en kg (bioimpedancia)
   basalMetabolicRateKcal  Int?                        // metabolismo basal en kcal (bioimpedancia)
   note       String?
+  consultationId String?
+  consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+  /// HU-006 (D1): ISAK = esta fila es el estudio antropométrico ISAK de la consulta.
+  study          MeasurementStudy?
   createdAt  DateTime @default(now())
 
   @@index([patientId, recordedAt])
+  @@index([consultationId])
+  /// Un solo estudio ISAK por consulta (D1). En Postgres los NULL son distintos entre sí: las
+  /// mediciones comunes (study NULL) y las filas sin consulta no chocan.
+  @@unique([consultationId, study])
+
+  /// HU-007: informe antropométrico del estudio ISAK (solo filas con study = ISAK).
+  anthropometricReport AnthropometricReport?
+}
+
+/// HU-007: informe antropométrico de un estudio ISAK (1:1 con la fila ISAK de EvolutionEntry).
+/// Guarda los textos que escribió o revisó la profesional y el último PDF. Los números NO se
+/// guardan: se calculan con buildIsakStudy al generar (D18 de la HU-006).
+/// Texto null = nunca guardado (la pantalla muestra el borrador automático).
+/// "" = guardado vacío a propósito (la sección sale sin párrafo).
+model AnthropometricReport {
+  id                String         @id @default(cuid())
+  isakEntryId       String         @unique
+  isakEntry         EvolutionEntry @relation(fields: [isakEntryId], references: [id], onDelete: Cascade)
+  girthsText        String?
+  distributionText  String?
+  adiposeMuscleText String?
+  muscleBoneText    String?
+  waistHipText      String?
+  somatotypeText    String?
+  conclusionsText   String?
+  pdfData           Bytes?
+  pdfFileName       String?
+  pdfGeneratedAt    DateTime?
+  /// Huella de los datos de entrada al generar el PDF (isakReportSourceKey). Si difiere de la
+  /// actual, la página avisa que el PDF está desactualizado (D13).
+  pdfSourceKey      String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  messages OutboundMessage[]
+}
+
+/// Una visita del paciente (HU-003). Viene de un turno (appointmentId, único) o es "Sin turno".
+/// Extensiones futuras cuelgan de acá: prescripción (HU-004), estudios ISAK / bioimpedancia (HU-006).
+model Consultation {
+  id            String          @id @default(cuid())
+  patientId     String
+  patient       Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId String?         @unique
+  appointment   Appointment?    @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  /// Turno: = Appointment.startsAt. Sin turno: el día elegido a las 12:00 en Professional.timezone.
+  consultedAt   DateTime
+  notes         String?
+  planId        String?
+  plan          NutritionPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  evolutionEntries EvolutionEntry[]
+  prescription     NutritionPrescription?
+
+  @@index([patientId, consultedAt])
+  @@index([planId])
+}
+
+/// Prescripción energética de una consulta (HU-004). Una por consulta; editar la reemplaza.
+/// Guarda una foto de los datos de entrada: los del paciente cambian, esta fila no.
+/// Los kcal y gramos se guardan redondeados tal como se muestran.
+model NutritionPrescription {
+  id             String       @id @default(cuid())
+  consultationId String       @unique
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  // Foto de los datos de entrada
+  sex                 BiologicalSex
+  ageYears            Int
+  heightCm            Decimal        @db.Decimal(5, 2)
+  actualWeightKg      Decimal        @db.Decimal(5, 2)
+  idealWeightDevineKg Decimal?       @db.Decimal(5, 2) // HU-008: null en menores (D14)
+  weightBasis         WeightBasis
+  weightUsedKg        Decimal        @db.Decimal(5, 2)
+  bodyFatPercent      Decimal?       @db.Decimal(4, 1)
+  bodyFatSource       BodyFatSource?
+  bodyFatRecordedAt   DateTime? // solo si bodyFatSource = MEASURED
+
+  // TMB
+  bmrFormula                   BmrFormula
+  bmrKcal                      Int
+  bmrMifflinStJeorKcal         Int? // HU-008: null en menores
+  bmrHarrisBenedictKcal        Int? // HU-008: null en menores
+  bmrKatchMcArdleKcal          Int?
+  bmrCunninghamKcal            Int?
+  bmrSchofieldWeightHeightKcal Int? // HU-008: solo menores
+  bmrSchofieldWeightKcal       Int? // HU-008: solo menores
+
+  // GET y VCT
+  activityLevel        ActivityLevel
+  activityFactor       Decimal         @db.Decimal(4, 3)
+  totalExpenditureKcal Int
+  nutritionGoal        NutritionGoal
+  adjustmentRange      AdjustmentRange
+  adjustmentPercent    Int
+  calculatedVctKcal    Int
+  prescribedVctKcal    Int
+
+  // Macros (sobre prescribedVctKcal). Los gramos los usa la épica 23.
+  macroMode      MacroMode
+  proteinPercent Decimal   @db.Decimal(4, 1)
+  fatPercent     Decimal   @db.Decimal(4, 1)
+  carbPercent    Decimal   @db.Decimal(4, 1)
+  proteinGPerKg  Decimal?  @db.Decimal(3, 1) // solo si macroMode = PROTEIN_PER_KG
+  proteinG       Int
+  fatG           Int
+  carbG          Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Service {
@@ -134,6 +268,12 @@ enum BiologicalSex {
   MALE
 }
 
+/// Tipo de estudio de una medición (HU-006). null = medición común (la de siempre).
+/// La épica 9 puede sumar valores (p. ej. BIOIMPEDANCE); agregar un valor es aditivo.
+enum MeasurementStudy {
+  ISAK
+}
+
 enum ActivityLevel {
   SEDENTARY
   LIGHT
@@ -153,6 +293,37 @@ enum BodyFrame {
   SMALL
   MEDIUM
   LARGE
+}
+
+enum BmrFormula {
+  MIFFLIN_ST_JEOR
+  HARRIS_BENEDICT
+  KATCH_MCARDLE
+  CUNNINGHAM
+  SCHOFIELD_WEIGHT_HEIGHT // HU-008: menores de 5 a 17 (peso y talla)
+  SCHOFIELD_WEIGHT        // HU-008: menores de 5 a 17 (solo peso)
+}
+
+enum WeightBasis {
+  ACTUAL
+  ADJUSTED
+}
+
+enum BodyFatSource {
+  MEASURED // bioimpedancia (EvolutionEntry.bodyFatPercent)
+  DEURENBERG // estimado
+}
+
+enum AdjustmentRange {
+  MODERATE_DEFICIT
+  AGGRESSIVE_DEFICIT
+  MAINTENANCE
+  SURPLUS
+}
+
+enum MacroMode {
+  PERCENT_OF_VCT
+  PROTEIN_PER_KG
 }
 
 enum ExceptionType {
@@ -226,6 +397,7 @@ model Appointment {
 
   messages OutboundMessage[]
   payments Payment[]
+  consultation Consultation?
 
   @@index([startsAt])
   @@index([status, startsAt])
@@ -242,6 +414,7 @@ enum MessageKind {
   PAYMENT_LINK
   CONFIRMATION_REQUEST
   PREP_INSTRUCTIONS
+  ANTHROPOMETRIC_REPORT_PDF
 }
 
 model Payment {
@@ -284,6 +457,9 @@ model OutboundMessage {
   appointmentId String?
   plan          NutritionPlan? @relation(fields: [planId], references: [id])
   planId        String?
+  /// HU-007: informe que manda un mensaje ANTHROPOMETRIC_REPORT_PDF.
+  anthropometricReport   AnthropometricReport? @relation(fields: [anthropometricReportId], references: [id], onDelete: SetNull)
+  anthropometricReportId String?
   sentAt        DateTime?
   createdAt     DateTime      @default(now())
 
@@ -292,37 +468,80 @@ model OutboundMessage {
   @@index([status, createdAt])
 }
 
+/// Grupos de SARA 2 (tablas 1 a 26) + OTROS (solo propios). El orden es el de la tabla.
 enum FoodGroup {
-  CEREALES
-  LACTEOS
-  CARNES_Y_HUEVOS
-  FRUTAS
   VERDURAS
-  LEGUMBRES
+  FRUTAS
+  LEGUMBRES_CEREALES
+  LECHE_Y_POSTRES
+  YOGURES
+  QUESOS
+  CARNES
+  HUEVOS
+  PESCADOS_Y_MARISCOS
+  ACEITES
+  FRUTAS_SECAS_Y_SEMILLAS
+  AZUCARES_MERMELADAS_Y_DULCES
+  GOLOSINAS_Y_CHOCOLATES
   GRASAS
-  AZUCARES_Y_DULCES
-  BEBIDAS
+  SNACKS_SALADOS
+  ADEREZOS
+  CALDOS_Y_SOPAS
+  POSTRES_Y_HELADOS
+  SALES
+  BEBIDAS_CON_AZUCAR
+  BEBIDAS_SIN_AZUCAR
+  BEBIDAS_ALCOHOLICAS_Y_ENERGIZANTES
+  BEBIDAS_DE_FRUTAS
+  INFUSIONES
+  COMIDAS_RAPIDAS
+  SUPLEMENTOS
   OTROS
 }
 
+enum FoodSource {
+  SARA2
+  PROPIO
+}
+
 model Food {
-  id            String    @id @default(cuid())
-  name          String
-  group         FoodGroup
-  kcalPer100    Decimal   @db.Decimal(6, 2)
-  proteinPer100 Decimal   @db.Decimal(5, 2)
-  carbsPer100   Decimal   @db.Decimal(5, 2)
-  fatPer100     Decimal   @db.Decimal(5, 2)
-  fiberPer100   Decimal?  @db.Decimal(5, 2)
-  unitHint      String?
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                  String     @id @default(cuid())
+  name                String
+  group               FoodGroup
+  /// SARA2 = dato oficial (no se edita, D3). PROPIO = cargado por la profesional.
+  source              FoodSource @default(PROPIO)
+  /// Solo SARA2, único: "sara2:t03:arroz-blanco-hervido". Lo usa el cargador para el upsert (D14).
+  sourceKey           String?    @unique
+  /// Solo propios: marca, rótulo, de dónde salió el dato (D13).
+  reference           String?
+  /// true = el grupo lo asignó la migración de la HU-005 (D2); se apaga al guardar el propio.
+  groupAutoAssigned   Boolean    @default(false)
+  /// SARA2: Atwater calculado sobre los valores guardados (D5). Propio nuevo/editado: Atwater.
+  /// Propio anterior a la HU-005: el valor cargado a mano, hasta que ella lo cambie (D1).
+  kcalPer100          Decimal    @db.Decimal(6, 2)
+  proteinPer100       Decimal    @db.Decimal(5, 2)
+  /// Carbohidratos DISPONIBLES (sin fibra), como SARA 2 y el rótulo argentino (D15).
+  carbsPer100         Decimal    @db.Decimal(5, 2)
+  fatPer100           Decimal    @db.Decimal(5, 2)
+  fiberPer100         Decimal?   @db.Decimal(5, 2)
+  alcoholPer100       Decimal?   @db.Decimal(5, 2)
+  sodiumMgPer100      Decimal?   @db.Decimal(8, 2)
+  addedSugarPer100    Decimal?   @db.Decimal(5, 2)
+  saturatedFatPer100  Decimal?   @db.Decimal(6, 3)
+  cholesterolMgPer100 Decimal?   @db.Decimal(7, 2)
+  /// Resto de los 39 componentes + kcalPublicada (D4, D5). Claves fijas: FOOD_EXTRA_NUTRIENTS
+  /// de packages/core. null = propio sin estos datos.
+  nutrients           Json?
+  unitHint            String?
+  active              Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   planItems     PlanMealItem[]
   templateItems TemplateMealItem[]
 
   @@index([group])
+  @@index([source, active])
 }
 
 enum PlanStatus {
@@ -346,6 +565,7 @@ model NutritionPlan {
 
   meals          PlanMeal[]
   messages       OutboundMessage[]
+  consultations  Consultation[]
 
   @@index([patientId, status])
 }

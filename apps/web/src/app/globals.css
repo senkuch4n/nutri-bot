@@ -2,127 +2,153 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-  --ink: #14181f;
-  --mint: #eef4ec;
-}
+/* ─── Tokens (canales HSL, consumidos por tailwind.config.ts como hsl(var(--x) / alpha)) ─── */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 45 8% 20%;
 
-body {
-  @apply bg-mint font-sans text-ink antialiased;
-}
+    --card: 0 0% 100%;
+    --card-foreground: 45 8% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 45 8% 20%;
 
-/* Tipografía display para títulos */
-.font-display {
-  font-feature-settings: "ss01";
-  letter-spacing: -0.02em;
-}
+    --primary: 45 4% 18%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 60 7% 94%;
+    --secondary-foreground: 45 8% 20%;
+    --muted: 60 11% 96%;
+    --muted-foreground: 50 4% 38%;
+    --accent: 60 6% 93%;
+    --accent-foreground: 45 8% 20%;
 
-/* --- Movimiento (sutil, respeta prefers-reduced-motion) --- */
+    --destructive: 2 54% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 357 82% 96%;
+    --success: 147 32% 33%;
+    --success-muted: 111 23% 94%;
+    --warning: 39 75% 30%;
+    --warning-muted: 45 80% 92%;
+    --info: 204 53% 37%;
+    --info-muted: 198 55% 94%;
+    --link: 211 73% 42%;
 
-/* Feedback de presión en botones: solo transform */
-.press {
-  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.press:active {
-  transform: scale(0.97);
-}
+    --border: 60 4% 91%;
+    --input: 48 2% 54%;
+    --ring: 210 77% 51%;
+    --sidebar: 60 11% 96%;
+    --radius: 0.5rem;
 
-/* Aparición suave de un bloque al montarse (ocasional, no en cada interacción) */
-@keyframes reveal {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
+    color-scheme: light;
   }
-  to {
-    opacity: 1;
-    transform: none;
+
+  /* Tono cálido del portal (D11). El :root:has(...) alcanza también al body y a los
+     overlays de Radix, que se montan en un portal fuera del div con la clase. */
+  .theme-warm,
+  :root:has(.theme-warm) {
+    --background: 40 43% 99%;
+    --foreground: 30 14% 20%;
+    --card: 0 0% 100%;
+    --card-foreground: 30 14% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 14% 20%;
+    --primary: 29 17% 25%;
+    --secondary: 37 31% 95%;
+    --secondary-foreground: 30 14% 20%;
+    --muted: 37 31% 95%;
+    --muted-foreground: 32 9% 38%;
+    --accent: 37 32% 92%;
+    --accent-foreground: 30 14% 20%;
+    --border: 37 25% 90%;
+    --input: 37 11% 50%;
+    --sidebar: 37 31% 95%;
+    --radius: 0.75rem;
   }
 }
-.reveal {
-  animation: reveal 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+  /* Foco visible también en los controles hechos a mano de las pantallas sin migrar.
+     Los primitivos usan focus-visible:outline-none + ring y pisan esta regla. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  /* Sin demora de doble tap en controles táctiles */
+  a,
+  button,
+  [role="button"] {
+    touch-action: manipulation;
+  }
 }
 
+/* ─── Movimiento reducido global ─── */
 @media (prefers-reduced-motion: reduce) {
-  .press,
-  .press:active {
-    transition: none;
-    transform: none;
-  }
-  .reveal {
-    animation: none;
-  }
-}
-
-@layer components {
-  /* Botones estilo Spring: rectos, borde grueso, mayúsculas, relleno al hover */
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 border-2 px-6 py-3 text-sm font-semibold
-      uppercase tracking-[0.08em] transition-colors duration-150 disabled:pointer-events-none
-      disabled:opacity-50;
-  }
-  .btn-solid {
-    @apply btn border-ink bg-ink text-white hover:bg-transparent hover:text-ink;
-  }
-  .btn-outline {
-    @apply btn border-ink bg-transparent text-ink hover:bg-ink hover:text-white;
-  }
-  .btn-leaf {
-    @apply btn border-leaf bg-leaf text-white hover:bg-leaf-deep hover:border-leaf-deep;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* FullCalendar afinado al sistema Spring-inspired */
+/* ─── FullCalendar sobre los tokens ─── */
 .fc {
-  --fc-border-color: theme("colors.line");
-  --fc-today-bg-color: theme("colors.leaf.tint");
-  --fc-now-indicator-color: theme("colors.red.500");
-  --fc-page-bg-color: theme("colors.paper");
+  --fc-border-color: hsl(var(--border));
+  --fc-today-bg-color: hsl(var(--muted));
+  --fc-now-indicator-color: hsl(var(--destructive));
+  --fc-page-bg-color: hsl(var(--background));
+  --fc-neutral-bg-color: hsl(var(--muted));
+  --fc-highlight-color: hsl(var(--accent) / 0.7);
   font-size: 0.8125rem;
 }
 .fc .fc-toolbar-title {
-  @apply font-display text-xl font-bold tracking-tight text-ink;
+  @apply text-lg font-semibold tracking-tight text-foreground;
 }
 .fc .fc-col-header-cell-cushion {
-  @apply py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft;
+  @apply py-2 text-xs font-medium text-muted-foreground;
 }
 .fc .fc-timegrid-slot-label-cushion,
 .fc .fc-list-day-text {
-  @apply text-ink-faint;
+  @apply text-xs text-muted-foreground;
 }
-/* Botones rectos con borde, estilo Spring */
 .fc .fc-button-primary {
-  @apply border-2 border-ink bg-transparent px-3 py-1.5 text-xs font-semibold uppercase
-    tracking-[0.06em] text-ink shadow-none transition-colors;
+  @apply h-8 rounded-md border border-input bg-background px-3 text-sm font-medium normal-case
+    text-foreground shadow-none transition-colors;
 }
-.fc .fc-button-primary:hover,
+.fc .fc-button-primary:hover {
+  @apply border-input bg-accent text-foreground;
+}
 .fc .fc-button-primary:not(:disabled):active,
 .fc .fc-button-primary:not(:disabled).fc-button-active {
-  @apply border-ink bg-ink text-white;
+  @apply border-input bg-secondary font-semibold text-foreground; /* activo: fondo + peso */
 }
 .fc .fc-button-primary:focus {
-  @apply shadow-none outline-none ring-2 ring-leaf/25;
+  @apply shadow-none;
+}
+.fc .fc-button-primary:focus-visible {
+  @apply outline-none ring-2 ring-ring ring-offset-1;
 }
 .fc .fc-button-primary:disabled {
-  @apply border-line bg-transparent text-ink-faint;
+  @apply border-border bg-background text-muted-foreground opacity-100;
 }
 .fc .fc-daygrid-event,
 .fc .fc-timegrid-event {
-  @apply rounded-none border-0 px-1.5 py-0.5 text-[11px] font-medium;
+  @apply rounded-sm border-0 px-1.5 py-0.5 text-xs font-medium;
 }
-/* Horas fuera del horario de atención: fondo tenue */
 .fc .fc-non-business {
-  background: repeating-linear-gradient(
-    -45deg,
-    theme("colors.leaf.tint"),
-    theme("colors.leaf.tint") 6px,
-    #f1f6ee 6px,
-    #f1f6ee 12px
-  );
+  background: hsl(var(--muted)); /* plano, sin rayado */
 }
 .fc .fc-timegrid-now-indicator-arrow {
   display: none;
 }
-.fc .fc-event:focus {
-  @apply outline-none ring-2 ring-ink/30;
+.fc .fc-event:focus-visible {
+  @apply outline-none ring-2 ring-ring ring-offset-1;
 }

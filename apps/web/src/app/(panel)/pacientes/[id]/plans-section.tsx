@@ -1,9 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
-import { useState } from "react";
-import { Badge, Button, Field, Input, Select } from "@/components/ui";
+import { ClipboardList } from "lucide-react";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
+import { Badge, Button, Card, EmptyState, Field, FormError, Input, Select } from "@/components/ui";
 import { createPlanAction, applyTemplateAction, type PlanListState } from "./planes/actions";
 
 export interface PlanRow {
@@ -11,10 +13,31 @@ export interface PlanRow {
   title: string;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
   updatedAtLabel: string;
+  /** "Indicado en la consulta del dd/MM" (primera consulta que lo indicó, HU-003); null si ninguna. */
+  consultationLabel: string | null;
 }
 
-const statusTone = { DRAFT: "slate", ACTIVE: "green", ARCHIVED: "slate" } as const;
+const statusTone = { DRAFT: "neutral", ACTIVE: "success", ARCHIVED: "neutral" } as const;
 const statusLabel = { DRAFT: "Borrador", ACTIVE: "Activo", ARCHIVED: "Archivado" } as const;
+
+const columns: DataTableColumn<PlanRow>[] = [
+  {
+    id: "titulo",
+    header: "Título",
+    cell: (p) => (
+      <div className="min-w-0">
+        <span className="font-medium">{p.title}</span>
+        {p.consultationLabel ? <p className="text-xs text-muted-foreground">{p.consultationLabel}</p> : null}
+      </div>
+    ),
+  },
+  { id: "estado", header: "Estado", cell: (p) => <Badge tone={statusTone[p.status]}>{statusLabel[p.status]}</Badge> },
+  {
+    id: "actualizado",
+    header: "Actualizado",
+    cell: (p) => <span className="text-muted-foreground">{p.updatedAtLabel}</span>,
+  },
+];
 
 const initial: PlanListState = { ok: false };
 
@@ -32,87 +55,79 @@ export function PlansSection({
   const [mode, setMode] = useState<"nuevo" | "plantilla">("nuevo");
 
   return (
-    <div className="space-y-4">
-      {plans.length === 0 ? (
-        <p className="text-sm text-ink-faint">Este paciente todavía no tiene planes cargados.</p>
-      ) : (
-        <ul className="divide-y divide-line border border-line bg-paper">
-          {plans.map((p) => (
-            <li key={p.id}>
-              <Link
-                href={`/pacientes/${patientId}/planes/${p.id}`}
-                className="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-mint"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ink">{p.title}</p>
-                  <p className="text-xs text-ink-faint">Actualizado {p.updatedAtLabel}</p>
-                </div>
-                <Badge tone={statusTone[p.status]}>{statusLabel[p.status]}</Badge>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
+      <Card title="Planes nutricionales" padding="none">
+        <DataTable
+          columns={columns}
+          rows={plans}
+          getRowId={(p) => p.id}
+          rowHref={(p) => `/pacientes/${patientId}/planes/${p.id}`}
+          caption="Planes nutricionales"
+          empty={
+            <EmptyState
+              icon={ClipboardList}
+              title="Este paciente todavía no tiene planes"
+              description="Creá el primero desde cero o a partir de una plantilla."
+            />
+          }
+        />
+      </Card>
 
-      <div className="flex gap-2 text-xs font-semibold uppercase tracking-[0.06em]">
-        <button
-          type="button"
-          onClick={() => setMode("nuevo")}
-          className={mode === "nuevo" ? "text-leaf-deep" : "text-ink-faint"}
+      <Card title="Nuevo plan">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={mode}
+          onValueChange={(v) => v && setMode(v as "nuevo" | "plantilla")}
+          aria-label="Cómo crear el plan"
+          className="mb-4 grid grid-cols-2 gap-0 rounded-md border border-input p-0.5 [&>button]:border-0"
         >
-          Plan nuevo
-        </button>
-        <span className="text-ink-faint">·</span>
-        <button
-          type="button"
-          onClick={() => setMode("plantilla")}
-          className={mode === "plantilla" ? "text-leaf-deep" : "text-ink-faint"}
-        >
-          Desde plantilla
-        </button>
-      </div>
+          <ToggleGroupItem value="nuevo" className="data-[state=on]:font-semibold">
+            Plan nuevo
+          </ToggleGroupItem>
+          <ToggleGroupItem value="plantilla" className="data-[state=on]:font-semibold">
+            Desde plantilla
+          </ToggleGroupItem>
+        </ToggleGroup>
 
-      {mode === "nuevo" ? (
-        <form action={createAction} className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="patientId" value={patientId} />
-          <Field label="Título del plan">
-            <Input name="title" placeholder="Ej: Plan inicial" required className="w-64" />
-          </Field>
-          <Button type="submit" disabled={creating}>
-            {creating ? "Creando…" : "Crear plan"}
-          </Button>
-          {createState.error ? (
-            <span className="reveal text-sm text-red-600">{createState.error}</span>
-          ) : null}
-        </form>
-      ) : templates.length === 0 ? (
-        <p className="text-sm text-ink-faint">
-          Todavía no tenés plantillas. Creá una en{" "}
-          <Link href="/plantillas" className="underline">
-            Plantillas
-          </Link>
-          .
-        </p>
-      ) : (
-        <form action={applyAction} className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="patientId" value={patientId} />
-          <Field label="Plantilla">
-            <Select name="templateId" defaultValue={templates[0]?.id} className="w-64">
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Button type="submit" disabled={applying}>
-            {applying ? "Aplicando…" : "Aplicar plantilla"}
-          </Button>
-          {applyState.error ? (
-            <span className="reveal text-sm text-red-600">{applyState.error}</span>
-          ) : null}
-        </form>
-      )}
+        {mode === "nuevo" ? (
+          <form action={createAction} className="space-y-4">
+            <input type="hidden" name="patientId" value={patientId} />
+            <Field label="Título del plan">
+              <Input name="title" placeholder="Ej: Plan inicial" required />
+            </Field>
+            <Button type="submit" loading={creating} className="w-full">
+              {creating ? "Creando…" : "Crear plan"}
+            </Button>
+            <FormError message={createState.error} />
+          </form>
+        ) : templates.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Todavía no tenés plantillas. Creá una en{" "}
+            <Link href="/plantillas" className="text-link underline-offset-4 hover:underline">
+              Plantillas
+            </Link>
+            .
+          </p>
+        ) : (
+          <form action={applyAction} className="space-y-4">
+            <input type="hidden" name="patientId" value={patientId} />
+            <Field label="Plantilla">
+              <Select name="templateId" defaultValue={templates[0]?.id}>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Button type="submit" loading={applying} className="w-full">
+              {applying ? "Aplicando…" : "Aplicar plantilla"}
+            </Button>
+            <FormError message={applyState.error} />
+          </form>
+        )}
+      </Card>
     </div>
   );
 }

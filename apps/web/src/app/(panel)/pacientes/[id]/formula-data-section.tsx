@@ -1,19 +1,22 @@
 import type { ReactNode } from "react";
 import {
-  MINOR_WARNING_TEXT,
+  PEDIATRIC_TEXT,
+  activityLevelOption,
+  ageGroupOf,
   bodyFrameLabel,
   formatDecimalEs,
   getMissingFormulaData,
-  isMinor,
   missingFormulaDataMessage,
+  nutritionGoalLabel,
+  sexLabel,
 } from "@nutri-bot/core";
-import { Badge } from "@/components/ui";
+import { Alert, Badge, Card, Quantity } from "@/components/ui";
 import { FormulaDataForm, type FormulaDataValues } from "./formula-data-form";
+import { FormulaDataSheet } from "./formula-data-sheet";
 
 type SummaryMeasurement = { value: number; dateLabel: string } | null;
 
-const warningClass = "bg-amber-50 px-3 py-2 text-sm text-amber-700";
-
+/** Card "Datos para cálculos" (HU-001): primero lo que se mira, la edición en un Sheet. */
 export function FormulaDataSection({
   patientId,
   values,
@@ -29,6 +32,7 @@ export function FormulaDataSection({
   height: SummaryMeasurement;
   bodyFat: SummaryMeasurement;
 }) {
+  const group = ageGroupOf(ageYears);
   const missingMessage = missingFormulaDataMessage(
     getMissingFormulaData({
       ...values,
@@ -38,49 +42,60 @@ export function FormulaDataSection({
     }),
   );
   const frameLabel = bodyFrameLabel(values.bodyFrame);
+  const activity = activityLevelOption(values.activityLevel);
 
   const measurement = (m: SummaryMeasurement, unit: string, emptyLabel: string): ReactNode =>
     m ? (
-      `${formatDecimalEs(m.value)}\u00a0${unit} (${m.dateLabel})`
+      <>
+        <Quantity value={m.value} unit={unit} />
+        <span className="ml-2 text-xs text-muted-foreground">{m.dateLabel}</span>
+      </>
     ) : (
       <Badge>{emptyLabel}</Badge>
     );
 
   const items: Array<{ label: string; value: ReactNode }> = [
-    { label: "Edad", value: ageYears !== null ? `${ageYears}\u00a0años` : <Badge>Sin cargar</Badge> },
+    {
+      label: "Edad",
+      value: ageYears !== null ? <Quantity value={ageYears} unit="años" decimals={0} /> : <Badge>Sin cargar</Badge>,
+    },
     { label: "Peso", value: measurement(weight, "kg", "Sin cargar") },
     { label: "Talla", value: measurement(height, "cm", "Sin cargar") },
     { label: "Grasa", value: measurement(bodyFat, "%", "Sin dato") },
+    { label: "Contextura", value: frameLabel ?? <Badge>Sin cargar, se asume Mediana</Badge> },
+    { label: "Sexo", value: sexLabel(values.sex) ?? <Badge>Sin cargar</Badge> },
     {
-      label: "Contextura",
-      value: frameLabel ?? <Badge>Sin cargar, se asume Mediana</Badge>,
+      label: "Actividad física",
+      value: activity ? `${activity.label} (×${formatDecimalEs(activity.factor)})` : <Badge>Sin cargar</Badge>,
     },
+    { label: "Objetivo", value: nutritionGoalLabel(values.nutritionGoal) ?? <Badge>Sin cargar</Badge> },
   ];
 
   return (
-    <div className="space-y-4">
-      {missingMessage ? <p className={warningClass}>{missingMessage}</p> : null}
-      {isMinor(ageYears) ? <p className={warningClass}>{MINOR_WARNING_TEXT}</p> : null}
-
-      <FormulaDataForm patientId={patientId} values={values} />
-
-      <div className="border-t border-line pt-4">
-        <h3 className="text-sm font-medium text-ink">Lo que van a usar las fórmulas</h3>
-        <ul className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-soft">
-          {items.map((item, i) => (
-            <li key={item.label} className="flex items-center gap-x-2">
-              {i > 0 ? (
-                <span aria-hidden="true" className="text-ink-faint">
-                  ·
-                </span>
-              ) : null}
-              <span className="inline-flex items-center gap-1.5">
-                {item.label} {item.value}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
+    <Card
+      title="Datos para cálculos"
+      description="Lo que van a usar las fórmulas."
+      actions={
+        <FormulaDataSheet>
+          <FormulaDataForm patientId={patientId} values={values} />
+        </FormulaDataSheet>
+      }
+    >
+      {missingMessage || group !== "ADULT" ? (
+        <div className="mb-4 space-y-3">
+          {missingMessage ? <Alert tone="warning">{missingMessage}</Alert> : null}
+          {group === "PEDIATRIC" ? <Alert tone="info">{PEDIATRIC_TEXT.formulaDataInfo}</Alert> : null}
+          {group === "UNDER_5" ? <Alert tone="warning">{PEDIATRIC_TEXT.under5}</Alert> : null}
+        </div>
+      ) : null}
+      <dl className="divide-y text-sm">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-center justify-between gap-4 py-2">
+            <dt className="text-muted-foreground">{item.label}</dt>
+            <dd className="text-right">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
   );
 }

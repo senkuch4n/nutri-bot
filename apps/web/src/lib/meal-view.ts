@@ -1,4 +1,4 @@
-import { computeItemMacros } from "@nutri-bot/core";
+import { atwaterBreakdown, computeItemMacros } from "@nutri-bot/core";
 import type { MealItemView, MealView } from "@/components/meals-editor";
 
 interface RawFood {
@@ -9,6 +9,7 @@ interface RawFood {
   carbsPer100: unknown;
   fatPer100: unknown;
   fiberPer100: unknown;
+  alcoholPer100: unknown;
 }
 
 interface RawItem {
@@ -45,6 +46,19 @@ export function toMealView(meals: RawMeal[]): MealView[] {
               quantityGrams,
             )
           : null;
+      // Desglose de Atwater de la porción (popover de kcal, D11). El portal y el PDF lo ignoran.
+      const kcalBreakdown =
+        item.food && quantityGrams !== null
+          ? atwaterBreakdown(
+              {
+                protein: Number(item.food.proteinPer100),
+                carbs: Number(item.food.carbsPer100),
+                fat: Number(item.food.fatPer100),
+                alcohol: item.food.alcoholPer100 === null ? null : Number(item.food.alcoholPer100),
+              },
+              quantityGrams,
+            )
+          : null;
       return {
         id: item.id,
         foodId: item.foodId,
@@ -53,6 +67,7 @@ export function toMealView(meals: RawMeal[]): MealView[] {
         quantityGrams: quantityGrams !== null ? String(quantityGrams) : null,
         notes: item.notes,
         macros,
+        kcalBreakdown,
       };
     }),
   }));

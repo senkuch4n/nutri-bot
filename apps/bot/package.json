@@ -7,7 +7,8 @@
     "dev": "dotenv -e ../../.env -- tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test:confirm-flow": "dotenv -e ../../.env -- tsx scripts/test-confirm-attendance.ts"
+    "test:confirm-flow": "dotenv -e ../../.env -- tsx scripts/test-confirm-attendance.ts",
+    "test:report-outbox": "dotenv -e ../../.env -- tsx scripts/test-report-outbox.ts"
   },
   "dependencies": {
     "@nutri-bot/core": "*",

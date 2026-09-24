@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Button, Textarea } from "@/components/ui";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { LoaderCircle, Send, Sparkles } from "lucide-react";
+import { Button, EmptyState, FormError, Textarea, cn } from "@/components/ui";
 import { askAssistantAction, type AssistantMessage } from "./actions";
 
 export function AssistantChat() {
@@ -9,6 +10,12 @@ export function AssistantChat() {
   const [question, setQuestion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const endRef = useRef<HTMLDivElement>(null);
+
+  // La conversación scrollea sola al último mensaje (y al "Pensando…").
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length, pending]);
 
   function ask() {
     const q = question.trim();
@@ -23,48 +30,64 @@ export function AssistantChat() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="min-h-[120px] space-y-3">
+    <div>
+      <div aria-live="polite" className="max-h-[calc(100vh-20rem)] min-h-48 space-y-3 overflow-y-auto p-6">
         {messages.length === 0 ? (
-          <p className="text-sm text-ink-faint">
-            Preguntame por tu agenda, un paciente puntual o la facturación. Ej: &quot;¿qué turnos
-            tengo mañana?&quot; o &quot;contame de Ricardo&quot;.
-          </p>
+          <EmptyState
+            icon={Sparkles}
+            title="Preguntale al asistente"
+            description='Preguntame por tu agenda, un paciente puntual o la facturación. Ej: "¿qué turnos tengo mañana?" o "contame de Ricardo".'
+          />
         ) : (
           messages.map((m, i) => (
             <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
               <p
-                className={
-                  "inline-block max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-left text-sm " +
-                  (m.role === "user" ? "bg-ink text-white" : "border border-line bg-paper text-ink")
-                }
+                className={cn(
+                  "inline-block max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-left text-sm",
+                  m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+                )}
               >
                 {m.content}
               </p>
             </div>
           ))
         )}
-        {pending ? <p className="text-sm text-ink-faint">Pensando…</p> : null}
+        {pending ? (
+          <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+            Pensando…
+          </p>
+        ) : null}
+        <div ref={endRef} />
       </div>
 
-      <div className="flex items-end gap-3">
-        <Textarea
-          rows={2}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Escribí tu pregunta…"
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              ask();
-            }
-          }}
-        />
-        <Button type="button" onClick={ask} disabled={pending}>
-          Preguntar
-        </Button>
+      <div className="border-t p-4">
+        <div className="flex items-end gap-3">
+          <Textarea
+            rows={2}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Escribí tu pregunta…"
+            aria-label="Pregunta"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                ask();
+              }
+            }}
+          />
+          <Button type="button" onClick={ask} loading={pending}>
+            {pending ? null : <Send aria-hidden />}
+            Preguntar
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">Enter envía · Shift + Enter hace un salto de línea</p>
+        {error ? (
+          <div className="mt-2">
+            <FormError message={error} />
+          </div>
+        ) : null}
       </div>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
     </div>
   );
 }

@@ -8,8 +8,10 @@ import {
   useTransition,
   type MouseEvent,
 } from "react";
-import { Button, Field, Input, Select } from "@/components/ui";
+import { X } from "lucide-react";
+import { Button, Field, FormError, Input, Select } from "@/components/ui";
 import { Modal } from "@/components/modal";
+import { useActionToast } from "@/lib/notify";
 import { addRuleAction, deleteRuleAction, type FormState } from "./actions";
 
 export interface Rule {
@@ -69,53 +71,58 @@ export function WeeklySchedule({
   }
 
   return (
-    <div>
-      <p className="mb-3 text-xs text-ink-faint">Tocá una franja vacía de un día para agregar un bloque.</p>
-      <div className="max-h-[520px] overflow-auto">
-        <div className="flex min-w-[560px]">
-          <div className="w-12 shrink-0 pt-7">
-            {hours.map((h) => (
-              <div key={h} className="relative pr-2 text-right text-[11px] text-ink-faint" style={{ height: HOUR_PX }}>
-                <span className="absolute -top-2 right-2">{fmt(h)}</span>
-              </div>
-            ))}
-          </div>
+    // Entra a 663 px de alto: la grilla scrollea dentro de la tarjeta, no la página.
+    <div className="max-h-[calc(100vh-17rem)] min-h-72 overflow-auto">
+      <div className="flex min-w-[560px]">
+        <div className="w-12 shrink-0 pt-8">
+          {hours.map((h) => (
+            <div
+              key={h}
+              className="relative pr-2 text-right text-xs tabular-nums text-muted-foreground"
+              style={{ height: HOUR_PX }}
+            >
+              <span className="absolute -top-2 right-2">{fmt(h)}</span>
+            </div>
+          ))}
+        </div>
 
-          <div className="grid flex-1 grid-cols-7 border-l border-line">
-            {DAYS.map(({ wd, short }) => {
-              const dayRules = rules
-                .filter((r) => r.weekday === wd)
-                .sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
-              return (
-                <div key={wd} className="border-r border-line">
-                  <div className="flex h-7 items-center justify-center border-b border-line text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
-                    {short}
-                  </div>
-                  <div
-                    className="relative cursor-pointer transition-colors hover:bg-mint/60"
-                    style={{ height: totalPx }}
-                    onClick={(e) => onColumnClick(e, wd)}
-                  >
-                    {hours.slice(1).map((h, i) => (
-                      <div
-                        key={h}
-                        className="pointer-events-none absolute inset-x-0 border-t border-line/60"
-                        style={{ top: (i + 1) * HOUR_PX }}
-                      />
-                    ))}
-                    {dayRules.map((r) => (
-                      <Block key={r.id} rule={r} startMin={startMin} />
-                    ))}
-                    {dayRules.length === 0 ? (
-                      <span className="pointer-events-none absolute inset-x-0 top-3 text-center text-[11px] text-ink-faint">
-                        —
-                      </span>
-                    ) : null}
-                  </div>
+        <div className="grid flex-1 grid-cols-7 border-l">
+          {DAYS.map(({ wd, short, full }) => {
+            const dayRules = rules
+              .filter((r) => r.weekday === wd)
+              .sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
+            return (
+              <div key={wd} className="border-r">
+                <div
+                  className="flex h-8 items-center justify-center border-b text-xs font-medium text-muted-foreground"
+                  title={full}
+                >
+                  {short}
                 </div>
-              );
-            })}
-          </div>
+                <div
+                  className="relative cursor-pointer transition-colors hover:bg-muted/60"
+                  style={{ height: totalPx }}
+                  onClick={(e) => onColumnClick(e, wd)}
+                >
+                  {hours.slice(1).map((h, i) => (
+                    <div
+                      key={h}
+                      className="pointer-events-none absolute inset-x-0 border-t border-border/60"
+                      style={{ top: (i + 1) * HOUR_PX }}
+                    />
+                  ))}
+                  {dayRules.map((r) => (
+                    <Block key={r.id} rule={r} startMin={startMin} />
+                  ))}
+                  {dayRules.length === 0 ? (
+                    <span className="pointer-events-none absolute inset-x-0 top-3 text-center text-xs text-muted-foreground">
+                      —
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -128,20 +135,21 @@ function Block({ rule, startMin }: { rule: Rule; startMin: number }) {
   const e = toMin(rule.endTime);
   return (
     <div
-      className="absolute inset-x-1 overflow-hidden border-l-2 border-leaf bg-leaf-tint px-2 py-1"
+      className="absolute inset-x-1 overflow-hidden rounded-md border-l-2 border-l-foreground bg-accent px-2 py-1"
       style={{ top: ((s - startMin) / 60) * HOUR_PX, height: Math.max(((e - s) / 60) * HOUR_PX, 24) }}
       onClick={(ev) => ev.stopPropagation()}
     >
-      <p className="pr-3 text-[11px] font-bold leading-tight text-leaf-deep">{rule.startTime}</p>
-      <p className="text-[11px] leading-tight text-leaf-deep/80">{rule.endTime}</p>
+      <p className="pr-5 text-xs font-medium leading-tight tabular-nums text-foreground">{rule.startTime}</p>
+      <p className="text-xs leading-tight tabular-nums text-muted-foreground">{rule.endTime}</p>
       <button
+        type="button"
         onClick={() => start(() => deleteRuleAction(rule.id))}
         disabled={pending}
         aria-label={`Quitar bloque ${rule.startTime} a ${rule.endTime}`}
         title="Quitar bloque"
-        className="absolute right-0 top-0 flex h-6 w-6 items-center justify-center text-sm leading-none text-ink-faint transition-colors hover:bg-white hover:text-red-600 focus-visible:bg-white focus-visible:text-red-600 disabled:opacity-40"
+        className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
       >
-        ×
+        <X className="h-3.5 w-3.5" aria-hidden />
       </button>
     </div>
   );
@@ -160,6 +168,7 @@ export function AddBlockModal({
 }) {
   const [state, action, pending] = useActionState(addRuleAction, initialState);
   const [wd, setWd] = useState(String(weekday));
+  useActionToast(state, { success: "Bloque agregado" });
   useEffect(() => {
     if (state.ok) onClose();
   }, [state.ok, onClose]);
@@ -184,12 +193,16 @@ export function AddBlockModal({
         <Field label="Hasta">
           <Input name="endTime" type="time" defaultValue={end} required />
         </Field>
-        <div className="flex items-center gap-3 sm:col-span-3">
-          <Button type="submit" disabled={pending}>
+        <div className="flex items-center justify-end gap-3 sm:col-span-3">
+          <Button type="submit" loading={pending}>
             {pending ? "Guardando…" : "Agregar bloque"}
           </Button>
-          {state.error ? <span className="text-sm text-red-600">{state.error}</span> : null}
         </div>
+        {state.error ? (
+          <div className="sm:col-span-3">
+            <FormError message={state.error} />
+          </div>
+        ) : null}
       </form>
     </Modal>
   );

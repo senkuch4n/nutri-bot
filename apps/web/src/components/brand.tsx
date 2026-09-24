@@ -1,31 +1,45 @@
-import { cn } from "./ui";
+import { cn } from "@/lib/utils";
 
-/** Marca denominativa de NutriBot con un glifo de hoja. */
-export function Wordmark({ className, tone = "ink" }: { className?: string; tone?: "ink" | "invert" }) {
+/**
+ * Marca: glifo + "NutriBot" y, opcionalmente, el nombre de la nutricionista debajo (D13).
+ * `compact` deja solo el glifo con el nombre en sr-only (sidebar colapsada).
+ */
+export function Wordmark({
+  className,
+  subtitle,
+  compact = false,
+}: {
+  className?: string;
+  subtitle?: string | null;
+  compact?: boolean;
+}) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-2 font-display text-xl font-bold tracking-tight",
-        tone === "invert" ? "text-white" : "text-ink",
-        className,
+    <span className={cn("inline-flex min-w-0 items-center gap-2", className)}>
+      <LeafMark className="h-5 w-5 shrink-0 text-foreground" />
+      {compact ? (
+        <span className="sr-only">NutriBot</span>
+      ) : (
+        <span className="min-w-0 leading-tight">
+          <span className="block text-sm font-semibold text-foreground">NutriBot</span>
+          {subtitle ? (
+            <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
+              {subtitle}
+            </span>
+          ) : null}
+        </span>
       )}
-    >
-      <LeafMark className="h-6 w-6 text-leaf" />
-      NutriBot
     </span>
   );
 }
 
+/** Glifo monocromo: toma el color del texto; el nervio usa el color de fondo. */
 export function LeafMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
-      <path
-        d="M21 3c0 9-4.5 15-13 15-2.2 0-3.8-.5-5-1.3C4.5 8.5 11 3 21 3Z"
-        fill="currentColor"
-      />
+      <path d="M21 3c0 9-4.5 15-13 15-2.2 0-3.8-.5-5-1.3C4.5 8.5 11 3 21 3Z" fill="currentColor" />
       <path
         d="M4 21C6 14 10 9 18 6"
-        stroke="#fff"
+        className="stroke-background"
         strokeWidth="1.8"
         strokeLinecap="round"
       />
@@ -33,55 +47,7 @@ export function LeafMark({ className }: { className?: string }) {
   );
 }
 
-/** Etiqueta "eyebrow": texto corto en mayúsculas con un tick verde. */
-export function Eyebrow({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-leaf-deep",
-        className,
-      )}
-    >
-      <span className="h-1.5 w-1.5 bg-leaf" />
-      {children}
-    </span>
-  );
-}
-
-/**
- * Composición geométrica al estilo spring.io: un cuarto de círculo y un
- * triángulo en dos verdes, sangrando por los bordes. Puramente decorativa.
- */
-export function SpringShapes({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cn("pointer-events-none absolute inset-0 h-full w-full", className)}
-      viewBox="0 0 600 800"
-      preserveAspectRatio="xMidYMid slice"
-      aria-hidden
-    >
-      {/* triángulo bright en la esquina inferior izquierda */}
-      <path d="M0 800 V560 L250 800 Z" fill="#93cf52" />
-      {/* cuarto de círculo verde profundo en la esquina superior derecha */}
-      <path d="M370 0 A230 230 0 0 1 600 230 L600 0 Z" fill="#5aa832" />
-      {/* círculo lineal, detalle fino */}
-      <circle cx="92" cy="720" r="78" fill="none" stroke="#ffffff" strokeWidth="2" strokeOpacity="0.55" />
-    </svg>
-  );
-}
-
-export function CornerTriangle({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cn("pointer-events-none absolute right-0 top-0 h-28 w-28", className)}
-      viewBox="0 0 160 160"
-      aria-hidden
-    >
-      <path d="M160 0 V160 L0 0 Z" fill="#93cf52" fillOpacity="0.45" />
-    </svg>
-  );
-}
-
+/** Los hex son los colores oficiales de Google. */
 export function GoogleG({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={cn("h-5 w-5", className)} aria-hidden>

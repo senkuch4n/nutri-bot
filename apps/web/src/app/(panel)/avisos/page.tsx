@@ -1,6 +1,6 @@
 import { prisma } from "@nutri-bot/db";
 import { formatInTimeZone } from "@nutri-bot/core";
-import { Card, PageHeader, SectionLabel } from "@/components/ui";
+import { Card, PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { jidToPhone } from "@/lib/patients";
 import { AvisosView, type MessageRow } from "./avisos-view";
@@ -43,12 +43,11 @@ export default async function AvisosPage() {
         title="Avisos"
         description="Cola de mensajes que envía el bot: confirmaciones, cancelaciones y recordatorios."
       />
-      <Card className="mb-6">
-        <SectionLabel>Comunicado a todos los pacientes</SectionLabel>
-        <p className="mb-4 text-sm text-ink-soft">
-          Para avisos generales (cambio de horario, vacaciones, saludos). Se manda por WhatsApp a
-          todos los pacientes cargados, no a uno en particular.
-        </p>
+      <Card
+        title="Comunicado a todos los pacientes"
+        description="Para avisos generales (cambio de horario, vacaciones, saludos). Se manda por WhatsApp a todos los pacientes cargados, no a uno en particular."
+        className="mb-6"
+      >
         <BroadcastForm patientCount={patientCount} />
       </Card>
 

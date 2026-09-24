@@ -1,4 +1,5 @@
-import { Badge } from "@/components/ui";
+import { NotebookPen } from "lucide-react";
+import { Badge, Card, EmptyState } from "@/components/ui";
 
 export interface DiaryEntryRow {
   id: string;
@@ -9,37 +10,38 @@ export interface DiaryEntryRow {
 }
 
 export function DiarySection({ entries }: { entries: DiaryEntryRow[] }) {
-  if (entries.length === 0) {
-    return (
-      <p className="text-sm text-ink-faint">
-        Todavía no cargó nada en su diario alimentario (lo hace desde el portal).
-      </p>
-    );
-  }
-
   return (
-    <ul className="divide-y divide-line text-sm">
-      {entries.map((e) => (
-        <li key={e.id} className="flex items-start justify-between gap-4 py-3">
-          <div className="min-w-0 space-y-2">
-            <p className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.06em] text-ink-faint">
-                {e.createdAtLabel}
-              </span>
-              {e.isRecent ? <Badge tone="green">Últimas 24 hs</Badge> : null}
-            </p>
-            {e.note ? <p className="text-ink">{e.note}</p> : null}
-            {e.hasPhoto ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`/api/diary/${e.id}/photo`}
-                alt="Foto de la comida"
-                className="max-h-48 max-w-full rounded object-cover"
-              />
-            ) : null}
-          </div>
-        </li>
-      ))}
-    </ul>
+    <Card title="Diario alimentario" description="Lo carga el paciente desde el portal.">
+      {entries.length === 0 ? (
+        <EmptyState
+          icon={NotebookPen}
+          title="Todavía no cargó nada en su diario"
+          description="El paciente lo completa desde el portal."
+        />
+      ) : (
+        <ul className="divide-y">
+          {entries.map((e) => (
+            <li key={e.id} className="grid gap-3 py-5 first:pt-0 last:pb-0 sm:grid-cols-[12rem_minmax(0,1fr)]">
+              <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-start">
+                <p className="text-sm text-muted-foreground">{e.createdAtLabel}</p>
+                {e.isRecent ? <Badge tone="info">Últimas 24 hs</Badge> : null}
+              </div>
+              <div className="min-w-0">
+                {e.note ? <p className="whitespace-pre-wrap text-sm">{e.note}</p> : null}
+                {e.hasPhoto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`/api/diary/${e.id}/photo`}
+                    alt="Foto de la comida"
+                    loading="lazy"
+                    className="mt-3 max-h-64 max-w-full rounded-md border object-cover"
+                  />
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
