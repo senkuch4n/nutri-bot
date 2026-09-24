@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import { formatInTimeZone } from "@nutri-bot/core";
 import { Modal } from "@/components/modal";
-import { Button, Field, Input, Select } from "@/components/ui";
+import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
+import { Button, Field, FormError, Input, Select } from "@/components/ui";
+import { notify } from "@/lib/notify";
 import { createAppointmentAction } from "./actions";
 
 export interface ServiceOption {
@@ -79,6 +82,7 @@ export function NewAppointmentModal({
       setPhone("");
       setServiceId("");
       setSlot("");
+      notify.saved("Turno creado");
       onCreated();
       onClose();
     } else {
@@ -87,7 +91,12 @@ export function NewAppointmentModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Nuevo turno">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Nuevo turno"
+      description="El paciente recibe la confirmación por WhatsApp."
+    >
       <form onSubmit={submit} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nombre del paciente">
@@ -120,41 +129,47 @@ export function NewAppointmentModal({
         </div>
 
         <div>
-          <span className="mb-2 block text-sm font-medium text-ink">Horario</span>
+          <p id="nuevo-turno-horario" className="mb-2 text-sm font-medium">
+            Horario
+          </p>
           {!serviceId ? (
-            <p className="text-sm text-ink-faint">Elegí un servicio y un día.</p>
+            <p className="text-sm text-muted-foreground">Elegí un servicio y un día.</p>
           ) : loadingSlots ? (
-            <p className="text-sm text-ink-faint">Buscando horarios…</p>
+            <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+              Buscando horarios…
+            </p>
           ) : slots.length === 0 ? (
-            <p className="text-sm text-ink-faint">No hay horarios disponibles ese día.</p>
+            <p className="text-sm text-muted-foreground">No hay horarios disponibles ese día.</p>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={slot}
+              onValueChange={(v) => v && setSlot(v)}
+              aria-labelledby="nuevo-turno-horario"
+              className="flex flex-wrap justify-start gap-2"
+            >
               {slots.map((s) => (
-                <button
-                  type="button"
+                <ToggleGroupItem
                   key={s}
-                  onClick={() => setSlot(s)}
-                  className={
-                    "border-2 px-3 py-1.5 text-sm font-medium transition-colors " +
-                    (slot === s
-                      ? "border-leaf bg-leaf text-white"
-                      : "border-line text-ink hover:border-ink")
-                  }
+                  value={s}
+                  className="tabular-nums data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:font-semibold data-[state=on]:text-primary-foreground"
                 >
                   {formatInTimeZone(new Date(s), tz, "HH:mm")}
-                </button>
+                </ToggleGroupItem>
               ))}
-            </div>
+            </ToggleGroup>
           )}
         </div>
 
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <FormError message={error} />
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting || !slot}>
+          <Button type="submit" loading={submitting} disabled={!slot}>
             {submitting ? "Creando…" : "Crear turno"}
           </Button>
         </div>

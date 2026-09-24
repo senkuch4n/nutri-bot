@@ -6,9 +6,12 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import type { EventClickArg, DateSelectArg } from "@fullcalendar/core";
-import { Button, PageHeader, StatTile } from "@/components/ui";
+import { Plus } from "lucide-react";
+import { Separator } from "@/components/primitives/separator";
+import { Button, PageHeader } from "@/components/ui";
+import { notify } from "@/lib/notify";
 import { NewAppointmentModal, type ServiceOption } from "./new-appointment-modal";
-import { AppointmentDetailModal, type SelectedAppointment } from "./appointment-detail-modal";
+import { AppointmentDetailSheet, type SelectedAppointment } from "./appointment-detail-sheet";
 
 // Referencias estables: si se crean inline en el render, FullCalendar cree que
 // la config cambió y vuelve a pedir los eventos → loop infinito con `loading`.
@@ -22,7 +25,7 @@ const BUTTON_TEXT = { today: "Hoy", month: "Mes", week: "Semana", day: "Día" } 
 const EVENT_SOURCE = {
   url: "/api/appointments",
   method: "GET" as const,
-  failure: () => console.error("No se pudieron cargar los turnos"),
+  failure: () => notify.error("No se pudieron cargar los turnos."),
 };
 
 interface BusinessHours {
@@ -57,6 +60,10 @@ export function CalendarClient({
   slotMax: string;
 }) {
   const calRef = useRef<FullCalendar>(null);
+  // Área del calendario: los clics adentro no cierran el panel del turno (se puede elegir otro).
+  const calendarAreaRef = useRef<HTMLDivElement>(null);
+  // Último turno tocado: al cerrar el panel, el foco vuelve ahí.
+  const lastEventElRef = useRef<HTMLElement | null>(null);
   const [creating, setCreating] = useState(false);
   const [initialDate, setInitialDate] = useState<string | undefined>();
   const [selected, setSelected] = useState<SelectedAppointment | null>(null);
@@ -68,6 +75,7 @@ export function CalendarClient({
 
   const onEventClick = useCallback((arg: EventClickArg) => {
     const p = arg.event.extendedProps;
+    lastEventElRef.current = arg.el;
     setSelected({
       id: arg.event.id,
       start: arg.event.startStr,
@@ -82,6 +90,7 @@ export function CalendarClient({
   }, []);
 
   const onSelect = useCallback((arg: DateSelectArg) => {
+    setSelected(null);
     setInitialDate(arg.startStr.slice(0, 10));
     setCreating(true);
     arg.view.calendar.unselect();
@@ -99,35 +108,50 @@ export function CalendarClient({
               setCreating(true);
             }}
           >
-            + Nuevo turno
+            <Plus aria-hidden />
+            Nuevo turno
           </Button>
         }
       />
 
-      {/* Resumen */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <StatTile label="Turnos hoy" value={summary.today} />
-        <StatTile label="Esta semana" value={summary.week} />
-        <StatTile label="Próximo turno">
-          {summary.next ? (
-            <p className="mt-1 truncate text-sm text-ink">
-              <span className="font-display font-bold">{summary.next.time}</span>
-              <span className="mx-1.5 text-ink-faint">·</span>
-              {summary.next.label}
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-ink-faint">Sin turnos próximos</p>
-          )}
-        </StatTile>
-      </div>
+      {/* Franja de resumen (reordenamiento 4): una línea en vez de tres tarjetas */}
+      <dl
+        aria-label="Resumen de turnos"
+        className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-card px-4 py-2.5 text-sm"
+      >
+        <div className="flex min-w-0 items-baseline gap-2">
+          <dt className="text-muted-foreground">Turnos hoy</dt>
+          <dd className="font-semibold tabular-nums">{summary.today}</dd>
+        </div>
+        <Separator orientation="vertical" className="hidden h-4 sm:block" />
+        <div className="flex min-w-0 items-baseline gap-2">
+          <dt className="text-muted-foreground">Esta semana</dt>
+          <dd className="font-semibold tabular-nums">{summary.week}</dd>
+        </div>
+        <Separator orientation="vertical" className="hidden h-4 sm:block" />
+        <div className="flex min-w-0 items-baseline gap-2">
+          <dt className="text-muted-foreground">Próximo turno</dt>
+          <dd className="min-w-0 truncate font-normal">
+            {summary.next ? (
+              <>
+                <span className="font-semibold tabular-nums">{summary.next.time}</span>
+                <span className="mx-1.5 text-muted-foreground">·</span>
+                <span>{summary.next.label}</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">Sin turnos próximos</span>
+            )}
+          </dd>
+        </div>
+      </dl>
 
       {/* Calendario */}
-      <div className="relative overflow-hidden rounded-card border border-line bg-paper p-4 shadow-card">
+      <div ref={calendarAreaRef} className="relative overflow-hidden rounded-lg border bg-card p-4">
         {loading ? (
           <span
-            className="absolute inset-x-0 top-0 z-10 h-[3px] animate-pulse bg-leaf"
             role="status"
             aria-label="Cargando turnos"
+            className="absolute inset-x-0 top-0 z-10 h-0.5 animate-pulse bg-primary"
           />
         ) : null}
         <FullCalendar
@@ -150,21 +174,20 @@ export function CalendarClient({
           selectable
           select={onSelect}
           eventClick={onEventClick}
+          eventInteractive
           loading={setLoading}
           events={EVENT_SOURCE}
           buttonText={BUTTON_TEXT}
         />
       </div>
 
-      {/* Leyenda de servicios */}
+      {/* Leyenda de servicios (el color es un dato del servicio) */}
       {legend.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-            Servicios
-          </span>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Servicios</span>
           {legend.map((s) => (
-            <span key={s.name} className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
-              <span className="h-2.5 w-2.5" style={{ background: s.color }} />
+            <span key={s.name} className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
               {s.name}
             </span>
           ))}
@@ -180,12 +203,14 @@ export function CalendarClient({
         initialDate={initialDate}
       />
 
-      <AppointmentDetailModal
+      <AppointmentDetailSheet
         appt={selected}
         tz={tz}
         currency={currency}
         onClose={() => setSelected(null)}
         onChanged={refetch}
+        interactionAreaRef={calendarAreaRef}
+        returnFocusRef={lastEventElRef}
       />
     </div>
   );

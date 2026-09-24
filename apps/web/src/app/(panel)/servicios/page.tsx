@@ -1,5 +1,6 @@
+import { Tag } from "lucide-react";
 import { formatPrice } from "@nutri-bot/core";
-import { PageHeader, SectionLabel } from "@/components/ui";
+import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
 import { NewServiceButton } from "./new-service-button";
@@ -31,7 +32,7 @@ export default async function ServiciosPage() {
   });
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       <PageHeader
         title="Servicios"
         description="Consultas, estudios y precios que ofrecés. El bot los muestra a los pacientes."
@@ -39,20 +40,24 @@ export default async function ServiciosPage() {
       />
 
       {services.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 border border-dashed border-line bg-paper px-6 py-16 text-center">
-          <p className="max-w-xs text-sm text-ink-soft">
-            Todavía no cargaste ningún servicio. Cargá el primero para que el bot pueda ofrecerlo.
-          </p>
-          <NewServiceButton label="Crear el primer servicio" />
-        </div>
+        <Card>
+          <EmptyState
+            icon={Tag}
+            title="Todavía no hay servicios"
+            description="Cargá el primero para que el bot pueda ofrecerlo."
+            action={<NewServiceButton label="Crear el primer servicio" />}
+          />
+        </Card>
       ) : (
         <>
           <section>
-            <SectionLabel>Activos ({active.length})</SectionLabel>
+            <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
+              Activos <Badge tone="neutral">{active.length}</Badge>
+            </h2>
             {active.length === 0 ? (
-              <p className="text-sm text-ink-faint">No hay servicios activos.</p>
+              <p className="text-sm text-muted-foreground">No hay servicios activos.</p>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {active.map((s) => (
                   <ServiceCard key={s.id} {...toView(s)} />
                 ))}
@@ -62,8 +67,10 @@ export default async function ServiciosPage() {
 
           {inactive.length > 0 ? (
             <section>
-              <SectionLabel>Inactivos ({inactive.length})</SectionLabel>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <h2 className="mb-4 flex items-center gap-2 text-base font-semibold">
+                Inactivos <Badge tone="neutral">{inactive.length}</Badge>
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {inactive.map((s) => (
                   <ServiceCard key={s.id} {...toView(s)} />
                 ))}

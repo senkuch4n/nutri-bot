@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
-import { Button, Field, Input, Select } from "@/components/ui";
+import { Ban, CalendarOff, Clock, X } from "lucide-react";
+import { Button, EmptyState, Field, FormError, Input, Select } from "@/components/ui";
+import { useActionToast } from "@/lib/notify";
 import { addExceptionAction, deleteExceptionAction, type FormState } from "./actions";
 
 export interface ExceptionView {
@@ -15,42 +17,50 @@ export interface ExceptionView {
 export function ExceptionsList({ exceptions }: { exceptions: ExceptionView[] }) {
   if (exceptions.length === 0) {
     return (
-      <p className="border border-dashed border-line px-3 py-6 text-center text-sm text-ink-faint">
-        Sin excepciones cargadas.
-      </p>
+      <EmptyState
+        icon={CalendarOff}
+        title="Sin excepciones cargadas"
+        description="Feriados, días libres u horarios especiales."
+      />
     );
   }
   return (
-    <ul className="space-y-2">
+    <ul className="divide-y">
       {exceptions.map((e) => (
-        <ExceptionChip key={e.id} exc={e} />
+        <ExceptionItem key={e.id} exc={e} />
       ))}
     </ul>
   );
 }
 
-function ExceptionChip({ exc }: { exc: ExceptionView }) {
+function ExceptionItem({ exc }: { exc: ExceptionView }) {
   const [pending, start] = useTransition();
+  // Ícono por tipo (no solo color): Ban = bloqueado, Clock = horario especial.
+  const Icon = exc.blocked ? Ban : Clock;
   return (
-    <li className="flex items-center justify-between gap-3 border border-line bg-paper px-3 py-2.5">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className={"h-9 w-1 shrink-0 " + (exc.blocked ? "bg-red-400" : "bg-leaf")} />
+    <li className="flex items-center justify-between gap-3 py-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <Icon
+          className={"mt-0.5 h-4 w-4 shrink-0 " + (exc.blocked ? "text-destructive" : "text-foreground")}
+          aria-hidden
+        />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold capitalize text-ink">{exc.dateLabel}</p>
-          <p className="truncate text-xs text-ink-soft">
+          <p className="truncate text-sm font-medium capitalize">{exc.dateLabel}</p>
+          <p className="truncate text-sm text-muted-foreground">
             {exc.detail}
-            {exc.reason ? <span className="text-ink-faint"> · {exc.reason}</span> : null}
+            {exc.reason ? ` · ${exc.reason}` : null}
           </p>
         </div>
       </div>
       <button
+        type="button"
         onClick={() => start(() => deleteExceptionAction(exc.id))}
         disabled={pending}
         aria-label={`Quitar excepción del ${exc.dateLabel}`}
         title="Quitar"
-        className="shrink-0 p-1 text-ink-faint transition-colors hover:text-red-600 focus-visible:text-red-600 disabled:opacity-40"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
       >
-        ×
+        <X className="h-3.5 w-3.5" aria-hidden />
       </button>
     </li>
   );
@@ -63,6 +73,7 @@ export function ExceptionForm({ onDone }: { onDone: () => void }) {
   const [type, setType] = useState<"BLOCKED" | "CUSTOM_HOURS">("BLOCKED");
   const ref = useRef<HTMLFormElement>(null);
 
+  useActionToast(state, { success: "Excepción agregada" });
   useEffect(() => {
     if (state.ok) {
       ref.current?.reset();
@@ -97,13 +108,17 @@ export function ExceptionForm({ onDone }: { onDone: () => void }) {
         </Field>
       </div>
 
-      <div className="flex items-center gap-3 sm:col-span-2">
-        <Button type="submit" disabled={pending}>
+      <div className="flex items-center justify-end gap-3 sm:col-span-2">
+        <Button type="submit" loading={pending}>
           {pending ? "Guardando…" : "Agregar excepción"}
         </Button>
-        {state.error ? <span className="text-sm text-red-600">{state.error}</span> : null}
       </div>
-      <p className="text-xs leading-relaxed text-ink-faint sm:col-span-2">
+      {state.error ? (
+        <div className="sm:col-span-2">
+          <FormError message={state.error} />
+        </div>
+      ) : null}
+      <p className="text-xs text-muted-foreground sm:col-span-2">
         Bloquear sin horas = día completo. Bloquear con horas = solo ese tramo. Horario especial
         reemplaza el horario habitual de ese día.
       </p>

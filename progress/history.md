@@ -74,3 +74,28 @@
 - **Pendientes:** formato es-AR del total del PDF (anotado en HU-002d); perímetros en barras
   horizontales anterior vs. actual (evaluar con el informe, épicas 44–46); regla de `useConfirm`
   para las SDD de 002c y 002d (anotada en el backlog).
+
+---
+
+## 2026-09-24 — HU-002c `rediseno-ui-agenda-gestion` — APROBADA (1ª ronda)
+
+- **Qué:**
+  - Calendario: franja compacta de contadores y detalle del turno en un panel lateral no modal
+    (se puede tocar otro turno sin cerrar); esqueleto con la forma del calendario; la página se
+    movió a `(panel)/(calendario)/page.tsx`.
+  - Servicios: alta y edición en Sheet.
+  - Pagos: tabla con filtros visibles y totales arriba; pago manual en un diálogo.
+  - Avisos: cola en tabla; la difusión se confirma con `useConfirm` sin deadlock y **el texto se
+    conserva si falla**.
+  - Ajustes: pestañas laterales con formulario único; el color por defecto del PDF sale de
+    `DEFAULT_PDF_ACCENT`.
+  - Toasts en todos los formularios.
+- **Modelos:** implementer Fable; reviewer Opus.
+- **Recorrido:** OK (`progress/recorrido_HU-002c.md`). `OutboundMessage` sin cambios (4 → 4). No
+  verificados: disponibilidad, `/ajustes/whatsapp`, asistente, 768 px, Slow 4G, movimiento
+  reducido; el reviewer revisó su código sin encontrar problemas.
+- **Hallazgo anterior a la HU:** el calendario muestra los turnos en UTC, 3 horas corridos
+  (FullCalendar recibe `timeZone` sin plugin de zonas horarias). Se arregla como cambio directo.
+- **Pendientes:** confirmación para "Cancelar turno" y "Reintentar N fallidos" (O-c1); colores
+  de COMPLETED/NO_SHOW fuera de los tokens (O-c2); cierre inesperado del panel si se cambia de
+  turno mientras corre una acción (duda del reviewer).

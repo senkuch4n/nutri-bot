@@ -1,13 +1,13 @@
 import { prisma } from "@nutri-bot/db";
 import { listPendingPayments, listApprovedPaymentsInRange } from "@nutri-bot/db/domain";
-import { formatDate, formatDateTime, formatPrice } from "@nutri-bot/core";
-import { Badge, Card, PageHeader, SectionLabel } from "@/components/ui";
+import { formatDateTime, formatInTimeZone, formatPrice } from "@nutri-bot/core";
+import { Card, PageHeader, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
-import { ManualPaymentForm, type AppointmentOption } from "./manual-payment-form";
+import { ManualPaymentDialog } from "./manual-payment-dialog";
+import type { AppointmentOption } from "./manual-payment-form";
+import { PaymentsTable, type PaymentRow } from "./payments-table";
 
 export const dynamic = "force-dynamic";
-
-const kindLabel = { DEPOSIT: "Seña", FULL: "Total" } as const;
 
 export default async function PagosPage() {
   const pro = await getProfessional();
@@ -40,79 +40,57 @@ export default async function PagosPage() {
     label: `${a.patient.name ?? a.patient.phone} · ${a.service.name} · ${formatDateTime(a.startsAt, pro.timezone)}`,
   }));
 
+  // Presentación sobre los mismos datos (reordenamiento 3): totales arriba y una sola tabla.
+  const tz = pro.timezone;
+  const pendingTotal = pending.reduce((s, p) => s + Number(p.amount), 0);
+  const manualCount = approvedThisMonth.filter((p) => p.provider === "manual").length;
+  const mpCount = approvedThisMonth.length - manualCount;
+
+  const toRow = (p: (typeof pending)[number] | (typeof approvedThisMonth)[number], status: PaymentRow["status"]): PaymentRow => {
+    const date = status === "APPROVED" ? (p.paidAt ?? p.createdAt) : p.createdAt;
+    return {
+      id: p.id,
+      status,
+      patient: p.appointment.patient.name ?? p.appointment.patient.phone,
+      service: p.appointment.service.name,
+      appointmentLabel: formatInTimeZone(p.appointment.startsAt, tz, "dd/MM/yyyy HH:mm"),
+      dateISO: date.toISOString(),
+      dateLabel: formatInTimeZone(date, tz, "dd/MM/yyyy"),
+      kind: p.kind,
+      provider: p.provider === "manual" ? "manual" : "mercadopago",
+      amount: Number(p.amount),
+      amountLabel: formatPrice(p.amount.toString(), pro.currency),
+    };
+  };
+  const rows: PaymentRow[] = [
+    ...pending.map((p) => toRow(p, "PENDING")),
+    ...approvedThisMonth.map((p) => toRow(p, "APPROVED")),
+  ];
+
   return (
     <div className="space-y-8">
       <PageHeader
         title="Pagos"
         description="Señas cobradas por Mercado Pago y facturación del mes."
+        action={<ManualPaymentDialog appointments={appointmentOptions} />}
       />
 
-      <div className="border border-line bg-paper px-5 py-4">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-          Cobrado este mes
-        </p>
-        <p className="mt-1 font-display text-3xl font-bold text-ink">
-          {formatPrice(totalThisMonth, pro.currency)}
-        </p>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatTile label="Cobrado este mes" value={formatPrice(totalThisMonth, pro.currency)} />
+        <StatTile label="Pendiente de confirmar" value={formatPrice(pendingTotal, pro.currency)}>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {pending.length} seña{pending.length === 1 ? "" : "s"} esperando
+          </p>
+        </StatTile>
+        <StatTile label="Pagos del mes" value={approvedThisMonth.length}>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {mpCount} Mercado Pago · {manualCount} manual{manualCount === 1 ? "" : "es"}
+          </p>
+        </StatTile>
       </div>
 
-      <Card>
-        <SectionLabel>Pagos pendientes ({pending.length})</SectionLabel>
-        {pending.length === 0 ? (
-          <p className="text-sm text-ink-faint">No hay señas esperando confirmación.</p>
-        ) : (
-          <ul className="divide-y divide-line text-sm">
-            {pending.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-4 py-3">
-                <div className="min-w-0">
-                  <p className="font-medium text-ink">
-                    {p.appointment.patient.name ?? p.appointment.patient.phone}
-                    <span className="mx-1.5 text-ink-faint">·</span>
-                    {p.appointment.service.name}
-                  </p>
-                  <p className="text-xs text-ink-faint">
-                    {formatDateTime(p.appointment.startsAt, pro.timezone)} hs · esperando desde{" "}
-                    {formatDateTime(p.createdAt, pro.timezone)}
-                  </p>
-                </div>
-                <Badge tone="amber">{formatPrice(p.amount.toString(), pro.currency)}</Badge>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card>
-        <SectionLabel>Registrar pago manual (efectivo, transferencia)</SectionLabel>
-        <ManualPaymentForm appointments={appointmentOptions} />
-      </Card>
-
-      <Card>
-        <SectionLabel>Pagos del mes ({approvedThisMonth.length})</SectionLabel>
-        {approvedThisMonth.length === 0 ? (
-          <p className="text-sm text-ink-faint">Todavía no hay pagos acreditados este mes.</p>
-        ) : (
-          <ul className="divide-y divide-line text-sm">
-            {approvedThisMonth.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-4 py-3">
-                <div className="min-w-0">
-                  <p className="font-medium text-ink">
-                    {p.appointment.patient.name ?? p.appointment.patient.phone}
-                    <span className="mx-1.5 text-ink-faint">·</span>
-                    {p.appointment.service.name}
-                  </p>
-                  <p className="text-xs text-ink-faint">
-                    {p.paidAt ? formatDate(p.paidAt, pro.timezone) : ""} · {kindLabel[p.kind]} ·{" "}
-                    {p.provider === "manual" ? "Manual" : "Mercado Pago"}
-                  </p>
-                </div>
-                <span className="font-semibold text-ink">
-                  {formatPrice(p.amount.toString(), pro.currency)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+      <Card title="Pagos" description="Pendientes de confirmar y pagos acreditados este mes." padding="none">
+        <PaymentsTable rows={rows} />
       </Card>
     </div>
   );

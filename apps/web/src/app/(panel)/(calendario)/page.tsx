@@ -3,7 +3,7 @@ import { prisma } from "@nutri-bot/db";
 import { formatInTimeZone, fromZonedTime } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
-import { CalendarClient } from "./calendar-client";
+import { CalendarClient } from "../calendar-client";
 
 export const dynamic = "force-dynamic";
 

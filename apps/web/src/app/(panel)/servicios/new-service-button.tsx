@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, type ComponentProps } from "react";
+import { Plus } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/primitives/sheet";
 import { Button } from "@/components/ui";
-import { Modal } from "@/components/modal";
 import { ServiceForm } from "./service-form";
 
 export function NewServiceButton({
-  label = "+ Nuevo servicio",
+  label = "Nuevo servicio",
   variant = "primary",
 }: {
   label?: string;
@@ -16,11 +23,20 @@ export function NewServiceButton({
   return (
     <>
       <Button variant={variant} onClick={() => setOpen(true)}>
+        <Plus aria-hidden />
         {label}
       </Button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Nuevo servicio">
-        <ServiceForm onDone={() => setOpen(false)} />
-      </Modal>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>Nuevo servicio</SheetTitle>
+            <SheetDescription>El bot lo ofrece a los pacientes por WhatsApp.</SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <ServiceForm onDone={() => setOpen(false)} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

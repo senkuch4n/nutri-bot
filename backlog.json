@@ -110,7 +110,7 @@
       "slug": "rediseno-ui-agenda-gestion",
       "titulo": "Rediseño UI (3/4): agenda y gestión",
       "origen": "HU-002 partida (D8)",
-      "estado": "implementando",
+      "estado": "aprobada",
       "notas": " REGLA: nunca await confirm() dentro de <form action> ni startTransition (deadlock en React 19, ver review_HU-002b). Pasárselo al architect.",
       "hu": "docs/hu-rediseno-ui-empresarial.md",
       "intentos_revision": 0,
@@ -125,7 +125,9 @@
         "ui-ux-pro-max",
         "ui-styling",
         "web-design-guidelines"
-      ]
+      ],
+      "review": "progress/review_HU-002c.md",
+      "modelo_reviewer": "opus"
     },
     {
       "id": "HU-002d",

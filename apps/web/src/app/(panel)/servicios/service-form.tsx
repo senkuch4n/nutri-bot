@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { NumberInput } from "@/components/number-input";
+import { Button, Field, FormError, Input, Select, Textarea, cn } from "@/components/ui";
+import { useActionToast } from "@/lib/notify";
 import { saveServiceAction, type ServiceFormState } from "./actions";
 
 export interface EditableService {
@@ -21,6 +23,7 @@ export interface EditableService {
 
 const initial: ServiceFormState = { ok: false };
 
+// Colores del servicio (datos que se guardan, no tokens del sistema).
 const PRESET_COLORS = ["#5aa832", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
 
 export function ServiceForm({ editing, onDone }: { editing?: EditableService; onDone?: () => void }) {
@@ -30,6 +33,7 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
   const [requiresDeposit, setRequiresDeposit] = useState(editing?.requiresDeposit ?? false);
   const [hasPrep, setHasPrep] = useState(Boolean(editing?.prepInstructions));
 
+  useActionToast(state, { success: editing ? "Servicio guardado" : "Servicio creado" });
   useEffect(() => {
     if (state.ok) {
       if (!editing) formRef.current?.reset();
@@ -63,26 +67,30 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
 
       <Field label="Color">
         <div className="flex flex-wrap items-center gap-2">
-          {PRESET_COLORS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setColor(c)}
-              aria-label={`Color ${c}`}
-              className={
-                "h-8 w-8 border-2 transition-transform " +
-                (color.toLowerCase() === c ? "border-ink scale-110" : "border-transparent")
-              }
-              style={{ background: c }}
-            />
-          ))}
-          <label className="ml-1 inline-flex h-8 cursor-pointer items-center border-2 border-line px-2 text-xs font-medium text-ink-soft hover:border-ink">
+          {PRESET_COLORS.map((c) => {
+            const selected = color.toLowerCase() === c;
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setColor(c)}
+                aria-label={`Color ${c}`}
+                aria-pressed={selected}
+                className={cn(
+                  "h-8 w-8 rounded-md ring-offset-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  selected && "ring-2 ring-foreground",
+                )}
+                style={{ background: c }}
+              />
+            );
+          })}
+          <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-input px-2 text-sm hover:bg-accent">
             Otro
             <input
               type="color"
               value={color}
               onChange={(e) => setColor(e.target.value)}
-              className="ml-1 h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+              className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
             />
           </label>
         </div>
@@ -94,15 +102,15 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
         </Field>
       </div>
 
-      <div className="sm:col-span-2 space-y-3 border-t border-line pt-4">
-        <label className="flex items-center gap-2 text-sm text-ink">
+      <div className="space-y-3 border-t pt-4 sm:col-span-2">
+        <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
             name="requiresDeposit"
             value="true"
             checked={requiresDeposit}
             onChange={(e) => setRequiresDeposit(e.target.checked)}
-            className="h-4 w-4 accent-leaf"
+            className="h-4 w-4 accent-primary"
           />
           Requiere seña para reservar por WhatsApp
         </label>
@@ -129,13 +137,13 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
         ) : null}
       </div>
 
-      <div className="sm:col-span-2 space-y-3 border-t border-line pt-4">
-        <label className="flex items-center gap-2 text-sm text-ink">
+      <div className="space-y-3 border-t pt-4 sm:col-span-2">
+        <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
             checked={hasPrep}
             onChange={(e) => setHasPrep(e.target.checked)}
-            className="h-4 w-4 accent-leaf"
+            className="h-4 w-4 accent-primary"
           />
           Mandar recomendaciones antes del turno (ej: estudios de antropometría o bioimpedancia)
         </label>
@@ -152,14 +160,15 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
               />
             </Field>
             <Field label="Horas antes">
-              <Input
+              <NumberInput
                 name="prepLeadHours"
-                type="number"
+                unit="h"
+                step={1}
                 min={1}
                 max={168}
                 defaultValue={editing?.prepLeadHours ?? 24}
                 required={hasPrep}
-                className="w-24"
+                className="w-28"
               />
             </Field>
           </div>
@@ -167,25 +176,28 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
       </div>
 
       {editing ? (
-        <label className="flex items-center gap-2 text-sm text-ink">
+        <label className="flex items-center gap-2 text-sm sm:col-span-2">
           <input
             type="checkbox"
             name="active"
             defaultChecked={editing.active}
             value="true"
-            className="h-4 w-4 accent-leaf"
+            className="h-4 w-4 accent-primary"
           />
           Servicio activo
         </label>
       ) : null}
 
-      <div className="flex items-center gap-3 sm:col-span-2">
-        <Button type="submit" disabled={pending}>
+      <div className="flex items-center justify-end gap-3 sm:col-span-2">
+        <Button type="submit" loading={pending}>
           {pending ? "Guardando…" : editing ? "Guardar cambios" : "Crear servicio"}
         </Button>
-        {state.error ? <span className="text-sm text-red-600">{state.error}</span> : null}
-        {state.ok ? <span className="text-sm text-leaf-deep">Guardado.</span> : null}
       </div>
+      {state.error ? (
+        <div className="sm:col-span-2">
+          <FormError message={state.error} />
+        </div>
+      ) : null}
     </form>
   );
 }

@@ -32,3 +32,5 @@
 - HU-002c: SDD lista → usuario confirmó (acepta D-c1..D-c7) → `implementando` (Fable; ui-ux-pro-max, ui-styling, web-design-guidelines).
 - El usuario no quiere sacar del historial el PDF de ejemplo con sus datos.
 - Pendiente fuera de HU (después de 002c): confirmación con useConfirm para "Cancelar turno" y "Reintentar N fallidos" (O-c1).
+- HU-002c: implementer (Fable) `done`. Recorrido en progress/recorrido_HU-002c.md: OK. **Bug anterior encontrado: el calendario muestra los turnos 3 h corridos (FullCalendar sin plugin de zona horaria)**; se arregla directo después de la 002c. → `en_revision`.
+- **HU-002c aprobada** y commiteada en la rama. Siguiente: arreglo directo de la zona horaria del calendario, después confirmaciones de Cancelar turno/Reintentar y después HU-002d.
