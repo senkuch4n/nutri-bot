@@ -1,6 +1,7 @@
 import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
+  normalizeMessageContent,
   useMultiFileAuthState,
   type WAMessage,
   type WASocket,
@@ -29,7 +30,9 @@ async function setBotStatus(data: {
 }
 
 function extractText(m: WAMessage): string | null {
-  const msg = m.message;
+  // Desenvuelve mensajes temporales, "ver una vez", editados, etc.: si no, el texto no se
+  // encuentra y el mensaje se ignora en silencio (pasó con un chat con mensajes temporales).
+  const msg = normalizeMessageContent(m.message);
   if (!msg) return null;
   return (
     msg.conversation ??
@@ -91,11 +94,20 @@ export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     for (const m of messages) {
-      if (!m.message || m.key.fromMe) continue;
+      if (m.key.fromMe) continue;
       const jid = m.key.remoteJid ?? "";
       if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") continue;
+      if (!m.message) {
+        // Suele ser un mensaje que no se pudo descifrar (ver "Failed to decrypt" arriba).
+        logger.warn({ jid, stubType: m.messageStubType ?? null }, "Mensaje entrante sin contenido: se ignora");
+        continue;
+      }
       const text = extractText(m);
-      if (!text) continue;
+      if (!text) {
+        const kinds = Object.keys(normalizeMessageContent(m.message) ?? {});
+        logger.info({ jid, kinds }, "Mensaje entrante sin texto: se ignora");
+        continue;
+      }
       try {
         await onMessage(jid, text.trim());
       } catch (err) {
