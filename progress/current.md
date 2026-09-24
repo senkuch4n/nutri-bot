@@ -69,3 +69,6 @@ orquestador, para que las revise a la mañana:
 - HU-002d: SDD lista; el orquestador acepta D-d1..D-d8 (modo autónomo) → aprobada (ver history). Pendiente directo después: confirmación en "Borrar comida" (O-d1).
 - Backlog: se sumaron HU-004 (18/19), HU-005 (20), HU-006 (44/45), HU-007 (46) y HU-008 (56).
 - **HU-002d aprobada**: el rediseño completo (002a–d) quedó cerrado. Rutas `prueba-*` borradas.
+- "Borrar comida" con confirmación (commit d5c87e5).
+- **HU-003** → `afinando`, en la rama `hu-003-consulta-entidad-central` (sale de la de la HU-002, encadenada).
+- HU-003 afinada; el orquestador valida D1–D11 según las recomendaciones (migración solo aditiva) → `en_arquitectura` (migracion-prisma + ui).
