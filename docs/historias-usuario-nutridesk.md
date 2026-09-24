@@ -601,8 +601,10 @@ por el middleware y sin validar la firma, ver `progress/current.md`).
 - Yo como profesional necesito mandar a mis pacientes un mensaje que ofrece el análisis de
   composición corporal (InBody), con su costo, para poder sumar ese servicio.
 
-Texto provisto por la nutricionista (en el PDF). Ojo: el mensaje dice **$20.000 adicionales**,
-pero la lista de precios dice **InBody $25.000**. Confirmar cuál es el valor.
+Texto provisto por la nutricionista (en el PDF). El mensaje decía **$20.000 adicionales** y la
+lista de precios dice **InBody $25.000**. **Decisión provisoria del usuario (2026-09-24): se usa
+$25.000 en los dos lugares**; ella lo puede cambiar después (el precio sale del servicio, no va
+fijo en el texto).
 
 ## Épica 54 — Textos reales de preparación para InBody y antropometría
 
@@ -619,9 +621,24 @@ PDF, que es un cambio directo, sin arnés.
 
 Notas: cubierto en parte por el PDF del plan y la Épica 46.
 
-## Contradicción a resolver
+## Contradicción resuelta (2026-09-24)
 
-- El PDF dice **"Atención a partir de los 5 años de edad"**, pero el alcance acordado era **solo
+- **Resuelto por el usuario: atiende desde los 5 años.** Queda sin efecto "solo adultos". Ver la
+  Épica 56.
+- El PDF dice **"Atención a partir de los 5 años de edad"**, y el alcance acordado antes era **solo
   adultos**. Si atiende chicos, las fórmulas de adultos (TMB, IMC con clasificación OMS de
   adultos, somatotipo) no alcanzan: harían falta percentiles de la OMS y otras ecuaciones. Hay que
   confirmarlo con ella.
+
+## Épica 56 — Pacientes pediátricos (desde los 5 años)
+
+- Yo como profesional necesito que el sistema distinga a los pacientes menores de 18 años y use
+  para ellos las referencias pediátricas (IMC para la edad con puntaje Z / percentiles de la OMS,
+  talla para la edad) en lugar de las fórmulas de adultos, para poder atender desde los 5 años.
+
+Notas: surge de la Ronda 3 (el PDF dice "Atención a partir de los 5 años"). Impacta en la
+calculadora (Épica 18: Mifflin, Harris-Benedict y los factores de actividad son de adultos), el
+diagnóstico (Épica 19: la clasificación OMS de IMC de adultos no aplica a chicos), el informe
+(Épicas 44–46) y el aviso de menor de 18 de la HU-001 (hoy dice "Las fórmulas son para adultos",
+que sigue siendo cierto, pero a futuro tiene que ofrecer la alternativa pediátrica). Pedir a la
+nutricionista qué ecuaciones usa en chicos (p. ej. Schofield o FAO/OMS) y qué tablas de la OMS.
