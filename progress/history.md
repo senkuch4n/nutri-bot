@@ -139,3 +139,22 @@
 - **Pendiente técnico:** `apps/bot/scripts/test-confirm-attendance.ts` borra con
   `deleteMany({ where: { patientId } })`, en contra de la regla de AGENTS.md, y además puede
   encolar WhatsApp real (se vio en la HU-001).
+
+---
+
+## 2026-09-24 — HU-004 `calculadora-requerimiento` — APROBADA (1ª ronda) · Épicas 18 y 19
+
+- **Qué:** diagnóstico antropométrico automático en el detalle de la consulta: IMC con
+  clasificación OMS, cintura, ICC por sexo, cintura/talla, conicidad, Deurenberg y peso ideal
+  (Devine, Hamwi, Broca, Broca-Brugsch, Lorentz), con sugerencia de peso ajustado arriba del 130 %.
+  Calculadora de requerimiento: las 4 TMB lado a lado (Mifflin preseleccionada; la del InBody solo
+  como referencia), actividad, objetivo con su %, VCT indicado editable y macros en % del VCT o
+  proteína en g/kg. Una `NutritionPrescription` por consulta, con los gramos objetivo guardados
+  para la épica 23. Tarjeta "Requerimiento indicado" en el Resumen. Solo adultos: en menores, el
+  aviso de siempre.
+- **Fórmulas:** puras en `packages/core`, con tests con valores calculados a mano. El orquestador
+  las verificó en el navegador con un paciente de prueba (borrado por id).
+- **Decisión del orquestador:** kcal con separador de miles (`formatMacroAmount`), para que
+  coincidan con el PDF.
+- **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
+  autónomo).

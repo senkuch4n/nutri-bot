@@ -8,3 +8,6 @@ export * from "./anthropometry";
 export * from "./deposits";
 export * from "./patient-formula-data";
 export * from "./consultations";
+export * from "./formula-measurements";
+export * from "./anthropometric-diagnosis";
+export * from "./energy-requirement";

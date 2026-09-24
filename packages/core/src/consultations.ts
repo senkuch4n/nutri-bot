@@ -45,7 +45,8 @@ export function measurementKinds(m: MeasurementValues): { anthropometry: boolean
   return { anthropometry: hasAnthropometry || !bioimpedance, bioimpedance };
 }
 
-export type ConsultationChip = "Antropometría" | "Bioimpedancia" | "Plan" | "Notas";
+/** Orden fijo: Antropometría, Bioimpedancia, Requerimiento, Plan, Notas. */
+export type ConsultationChip = "Antropometría" | "Bioimpedancia" | "Requerimiento" | "Plan" | "Notas";
 
 function hasText(notes: string | null): boolean {
   return notes != null && notes.trim().length > 0;
@@ -54,6 +55,7 @@ function hasText(notes: string | null): boolean {
 /** Chips en ese orden fijo, solo los que aplican. `notes` con solo espacios no cuenta. */
 export function consultationChips(input: {
   measurements: MeasurementValues[];
+  hasPrescription: boolean;
   hasPlan: boolean;
   notes: string | null;
 }): ConsultationChip[] {
@@ -67,23 +69,30 @@ export function consultationChips(input: {
   const chips: ConsultationChip[] = [];
   if (anthropometry) chips.push("Antropometría");
   if (bioimpedance) chips.push("Bioimpedancia");
+  if (input.hasPrescription) chips.push("Requerimiento");
   if (input.hasPlan) chips.push("Plan");
   if (hasText(input.notes)) chips.push("Notas");
   return chips;
 }
 
-/** Vacía (D3, al revertir un turno): sin mediciones, sin plan y sin notas (trim). */
+/** Vacía (D3, al revertir un turno): sin mediciones, sin prescripción, sin plan y sin notas (trim). */
 export function isConsultationEmpty(input: {
   measurementCount: number;
+  hasPrescription: boolean;
   hasPlan: boolean;
   notes: string | null;
 }): boolean {
-  return input.measurementCount === 0 && !input.hasPlan && !hasText(input.notes);
+  return input.measurementCount === 0 && !input.hasPrescription && !input.hasPlan && !hasText(input.notes);
 }
 
-/** Borrable a mano: sin mediciones y sin plan. Las notas se borran con ella, previa confirmación. */
-export function canDeleteConsultation(input: { measurementCount: number; hasPlan: boolean }): boolean {
-  return input.measurementCount === 0 && !input.hasPlan;
+/** Borrable a mano: sin mediciones, sin prescripción y sin plan. Las notas se borran con ella,
+ *  previa confirmación. */
+export function canDeleteConsultation(input: {
+  measurementCount: number;
+  hasPrescription: boolean;
+  hasPlan: boolean;
+}): boolean {
+  return input.measurementCount === 0 && !input.hasPrescription && !input.hasPlan;
 }
 
 export const CONSULTATION_NOTES_MAX = 4000;
@@ -92,7 +101,8 @@ export const CONSULTATION_NOTES_MAX = 4000;
 export const CONSULTATION_TEXT = {
   futureDate: "La fecha de la consulta no puede ser futura",
   futureMeasurementDate: "La fecha de la medición no puede ser futura",
-  notDeletable: "Para eliminar la consulta primero borrá sus mediciones y quitá el plan indicado",
+  notDeletable:
+    "Para eliminar la consulta primero borrá sus mediciones, la prescripción y quitá el plan indicado",
   sameDayExists: "Ya hay una consulta de ese día",
   appointmentNotCompleted: "El turno de esta consulta ya no figura como completado.",
 } as const;

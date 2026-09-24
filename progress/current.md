@@ -77,3 +77,4 @@ orquestador, para que las revise a la mañana:
 - **HU-003 aprobada** (épica 30). Siguiente: HU-004 (épicas 18/19).
 - HU-004 afinada y validada (D1–D14 según las recomendaciones) → `en_arquitectura`.
 - HU-004: SDD lista (formato de kcal unificado con separador de miles) → `implementando` (Opus).
+- **HU-004 aprobada** (épicas 18/19). Siguiente: HU-005 (SARA 2, épica 20).

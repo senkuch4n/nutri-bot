@@ -14,6 +14,7 @@ import {
   type Consultation,
   type EvolutionEntry,
   type NutritionPlan,
+  type NutritionPrescription,
   type Patient,
   type Prisma,
   type Service,
@@ -55,12 +56,14 @@ export type ConsultationWithRelations = Consultation & {
   appointment: (Appointment & { service: Service }) | null;
   plan: Pick<NutritionPlan, "id" | "title" | "status"> | null;
   evolutionEntries: EvolutionEntry[];
+  prescription: NutritionPrescription | null;
 };
 
 const consultationInclude = {
   appointment: { include: { service: true } },
   plan: { select: { id: true, title: true, status: true } },
   evolutionEntries: { orderBy: { createdAt: "asc" } },
+  prescription: true,
 } satisfies Prisma.ConsultationInclude;
 
 function assertValidDayKey(dayKey: string) {
@@ -182,16 +185,21 @@ export async function createPlanForConsultation(params: { consultationId: string
   });
 }
 
-/** Borrado a mano: solo sin mediciones y sin plan. El turno no se toca. */
+/** Borrado a mano: solo sin mediciones, sin prescripción y sin plan. El turno no se toca. */
 export async function deleteConsultation(consultationId: string): Promise<void> {
   const consultation = await prisma.consultation.findUnique({
     where: { id: consultationId },
-    select: { planId: true, _count: { select: { evolutionEntries: true } } },
+    select: {
+      planId: true,
+      prescription: { select: { id: true } },
+      _count: { select: { evolutionEntries: true } },
+    },
   });
   if (!consultation) throw new Error("La consulta no existe");
   if (
     !canDeleteConsultation({
       measurementCount: consultation._count.evolutionEntries,
+      hasPrescription: consultation.prescription !== null,
       hasPlan: consultation.planId != null,
     })
   ) {
@@ -199,7 +207,7 @@ export async function deleteConsultation(consultationId: string): Promise<void> 
   }
   // El filtro repite la regla: si alguien cargó algo entre la lectura y el borrado, no se borra.
   const { count } = await prisma.consultation.deleteMany({
-    where: { id: consultationId, planId: null, evolutionEntries: { none: {} } },
+    where: { id: consultationId, planId: null, evolutionEntries: { none: {} }, prescription: { is: null } },
   });
   if (count === 0) throw new ConsultationNotDeletableError();
 }

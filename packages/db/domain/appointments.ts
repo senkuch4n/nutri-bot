@@ -152,7 +152,14 @@ export async function setAppointmentStatus(params: {
     prisma.$transaction(async (tx): Promise<SetAppointmentStatusResult> => {
       const prev = await tx.appointment.findUniqueOrThrow({
         where: { id: params.id },
-        include: { consultation: { include: { _count: { select: { evolutionEntries: true } } } } },
+        include: {
+          consultation: {
+            include: {
+              _count: { select: { evolutionEntries: true } },
+              prescription: { select: { id: true } },
+            },
+          },
+        },
       });
       const appointment = await tx.appointment.update({
         where: { id: params.id },
@@ -176,13 +183,20 @@ export async function setAppointmentStatus(params: {
         if (
           isConsultationEmpty({
             measurementCount: c._count.evolutionEntries,
+            hasPrescription: c.prescription != null,
             hasPlan: c.planId != null,
             notes: c.notes,
           })
         ) {
           // El filtro repite la condición por si alguien cargó algo entre la lectura y el borrado.
           const { count } = await tx.consultation.deleteMany({
-            where: { id: c.id, notes: null, planId: null, evolutionEntries: { none: {} } },
+            where: {
+              id: c.id,
+              notes: null,
+              planId: null,
+              evolutionEntries: { none: {} },
+              prescription: { is: null },
+            },
           });
           removedEmptyConsultation = count === 1;
         }

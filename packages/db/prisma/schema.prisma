@@ -121,9 +121,62 @@ model Consultation {
   updatedAt     DateTime        @updatedAt
 
   evolutionEntries EvolutionEntry[]
+  prescription     NutritionPrescription?
 
   @@index([patientId, consultedAt])
   @@index([planId])
+}
+
+/// Prescripción energética de una consulta (HU-004). Una por consulta; editar la reemplaza.
+/// Guarda una foto de los datos de entrada: los del paciente cambian, esta fila no.
+/// Los kcal y gramos se guardan redondeados tal como se muestran.
+model NutritionPrescription {
+  id             String       @id @default(cuid())
+  consultationId String       @unique
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  // Foto de los datos de entrada
+  sex                 BiologicalSex
+  ageYears            Int
+  heightCm            Decimal        @db.Decimal(5, 2)
+  actualWeightKg      Decimal        @db.Decimal(5, 2)
+  idealWeightDevineKg Decimal        @db.Decimal(5, 2)
+  weightBasis         WeightBasis
+  weightUsedKg        Decimal        @db.Decimal(5, 2)
+  bodyFatPercent      Decimal?       @db.Decimal(4, 1)
+  bodyFatSource       BodyFatSource?
+  bodyFatRecordedAt   DateTime? // solo si bodyFatSource = MEASURED
+
+  // TMB
+  bmrFormula            BmrFormula
+  bmrKcal               Int
+  bmrMifflinStJeorKcal  Int
+  bmrHarrisBenedictKcal Int
+  bmrKatchMcArdleKcal   Int?
+  bmrCunninghamKcal     Int?
+
+  // GET y VCT
+  activityLevel        ActivityLevel
+  activityFactor       Decimal         @db.Decimal(4, 3)
+  totalExpenditureKcal Int
+  nutritionGoal        NutritionGoal
+  adjustmentRange      AdjustmentRange
+  adjustmentPercent    Int
+  calculatedVctKcal    Int
+  prescribedVctKcal    Int
+
+  // Macros (sobre prescribedVctKcal). Los gramos los usa la épica 23.
+  macroMode      MacroMode
+  proteinPercent Decimal   @db.Decimal(4, 1)
+  fatPercent     Decimal   @db.Decimal(4, 1)
+  carbPercent    Decimal   @db.Decimal(4, 1)
+  proteinGPerKg  Decimal?  @db.Decimal(3, 1) // solo si macroMode = PROTEIN_PER_KG
+  proteinG       Int
+  fatG           Int
+  carbG          Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Service {
@@ -179,6 +232,35 @@ enum BodyFrame {
   SMALL
   MEDIUM
   LARGE
+}
+
+enum BmrFormula {
+  MIFFLIN_ST_JEOR
+  HARRIS_BENEDICT
+  KATCH_MCARDLE
+  CUNNINGHAM
+}
+
+enum WeightBasis {
+  ACTUAL
+  ADJUSTED
+}
+
+enum BodyFatSource {
+  MEASURED // bioimpedancia (EvolutionEntry.bodyFatPercent)
+  DEURENBERG // estimado
+}
+
+enum AdjustmentRange {
+  MODERATE_DEFICIT
+  AGGRESSIVE_DEFICIT
+  MAINTENANCE
+  SURPLUS
+}
+
+enum MacroMode {
+  PERCENT_OF_VCT
+  PROTEIN_PER_KG
 }
 
 enum ExceptionType {

@@ -72,49 +72,64 @@ describe("measurementKinds", () => {
 
 describe("consultationChips", () => {
   it("todo junto, en orden fijo", () => {
-    expect(consultationChips({ measurements: [bio, anthro], hasPlan: true, notes: "control" })).toEqual([
-      "Antropometría",
-      "Bioimpedancia",
-      "Plan",
-      "Notas",
-    ]);
+    expect(
+      consultationChips({ measurements: [bio, anthro], hasPrescription: true, hasPlan: true, notes: "control" }),
+    ).toEqual(["Antropometría", "Bioimpedancia", "Requerimiento", "Plan", "Notas"]);
   });
 
   it("el orden no depende del orden de las mediciones", () => {
-    expect(consultationChips({ measurements: [anthro, bio], hasPlan: false, notes: null })).toEqual([
-      "Antropometría",
-      "Bioimpedancia",
-    ]);
+    expect(
+      consultationChips({ measurements: [anthro, bio], hasPrescription: false, hasPlan: false, notes: null }),
+    ).toEqual(["Antropometría", "Bioimpedancia"]);
   });
 
   it("sin nada → []", () => {
-    expect(consultationChips({ measurements: [], hasPlan: false, notes: null })).toEqual([]);
+    expect(consultationChips({ measurements: [], hasPrescription: false, hasPlan: false, notes: null })).toEqual([]);
   });
 
   it("notas con solo espacios no suman 'Notas'", () => {
-    expect(consultationChips({ measurements: [], hasPlan: true, notes: "   " })).toEqual(["Plan"]);
+    expect(consultationChips({ measurements: [], hasPrescription: false, hasPlan: true, notes: "   " })).toEqual([
+      "Plan",
+    ]);
+  });
+
+  it("solo prescripción → 'Requerimiento'", () => {
+    expect(consultationChips({ measurements: [], hasPrescription: true, hasPlan: false, notes: null })).toEqual([
+      "Requerimiento",
+    ]);
+  });
+
+  it("'Requerimiento' va entre Bioimpedancia y Plan", () => {
+    expect(consultationChips({ measurements: [bio], hasPrescription: true, hasPlan: true, notes: null })).toEqual([
+      "Bioimpedancia",
+      "Requerimiento",
+      "Plan",
+    ]);
   });
 });
 
 describe("isConsultationEmpty", () => {
   it.each([
-    [0, false, null, true],
-    [0, false, "  ", true],
-    [0, false, "x", false],
-    [1, false, null, false],
-    [0, true, null, false],
-  ] as const)("(%s, %s, %j) → %s", (measurementCount, hasPlan, notes, expected) => {
-    expect(isConsultationEmpty({ measurementCount, hasPlan, notes })).toBe(expected);
+    [0, false, false, null, true],
+    [0, false, false, "  ", true],
+    [0, false, false, "x", false],
+    [1, false, false, null, false],
+    [0, false, true, null, false],
+    [0, true, false, null, false],
+  ] as const)("(%s, prescripción %s, plan %s, %j) → %s", (measurementCount, hasPrescription, hasPlan, notes, expected) => {
+    expect(isConsultationEmpty({ measurementCount, hasPrescription, hasPlan, notes })).toBe(expected);
   });
 });
 
 describe("canDeleteConsultation", () => {
   it.each([
-    [0, false, true],
-    [1, false, false],
-    [0, true, false],
-  ] as const)("(%s, %s) → %s", (measurementCount, hasPlan, expected) => {
-    expect(canDeleteConsultation({ measurementCount, hasPlan })).toBe(expected);
+    [0, false, false, true],
+    [1, false, false, false],
+    [0, false, true, false],
+    [0, true, false, false],
+    [1, true, true, false],
+  ] as const)("(%s, prescripción %s, plan %s) → %s", (measurementCount, hasPrescription, hasPlan, expected) => {
+    expect(canDeleteConsultation({ measurementCount, hasPrescription, hasPlan })).toBe(expected);
   });
 });
 
@@ -205,7 +220,7 @@ describe("CONSULTATION_TEXT", () => {
   it("textos exactos compartidos con web y domain", () => {
     expect(CONSULTATION_TEXT.futureDate).toBe("La fecha de la consulta no puede ser futura");
     expect(CONSULTATION_TEXT.notDeletable).toBe(
-      "Para eliminar la consulta primero borrá sus mediciones y quitá el plan indicado",
+      "Para eliminar la consulta primero borrá sus mediciones, la prescripción y quitá el plan indicado",
     );
   });
 });

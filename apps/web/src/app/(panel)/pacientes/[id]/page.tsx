@@ -13,6 +13,7 @@ import {
 } from "@nutri-bot/core";
 import {
   getLatestFormulaMeasurements,
+  listLatestPrescriptions,
   listPatientConsultations,
   listPatientPlans,
   listTemplates,
@@ -30,6 +31,7 @@ import { DiarySection } from "./diary-section";
 import { EvolutionSection } from "./evolution-section";
 import { EvolutionSummary } from "./evolution-summary";
 import { FormulaDataSection } from "./formula-data-section";
+import { RequirementSummaryCard } from "./requirement-summary-card";
 import { PatientForm } from "./patient-form";
 import { PatientHeader } from "./patient-header";
 import { PatientTabs } from "./patient-tabs";
@@ -47,7 +49,7 @@ const statusMeta = {
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [pro, patient, plans, templates, diaryEntries, measurements, consultations] = await Promise.all([
+  const [pro, patient, plans, templates, diaryEntries, measurements, consultations, prescriptions] = await Promise.all([
     getProfessional(),
     prisma.patient.findUnique({
       where: { id },
@@ -65,6 +67,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     listDiaryEntries(id),
     getLatestFormulaMeasurements(id),
     listPatientConsultations(id),
+    listLatestPrescriptions(id, 2),
   ]);
   if (!patient) notFound();
 
@@ -104,6 +107,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     originLabel: c.appointment ? c.appointment.service.name : null,
     chips: consultationChips({
       measurements: c.evolutionEntries.map((e) => toEvolutionRow(e, pro.timezone)),
+      hasPrescription: c.prescription !== null,
       hasPlan: c.planId !== null,
       notes: c.notes,
     }),
@@ -116,6 +120,10 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     note: e.note,
     hasPhoto: Boolean(e.photoData),
   }));
+
+  const [latestPrescription, previousPrescription] = prescriptions;
+  const prescriptionDateLabel = (p: (typeof prescriptions)[number]) =>
+    formatInTimeZone(p.consultation.consultedAt, pro.timezone, "dd/MM/yyyy");
 
   const formulaValues = {
     sex: patient.sex,
@@ -157,14 +165,39 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
             <div className="space-y-8">
               <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
                 <EvolutionSummary entries={evolutionRows} />
-                <FormulaDataSection
-                  patientId={patient.id}
-                  values={formulaValues}
-                  ageYears={ageYears}
-                  weight={summaryMeasurement(measurements.weightKg)}
-                  height={summaryMeasurement(measurements.heightCm)}
-                  bodyFat={summaryMeasurement(measurements.bodyFatPercent)}
-                />
+                <div className="space-y-6">
+                  <FormulaDataSection
+                    patientId={patient.id}
+                    values={formulaValues}
+                    ageYears={ageYears}
+                    weight={summaryMeasurement(measurements.weightKg)}
+                    height={summaryMeasurement(measurements.heightCm)}
+                    bodyFat={summaryMeasurement(measurements.bodyFatPercent)}
+                  />
+                  <RequirementSummaryCard
+                    patientId={patient.id}
+                    latest={
+                      latestPrescription
+                        ? {
+                            consultationId: latestPrescription.consultation.id,
+                            dateLabel: prescriptionDateLabel(latestPrescription),
+                            prescribedVctKcal: latestPrescription.prescribedVctKcal,
+                            proteinG: latestPrescription.proteinG,
+                            fatG: latestPrescription.fatG,
+                            carbG: latestPrescription.carbG,
+                          }
+                        : null
+                    }
+                    previous={
+                      previousPrescription
+                        ? {
+                            prescribedVctKcal: previousPrescription.prescribedVctKcal,
+                            dateLabel: prescriptionDateLabel(previousPrescription),
+                          }
+                        : null
+                    }
+                  />
+                </div>
               </div>
               <section aria-labelledby="turnos-resumen">
                 <SectionLabel>

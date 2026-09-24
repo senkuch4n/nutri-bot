@@ -2,27 +2,41 @@ import { notFound } from "next/navigation";
 import { CalendarDays } from "lucide-react";
 import {
   CONSULTATION_TEXT,
+  buildAnthropometricDiagnosis,
   canDeleteConsultation,
   computeAgeYears,
   dayKeyInTz,
   formatInTimeZone,
+  getRequirementBlockingMissing,
+  initialRequirementDraft,
+  missingFormulaDataMessage,
+  type SourcedMeasurement,
 } from "@nutri-bot/core";
-import { getConsultation, listPatientPlans } from "@nutri-bot/db/domain";
+import {
+  getConsultation,
+  getReferencePrescription,
+  getRequirementContextForConsultation,
+  listPatientPlans,
+  toPrescriptionSnapshot,
+} from "@nutri-bot/db/domain";
 import { Separator } from "@/components/primitives/separator";
 import { Alert, Badge, Button, PageHeader } from "@/components/ui";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { getProfessional } from "@/lib/professional";
 import { ConsultationDateSheet } from "../../consultation-date-sheet";
+import { AnthropometricDiagnosisCard, type DiagnosisSourceKey } from "./anthropometric-diagnosis";
 import { ConsultationMeasurements } from "./consultation-measurements";
 import { ConsultationNotes } from "./consultation-notes";
 import { ConsultationPlan, type PlanOption } from "./consultation-plan";
 import { DeleteConsultationButton } from "./delete-consultation-button";
+import type { CalculatorProps } from "./requirement-calculator";
+import { RequirementSection } from "./requirement-section";
 
 export const dynamic = "force-dynamic";
 
 const planStatusRank = { ACTIVE: 0, DRAFT: 1, ARCHIVED: 2 } as const;
 
-/** Detalle de una consulta (HU-003): mediciones, plan indicado y notas. */
+/** Detalle de una consulta (HU-003): mediciones, diagnóstico y requerimiento (HU-004), plan indicado y notas. */
 export default async function ConsultationPage({
   params,
 }: {
@@ -46,8 +60,73 @@ export default async function ConsultationPage({
   const entries = consultation.evolutionEntries.map((e) => toEvolutionRow(e, tz));
   const canDelete = canDeleteConsultation({
     measurementCount: consultation.evolutionEntries.length,
+    hasPrescription: consultation.prescription !== null,
     hasPlan: consultation.planId !== null,
   });
+
+  // ── HU-004: diagnóstico y requerimiento, con las mediciones D4 (de la consulta o anteriores) ──
+  const requirement = await getRequirementContextForConsultation(consultation.id);
+  const m = requirement.measurements;
+  const dateLabel = (d: Date) => formatInTimeZone(d, tz, "dd/MM/yyyy");
+  const fromOther = (s: SourcedMeasurement | null) => s !== null && s.consultationId !== consultation.id;
+  const otherDates: Partial<Record<DiagnosisSourceKey, string>> = {};
+  for (const key of ["weightKg", "heightCm", "waistCm", "hipCm"] as const) {
+    const source = m[key];
+    if (source && fromOther(source)) otherDates[key] = dateLabel(source.recordedAt);
+  }
+  const diagnosis = buildAnthropometricDiagnosis({
+    sex: patient.sex,
+    ageYears: requirement.ageYears,
+    bodyFrame: patient.bodyFrame,
+    weightKg: m.weightKg?.value ?? null,
+    heightCm: m.heightCm?.value ?? null,
+    waistCm: m.waistCm?.value ?? null,
+    hipCm: m.hipCm?.value ?? null,
+  });
+  const measuredBodyFat = m.bodyFatPercent
+    ? { percent: m.bodyFatPercent.value, dateLabel: dateLabel(m.bodyFatPercent.recordedAt) }
+    : null;
+
+  const blockingItems = getRequirementBlockingMissing({
+    sex: patient.sex,
+    activityLevel: patient.activityLevel,
+    nutritionGoal: patient.nutritionGoal,
+    hasBirthDate: patient.birthDate !== null,
+    weightKg: m.weightKg?.value ?? null,
+    heightCm: m.heightCm?.value ?? null,
+  });
+  const prescription = consultation.prescription ? toPrescriptionSnapshot(consultation.prescription) : null;
+  const ctx = requirement.ctx;
+  const reference =
+    ctx && !prescription
+      ? await getReferencePrescription({
+          patientId: id,
+          consultationId: consultation.id,
+          consultedAt: consultation.consultedAt,
+        })
+      : null;
+  const calculator: CalculatorProps | null = ctx
+    ? {
+        ctx,
+        initialDraft: initialRequirementDraft({
+          ctx,
+          patientActivityLevel: patient.activityLevel,
+          patientNutritionGoal: patient.nutritionGoal,
+          reference,
+        }),
+        editing: prescription !== null,
+        measuredBodyFat,
+        measuredBmr: m.basalMetabolicRateKcal
+          ? {
+              kcal: m.basalMetabolicRateKcal.value,
+              dateLabel: dateLabel(m.basalMetabolicRateKcal.recordedAt),
+              fromOtherConsultation: fromOther(m.basalMetabolicRateKcal),
+            }
+          : null,
+        patientActivityLevel: patient.activityLevel,
+        patientNutritionGoal: patient.nutritionGoal,
+      }
+    : null;
 
   // listPatientPlans viene por createdAt desc; el sort es estable, así que cada grupo lo conserva.
   const planOptions: PlanOption[] = [...plans]
@@ -99,7 +178,37 @@ export default async function ConsultationPage({
       ) : null}
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
-        <ConsultationMeasurements patientId={id} consultationId={consultation.id} entries={entries} />
+        <div className="space-y-6">
+          <ConsultationMeasurements patientId={id} consultationId={consultation.id} entries={entries} />
+          <AnthropometricDiagnosisCard
+            diagnosis={diagnosis}
+            consultationDateLabel={dateLabel(consultation.consultedAt)}
+            otherDates={otherDates}
+            measuredBodyFat={measuredBodyFat}
+          />
+          {diagnosis.minor ? null : (
+            <RequirementSection
+              patientId={id}
+              consultationId={consultation.id}
+              blockingMessage={missingFormulaDataMessage(blockingItems)}
+              missingSex={blockingItems.some((i) => i.key === "sex")}
+              missingBirthDate={blockingItems.some((i) => i.key === "birthDate")}
+              formulaValues={{
+                sex: patient.sex,
+                activityLevel: patient.activityLevel,
+                nutritionGoal: patient.nutritionGoal,
+                bodyFrame: patient.bodyFrame,
+              }}
+              calculator={calculator}
+              prescription={prescription}
+              bodyFatDateLabel={
+                consultation.prescription?.bodyFatRecordedAt
+                  ? dateLabel(consultation.prescription.bodyFatRecordedAt)
+                  : null
+              }
+            />
+          )}
+        </div>
         <div className="space-y-6">
           <ConsultationPlan
             patientId={id}

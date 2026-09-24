@@ -54,8 +54,14 @@ export const ACTIVITY_LEVELS: ReadonlyArray<ActivityLevelOption> = [
 // ── Objetivo nutricional ── (sección 3 del documento de fórmulas; los rangos los usa la Épica 18)
 export const NUTRITION_GOAL_VALUES = ["LOSE_WEIGHT", "MAINTAIN", "GAIN_WEIGHT", "GAIN_MUSCLE"] as const;
 export type NutritionGoal = (typeof NUTRITION_GOAL_VALUES)[number];
+/** Tipos de ajuste por objetivo. Coinciden con el enum AdjustmentRange de Prisma (HU-004). */
+export const ADJUSTMENT_RANGE_VALUES = ["MODERATE_DEFICIT", "AGGRESSIVE_DEFICIT", "MAINTENANCE", "SURPLUS"] as const;
+export type AdjustmentRangeKey = (typeof ADJUSTMENT_RANGE_VALUES)[number];
 export interface GoalAdjustmentRange {
+  key: AdjustmentRangeKey;
   label: string;
+  /** Sin la aclaración entre paréntesis: "Déficit moderado" | "Déficit agresivo" | "Mantenimiento" | "Superávit". */
+  shortLabel: string;
   minPercent: number;
   maxPercent: number;
 }
@@ -69,24 +75,30 @@ export const NUTRITION_GOALS: ReadonlyArray<NutritionGoalOption> = [
     value: "LOSE_WEIGHT",
     label: "Bajar de peso",
     adjustmentRanges: [
-      { label: "Déficit moderado", minPercent: -25, maxPercent: -15 },
-      { label: "Déficit agresivo (con supervisión)", minPercent: -30, maxPercent: -25 },
+      { key: "MODERATE_DEFICIT", label: "Déficit moderado", shortLabel: "Déficit moderado", minPercent: -25, maxPercent: -15 },
+      {
+        key: "AGGRESSIVE_DEFICIT",
+        label: "Déficit agresivo (con supervisión)",
+        shortLabel: "Déficit agresivo",
+        minPercent: -30,
+        maxPercent: -25,
+      },
     ],
   },
   {
     value: "MAINTAIN",
     label: "Mantener",
-    adjustmentRanges: [{ label: "Mantenimiento", minPercent: 0, maxPercent: 0 }],
+    adjustmentRanges: [{ key: "MAINTENANCE", label: "Mantenimiento", shortLabel: "Mantenimiento", minPercent: 0, maxPercent: 0 }],
   },
   {
     value: "GAIN_WEIGHT",
     label: "Subir de peso",
-    adjustmentRanges: [{ label: "Superávit", minPercent: 10, maxPercent: 20 }],
+    adjustmentRanges: [{ key: "SURPLUS", label: "Superávit", shortLabel: "Superávit", minPercent: 10, maxPercent: 20 }],
   },
   {
     value: "GAIN_MUSCLE",
     label: "Ganar masa muscular",
-    adjustmentRanges: [{ label: "Superávit", minPercent: 10, maxPercent: 20 }],
+    adjustmentRanges: [{ key: "SURPLUS", label: "Superávit", shortLabel: "Superávit", minPercent: 10, maxPercent: 20 }],
   },
 ];
 
@@ -104,6 +116,12 @@ export const BODY_FRAMES: ReadonlyArray<BodyFrameOption> = [
   { value: "LARGE", label: "Grande", hamwiAdjustmentPercent: 10 },
 ];
 export const DEFAULT_BODY_FRAME: BodyFrame = "MEDIUM";
+
+/** Rango del objetivo con esa key, o null si no le corresponde (p. ej. SURPLUS en LOSE_WEIGHT). */
+export function goalAdjustmentRange(goal: NutritionGoal, key: AdjustmentRangeKey): GoalAdjustmentRange | null {
+  const option = NUTRITION_GOALS.find((g) => g.value === goal);
+  return option?.adjustmentRanges.find((r) => r.key === key) ?? null;
+}
 
 /** Contextura a usar en las fórmulas: si no está cargada, se asume Mediana. */
 export function effectiveBodyFrame(frame: BodyFrame | null): BodyFrame {
@@ -218,4 +236,25 @@ export function missingFormulaDataMessage(
 /** 66.5 → "66,5"; 162 → "162"; 1.375 → "1,375". */
 export function formatDecimalEs(value: number, maxFractionDigits = 3): string {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: maxFractionDigits }).format(value);
+}
+
+const MINUS_SIGN = "\u2212";
+const signedIntFormat = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0, useGrouping: true });
+
+function signPrefix(value: number): string {
+  if (value < 0) return MINUS_SIGN;
+  if (value > 0) return "+";
+  return "";
+}
+
+/** −20 → "−20 %" (U+2212), 15 → "+15 %", 0 → "0 %". */
+export function formatSignedPercentEs(value: number): string {
+  return `${signPrefix(value)}${formatDecimalEs(Math.abs(value))} %`;
+}
+
+/** −119 → "−119" (U+2212), 50 → "+50", 0 → "0". Enteros (Math.round), con separador de miles
+ *  es-AR como el resto de las kcal ("+1.200"). */
+export function formatSignedIntEs(value: number): string {
+  const rounded = Math.round(value);
+  return `${signPrefix(rounded)}${signedIntFormat.format(Math.abs(rounded))}`;
 }

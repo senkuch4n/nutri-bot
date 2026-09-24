@@ -25,6 +25,7 @@ import {
   setConsultationPlan,
   updateManualConsultationDate,
 } from "@nutri-bot/db/domain";
+import { belongsToPatient } from "@/lib/consultation-guard";
 import type { ActionState } from "./clinical-actions";
 import { parseMeasuresFromForm } from "./measure-form-data";
 
@@ -41,12 +42,6 @@ export type ConsultationFormState = {
 const INVALID = { ok: false, error: "Datos inválidos" } as const;
 
 const idSchema = z.string().min(1);
-
-/** true si la consulta existe y es del paciente. */
-async function belongsToPatient(patientId: string, consultationId: string): Promise<boolean> {
-  const c = await prisma.consultation.findUnique({ where: { id: consultationId }, select: { patientId: true } });
-  return c !== null && c.patientId === patientId;
-}
 
 function revalidateConsultation(patientId: string, consultationId: string) {
   revalidatePath(`/pacientes/${patientId}`);

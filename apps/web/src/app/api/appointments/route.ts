@@ -24,7 +24,13 @@ export async function GET(req: Request) {
       patient: true,
       service: true,
       consultation: {
-        select: { id: true, notes: true, planId: true, _count: { select: { evolutionEntries: true } } },
+        select: {
+          id: true,
+          notes: true,
+          planId: true,
+          prescription: { select: { id: true } },
+          _count: { select: { evolutionEntries: true } },
+        },
       },
     },
     orderBy: { startsAt: "asc" },
@@ -56,6 +62,7 @@ export async function GET(req: Request) {
             id: a.consultation.id,
             hasContent: !isConsultationEmpty({
               measurementCount: a.consultation._count.evolutionEntries,
+              hasPrescription: a.consultation.prescription !== null,
               hasPlan: a.consultation.planId !== null,
               notes: a.consultation.notes,
             }),

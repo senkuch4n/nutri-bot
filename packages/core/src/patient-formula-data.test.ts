@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTIVITY_LEVELS,
+  ADJUSTMENT_RANGE_VALUES,
   ACTIVITY_LEVEL_VALUES,
   BODY_FRAMES,
   BODY_FRAME_VALUES,
@@ -13,6 +14,9 @@ import {
   computeAgeYears,
   effectiveBodyFrame,
   formatDecimalEs,
+  formatSignedIntEs,
+  formatSignedPercentEs,
+  goalAdjustmentRange,
   getMissingFormulaData,
   isMinor,
   missingFormulaDataMessage,
@@ -189,5 +193,47 @@ describe("formatDecimalEs", () => {
     expect(formatDecimalEs(162)).toBe("162");
     expect(formatDecimalEs(1.375)).toBe("1,375");
     expect(formatDecimalEs(29.4)).toBe("29,4");
+  });
+});
+
+describe("HU-004: rangos de ajuste y formatos con signo", () => {
+  it("los rangos tienen key y shortLabel", () => {
+    expect(
+      NUTRITION_GOALS.map((g) => [g.value, g.adjustmentRanges.map((r) => [r.key, r.shortLabel, r.minPercent, r.maxPercent])]),
+    ).toEqual([
+      [
+        "LOSE_WEIGHT",
+        [
+          ["MODERATE_DEFICIT", "Déficit moderado", -25, -15],
+          ["AGGRESSIVE_DEFICIT", "Déficit agresivo", -30, -25],
+        ],
+      ],
+      ["MAINTAIN", [["MAINTENANCE", "Mantenimiento", 0, 0]]],
+      ["GAIN_WEIGHT", [["SURPLUS", "Superávit", 10, 20]]],
+      ["GAIN_MUSCLE", [["SURPLUS", "Superávit", 10, 20]]],
+    ]);
+    expect(ADJUSTMENT_RANGE_VALUES).toEqual(["MODERATE_DEFICIT", "AGGRESSIVE_DEFICIT", "MAINTENANCE", "SURPLUS"]);
+  });
+
+  it("goalAdjustmentRange", () => {
+    expect(goalAdjustmentRange("LOSE_WEIGHT", "AGGRESSIVE_DEFICIT")?.label).toBe("Déficit agresivo (con supervisión)");
+    expect(goalAdjustmentRange("GAIN_MUSCLE", "SURPLUS")?.minPercent).toBe(10);
+    expect(goalAdjustmentRange("LOSE_WEIGHT", "SURPLUS")).toBeNull();
+    expect(goalAdjustmentRange("MAINTAIN", "MODERATE_DEFICIT")).toBeNull();
+  });
+
+  it("formatSignedPercentEs (U+2212)", () => {
+    expect(formatSignedPercentEs(-20)).toBe("−20 %");
+    expect(formatSignedPercentEs(15)).toBe("+15 %");
+    expect(formatSignedPercentEs(0)).toBe("0 %");
+  });
+
+  it("formatSignedIntEs", () => {
+    expect(formatSignedIntEs(-119)).toBe("−119");
+    expect(formatSignedIntEs(50)).toBe("+50");
+    expect(formatSignedIntEs(0)).toBe("0");
+    expect(formatSignedIntEs(-0.4)).toBe("0");
+    // kcal con separador de miles es-AR (decisión del orquestador)
+    expect(formatSignedIntEs(1200)).toBe("+1.200");
   });
 });
