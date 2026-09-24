@@ -3,6 +3,7 @@ import {
   buildIsakReportDrafts,
   buildIsakReportModel,
   buildIsakStudy,
+  computeAgeMonths,
   computeAgeYears,
   dayKeyInTz,
   formatInTimeZone,
@@ -67,9 +68,12 @@ export async function loadIsakReportContext(
   const tz = pro.timezone;
   const { patient } = consultation;
   const ageAt = (at: Date) => (patient.birthDate ? computeAgeYears(patient.birthDate, at, tz) : null);
+  // HU-008: meses cumplidos a la fecha de cada estudio (solo entran en la huella si es pediátrico).
+  const monthsAt = (at: Date) => (patient.birthDate ? computeAgeMonths(patient.birthDate, at, tz) : null);
   const dateLabel = (d: Date) => formatInTimeZone(d, tz, "dd/MM/yyyy");
 
   const currentAge = ageAt(consultation.consultedAt);
+  const currentMonths = monthsAt(consultation.consultedAt);
   const currentMeasures = toIsakMeasures(entry);
   const currentDateLabel = dateLabel(consultation.consultedAt);
 
@@ -82,19 +86,30 @@ export async function loadIsakReportContext(
           measures: toIsakMeasures(previousEntry),
           dateLabel: dateLabel(previousAt),
           ageYears: ageAt(previousAt),
+          ageMonths: monthsAt(previousAt),
         }
       : null;
 
   const input: IsakReportInput = {
     patientName: patient.name ?? patient.phone,
     current: {
-      result: buildIsakStudy({ measures: currentMeasures, sex: patient.sex, ageYears: currentAge }),
+      result: buildIsakStudy({
+        measures: currentMeasures,
+        sex: patient.sex,
+        ageYears: currentAge,
+        ageMonths: currentMonths,
+      }),
       dateLabel: currentDateLabel,
       ageYears: currentAge,
     },
     previous: previous
       ? {
-          result: buildIsakStudy({ measures: previous.measures, sex: patient.sex, ageYears: previous.ageYears }),
+          result: buildIsakStudy({
+            measures: previous.measures,
+            sex: patient.sex,
+            ageYears: previous.ageYears,
+            ageMonths: previous.ageMonths,
+          }),
           dateLabel: previous.dateLabel,
           ageYears: previous.ageYears,
         }
@@ -106,7 +121,13 @@ export async function loadIsakReportContext(
   const report = await getAnthropometricReportMeta(entry.id);
   const sourceKey = isakReportSourceKey({
     sex: patient.sex,
-    current: { entryId: entry.id, measures: currentMeasures, dateLabel: currentDateLabel, ageYears: currentAge },
+    current: {
+      entryId: entry.id,
+      measures: currentMeasures,
+      dateLabel: currentDateLabel,
+      ageYears: currentAge,
+      ageMonths: currentMonths,
+    },
     previous,
   });
   const studyHref = `${consultationHref}/antropometria`;

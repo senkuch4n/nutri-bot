@@ -1,13 +1,24 @@
 import {
   BMI_HEALTHY_RANGE_TEXT,
   DIAGNOSIS_TEXT,
-  MINOR_WARNING_TEXT,
+  PEDIATRIC_TEXT,
   formatDecimalEs,
   type AnthropometricDiagnosis,
 } from "@nutri-bot/core";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/primitives/table";
 import { Alert, Card, Quantity } from "@/components/ui";
-import { BMI_TONES, HEALTHY_TONES, IndicatorRow, Muted, Row, WAIST_HIP_TONES, WAIST_TONES } from "./diagnosis-rows";
+import {
+  BMI_FOR_AGE_TONES,
+  BMI_TONES,
+  GrowthIndicatorRow,
+  HEALTHY_TONES,
+  HEIGHT_FOR_AGE_TONES,
+  IndicatorRow,
+  Muted,
+  Row,
+  WAIST_HIP_TONES,
+  WAIST_TONES,
+} from "./diagnosis-rows";
 
 export type DiagnosisSourceKey = "weightKg" | "heightCm" | "waistCm" | "hipCm";
 
@@ -46,11 +57,44 @@ export function AnthropometricDiagnosisCard({
     );
   }
 
-  if (diagnosis.minor) {
+  // HU-008: 5 a 17 años, referencia OMS 2007 (IMC para la edad y talla para la edad).
+  if (diagnosis.ageGroup === "PEDIATRIC" && diagnosis.pediatric) {
+    const { pediatric } = diagnosis;
     return (
       <Card title="Diagnóstico antropométrico" description={description}>
         <Alert tone="info" className="mb-4">
-          {MINOR_WARNING_TEXT}
+          {PEDIATRIC_TEXT.diagnosisInfo}
+        </Alert>
+        <dl className="divide-y text-sm">
+          <GrowthIndicatorRow
+            label={PEDIATRIC_TEXT.bmiForAgeLabel}
+            row={pediatric.bmiForAge}
+            tones={BMI_FOR_AGE_TONES}
+            decimals={1}
+            reference={PEDIATRIC_TEXT.bmiForAgeReference}
+            source={datesOf("weightKg", "heightCm")}
+          />
+          <GrowthIndicatorRow
+            label={PEDIATRIC_TEXT.heightForAgeLabel}
+            row={pediatric.heightForAge}
+            tones={HEIGHT_FOR_AGE_TONES}
+            unit="cm"
+            decimals={1}
+            reference={PEDIATRIC_TEXT.heightForAgeReference}
+            source={datesOf("heightCm")}
+          />
+        </dl>
+        <p className="mt-3 text-xs text-muted-foreground">{pediatric.footer}</p>
+      </Card>
+    );
+  }
+
+  // HU-008: menores de 5, sin referencias (D18): el IMC sin clasificar, como antes.
+  if (diagnosis.minor) {
+    return (
+      <Card title="Diagnóstico antropométrico" description={description}>
+        <Alert tone="warning" className="mb-4">
+          {PEDIATRIC_TEXT.under5}
         </Alert>
         <dl className="divide-y text-sm">
           <IndicatorRow

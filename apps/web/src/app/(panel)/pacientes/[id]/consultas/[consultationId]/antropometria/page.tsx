@@ -6,7 +6,9 @@ import {
   ISAK_TEXT,
   MUSCLE_BONE_CLASS_LABELS,
   MUSCLE_BONE_TABLE,
+  PEDIATRIC_TEXT,
   buildIsakStudy,
+  computeAgeMonths,
   computeAgeYears,
   daysBetweenDayKeys,
   dayKeyInTz,
@@ -34,7 +36,18 @@ import { getProfessional } from "@/lib/professional";
 import { FormulaDataForm } from "../../../formula-data-form";
 import { FormulaDataSheet } from "../../../formula-data-sheet";
 import { DeleteIsakStudyButton } from "../delete-isak-study-button";
-import { BMI_TONES, HEALTHY_TONES, IndicatorRow, MUSCLE_BONE_TONES, Muted, Row, WAIST_HIP_TONES } from "../diagnosis-rows";
+import {
+  BMI_FOR_AGE_TONES,
+  BMI_TONES,
+  GrowthIndicatorRow,
+  HEALTHY_TONES,
+  HEIGHT_FOR_AGE_TONES,
+  IndicatorRow,
+  MUSCLE_BONE_TONES,
+  Muted,
+  Row,
+  WAIST_HIP_TONES,
+} from "../diagnosis-rows";
 import { IsakMeasuresTable, IsakValueText, PreviousCells, diffText } from "./isak-measures-table";
 import { Somatochart } from "./somatochart";
 import { TissueStackedBar } from "./tissue-stacked-bar";
@@ -72,7 +85,14 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
   const { patient } = consultation;
   const ageAt = (at: Date) => (patient.birthDate ? computeAgeYears(patient.birthDate, at, tz) : null);
   const age = ageAt(consultation.consultedAt);
-  const current = buildIsakStudy({ measures: toIsakMeasures(entry), sex: patient.sex, ageYears: age });
+  // HU-008: meses cumplidos a la fecha de cada estudio (IMC/E y T/E de la OMS 2007).
+  const monthsAt = (at: Date) => (patient.birthDate ? computeAgeMonths(patient.birthDate, at, tz) : null);
+  const current = buildIsakStudy({
+    measures: toIsakMeasures(entry),
+    sex: patient.sex,
+    ageYears: age,
+    ageMonths: monthsAt(consultation.consultedAt),
+  });
 
   const [previousEntry, report] = await Promise.all([
     getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt }),
@@ -81,7 +101,12 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
   const previousAt = previousEntry?.consultation?.consultedAt ?? null;
   const previous: IsakStudyResult | null =
     previousEntry && previousAt
-      ? buildIsakStudy({ measures: toIsakMeasures(previousEntry), sex: patient.sex, ageYears: ageAt(previousAt) })
+      ? buildIsakStudy({
+          measures: toIsakMeasures(previousEntry),
+          sex: patient.sex,
+          ageYears: ageAt(previousAt),
+          ageMonths: monthsAt(previousAt),
+        })
       : null;
 
   const dateLabel = (d: Date) => formatInTimeZone(d, tz, "dd/MM/yyyy");
@@ -461,14 +486,36 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
         {/* 8. Índices de salud (reusa las filas del diagnóstico de la HU-004) */}
         <Card title="Índices de salud">
           <dl className="divide-y text-sm">
-            <IndicatorRow
-              label="IMC"
-              row={health.bmi}
-              tones={BMI_TONES}
-              decimals={1}
-              reference={minor ? null : BMI_HEALTHY_RANGE_TEXT}
-              source={null}
-            />
+            {health.ageGroup === "PEDIATRIC" && health.pediatric ? (
+              <>
+                <GrowthIndicatorRow
+                  label={PEDIATRIC_TEXT.bmiForAgeLabel}
+                  row={health.pediatric.bmiForAge}
+                  tones={BMI_FOR_AGE_TONES}
+                  decimals={1}
+                  reference={PEDIATRIC_TEXT.bmiForAgeReference}
+                  source={null}
+                />
+                <GrowthIndicatorRow
+                  label={PEDIATRIC_TEXT.heightForAgeLabel}
+                  row={health.pediatric.heightForAge}
+                  tones={HEIGHT_FOR_AGE_TONES}
+                  unit="cm"
+                  decimals={1}
+                  reference={PEDIATRIC_TEXT.heightForAgeReference}
+                  source={null}
+                />
+              </>
+            ) : (
+              <IndicatorRow
+                label="IMC"
+                row={health.bmi}
+                tones={BMI_TONES}
+                decimals={1}
+                reference={minor ? null : BMI_HEALTHY_RANGE_TEXT}
+                source={null}
+              />
+            )}
             {health.waistHipRatio ? (
               <IndicatorRow
                 label="Índice cintura/cadera"

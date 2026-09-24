@@ -183,7 +183,11 @@ export function AnthropometricReportDocument({ input }: { input: ReportPdfInput 
           <View style={styles.section} wrap={false}>
             <SectionTitle title={S.measurements} styles={styles} />
             {model.measurements.minorNote ? <Text style={styles.note}>{model.measurements.minorNote}</Text> : null}
-            <Rows rows={[...model.measurements.rows, model.measurements.bmi]} model={model} styles={styles} head />
+            <Rows rows={[
+              ...model.measurements.rows,
+              model.measurements.bmi,
+              ...(model.measurements.heightForAge ? [model.measurements.heightForAge] : []),
+            ]} model={model} styles={styles} head />
           </View>
 
           {/* 3. Pliegues */}

@@ -333,7 +333,11 @@ export function ReportEditor({
 
         {/* 2. Mediciones */}
         <Card title={T.sections.measurements}>
-          <ReportRowsTable model={model} rows={[...model.measurements.rows, model.measurements.bmi]} />
+          <ReportRowsTable model={model} rows={[
+              ...model.measurements.rows,
+              model.measurements.bmi,
+              ...(model.measurements.heightForAge ? [model.measurements.heightForAge] : []),
+            ]} />
         </Card>
 
         {/* 3. Pliegues */}

@@ -280,3 +280,20 @@ describe("resumen, diferencias y fechas", () => {
     expect(ISAK_TEXT.comparedWith("07/05/2026", 1)).toBe("Comparado con el estudio del 07/05/2026 (1 día antes)");
   });
 });
+
+// ── HU-008 ──
+describe("HU-008: estudio de un chico", () => {
+  it("IMC/E y T/E viajan en health.diagnosis.pediatric", () => {
+    const r = buildIsakStudy({
+      measures: { ...CASE_A, weightKg: 40, heightCm: 150 },
+      sex: "MALE",
+      ageYears: 12,
+      ageMonths: 149,
+    });
+    const p = r.health.diagnosis.pediatric!;
+    expect(p.bmiForAge.status === "classified" && p.bmiForAge.z).toBe(-0.02);
+    expect(p.heightForAge.status === "classified" && p.heightForAge.classKey).toBe("ADEQUATE");
+    expect(r.minor).toBe(true);
+    expect(r.tissues.adipose.kg).toEqual({ status: "not_for_minors" });
+  });
+});

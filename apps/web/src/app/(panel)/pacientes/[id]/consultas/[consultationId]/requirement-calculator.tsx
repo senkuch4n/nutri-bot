@@ -3,22 +3,27 @@
 import { useId, useState, useTransition, type ReactNode } from "react";
 import {
   ACTIVITY_LEVELS,
-  BMR_FORMULAS,
   DEFAULT_MACRO_PERCENTS,
   DEFAULT_PROTEIN_G_PER_KG,
   NUTRITION_GOALS,
+  PEDIATRIC_TEXT,
   REQUIREMENT_TEXT,
   activityLevelOption,
+  adjustmentRangeFor,
   adjustmentRangeHint,
   adjustmentRangeOptionLabel,
+  adjustmentRangesFor,
+  bmrFormulasFor,
   calculateRequirement,
   defaultAdjustmentPercent,
   formatDecimalEs,
   formatMacroAmount,
-  goalAdjustmentRange,
   initialAdjustmentRange,
+  macroReferenceFor,
+  macroReferenceHint,
   nutritionGoalLabel,
   roundTo,
+  schofieldBandLabel,
   vctDifferenceText,
   type ActivityLevel,
   type AdjustmentRangeKey,
@@ -154,15 +159,20 @@ export function RequirementCalculator({
   const draft: RequirementDraft = { ...baseDraft, prescribedVctKcal };
   const calc = calculateRequirement(ctx, draft);
 
-  const goalOption = NUTRITION_GOALS.find((g) => g.value === nutritionGoal) ?? null;
-  const range = nutritionGoal && adjustmentRange ? goalAdjustmentRange(nutritionGoal, adjustmentRange) : null;
+  // HU-008: en pediátricos (5 a 17) cambian las fórmulas, los rangos y la referencia de macros.
+  const population = ctx.population;
+  const pediatric = population === "PEDIATRIC";
+  const stepOffset = pediatric ? 0 : 1; // sin el paso "Peso para las fórmulas" se renumera
+  const macroRef = macroReferenceFor(population);
+  const goalRanges = nutritionGoal ? adjustmentRangesFor(nutritionGoal, population) : [];
+  const range = nutritionGoal && adjustmentRange ? adjustmentRangeFor(nutritionGoal, adjustmentRange, population) : null;
   const activityDiffers = patientActivityLevel !== null && activityLevel !== patientActivityLevel;
   const goalDiffers = patientNutritionGoal !== null && nutritionGoal !== patientNutritionGoal;
 
   function changeGoal(value: string) {
     const goal = (value || null) as NutritionGoal | null;
     setNutritionGoal(goal);
-    const first = initialAdjustmentRange(goal, null);
+    const first = initialAdjustmentRange(goal, null, population);
     setAdjustmentRange(first?.key ?? null);
     setFields((prev) => ({ ...prev, adjustment: first ? String(defaultAdjustmentPercent(first)) : "" }));
     setServerError(null);
@@ -171,7 +181,7 @@ export function RequirementCalculator({
   function changeRange(value: string) {
     const key = (value || null) as AdjustmentRangeKey | null;
     setAdjustmentRange(key);
-    const r = key && nutritionGoal ? goalAdjustmentRange(nutritionGoal, key) : null;
+    const r = key && nutritionGoal ? adjustmentRangeFor(nutritionGoal, key, population) : null;
     setFields((prev) => ({ ...prev, adjustment: r ? String(defaultAdjustmentPercent(r)) : "" }));
     setServerError(null);
   }
@@ -229,30 +239,32 @@ export function RequirementCalculator({
   return (
     <div className="space-y-8">
       <ol className="space-y-8">
-        {/* 1. Peso */}
-        <Step number={1} title="Peso para las fórmulas">
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            value={weightBasis}
-            onValueChange={(v) => v && setWeightBasis(v as WeightBasis)}
-            aria-label="Peso para las fórmulas"
-            className="grid max-w-md grid-cols-2 gap-0 rounded-md border border-input p-0.5 [&>button]:border-0"
-          >
-            <ToggleGroupItem value="ACTUAL" className="tabular-nums data-[state=on]:font-semibold">
-              Actual ({kg1(ctx.actualWeightKg)} kg)
-            </ToggleGroupItem>
-            <ToggleGroupItem value="ADJUSTED" className="tabular-nums data-[state=on]:font-semibold">
-              Ajustado ({kg1(calc.adjustedWeightKg)} kg)
-            </ToggleGroupItem>
-          </ToggleGroup>
-          {calc.suggestAdjustedWeight ? (
-            <p className="mt-2 text-xs text-muted-foreground">Sugerido: supera el 130 % del peso ideal</p>
-          ) : null}
-        </Step>
+        {/* 1. Peso (solo adultos: en menores se usa el peso actual, D14) */}
+        {!pediatric && calc.adjustedWeightKg !== null ? (
+          <Step number={1} title="Peso para las fórmulas">
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={weightBasis}
+              onValueChange={(v) => v && setWeightBasis(v as WeightBasis)}
+              aria-label="Peso para las fórmulas"
+              className="grid max-w-md grid-cols-2 gap-0 rounded-md border border-input p-0.5 [&>button]:border-0"
+            >
+              <ToggleGroupItem value="ACTUAL" className="tabular-nums data-[state=on]:font-semibold">
+                Actual ({kg1(ctx.actualWeightKg)} kg)
+              </ToggleGroupItem>
+              <ToggleGroupItem value="ADJUSTED" className="tabular-nums data-[state=on]:font-semibold">
+                Ajustado ({kg1(calc.adjustedWeightKg)} kg)
+              </ToggleGroupItem>
+            </ToggleGroup>
+            {calc.suggestAdjustedWeight ? (
+              <p className="mt-2 text-xs text-muted-foreground">Sugerido: supera el 130 % del peso ideal</p>
+            ) : null}
+          </Step>
+        ) : null}
 
         {/* 2. TMB */}
-        <Step number={2} title="Tasa metabólica basal (TMB)">
+        <Step number={1 + stepOffset} title="Tasa metabólica basal (TMB)">
           <RadioGroup
             value={bmrFormula}
             onValueChange={(v) => setBmrFormula(v as BmrFormula)}
@@ -271,7 +283,7 @@ export function RequirementCalculator({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {BMR_FORMULAS.map((f) => {
+                {bmrFormulasFor(population).map((f) => {
                   const value = calc.bmrByFormula[f.value];
                   const itemId = `${baseId}-bmr-${f.value}`;
                   return (
@@ -286,7 +298,11 @@ export function RequirementCalculator({
                       </TableCell>
                       <TableCell numeric>{value === null ? "—" : kcal(value)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {f.needsBodyFat ? bodyFatUsage : `con ${kg1(calc.weightUsedKg)} kg`}
+                        {f.needsBodyFat
+                          ? bodyFatUsage
+                          : f.value === "SCHOFIELD_WEIGHT_HEIGHT"
+                            ? `con ${kg1(calc.weightUsedKg)} kg y ${formatDecimalEs(ctx.heightCm, 1)} cm`
+                            : `con ${kg1(calc.weightUsedKg)} kg`}
                       </TableCell>
                     </TableRow>
                   );
@@ -294,18 +310,22 @@ export function RequirementCalculator({
               </TableBody>
             </Table>
           </RadioGroup>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {calc.bodyFatPercent === null ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setBodyFatSource("DEURENBERG")}>
-                Usar el estimado de Deurenberg
-              </Button>
-            ) : null}
-            {bodyFatSource === "DEURENBERG" && measuredBodyFat ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setBodyFatSource("MEASURED")}>
-                Usar el % medido ({formatDecimalEs(measuredBodyFat.percent, 1)} %)
-              </Button>
-            ) : null}
-          </div>
+          {pediatric ? (
+            <p className="mt-2 text-xs text-muted-foreground">{schofieldBandLabel(ctx.sex, ctx.ageYears)}</p>
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {calc.bodyFatPercent === null ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setBodyFatSource("DEURENBERG")}>
+                  Usar el estimado de Deurenberg
+                </Button>
+              ) : null}
+              {bodyFatSource === "DEURENBERG" && measuredBodyFat ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setBodyFatSource("MEASURED")}>
+                  Usar el % medido ({formatDecimalEs(measuredBodyFat.percent, 1)} %)
+                </Button>
+              ) : null}
+            </div>
+          )}
           {measuredBmr ? (
             <p className="mt-2 text-sm text-muted-foreground">
               Medido por bioimpedancia: {kcal(measuredBmr.kcal)}
@@ -316,7 +336,7 @@ export function RequirementCalculator({
 
         {/* 3. Actividad */}
         <Step
-          number={3}
+          number={2 + stepOffset}
           title="Actividad"
           result={calc.totalExpenditureKcal !== null ? `GET ${kcal(calc.totalExpenditureKcal)}` : null}
         >
@@ -344,12 +364,13 @@ export function RequirementCalculator({
                 ))}
               </Select>
             </Field>
+            {pediatric ? <p className="mt-2 text-xs text-muted-foreground">{PEDIATRIC_TEXT.activityHint}</p> : null}
           </div>
         </Step>
 
         {/* 4. Objetivo */}
         <Step
-          number={4}
+          number={3 + stepOffset}
           title="Objetivo"
           result={calc.calculatedVctKcal !== null ? `VCT calculado ${kcal(calc.calculatedVctKcal)}` : null}
         >
@@ -367,11 +388,11 @@ export function RequirementCalculator({
                 ))}
               </Select>
             </Field>
-            {goalOption && goalOption.adjustmentRanges.length > 1 ? (
+            {goalRanges.length > 1 ? (
               <Field label="Tipo de ajuste">
                 <Select value={adjustmentRange ?? ""} onChange={(e) => changeRange(e.target.value)}>
                   <option value="">Elegí…</option>
-                  {goalOption.adjustmentRanges.map((r) => (
+                  {goalRanges.map((r) => (
                     <option key={r.key} value={r.key}>
                       {adjustmentRangeOptionLabel(r)}
                     </option>
@@ -398,7 +419,7 @@ export function RequirementCalculator({
         </Step>
 
         {/* 5. VCT indicado */}
-        <Step number={5} title="VCT indicado">
+        <Step number={4 + stepOffset} title="VCT indicado">
           <div className="max-w-xs">
             <Field label="VCT indicado">
               <NumberInput name="prescribedVctKcal" autoComplete="off"
@@ -428,7 +449,7 @@ export function RequirementCalculator({
         </Step>
 
         {/* 6. Macros */}
-        <Step number={6} title="Macronutrientes">
+        <Step number={5 + stepOffset} title="Macronutrientes">
           <ToggleGroup
             type="single"
             variant="outline"
@@ -451,22 +472,25 @@ export function RequirementCalculator({
 
           {macroMode === "PERCENT_OF_VCT" ? (
             <div className="grid max-w-2xl gap-4 sm:grid-cols-3">
-              <Field label="Proteínas" hint="15–25 %">
+              <Field label="Proteínas" hint={macroReferenceHint(macroRef.proteinPercent, "%")}>
                 <NumberInput name="proteinPercent" autoComplete="off" unit="%" step={0.1} value={fields.proteinPercent} onChange={(e) => setField("proteinPercent")(e.target.value)} />
               </Field>
-              <Field label="Grasas" hint="20–35 %">
+              <Field label="Grasas" hint={macroReferenceHint(macroRef.fatPercent, "%")}>
                 <NumberInput name="fatPercent" autoComplete="off" unit="%" step={0.1} value={fields.fatPercent} onChange={(e) => setField("fatPercent")(e.target.value)} />
               </Field>
-              <Field label="Carbohidratos" hint="45–60 %">
+              <Field label="Carbohidratos" hint={macroReferenceHint(macroRef.carbPercent, "%")}>
                 <NumberInput name="carbPercent" autoComplete="off" unit="%" step={0.1} value={fields.carbPercent} onChange={(e) => setField("carbPercent")(e.target.value)} />
               </Field>
             </div>
           ) : (
             <div className="grid max-w-2xl gap-4 sm:grid-cols-3">
-              <Field label="Proteínas" hint="1,2–2,2 g/kg">
+              <Field
+                label="Proteínas"
+                hint={pediatric ? PEDIATRIC_TEXT.proteinGPerKgHint : macroReferenceHint(macroRef.proteinGPerKg, "g/kg")}
+              >
                 <NumberInput name="proteinGPerKg" autoComplete="off" unit="g/kg" step={0.1} value={fields.proteinGPerKg} onChange={(e) => setField("proteinGPerKg")(e.target.value)} />
               </Field>
-              <Field label="Grasas" hint="20–35 %">
+              <Field label="Grasas" hint={macroReferenceHint(macroRef.fatPercent, "%")}>
                 <NumberInput name="fatPercent" autoComplete="off" unit="%" step={0.1} value={fields.fatPercent} onChange={(e) => setField("fatPercent")(e.target.value)} />
               </Field>
               <div className="self-center text-sm text-muted-foreground sm:pt-6">Carbohidratos: el resto</div>

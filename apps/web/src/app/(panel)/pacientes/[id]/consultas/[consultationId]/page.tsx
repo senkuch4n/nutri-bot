@@ -7,6 +7,7 @@ import {
   buildIsakStudy,
   buildIsakSummary,
   canDeleteConsultation,
+  computeAgeMonths,
   computeAgeYears,
   dayKeyInTz,
   formatDateTime,
@@ -84,6 +85,8 @@ export default async function ConsultationPage({
     const source = m[key];
     if (source && fromOther(source)) otherDates[key] = dateLabel(source.recordedAt);
   }
+  // HU-008 (D8): meses cumplidos a la fecha de cada medición.
+  const monthsAt = (at: Date) => (patient.birthDate ? computeAgeMonths(patient.birthDate, at, tz) : null);
   const diagnosis = buildAnthropometricDiagnosis({
     sex: patient.sex,
     ageYears: requirement.ageYears,
@@ -92,6 +95,8 @@ export default async function ConsultationPage({
     heightCm: m.heightCm?.value ?? null,
     waistCm: m.waistCm?.value ?? null,
     hipCm: m.hipCm?.value ?? null,
+    weightAgeMonths: m.weightKg ? monthsAt(m.weightKg.recordedAt) : null,
+    heightAgeMonths: m.heightCm ? monthsAt(m.heightCm.recordedAt) : null,
   });
   const measuredBodyFat = m.bodyFatPercent
     ? { percent: m.bodyFatPercent.value, dateLabel: dateLabel(m.bodyFatPercent.recordedAt) }
@@ -143,7 +148,12 @@ export default async function ConsultationPage({
   let isakStudy: Parameters<typeof IsakCard>[0]["study"] = null;
   if (isakEntry) {
     const values = toIsakMeasures(isakEntry);
-    const result = buildIsakStudy({ measures: values, sex: patient.sex, ageYears: age });
+    const result = buildIsakStudy({
+      measures: values,
+      sex: patient.sex,
+      ageYears: age,
+      ageMonths: monthsAt(consultation.consultedAt),
+    });
     const [previousEntry, report] = await Promise.all([
       getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt }),
       getAnthropometricReportMeta(isakEntry.id),
@@ -156,6 +166,7 @@ export default async function ConsultationPage({
               measures: toIsakMeasures(previousEntry),
               sex: patient.sex,
               ageYears: patient.birthDate ? computeAgeYears(patient.birthDate, previousAt, tz) : null,
+              ageMonths: monthsAt(previousAt),
             }),
             dateLabel: dateLabel(previousAt),
           }
@@ -251,7 +262,7 @@ export default async function ConsultationPage({
             otherDates={otherDates}
             measuredBodyFat={measuredBodyFat}
           />
-          {diagnosis.minor ? null : (
+          {diagnosis.ageGroup === "UNDER_5" ? null : (
             <RequirementSection
               patientId={id}
               consultationId={consultation.id}

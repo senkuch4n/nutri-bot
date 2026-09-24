@@ -1,10 +1,11 @@
 import {
   REQUIREMENT_TEXT,
+  ageGroupOf,
   buildPrescriptionSnapshot,
   computeAgeYears,
   dayKeyInTz,
   dayRangeUtc,
-  isMinor,
+  type AgeGroup,
   type FormulaMeasurements,
   type PrescriptionChoices,
   type PrescriptionSnapshot,
@@ -28,6 +29,8 @@ export class InvalidPrescriptionError extends Error {
 export type RequirementContextForConsultation = {
   ctx: RequirementContext | null;
   ageYears: number | null;
+  /** HU-008: ADULT (≥ 18 o sin fecha de nacimiento), PEDIATRIC (5 a 17) o UNDER_5. */
+  ageGroup: AgeGroup;
   measurements: FormulaMeasurements;
   patient: Pick<Patient, "id" | "sex" | "birthDate" | "activityLevel" | "nutritionGoal" | "bodyFrame">;
   consultedAt: Date;
@@ -40,7 +43,8 @@ function measurementsUntil(consultedAt: Date, tz: string): Date {
 }
 
 /** Contexto de la calculadora para una consulta: paciente, edad a la fecha, mediciones D4.
- *  `ctx` es null si falta algo bloqueante (sexo, fecha de nacimiento, peso, talla) o si es menor. */
+ *  `ctx` null si falta algo bloqueante (sexo, fecha de nacimiento, peso, talla) o si es menor de 5.
+ *  HU-008: de 5 a 17 el ctx lleva population "PEDIATRIC". */
 export async function getRequirementContextForConsultation(
   consultationId: string,
 ): Promise<RequirementContextForConsultation> {
@@ -66,9 +70,11 @@ export async function getRequirementContextForConsultation(
   const ageYears = patient.birthDate ? computeAgeYears(patient.birthDate, consultedAt, pro.timezone) : null;
   const weight = measurements.weightKg;
   const height = measurements.heightCm;
+  const ageGroup = ageGroupOf(ageYears);
   const ctx: RequirementContext | null =
-    patient.sex !== null && ageYears !== null && !isMinor(ageYears) && weight !== null && height !== null
+    patient.sex !== null && ageYears !== null && ageGroup !== "UNDER_5" && weight !== null && height !== null
       ? {
+          population: ageGroup === "PEDIATRIC" ? "PEDIATRIC" : "ADULT",
           sex: patient.sex,
           ageYears,
           heightCm: height.value,
@@ -76,7 +82,7 @@ export async function getRequirementContextForConsultation(
           measuredBodyFatPercent: measurements.bodyFatPercent?.value ?? null,
         }
       : null;
-  return { ctx, ageYears, measurements, patient, consultedAt };
+  return { ctx, ageYears, ageGroup, measurements, patient, consultedAt };
 }
 
 /** Prescripción anterior de referencia (D1, D9, D12): la de la consulta del paciente con
@@ -177,7 +183,7 @@ export function toPrescriptionSnapshot(p: NutritionPrescription): PrescriptionSn
     ageYears: p.ageYears,
     heightCm: Number(p.heightCm),
     actualWeightKg: Number(p.actualWeightKg),
-    idealWeightDevineKg: Number(p.idealWeightDevineKg),
+    idealWeightDevineKg: decimalOrNull(p.idealWeightDevineKg),
     weightBasis: p.weightBasis,
     weightUsedKg: Number(p.weightUsedKg),
     bodyFatPercent: decimalOrNull(p.bodyFatPercent),
@@ -188,6 +194,8 @@ export function toPrescriptionSnapshot(p: NutritionPrescription): PrescriptionSn
     bmrHarrisBenedictKcal: p.bmrHarrisBenedictKcal,
     bmrKatchMcArdleKcal: p.bmrKatchMcArdleKcal,
     bmrCunninghamKcal: p.bmrCunninghamKcal,
+    bmrSchofieldWeightHeightKcal: p.bmrSchofieldWeightHeightKcal,
+    bmrSchofieldWeightKcal: p.bmrSchofieldWeightKcal,
     activityLevel: p.activityLevel,
     activityFactor: Number(p.activityFactor),
     totalExpenditureKcal: p.totalExpenditureKcal,

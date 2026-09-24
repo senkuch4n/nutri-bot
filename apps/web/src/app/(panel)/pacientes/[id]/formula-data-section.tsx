@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import {
-  MINOR_WARNING_TEXT,
+  PEDIATRIC_TEXT,
   activityLevelOption,
+  ageGroupOf,
   bodyFrameLabel,
   formatDecimalEs,
   getMissingFormulaData,
-  isMinor,
   missingFormulaDataMessage,
   nutritionGoalLabel,
   sexLabel,
@@ -32,6 +32,7 @@ export function FormulaDataSection({
   height: SummaryMeasurement;
   bodyFat: SummaryMeasurement;
 }) {
+  const group = ageGroupOf(ageYears);
   const missingMessage = missingFormulaDataMessage(
     getMissingFormulaData({
       ...values,
@@ -80,10 +81,11 @@ export function FormulaDataSection({
         </FormulaDataSheet>
       }
     >
-      {missingMessage || isMinor(ageYears) ? (
+      {missingMessage || group !== "ADULT" ? (
         <div className="mb-4 space-y-3">
           {missingMessage ? <Alert tone="warning">{missingMessage}</Alert> : null}
-          {isMinor(ageYears) ? <Alert tone="warning">{MINOR_WARNING_TEXT}</Alert> : null}
+          {group === "PEDIATRIC" ? <Alert tone="info">{PEDIATRIC_TEXT.formulaDataInfo}</Alert> : null}
+          {group === "UNDER_5" ? <Alert tone="warning">{PEDIATRIC_TEXT.under5}</Alert> : null}
         </div>
       ) : null}
       <dl className="divide-y text-sm">

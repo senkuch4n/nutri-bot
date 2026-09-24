@@ -374,3 +374,72 @@ describe("isakReportSourceKey", () => {
     for (const v of variants) expect(isakReportSourceKey(v)).not.toBe(key);
   });
 });
+
+// ── HU-008 ──
+describe("HU-008: informe de un chico (OMS 2007)", () => {
+  const M = "−";
+  const kidStudy = (measures: IsakMeasures, ageYears: number, ageMonths: number, dateLabel: string) => ({
+    result: buildIsakStudy({ measures, sex: "MALE", ageYears, ageMonths }),
+    dateLabel,
+    ageYears,
+  });
+  const KID: IsakReportInput = {
+    patientName: NAME,
+    current: kidStudy({ ...CASE_A, weightKg: 40, heightCm: 150 }, 12, 149, "10/09/2026"),
+    previous: kidStudy({ ...CASE_B, weightKg: 38, heightCm: 146 }, 11, 143, "10/03/2026"),
+  };
+
+  it("IMC para la edad y talla para la edad, en las dos columnas", () => {
+    const m = buildIsakReportModel(KID);
+    expect(m.measurements.bmi.label).toBe("IMC para la edad (OMS 2007)");
+    expect(m.measurements.bmi.current).toBe(`17,8 · Normal (Z ${M}0,02, P49)`);
+    // IMC/E niños mes 143: L −1.778, M 17.4799, S 0.11487.
+    expect(m.measurements.bmi.previous).toBe("17,8 · Normal (Z +0,17, P57)");
+    expect(m.measurements.heightForAge).toEqual({
+      key: "heightForAge",
+      label: "Talla para la edad (OMS 2007)",
+      current: `150,0 cm · Talla adecuada (Z ${M}0,26, P40)`,
+      // T/E niños mes 143: M 148.5478, S 0.0475.
+      previous: `146,0 cm · Talla adecuada (Z ${M}0,36, P36)`,
+      diff: null,
+      change: null,
+    });
+    expect(m.composition).toBeNull();
+  });
+
+  it("anterior de otro grupo → 'Sin dato'; sin anterior → null", () => {
+    const adultPrev: IsakReportInput = { ...KID, previous: study(CASE_B, 18, "10/03/2026") };
+    expect(buildIsakReportModel(adultPrev).measurements.heightForAge!.previous).toBe("Sin dato");
+    const alone: IsakReportInput = { ...KID, previous: null };
+    expect(buildIsakReportModel(alone).measurements.heightForAge!.previous).toBeNull();
+  });
+
+  it("adulto: sin talla para la edad y la etiqueta de siempre", () => {
+    const m = buildIsakReportModel(AB);
+    expect(m.measurements.heightForAge).toBeNull();
+    expect(m.measurements.bmi.label).toBe("IMC (OMS)");
+  });
+
+  it("huella: ageMonths no cambia la de adultos; en chicos sí", () => {
+    const adult = {
+      sex: "MALE" as const,
+      current: { entryId: "a1", measures: CASE_A, dateLabel: "08/05/2026", ageYears: 22 },
+      previous: { entryId: "b1", measures: CASE_B, dateLabel: "05/11/2025", ageYears: 21 },
+    };
+    const adultWithMonths = {
+      ...adult,
+      current: { ...adult.current, ageMonths: 270 },
+      previous: { ...adult.previous, ageMonths: 258 },
+    };
+    expect(isakReportSourceKey(adultWithMonths)).toBe(isakReportSourceKey(adult));
+
+    const kid = {
+      sex: "MALE" as const,
+      current: { entryId: "a1", measures: CASE_A, dateLabel: "10/09/2026", ageYears: 12, ageMonths: 149 },
+      previous: null,
+    };
+    expect(isakReportSourceKey({ ...kid, current: { ...kid.current, ageMonths: 150 } })).not.toBe(
+      isakReportSourceKey(kid),
+    );
+  });
+});

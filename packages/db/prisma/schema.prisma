@@ -193,7 +193,7 @@ model NutritionPrescription {
   ageYears            Int
   heightCm            Decimal        @db.Decimal(5, 2)
   actualWeightKg      Decimal        @db.Decimal(5, 2)
-  idealWeightDevineKg Decimal        @db.Decimal(5, 2)
+  idealWeightDevineKg Decimal?       @db.Decimal(5, 2) // HU-008: null en menores (D14)
   weightBasis         WeightBasis
   weightUsedKg        Decimal        @db.Decimal(5, 2)
   bodyFatPercent      Decimal?       @db.Decimal(4, 1)
@@ -201,12 +201,14 @@ model NutritionPrescription {
   bodyFatRecordedAt   DateTime? // solo si bodyFatSource = MEASURED
 
   // TMB
-  bmrFormula            BmrFormula
-  bmrKcal               Int
-  bmrMifflinStJeorKcal  Int
-  bmrHarrisBenedictKcal Int
-  bmrKatchMcArdleKcal   Int?
-  bmrCunninghamKcal     Int?
+  bmrFormula                   BmrFormula
+  bmrKcal                      Int
+  bmrMifflinStJeorKcal         Int? // HU-008: null en menores
+  bmrHarrisBenedictKcal        Int? // HU-008: null en menores
+  bmrKatchMcArdleKcal          Int?
+  bmrCunninghamKcal            Int?
+  bmrSchofieldWeightHeightKcal Int? // HU-008: solo menores
+  bmrSchofieldWeightKcal       Int? // HU-008: solo menores
 
   // GET y VCT
   activityLevel        ActivityLevel
@@ -298,6 +300,8 @@ enum BmrFormula {
   HARRIS_BENEDICT
   KATCH_MCARDLE
   CUNNINGHAM
+  SCHOFIELD_WEIGHT_HEIGHT // HU-008: menores de 5 a 17 (peso y talla)
+  SCHOFIELD_WEIGHT        // HU-008: menores de 5 a 17 (solo peso)
 }
 
 enum WeightBasis {

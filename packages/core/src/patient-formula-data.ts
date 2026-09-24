@@ -177,6 +177,69 @@ export function isMinor(ageYears: number | null): boolean {
 
 export const MINOR_WARNING_TEXT = "Las fórmulas son para adultos.";
 
+// ── HU-008: grupos de edad y edad en meses ──
+export const PEDIATRIC_MIN_AGE_YEARS = 5;
+
+/** ADULT: ≥ 18 o sin fecha de nacimiento (HU-004, "se lo trata como adulto").
+ *  PEDIATRIC: 5 a 17. UNDER_5: 0 a 4. */
+export type AgeGroup = "ADULT" | "PEDIATRIC" | "UNDER_5";
+
+export function ageGroupOf(ageYears: number | null): AgeGroup {
+  if (ageYears === null || ageYears >= ADULT_AGE_YEARS) return "ADULT";
+  if (ageYears >= PEDIATRIC_MIN_AGE_YEARS) return "PEDIATRIC";
+  return "UNDER_5";
+}
+
+/**
+ * Meses cumplidos. Misma regla que computeAgeYears: el día de nacimiento se lee en UTC (columna
+ * @db.Date) y el "hoy" en `timeZone`.
+ * meses = 12·(año − añoNac) + (mes − mesNac) − (día < díaNac ? 1 : 0).
+ * Siempre vale Math.floor(computeAgeMonths(...) / 12) === computeAgeYears(...).
+ * Nacidos un 31: el 28/02 todavía no cumplieron el mes (día 28 < 31).
+ */
+export function computeAgeMonths(birthDate: Date, at: Date, timeZone: string): number {
+  const birthYear = birthDate.getUTCFullYear();
+  const birthMonth = birthDate.getUTCMonth() + 1;
+  const birthDay = birthDate.getUTCDate();
+  const [y, m, d] = formatInTimeZone(at, timeZone, "yyyy-MM-dd").split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  return 12 * (y - birthYear) + (m - birthMonth) - (d < birthDay ? 1 : 0);
+}
+
+/** 149 → "12 años y 5 meses (149 meses)"; 96 → "8 años (96 meses)"; 61 → "5 años y 1 mes (61 meses)";
+ *  12 → "1 año (12 meses)". */
+export function ageMonthsLabel(months: number): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const total = `(${plural(months, "mes", "meses")})`;
+  if (years === 0) return `${plural(rest, "mes", "meses")} ${total}`;
+  const yearsText = plural(years, "año", "años");
+  if (rest === 0) return `${yearsText} ${total}`;
+  return `${yearsText} y ${plural(rest, "mes", "meses")} ${total}`;
+}
+
+/** Textos de la HU-008 (D15), exactos. */
+export const PEDIATRIC_TEXT = {
+  formulaDataInfo:
+    "Paciente pediátrico: el diagnóstico usa la referencia OMS 2007 y la TMB, las ecuaciones de Schofield.",
+  diagnosisInfo: "Paciente pediátrico: referencia OMS 2007 (5 a 19 años).",
+  under5: "Menor de 5 años: el sistema no tiene referencias para esta edad.",
+  implausible: "Valor fuera de rango: revisá la medición.",
+  noReferenceForMeasurementAge: "Sin referencia OMS para la edad de esta medición",
+  bmiForAgeLabel: "IMC para la edad",
+  heightForAgeLabel: "Talla para la edad",
+  bmiForAgeReference: "Normal: Z \u22122 a +1",
+  heightForAgeReference: "Adecuada: Z \u2265 \u22122",
+  reportBmiForAgeLabel: "IMC para la edad (OMS 2007)",
+  reportHeightForAgeLabel: "Talla para la edad (OMS 2007)",
+  activityHint: "Factores de actividad de adultos: usalos como orientación.",
+  proteinGPerKgHint: "0,85\u20130,95 g/kg (IDR)",
+} as const;
+
 // ── Qué falta ──
 export type MissingFormulaDataKey =
   | "sex"

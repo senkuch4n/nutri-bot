@@ -131,6 +131,7 @@ async function main() {
       const ctx = await getRequirementContextForConsultation(c12.id);
       assert.equal(ctx.ageYears, 34);
       assert.deepEqual(ctx.ctx, {
+        population: "ADULT",
         sex: "FEMALE",
         ageYears: 34,
         heightCm: 162,
@@ -254,20 +255,74 @@ async function main() {
       assert.ok(await prisma.consultation.findUnique({ where: { id: done.consultation.id } }));
     });
 
-    // 11) Menor: sin contexto y sin guardar.
-    await step("menor: ctx null y no se guarda", async () => {
+    // 11) HU-008: menor de 5 a 17: ctx pediátrico y se guarda con Schofield.
+    await step("menor de 5 a 17: ctx pediátrico y se guarda con Schofield", async () => {
       const cm = await createManualConsultation({ patientId: minor.id, dayKey: "2026-09-12" });
       consultationIds.push(cm.id);
       const em = await addEvolutionEntryToConsultation(cm.id, { weightKg: 40, heightCm: 150 });
       entryIds.push(em.id);
       const r = await getRequirementContextForConsultation(cm.id);
-      assert.equal(r.ctx, null);
       assert.equal(r.ageYears, 12);
+      assert.equal(r.ageGroup, "PEDIATRIC");
+      assert.deepEqual(r.ctx, {
+        population: "PEDIATRIC",
+        sex: "MALE",
+        ageYears: 12,
+        heightCm: 150,
+        actualWeightKg: 40,
+        measuredBodyFatPercent: null,
+      });
+      // Mifflin (de adultos) + déficit moderado → no se guarda.
       await assert.rejects(
         saveConsultationPrescription({ consultationId: cm.id, choices: baseChoices }),
         InvalidPrescriptionError,
       );
       assert.equal(await prisma.nutritionPrescription.count({ where: { consultationId: cm.id } }), 0);
+      const p = await saveConsultationPrescription({
+        consultationId: cm.id,
+        choices: {
+          ...baseChoices,
+          bmrFormula: "SCHOFIELD_WEIGHT_HEIGHT",
+          bodyFatSource: null,
+          nutritionGoal: "MAINTAIN",
+          adjustmentRange: "MAINTENANCE",
+          adjustmentPercent: 0,
+          prescribedVctKcal: 1886,
+        },
+      });
+      prescriptionIds.push(p.id);
+      const row = await prisma.nutritionPrescription.findUniqueOrThrow({ where: { id: p.id } });
+      assert.equal(row.bmrFormula, "SCHOFIELD_WEIGHT_HEIGHT");
+      assert.equal(row.bmrKcal, 1371);
+      assert.equal(row.bmrSchofieldWeightHeightKcal, 1371);
+      assert.equal(row.bmrSchofieldWeightKcal, 1366);
+      assert.equal(row.bmrMifflinStJeorKcal, null);
+      assert.equal(row.bmrHarrisBenedictKcal, null);
+      assert.equal(row.idealWeightDevineKg, null);
+      assert.equal(row.totalExpenditureKcal, 1886);
+      assert.equal(toPrescriptionSnapshot(row).idealWeightDevineKg, null);
+    });
+
+    // 11b) HU-008: menor de 5: sin contexto.
+    await step("menor de 5: ctx null y ageGroup UNDER_5", async () => {
+      const small = await prisma.patient.create({
+        data: {
+          whatsappJid: `test-hu008-under5-${stamp}@test.invalid`,
+          phone: "000",
+          name: "Prueba HU-008 menor de 5 (TEST)",
+          birthDate: new Date("2022-05-01"),
+          sex: "FEMALE",
+        },
+      });
+      patientIds.push(small.id);
+      const cs = await createManualConsultation({ patientId: small.id, dayKey: "2026-09-12" });
+      consultationIds.push(cs.id);
+      const es = await addEvolutionEntryToConsultation(cs.id, { weightKg: 16, heightCm: 102 });
+      entryIds.push(es.id);
+      const r = await getRequirementContextForConsultation(cs.id);
+      assert.equal(r.ctx, null);
+      assert.equal(r.ageYears, 4);
+      assert.equal(r.ageGroup, "UNDER_5");
     });
 
     // 12) Borrar la prescripción.

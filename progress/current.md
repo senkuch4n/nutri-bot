@@ -97,3 +97,4 @@ orquestador, para que las revise a la mañana:
 - **HU-007 aprobada** (épica 46). Siguiente: HU-008 (pediatría, épica 56).
 - HU-008 afinada y validada (D1–D18 según las recomendaciones) → `en_arquitectura`.
 - HU-008: SDD lista (tablas OMS de who.int, con su hash) → `implementando` (Opus).
+- **HU-008 aprobada** (épica 56). Todas las HU del objetivo quedaron cerradas. Siguiente: merge a main, verify.sh y push.

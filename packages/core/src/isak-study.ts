@@ -74,6 +74,8 @@ export interface IsakStudyInput {
   sex: Sex | null;
   /** A la fecha de la consulta; null = sin fecha de nacimiento. */
   ageYears: number | null;
+  /** HU-008: meses cumplidos a la fecha de la consulta del estudio. Opcional; producción lo pasa. */
+  ageMonths?: number | null;
 }
 
 export interface IsakMeasureRow {
@@ -541,6 +543,9 @@ export function buildIsakStudy(input: IsakStudyInput): IsakStudyResult {
     heightCm: measures.heightCm,
     waistCm: measures.waistCm,
     hipCm: measures.hipCm,
+    // HU-008: peso y talla del estudio son de la misma fecha (la de la consulta).
+    weightAgeMonths: input.ageMonths ?? null,
+    heightAgeMonths: input.ageMonths ?? null,
   });
   const fatDistribution: IsakValue =
     check({ keys: SKINFOLDS_6 }) ??

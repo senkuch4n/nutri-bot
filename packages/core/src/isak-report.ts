@@ -7,7 +7,8 @@ import {
   type IsakStudyResult,
   type IsakValue,
 } from "./isak-study";
-import { formatFixedEs, formatSignedFixedEs, type Sex } from "./patient-formula-data";
+import { growthReportCell } from "./growth-reference";
+import { PEDIATRIC_TEXT, ageGroupOf, formatFixedEs, formatSignedFixedEs, type Sex } from "./patient-formula-data";
 
 /**
  * HU-007 (épica 46): informe antropométrico en PDF. Arma el modelo del informe (filas ya
@@ -92,6 +93,8 @@ export interface IsakReportModel {
     minorNote: string | null;
     rows: IsakReportRow[];
     bmi: IsakReportRow;
+    /** HU-008: solo si el estudio ACTUAL es PEDIATRIC; null en el resto. */
+    heightForAge: IsakReportRow | null;
   };
   skinfolds: {
     intro: string;
@@ -355,7 +358,14 @@ export function isakReportFileName(consultationDayKey: string): string {
   return `informe-antropometrico-${consultationDayKey}.pdf`;
 }
 
-type SourceStudy = { entryId: string; measures: IsakMeasures; dateLabel: string; ageYears: number | null };
+type SourceStudy = {
+  entryId: string;
+  measures: IsakMeasures;
+  dateLabel: string;
+  ageYears: number | null;
+  /** HU-008: meses cumplidos a la fecha del estudio. Solo entra en la huella si es PEDIATRIC. */
+  ageMonths?: number | null;
+};
 
 /** Huella de los datos de entrada (D13): FNV-1a de 32 bits (hex, 8 caracteres) sobre el JSON canónico. */
 export function isakReportSourceKey(input: {
@@ -363,11 +373,14 @@ export function isakReportSourceKey(input: {
   current: SourceStudy;
   previous: SourceStudy | null;
 }): string {
+  // HU-008: ageMonths solo en pediátricos, así la huella de adultos y menores de 5 no cambia
+  // (sus PDFs no pasan a "desactualizados").
   const canon = (s: SourceStudy) => ({
     entryId: s.entryId,
     measures: ISAK_MEASURE_KEYS.map((k) => s.measures[k] ?? null),
     dateLabel: s.dateLabel,
     ageYears: s.ageYears,
+    ...(ageGroupOf(s.ageYears) === "PEDIATRIC" ? { ageMonths: s.ageMonths ?? null } : {}),
   });
   const json = JSON.stringify({
     sex: input.sex,
@@ -506,19 +519,40 @@ export function buildIsakReportModel(input: IsakReportInput): IsakReportModel {
 
   // Mediciones.
   const bmiCell = (result: IsakStudyResult): string => {
+    // HU-008: si ESE estudio es pediátrico, la celda es la del IMC para la edad.
+    const pediatric = result.health.diagnosis.pediatric;
+    if (pediatric) return growthReportCell(pediatric.bmiForAge, "", NO_DATA);
     const b = result.health.diagnosis.bmi;
     if (b.status === "classified") return `${formatFixedEs(b.value, 1)} · ${b.classLabel}`;
     if (b.status === "unclassified") return formatFixedEs(b.value, 1);
     return NO_DATA;
   };
+  const curPediatric = cur.health.diagnosis.pediatric;
   const bmi = track<IsakReportRow>({
     key: "bmi",
-    label: "IMC (OMS)",
+    label: curPediatric ? PEDIATRIC_TEXT.reportBmiForAgeLabel : "IMC (OMS)",
     previous: prev ? bmiCell(prev) : null,
     current: bmiCell(cur),
     diff: null,
     change: null,
   });
+  // HU-008: talla para la edad, solo si el estudio actual es pediátrico.
+  let heightForAge: IsakReportRow | null = null;
+  if (curPediatric) {
+    const prevPediatric = prev?.health.diagnosis.pediatric ?? null;
+    heightForAge = track<IsakReportRow>({
+      key: "heightForAge",
+      label: PEDIATRIC_TEXT.reportHeightForAgeLabel,
+      previous: prev
+        ? prevPediatric
+          ? growthReportCell(prevPediatric.heightForAge, "cm", NO_DATA)
+          : NO_DATA
+        : null,
+      current: growthReportCell(curPediatric.heightForAge, "cm", NO_DATA),
+      diff: null,
+      change: null,
+    });
+  }
 
   // Pliegues.
   const skinfoldRows = SKINFOLD_ROWS.map((r) => measureRow(r.key, r.label, "mm"));
@@ -677,6 +711,7 @@ export function buildIsakReportModel(input: IsakReportInput): IsakReportModel {
       minorNote: minor ? ISAK_TEXT.minorWarning : null,
       rows: measurementRows,
       bmi,
+      heightForAge,
     },
     skinfolds: {
       intro: ISAK_REPORT_TEXT.skinfoldsIntro,

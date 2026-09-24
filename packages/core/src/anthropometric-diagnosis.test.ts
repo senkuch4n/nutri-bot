@@ -139,3 +139,88 @@ describe("buildAnthropometricDiagnosis", () => {
     expect(noWeight.idealWeights).toHaveLength(5);
   });
 });
+
+// ── HU-008 ──
+describe("HU-008: diagnóstico pediátrico", () => {
+  const tomas: DiagnosisInput = {
+    sex: "MALE",
+    ageYears: 12,
+    bodyFrame: null,
+    weightKg: 40,
+    heightCm: 150,
+    waistCm: 62,
+    hipCm: 75,
+    weightAgeMonths: 149,
+    heightAgeMonths: 149,
+  };
+
+  it("Tomás: IMC/E y T/E con la OMS 2007; el resto null como hoy", () => {
+    const d = buildAnthropometricDiagnosis(tomas);
+    expect(d.ageGroup).toBe("PEDIATRIC");
+    expect(d.minor).toBe(true);
+    expect(d.bmi).toEqual({ status: "unclassified", value: 17.8, note: null });
+    expect(d.pediatric).toEqual({
+      bmiForAge: {
+        status: "classified",
+        value: 17.8,
+        ageMonths: 149,
+        z: -0.02,
+        percentileText: "P49",
+        classKey: "NORMAL",
+        classLabel: "Normal",
+      },
+      heightForAge: {
+        status: "classified",
+        value: 150,
+        ageMonths: 149,
+        z: -0.26,
+        percentileText: "P40",
+        classKey: "ADEQUATE",
+        classLabel: "Talla adecuada",
+      },
+      footer: "Referencia: OMS 2007. Edad: 12 años y 5 meses (149 meses).",
+    });
+    expect(d.waist).toBeNull();
+    expect(d.idealWeights).toBeNull();
+    expect(d.adjustedWeightSuggestion).toBeNull();
+  });
+
+  it("D8: el IMC/E usa la edad del peso; pie con la edad de cada medición", () => {
+    const d = buildAnthropometricDiagnosis({ ...tomas, weightAgeMonths: 150, heightAgeMonths: 149 });
+    expect(d.pediatric!.bmiForAge).toMatchObject({ status: "classified", ageMonths: 150 });
+    expect(d.pediatric!.heightForAge).toMatchObject({ status: "classified", ageMonths: 149 });
+    expect(d.pediatric!.footer).toBe("Referencia: OMS 2007. Edad a cada medición: IMC/E 150 meses, T/E 149 meses.");
+  });
+
+  it("menor de 5: UNDER_5, sin pediatric, IMC sin clasificar", () => {
+    const d = buildAnthropometricDiagnosis({ ...tomas, ageYears: 4, weightKg: 16, heightCm: 102 });
+    expect(d.ageGroup).toBe("UNDER_5");
+    expect(d.pediatric).toBeNull();
+    expect(d.bmi).toEqual({ status: "unclassified", value: 15.4, note: null });
+  });
+
+  it("adulto: ADULT y pediatric null", () => {
+    const d = buildAnthropometricDiagnosis(ana);
+    expect(d.ageGroup).toBe("ADULT");
+    expect(d.pediatric).toBeNull();
+    expect(d.bmi).toEqual({ status: "classified", value: 25.3, classKey: "OVERWEIGHT", classLabel: "Sobrepeso" });
+  });
+
+  it("sin meses: las dos filas sin clasificar con 'Falta fecha de nacimiento'", () => {
+    const { weightAgeMonths: _w, heightAgeMonths: _h, ...sinMeses } = tomas;
+    const d = buildAnthropometricDiagnosis(sinMeses);
+    expect(d.pediatric!.bmiForAge).toEqual({
+      status: "unclassified",
+      value: 17.8,
+      ageMonths: null,
+      note: "Falta fecha de nacimiento",
+    });
+    expect(d.pediatric!.heightForAge).toEqual({
+      status: "unclassified",
+      value: 150,
+      ageMonths: null,
+      note: "Falta fecha de nacimiento",
+    });
+    expect(d.pediatric!.footer).toBe("Referencia: OMS 2007.");
+  });
+});

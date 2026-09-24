@@ -22,7 +22,8 @@
     "sara2:load:prod": "tsx scripts/sara2/load.ts",
     "test:foods": "dotenv -e ../../.env -- tsx scripts/test-foods-sara2.ts",
     "test:isak": "dotenv -e ../../.env -- tsx scripts/test-isak.ts",
-    "test:report": "dotenv -e ../../.env -- tsx scripts/test-anthropometric-report.ts"
+    "test:report": "dotenv -e ../../.env -- tsx scripts/test-anthropometric-report.ts",
+    "walkthrough:hu008": "dotenv -e ../../.env -- tsx scripts/hu008-walkthrough.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

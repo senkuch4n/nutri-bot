@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { roundTo } from "./anthropometry";
 import {
+  MACRO_REFERENCE,
+  MACRO_REFERENCE_PEDIATRIC,
   REQUIREMENT_TEXT,
   adjustmentRangeHint,
+  adjustmentRangesFor,
+  bmrFormulasFor,
+  macroReferenceHint,
+  schofieldBand,
+  schofieldBandLabel,
+  schofieldWeightBmr,
+  schofieldWeightHeightBmr,
   adjustmentRangeOptionLabel,
   buildPrescriptionSnapshot,
   calculateRequirement,
@@ -33,6 +42,7 @@ const NBSP = " ";
 const kcalText = (v: number) => formatMacroAmount(v, "kcal");
 
 const ana: RequirementContext = {
+  population: "ADULT",
   sex: "FEMALE",
   ageYears: 34,
   heightCm: 162,
@@ -41,6 +51,7 @@ const ana: RequirementContext = {
 };
 
 const luis: RequirementContext = {
+  population: "ADULT",
   sex: "MALE",
   ageYears: 45,
   heightCm: 180,
@@ -580,5 +591,252 @@ describe("getRequirementBlockingMissing", () => {
     expect(
       getRequirementBlockingMissing({ ...complete, sex: null, weightKg: null, heightCm: null }).map((i) => i.key),
     ).toEqual(["sex", "weight", "height"]);
+  });
+});
+
+// ── HU-008: pediátricos (5 a 17) ──
+describe("HU-008: Schofield (1985)", () => {
+  it.each([
+    ["Tomás", "MALE", 12, 40, 150, 1365.64, 1371.3],
+    ["Sofía", "FEMALE", 8, 26, 128, 1014.09, 1019.524],
+    ["F 12", "FEMALE", 12, 40, 150, 1227.96, 1232.1],
+    // 19,59·30 + 130,3·1,273 + 414,9 = 1168,4719 (la SDD lo muestra redondeado a 1168,472).
+    ["M 8", "MALE", 8, 30, 127.3, 1185.48, 1168.4719],
+  ] as const)("%s: peso %s / peso y talla %s", (_n, sex, ageYears, weightKg, heightCm, w, wh) => {
+    const p = { sex, ageYears, weightKg, heightCm };
+    expect(Math.abs(schofieldWeightBmr(p)! - w)).toBeLessThanOrEqual(1e-6);
+    expect(Math.abs(schofieldWeightHeightBmr(p)! - wh)).toBeLessThanOrEqual(1e-6);
+  });
+
+  it("redondeo: Tomás 1366/1371, Sofía 1014/1020", () => {
+    expect(Math.round(schofieldWeightBmr({ sex: "MALE", ageYears: 12, weightKg: 40, heightCm: 150 })!)).toBe(1366);
+    expect(Math.round(schofieldWeightHeightBmr({ sex: "MALE", ageYears: 12, weightKg: 40, heightCm: 150 })!)).toBe(1371);
+    expect(Math.round(schofieldWeightBmr({ sex: "FEMALE", ageYears: 8, weightKg: 26, heightCm: 128 })!)).toBe(1014);
+    expect(Math.round(schofieldWeightHeightBmr({ sex: "FEMALE", ageYears: 8, weightKg: 26, heightCm: 128 })!)).toBe(1020);
+  });
+
+  it("bandas y etiqueta", () => {
+    expect(schofieldBand(9)).toBe("3_TO_9");
+    expect(schofieldBand(10)).toBe("10_TO_17");
+    expect(schofieldBand(2)).toBeNull();
+    expect(schofieldBand(18)).toBeNull();
+    expect(schofieldWeightBmr({ sex: "MALE", ageYears: 18, weightKg: 70, heightCm: 175 })).toBeNull();
+    expect(schofieldBandLabel("MALE", 12)).toBe("Schofield (1985), 10 a 17 años, masculino");
+    expect(schofieldBandLabel("FEMALE", 8)).toBe("Schofield (1985), 3 a 9 años, femenino");
+  });
+
+  it("fórmulas por población", () => {
+    expect(bmrFormulasFor("PEDIATRIC").map((f) => f.value)).toEqual(["SCHOFIELD_WEIGHT_HEIGHT", "SCHOFIELD_WEIGHT"]);
+    expect(bmrFormulasFor("ADULT").map((f) => f.value)).toEqual([
+      "MIFFLIN_ST_JEOR",
+      "HARRIS_BENEDICT",
+      "KATCH_MCARDLE",
+      "CUNNINGHAM",
+    ]);
+  });
+});
+
+describe("HU-008: calculadora pediátrica", () => {
+  const tomas: RequirementContext = {
+    population: "PEDIATRIC",
+    sex: "MALE",
+    ageYears: 12,
+    heightCm: 150,
+    actualWeightKg: 40,
+    measuredBodyFatPercent: null,
+  };
+  const kidDraft: RequirementDraft = {
+    bmrFormula: "SCHOFIELD_WEIGHT_HEIGHT",
+    weightBasis: "ACTUAL",
+    bodyFatSource: null,
+    activityLevel: "LIGHT",
+    nutritionGoal: "MAINTAIN",
+    adjustmentRange: "MAINTENANCE",
+    adjustmentPercent: 0,
+    prescribedVctKcal: 1886,
+    macros: { mode: "PERCENT_OF_VCT", proteinPercent: 20, fatPercent: 30, carbPercent: 50 },
+  };
+  const kidChoices = kidDraft as PrescriptionChoices;
+
+  it("Tomás con Schofield (peso y talla), Ligero, Mantener", () => {
+    const c = calculateRequirement(tomas, kidDraft);
+    expect(c.bmrKcal).toBeCloseTo(1371.3, 6);
+    expect(c.totalExpenditureKcal).toBeCloseTo(1885.5375, 6);
+    expect(c.calculatedVctKcal).toBeCloseTo(1885.5375, 6);
+    expect(c.bmrByFormula.MIFFLIN_ST_JEOR).toBeNull();
+    expect(c.bmrByFormula.HARRIS_BENEDICT).toBeNull();
+    expect(c.bmrByFormula.KATCH_MCARDLE).toBeNull();
+    expect(c.bmrByFormula.CUNNINGHAM).toBeNull();
+    expect(c.bmrByFormula.SCHOFIELD_WEIGHT).toBeCloseTo(1365.64, 6);
+    expect(c.idealWeightDevineKg).toBeNull();
+    expect(c.adjustedWeightKg).toBeNull();
+    expect(c.deurenbergBodyFatPercent).toBeNull();
+    expect(c.suggestAdjustedWeight).toBe(false);
+    expect(c.weightUsedKg).toBe(40);
+    expect(c.errors).toEqual([]);
+    expect(c.warnings).toEqual([]);
+  });
+
+  it("grasa: en menores no se usa aunque haya medida", () => {
+    const c = calculateRequirement({ ...tomas, measuredBodyFatPercent: 20 }, { ...kidDraft, bodyFatSource: "MEASURED" });
+    expect(c.bodyFatPercent).toBeNull();
+  });
+
+  it("snapshot y textos del resumen", () => {
+    const r = buildPrescriptionSnapshot(tomas, kidChoices);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const s = r.snapshot;
+    expect(s.bmrKcal).toBe(1371);
+    expect(s.totalExpenditureKcal).toBe(1886);
+    expect(s.bmrSchofieldWeightHeightKcal).toBe(1371);
+    expect(s.bmrSchofieldWeightKcal).toBe(1366);
+    expect(s.bmrMifflinStJeorKcal).toBeNull();
+    expect(s.bmrHarrisBenedictKcal).toBeNull();
+    expect(s.idealWeightDevineKg).toBeNull();
+    expect(s.bodyFatSource).toBeNull();
+    expect(prescriptionFormulaLine(s)).toBe(
+      `Schofield (peso y talla) · TMB ${formatMacroAmount(1371, "kcal")} · Ligero ×1,375 · GET ${formatMacroAmount(1886, "kcal")} · Mantenimiento`,
+    );
+    expect(prescriptionWeightLine(s)).toBe("Peso usado: 40,0 kg (actual)");
+  });
+
+  it("adulto: Schofield en null en el snapshot", () => {
+    const r = buildPrescriptionSnapshot(ana, { ...baseDraft } as PrescriptionChoices);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.snapshot.bmrSchofieldWeightHeightKcal).toBeNull();
+    expect(r.snapshot.bmrSchofieldWeightKcal).toBeNull();
+    expect(r.snapshot.bmrMifflinStJeorKcal).toBe(1347);
+  });
+
+  it("errores de población", () => {
+    const mifflin = calculateRequirement(tomas, { ...kidDraft, bmrFormula: "MIFFLIN_ST_JEOR" });
+    expect(mifflin.errors).toContain(REQUIREMENT_TEXT.formulaNotForAge);
+    expect(mifflin.errors).not.toContain(REQUIREMENT_TEXT.bodyFatNeeded);
+    expect(mifflin.bmrKcal).toBeNull();
+
+    const adultSchofield = calculateRequirement(ana, { ...baseDraft, bmrFormula: "SCHOFIELD_WEIGHT" });
+    expect(adultSchofield.errors).toContain(REQUIREMENT_TEXT.formulaNotForAge);
+    expect(adultSchofield.errors).not.toContain(REQUIREMENT_TEXT.bodyFatNeeded);
+    expect(adultSchofield.bmrKcal).toBeNull();
+
+    expect(calculateRequirement(tomas, { ...kidDraft, weightBasis: "ADJUSTED" }).errors).toContain(
+      REQUIREMENT_TEXT.adjustedWeightNotForMinors,
+    );
+    expect(
+      calculateRequirement(tomas, {
+        ...kidDraft,
+        nutritionGoal: "LOSE_WEIGHT",
+        adjustmentRange: "AGGRESSIVE_DEFICIT",
+        adjustmentPercent: -28,
+      }).errors,
+    ).toContain(REQUIREMENT_TEXT.rangeMissing);
+  });
+
+  it("VCT mínimo 500 en menores (D13); 800 en adultos", () => {
+    const vctErrors = (e: string[]) =>
+      e.filter((x) => x === REQUIREMENT_TEXT.vctOutOfRange || x === REQUIREMENT_TEXT.vctOutOfRangePediatric);
+    expect(vctErrors(calculateRequirement(tomas, { ...kidDraft, prescribedVctKcal: 766 }).errors)).toEqual([]);
+    expect(vctErrors(calculateRequirement(tomas, { ...kidDraft, prescribedVctKcal: 499 }).errors)).toEqual([
+      "El VCT indicado va de 500 a 6.000 kcal",
+    ]);
+    expect(vctErrors(calculateRequirement(ana, { ...baseDraft, prescribedVctKcal: 766 }).errors)).toEqual([
+      REQUIREMENT_TEXT.vctOutOfRange,
+    ]);
+  });
+
+  it("macros con la referencia pediátrica", () => {
+    const pct = (proteinPercent: number, fatPercent: number, carbPercent: number) =>
+      ({ mode: "PERCENT_OF_VCT", proteinPercent, fatPercent, carbPercent }) as const;
+    const kid = (macros: Parameters<typeof computeMacros>[0]["macros"]) =>
+      computeMacros({ prescribedVctKcal: 1886, weightKg: 40, macros, reference: MACRO_REFERENCE_PEDIATRIC }).warnings;
+    const adult = (macros: Parameters<typeof computeMacros>[0]["macros"]) =>
+      computeMacros({ prescribedVctKcal: 1886, weightKg: 40, macros }).warnings;
+
+    expect(kid(pct(20, 30, 50))).toEqual([]);
+    expect(kid(pct(35, 25, 40))).toEqual([
+      "Proteínas 35 %: fuera del rango de referencia (10–30 %)",
+      "Carbohidratos 40 %: fuera del rango de referencia (45–65 %)",
+    ]);
+    const gkg = { mode: "PROTEIN_PER_KG", proteinGPerKg: 1.6, fatPercent: 30 } as const;
+    expect(kid(gkg)).toEqual(["Proteínas 1,6 g/kg: fuera del rango de referencia (0,85–0,95 g/kg)"]);
+
+    // Los mismos casos en adultos dan los textos de hoy.
+    expect(adult(pct(35, 25, 40))).toEqual([
+      "Proteínas 35 %: fuera del rango de referencia (15–25 %)",
+      "Carbohidratos 40 %: fuera del rango de referencia (45–60 %)",
+    ]);
+    expect(adult(gkg)).toEqual([]);
+    expect(REQUIREMENT_TEXT.proteinGPerKgWarning(2.5)).toBe(
+      "Proteínas 2,5 g/kg: fuera del rango de referencia (1,2–2,2 g/kg)",
+    );
+  });
+
+  it("macroReferenceHint", () => {
+    expect(macroReferenceHint(MACRO_REFERENCE.proteinPercent, "%")).toBe("15–25 %");
+    expect(macroReferenceHint(MACRO_REFERENCE.proteinGPerKg, "g/kg")).toBe("1,2–2,2 g/kg");
+    expect(macroReferenceHint(MACRO_REFERENCE_PEDIATRIC.carbPercent, "%")).toBe("45–65 %");
+  });
+
+  it("adjustmentRangesFor: sin déficit agresivo en menores (D11)", () => {
+    expect(adjustmentRangesFor("LOSE_WEIGHT", "PEDIATRIC").map((r) => r.key)).toEqual(["MODERATE_DEFICIT"]);
+    expect(adjustmentRangesFor("LOSE_WEIGHT", "ADULT").map((r) => r.key)).toEqual([
+      "MODERATE_DEFICIT",
+      "AGGRESSIVE_DEFICIT",
+    ]);
+  });
+
+  it("initialRequirementDraft pediátrico corrige la referencia de adultos", () => {
+    const reference = {
+      bmrFormula: "MIFFLIN_ST_JEOR" as const,
+      adjustmentRange: "AGGRESSIVE_DEFICIT" as const,
+      adjustmentPercent: -28,
+      macroMode: "PERCENT_OF_VCT" as const,
+      proteinPercent: 20,
+      fatPercent: 30,
+      carbPercent: 50,
+      proteinGPerKg: null,
+    };
+    const d = initialRequirementDraft({
+      ctx: tomas,
+      patientActivityLevel: "LIGHT",
+      patientNutritionGoal: "LOSE_WEIGHT",
+      reference,
+    });
+    expect(d.bmrFormula).toBe("SCHOFIELD_WEIGHT_HEIGHT");
+    expect(d.weightBasis).toBe("ACTUAL");
+    expect(d.bodyFatSource).toBeNull();
+    expect(d.adjustmentRange).toBe("MODERATE_DEFICIT");
+    expect(d.adjustmentPercent).toBe(-20);
+
+    const withFat = initialRequirementDraft({
+      ctx: { ...tomas, measuredBodyFatPercent: 20 },
+      patientActivityLevel: "LIGHT",
+      patientNutritionGoal: "MAINTAIN",
+      reference: null,
+    });
+    expect(withFat.bodyFatSource).toBeNull();
+    expect(withFat.bmrFormula).toBe("SCHOFIELD_WEIGHT_HEIGHT");
+  });
+
+  it("draftFromPrescription: un snapshot de adulto con ctx pediátrico se corrige", () => {
+    const r = buildPrescriptionSnapshot(tomas, kidChoices);
+    if (!r.ok) throw new Error("snapshot");
+    const adultLike = {
+      ...r.snapshot,
+      bmrFormula: "MIFFLIN_ST_JEOR" as const,
+      weightBasis: "ADJUSTED" as const,
+      bodyFatSource: "MEASURED" as const,
+    };
+    const d = draftFromPrescription(adultLike, tomas);
+    expect(d.bmrFormula).toBe("SCHOFIELD_WEIGHT_HEIGHT");
+    expect(d.weightBasis).toBe("ACTUAL");
+    expect(d.bodyFatSource).toBeNull();
+
+    const aggressive = { ...adultLike, nutritionGoal: "LOSE_WEIGHT" as const, adjustmentRange: "AGGRESSIVE_DEFICIT" as const, adjustmentPercent: -28 };
+    const d2 = draftFromPrescription(aggressive, tomas);
+    expect(d2.adjustmentRange).toBe("MODERATE_DEFICIT");
+    expect(d2.adjustmentPercent).toBe(-20);
   });
 });

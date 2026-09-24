@@ -226,3 +226,21 @@
   la flecha.
 - **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
   autónomo).
+
+---
+
+## 2026-09-24 — HU-008 `pediatria-oms` — APROBADA (1ª ronda) · Épica 56
+
+- **Qué:** pacientes de 5 a 18 años con la referencia OMS 2007: IMC/E y T/E con Z LMS (y la
+  extensión OMS para |Z| > 3), percentil y clasificación. Las tablas LMS se bajaron de who.int
+  con sha256 verificado y se versionaron con un script reproducible, más la fila del mes 60 de la
+  OMS 2006. TMB por Schofield (1985) en sus dos variantes, con reglas para menores en la
+  calculadora: sin peso ideal ni ajustado, sin déficit agresivo, VCT mínimo 500 kcal y ayudas de
+  macros pediátricas. La página ISAK y el informe muestran la clasificación pediátrica. Los
+  menores de 5 quedan sin referencia, con un aviso.
+- **Migración** `pediatric_schofield`: 2 valores de enum, 2 columnas y 3 `DROP NOT NULL`, sin
+  pérdida de datos.
+- **Verificación:** el orquestador comprobó a mano la Z (+1,52) y Schofield (1.168 / 1.185); el
+  recorrido coincidió en todo.
+- **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
+  autónomo).

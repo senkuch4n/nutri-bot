@@ -32,11 +32,20 @@ import {
   type WaistHipRisk,
   type WaistRisk,
 } from "./anthropometry";
+import { DIAGNOSIS_MISSING_TEXT } from "./diagnosis-missing-text";
 import {
+  buildBmiForAgeRow,
+  buildHeightForAgeRow,
+  pediatricFooterText,
+  type PediatricDiagnosis,
+} from "./growth-reference";
+import {
+  ageGroupOf,
   bodyFrameLabel,
   effectiveBodyFrame,
   formatDecimalEs,
   isMinor,
+  type AgeGroup,
   type BodyFrame,
   type Sex,
 } from "./patient-formula-data";
@@ -56,6 +65,11 @@ export interface DiagnosisInput {
   heightCm: number | null;
   waistCm: number | null;
   hipCm: number | null;
+  /** HU-008 (D8): meses cumplidos a la fecha de la medición del PESO. Solo se usa en PEDIATRIC.
+   *  Opcional para no romper a quien no lo pasa; los callers de producción lo pasan SIEMPRE. */
+  weightAgeMonths?: number | null;
+  /** Ídem, a la fecha de la medición de la TALLA. */
+  heightAgeMonths?: number | null;
 }
 
 /** Fila de un indicador. `value` ya redondeado a lo que se muestra. */
@@ -74,7 +88,10 @@ export interface IdealWeightRow {
 }
 
 export interface AnthropometricDiagnosis {
+  /** true para PEDIATRIC y UNDER_5 (igual que hoy: isMinor). */
   minor: boolean;
+  /** HU-008. */
+  ageGroup: AgeGroup;
   /** true si faltan peso y talla a la vez: la UI muestra solo el texto de vacío. */
   noMeasurements: boolean;
   /** Menor → "unclassified" con note null. */
@@ -91,16 +108,18 @@ export interface AnthropometricDiagnosis {
   percentOfIdealDevine: number | null;
   /** Aviso de peso ajustado. null si no corresponde. */
   adjustedWeightSuggestion: { adjustedKg: number; thresholdPercent: number } | null;
+  /** HU-008: solo PEDIATRIC; null en ADULT y UNDER_5. */
+  pediatric: PediatricDiagnosis | null;
 }
 
 /** Textos exactos de faltantes. */
 export const DIAGNOSIS_TEXT = {
-  missingWeight: "Sin dato (falta peso)",
-  missingHeight: "Sin dato (falta talla)",
+  missingWeight: DIAGNOSIS_MISSING_TEXT.missingWeight,
+  missingHeight: DIAGNOSIS_MISSING_TEXT.missingHeight,
   missingWaist: "Sin dato (falta cintura)",
   missingHip: "Sin dato (falta cadera)",
-  missingSex: "Falta sexo",
-  missingBirthDate: "Falta fecha de nacimiento",
+  missingSex: DIAGNOSIS_MISSING_TEXT.missingSex,
+  missingBirthDate: DIAGNOSIS_MISSING_TEXT.missingBirthDate,
   noMeasurements: "Cargá peso y talla en Mediciones para ver el diagnóstico.",
   adjustedWeightAlert: (adjustedKg: number) =>
     `El peso actual supera el ${ADJUSTED_WEIGHT_THRESHOLD_PERCENT} % del peso ideal. Se sugiere calcular con peso ajustado: ${formatDecimalEs(adjustedKg, 1)} kg.`,
@@ -210,12 +229,30 @@ function buildIdealWeights(input: DiagnosisInput): IdealWeightRow[] | null {
 
 export function buildAnthropometricDiagnosis(input: DiagnosisInput): AnthropometricDiagnosis {
   const minor = isMinor(input.ageYears);
+  const ageGroup = ageGroupOf(input.ageYears);
   const noMeasurements = input.weightKg === null && input.heightCm === null;
   const bmi = buildBmiRow(input, minor);
 
   if (minor) {
+    let pediatric: PediatricDiagnosis | null = null;
+    if (ageGroup === "PEDIATRIC") {
+      // D8: el IMC/E usa la edad a la fecha del PESO; la T/E, la de la TALLA.
+      const bmiForAge = buildBmiForAgeRow({
+        sex: input.sex,
+        ageMonths: input.weightAgeMonths ?? null,
+        weightKg: input.weightKg,
+        heightCm: input.heightCm,
+      });
+      const heightForAge = buildHeightForAgeRow({
+        sex: input.sex,
+        ageMonths: input.heightAgeMonths ?? null,
+        heightCm: input.heightCm,
+      });
+      pediatric = { bmiForAge, heightForAge, footer: pediatricFooterText(bmiForAge, heightForAge) };
+    }
     return {
       minor,
+      ageGroup,
       noMeasurements,
       bmi,
       waist: null,
@@ -226,6 +263,7 @@ export function buildAnthropometricDiagnosis(input: DiagnosisInput): Anthropomet
       idealWeights: null,
       percentOfIdealDevine: null,
       adjustedWeightSuggestion: null,
+      pediatric,
     };
   }
 
@@ -244,6 +282,7 @@ export function buildAnthropometricDiagnosis(input: DiagnosisInput): Anthropomet
 
   return {
     minor,
+    ageGroup,
     noMeasurements,
     bmi,
     waist: buildWaistRow(input),
@@ -254,5 +293,6 @@ export function buildAnthropometricDiagnosis(input: DiagnosisInput): Anthropomet
     idealWeights: buildIdealWeights(input),
     percentOfIdealDevine,
     adjustedWeightSuggestion,
+    pediatric: null,
   };
 }

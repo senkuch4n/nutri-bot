@@ -10,6 +10,7 @@ export * from "./patient-formula-data";
 export * from "./consultations";
 export * from "./formula-measurements";
 export * from "./anthropometric-diagnosis";
+export * from "./growth-reference";
 export * from "./energy-requirement";
 export * from "./food-groups";
 export * from "./food-nutrients";

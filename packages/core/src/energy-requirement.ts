@@ -33,18 +33,50 @@ import {
 const NBSP = " ";
 
 // ── TMB (kcal/día, exactas) ──
-export const BMR_FORMULA_VALUES = ["MIFFLIN_ST_JEOR", "HARRIS_BENEDICT", "KATCH_MCARDLE", "CUNNINGHAM"] as const;
+export const BMR_FORMULA_VALUES = [
+  "MIFFLIN_ST_JEOR",
+  "HARRIS_BENEDICT",
+  "KATCH_MCARDLE",
+  "CUNNINGHAM",
+  "SCHOFIELD_WEIGHT_HEIGHT",
+  "SCHOFIELD_WEIGHT",
+] as const; // mismo orden que el enum de Prisma
 export type BmrFormula = (typeof BMR_FORMULA_VALUES)[number];
-export const BMR_FORMULAS: ReadonlyArray<{ value: BmrFormula; label: string; needsBodyFat: boolean }> = [
-  { value: "MIFFLIN_ST_JEOR", label: "Mifflin-St Jeor", needsBodyFat: false },
-  { value: "HARRIS_BENEDICT", label: "Harris-Benedict", needsBodyFat: false },
-  { value: "KATCH_MCARDLE", label: "Katch-McArdle", needsBodyFat: true },
-  { value: "CUNNINGHAM", label: "Cunningham", needsBodyFat: true },
+
+/** HU-008: a quién aplica cada fórmula. UNDER_5 no tiene calculadora. */
+export type RequirementPopulation = "ADULT" | "PEDIATRIC";
+
+export const BMR_FORMULAS: ReadonlyArray<{
+  value: BmrFormula;
+  label: string;
+  needsBodyFat: boolean;
+  population: RequirementPopulation;
+}> = [
+  { value: "MIFFLIN_ST_JEOR", label: "Mifflin-St Jeor", needsBodyFat: false, population: "ADULT" },
+  { value: "HARRIS_BENEDICT", label: "Harris-Benedict", needsBodyFat: false, population: "ADULT" },
+  { value: "KATCH_MCARDLE", label: "Katch-McArdle", needsBodyFat: true, population: "ADULT" },
+  { value: "CUNNINGHAM", label: "Cunningham", needsBodyFat: true, population: "ADULT" },
+  { value: "SCHOFIELD_WEIGHT_HEIGHT", label: "Schofield (peso y talla)", needsBodyFat: false, population: "PEDIATRIC" },
+  { value: "SCHOFIELD_WEIGHT", label: "Schofield (peso)", needsBodyFat: false, population: "PEDIATRIC" },
 ];
 export const DEFAULT_BMR_FORMULA: BmrFormula = "MIFFLIN_ST_JEOR";
 
 function bmrFormulaOption(value: BmrFormula) {
   return BMR_FORMULAS.find((f) => f.value === value)!;
+}
+
+/** Las fórmulas de la población, en el orden de BMR_FORMULAS. */
+export function bmrFormulasFor(population: RequirementPopulation): typeof BMR_FORMULAS {
+  return BMR_FORMULAS.filter((f) => f.population === population);
+}
+
+/** ADULT → "MIFFLIN_ST_JEOR" (DEFAULT_BMR_FORMULA); PEDIATRIC → "SCHOFIELD_WEIGHT_HEIGHT" (D9). */
+export function defaultBmrFormula(population: RequirementPopulation): BmrFormula {
+  return population === "PEDIATRIC" ? "SCHOFIELD_WEIGHT_HEIGHT" : DEFAULT_BMR_FORMULA;
+}
+
+function isFormulaFor(formula: BmrFormula, population: RequirementPopulation): boolean {
+  return bmrFormulaOption(formula).population === population;
 }
 
 export interface BmrPersonInput {
@@ -79,6 +111,62 @@ export function katchMcArdleBmr(leanMassKg: number): number {
 /** 500 + 22 × masa magra */
 export function cunninghamBmr(leanMassKg: number): number {
   return 500 + 22 * leanMassKg;
+}
+
+// ── Schofield (1985), HU-008 ──
+// La publicación da los coeficientes en MJ/día; estos son la forma en kcal/día (MJ × 239).
+// P en kg, T en METROS (heightCm / 100).
+export type SchofieldBand = "3_TO_9" | "10_TO_17";
+
+/** 3 ≤ edad < 10 → "3_TO_9"; 10 ≤ edad < 18 → "10_TO_17"; si no, null. */
+export function schofieldBand(ageYears: number): SchofieldBand | null {
+  if (ageYears >= 3 && ageYears < 10) return "3_TO_9";
+  if (ageYears >= 10 && ageYears < 18) return "10_TO_17";
+  return null;
+}
+
+export const SCHOFIELD_COEFFICIENTS: Record<
+  Sex,
+  Record<
+    SchofieldBand,
+    {
+      weight: { perKg: number; constant: number };
+      weightHeight: { perKg: number; perM: number; constant: number };
+    }
+  >
+> = {
+  MALE: {
+    "3_TO_9": { weight: { perKg: 22.706, constant: 504.3 }, weightHeight: { perKg: 19.59, perM: 130.3, constant: 414.9 } },
+    "10_TO_17": { weight: { perKg: 17.686, constant: 658.2 }, weightHeight: { perKg: 16.25, perM: 137.2, constant: 515.5 } },
+  },
+  FEMALE: {
+    "3_TO_9": { weight: { perKg: 20.315, constant: 485.9 }, weightHeight: { perKg: 16.97, perM: 161.8, constant: 371.2 } },
+    "10_TO_17": { weight: { perKg: 13.384, constant: 692.6 }, weightHeight: { perKg: 8.365, perM: 465, constant: 200.0 } },
+  },
+};
+
+/** perKg·P + constante. null si la edad no tiene banda. */
+export function schofieldWeightBmr(p: BmrPersonInput): number | null {
+  const band = schofieldBand(p.ageYears);
+  if (band === null) return null;
+  const c = SCHOFIELD_COEFFICIENTS[p.sex][band].weight;
+  return c.perKg * p.weightKg + c.constant;
+}
+
+/** perKg·P + perM·T(m) + constante. null si la edad no tiene banda. */
+export function schofieldWeightHeightBmr(p: BmrPersonInput): number | null {
+  const band = schofieldBand(p.ageYears);
+  if (band === null) return null;
+  const c = SCHOFIELD_COEFFICIENTS[p.sex][band].weightHeight;
+  return c.perKg * p.weightKg + c.perM * (p.heightCm / 100) + c.constant;
+}
+
+/** "Schofield (1985), 10 a 17 años, masculino" | "Schofield (1985), 3 a 9 años, femenino"; null sin banda. */
+export function schofieldBandLabel(sex: Sex, ageYears: number): string | null {
+  const band = schofieldBand(ageYears);
+  if (band === null) return null;
+  const range = band === "3_TO_9" ? "3 a 9 años" : "10 a 17 años";
+  return `Schofield (1985), ${range}, ${sex === "MALE" ? "masculino" : "femenino"}`;
 }
 
 /** TMB × factor */
@@ -124,20 +212,61 @@ export function adjustmentRangeHint(range: GoalAdjustmentRange): string {
   return `Entre ${formatSignedPercentEs(near)} y ${formatSignedPercentEs(far)}`;
 }
 
+/** Rangos del objetivo para la población: PEDIATRIC saca AGGRESSIVE_DEFICIT (D11). */
+export function adjustmentRangesFor(
+  goal: NutritionGoal,
+  population: RequirementPopulation,
+): ReadonlyArray<GoalAdjustmentRange> {
+  const ranges = NUTRITION_GOALS.find((g) => g.value === goal)?.adjustmentRanges ?? [];
+  return population === "PEDIATRIC" ? ranges.filter((r) => r.key !== "AGGRESSIVE_DEFICIT") : ranges;
+}
+
+/** goalAdjustmentRange + filtro de población (null si no corresponde). */
+export function adjustmentRangeFor(
+  goal: NutritionGoal,
+  key: AdjustmentRangeKey,
+  population: RequirementPopulation,
+): GoalAdjustmentRange | null {
+  return adjustmentRangesFor(goal, population).find((r) => r.key === key) ?? null;
+}
+
 function lowerFirst(text: string): string {
   return text.charAt(0).toLocaleLowerCase("es-AR") + text.slice(1);
 }
 
 // ── Macros ──
 export const KCAL_PER_GRAM = { protein: 4, fat: 9, carb: 4 } as const;
+export type MacroReference = Record<
+  "proteinPercent" | "fatPercent" | "carbPercent" | "proteinGPerKg",
+  { min: number; max: number }
+>;
 export const MACRO_REFERENCE = {
   proteinPercent: { min: 15, max: 25 },
   fatPercent: { min: 20, max: 35 },
   carbPercent: { min: 45, max: 60 },
   proteinGPerKg: { min: 1.2, max: 2.2 },
 } as const;
+/** HU-008 (D12): referencia pediátrica (AMDR 4 a 18 años; proteína según IDR). */
+export const MACRO_REFERENCE_PEDIATRIC: MacroReference = {
+  proteinPercent: { min: 10, max: 30 },
+  fatPercent: { min: 25, max: 35 },
+  carbPercent: { min: 45, max: 65 },
+  proteinGPerKg: { min: 0.85, max: 0.95 },
+};
+export function macroReferenceFor(population: RequirementPopulation): MacroReference {
+  return population === "PEDIATRIC" ? MACRO_REFERENCE_PEDIATRIC : MACRO_REFERENCE;
+}
+/** "15–25 %" / "1,2–2,2 g/kg" (formatDecimalEs a ambos lados, guion "–" U+2013). */
+export function macroReferenceHint(range: { min: number; max: number }, unit: "%" | "g/kg"): string {
+  return `${formatDecimalEs(range.min)}\u2013${formatDecimalEs(range.max)} ${unit}`;
+}
 export const MACRO_INPUT_BOUNDS = { percent: { min: 0, max: 100 }, proteinGPerKg: { min: 0.5, max: 4 } } as const;
 export const PRESCRIBED_VCT_BOUNDS = { min: 800, max: 6000 } as const;
+/** HU-008 (D13). */
+export const PRESCRIBED_VCT_BOUNDS_PEDIATRIC = { min: 500, max: 6000 } as const;
+export function prescribedVctBoundsFor(population: RequirementPopulation): { min: number; max: number } {
+  return population === "PEDIATRIC" ? PRESCRIBED_VCT_BOUNDS_PEDIATRIC : PRESCRIBED_VCT_BOUNDS;
+}
 export const DEFAULT_MACRO_PERCENTS = { proteinPercent: 20, fatPercent: 30, carbPercent: 50 } as const;
 /** Arranque en GAIN_MUSCLE (D9). */
 export const DEFAULT_PROTEIN_G_PER_KG = 1.6;
@@ -193,8 +322,11 @@ export const REQUIREMENT_TEXT = {
     return `El ajuste para ${who} va de ${formatSignedPercentEs(near)} a ${formatSignedPercentEs(far)}`;
   },
   bodyFatNeeded: "La fórmula elegida necesita el % de grasa",
+  formulaNotForAge: "La fórmula elegida no corresponde a la edad del paciente",
+  adjustedWeightNotForMinors: "En menores se usa el peso actual",
   vctMissing: "Ingresá el VCT indicado",
   vctOutOfRange: "El VCT indicado va de 800 a 6.000 kcal",
+  vctOutOfRangePediatric: "El VCT indicado va de 500 a 6.000 kcal",
   vctNotInteger: "El VCT indicado tiene que ser un número entero",
   percentOutOfBounds: "Cada porcentaje va de 0 a 100 %",
   percentDecimals: "Los porcentajes admiten un decimal",
@@ -208,8 +340,11 @@ export const REQUIREMENT_TEXT = {
   macroPercentWarning: (label: string, percent: number, min: number, max: number): string =>
     `${label} ${formatDecimalEs(roundTo(percent, 1), 1)} %: fuera del rango de referencia (${formatDecimalEs(min)}–${formatDecimalEs(max)} %)`,
   /** "Proteínas 2,5 g/kg: fuera del rango de referencia (1,2–2,2 g/kg)" */
-  proteinGPerKgWarning: (gPerKg: number): string =>
-    `Proteínas ${formatDecimalEs(roundTo(gPerKg, 1), 1)} g/kg: fuera del rango de referencia (${formatDecimalEs(MACRO_REFERENCE.proteinGPerKg.min)}–${formatDecimalEs(MACRO_REFERENCE.proteinGPerKg.max)} g/kg)`,
+  proteinGPerKgWarning: (
+    gPerKg: number,
+    ref: { min: number; max: number } = MACRO_REFERENCE.proteinGPerKg,
+  ): string =>
+    `Proteínas ${formatDecimalEs(roundTo(gPerKg, 1), 1)} g/kg: fuera del rango de referencia (${formatDecimalEs(ref.min)}–${formatDecimalEs(ref.max)} g/kg)`,
   saved: "Prescripción guardada",
   deleted: "Prescripción borrada",
   invalid: "Datos inválidos",
@@ -256,7 +391,10 @@ export function computeMacros(p: {
   prescribedVctKcal: number;
   weightKg: number;
   macros: MacroChoices;
+  /** HU-008: referencia de los warnings. Por defecto, la de adultos. */
+  reference?: MacroReference;
 }): MacroBreakdown {
+  const reference = p.reference ?? MACRO_REFERENCE;
   const vct = p.prescribedVctKcal;
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -304,18 +442,18 @@ export function computeMacros(p: {
   if (errors.length === 0) {
     const [protein, fat, carb] = lines;
     if (p.macros.mode === "PERCENT_OF_VCT") {
-      const ref = MACRO_REFERENCE.proteinPercent;
+      const ref = reference.proteinPercent;
       if (outsideReference(protein.percent, ref)) {
         warnings.push(REQUIREMENT_TEXT.macroPercentWarning(protein.label, protein.percent, ref.min, ref.max));
       }
-    } else if (outsideReference(p.macros.proteinGPerKg, MACRO_REFERENCE.proteinGPerKg)) {
-      warnings.push(REQUIREMENT_TEXT.proteinGPerKgWarning(p.macros.proteinGPerKg));
+    } else if (outsideReference(p.macros.proteinGPerKg, reference.proteinGPerKg)) {
+      warnings.push(REQUIREMENT_TEXT.proteinGPerKgWarning(p.macros.proteinGPerKg, reference.proteinGPerKg));
     }
-    const fatRef = MACRO_REFERENCE.fatPercent;
+    const fatRef = reference.fatPercent;
     if (outsideReference(fat.percent, fatRef)) {
       warnings.push(REQUIREMENT_TEXT.macroPercentWarning(fat.label, fat.percent, fatRef.min, fatRef.max));
     }
-    const carbRef = MACRO_REFERENCE.carbPercent;
+    const carbRef = reference.carbPercent;
     if (outsideReference(carb.percent, carbRef)) {
       warnings.push(REQUIREMENT_TEXT.macroPercentWarning(carb.label, carb.percent, carbRef.min, carbRef.max));
     }
@@ -330,8 +468,10 @@ export type BodyFatSource = "MEASURED" | "DEURENBERG";
 export const WEIGHT_BASIS_VALUES = ["ACTUAL", "ADJUSTED"] as const satisfies readonly WeightBasis[];
 export const BODY_FAT_SOURCE_VALUES = ["MEASURED", "DEURENBERG"] as const satisfies readonly BodyFatSource[];
 
-/** Datos de entrada que no elige la profesional (salen del paciente y de las mediciones, D4). Adulto. */
+/** Datos de entrada que no elige la profesional (salen del paciente y de las mediciones, D4). */
 export interface RequirementContext {
+  /** HU-008: la arma el dominio con ageGroupOf (ADULT o PEDIATRIC; UNDER_5 no tiene contexto). */
+  population: RequirementPopulation;
   sex: Sex;
   ageYears: number;
   heightCm: number;
@@ -365,16 +505,19 @@ export type PrescriptionChoices = Omit<
 };
 
 export interface RequirementCalculation {
-  idealWeightDevineKg: number;
-  adjustedWeightKg: number;
+  /** null en PEDIATRIC (D14). */
+  idealWeightDevineKg: number | null;
+  /** null en PEDIATRIC. */
+  adjustedWeightKg: number | null;
   suggestAdjustedWeight: boolean;
   /** Actual o ajustado según weightBasis. */
   weightUsedKg: number;
   /** El de bodyFatSource: medido, Deurenberg o null. */
   bodyFatPercent: number | null;
-  /** Siempre (el botón "Usar el estimado" lo muestra). */
-  deurenbergBodyFatPercent: number;
-  /** Mifflin/HB con weightUsedKg; Katch/Cunningham con la masa magra del PESO ACTUAL. */
+  /** Siempre en adultos (el botón "Usar el estimado" lo muestra); null en PEDIATRIC. */
+  deurenbergBodyFatPercent: number | null;
+  /** Mifflin/HB con weightUsedKg; Katch/Cunningham con la masa magra del PESO ACTUAL.
+   *  HU-008: las de la otra población van en null (Schofield en adultos; las de adultos en PEDIATRIC). */
   bmrByFormula: Record<BmrFormula, number | null>;
   bmrKcal: number | null;
   activityFactor: number | null;
@@ -388,21 +531,34 @@ export interface RequirementCalculation {
 
 export function calculateRequirement(ctx: RequirementContext, draft: RequirementDraft): RequirementCalculation {
   const errors: string[] = [];
+  const pediatric = ctx.population === "PEDIATRIC";
 
-  // 1–2. Peso
-  const idealWeightDevineKg = devineIdealWeightKg(ctx.sex, ctx.heightCm);
-  const adjusted = adjustedWeightKg(ctx.actualWeightKg, idealWeightDevineKg);
-  const suggestAdjustedWeight = shouldSuggestAdjustedWeight(ctx.actualWeightKg, idealWeightDevineKg);
-  const weightUsedKg = draft.weightBasis === "ADJUSTED" ? adjusted : ctx.actualWeightKg;
+  // 1–2. Peso (HU-008: en menores, siempre el actual; sin ideal ni ajustado, D14)
+  let idealWeightDevineKg: number | null = null;
+  let adjusted: number | null = null;
+  let suggestAdjustedWeight = false;
+  let weightUsedKg = ctx.actualWeightKg;
+  if (pediatric) {
+    if (draft.weightBasis === "ADJUSTED") errors.push(REQUIREMENT_TEXT.adjustedWeightNotForMinors);
+  } else {
+    const ideal = devineIdealWeightKg(ctx.sex, ctx.heightCm);
+    idealWeightDevineKg = ideal;
+    adjusted = adjustedWeightKg(ctx.actualWeightKg, ideal);
+    suggestAdjustedWeight = shouldSuggestAdjustedWeight(ctx.actualWeightKg, ideal);
+    weightUsedKg = draft.weightBasis === "ADJUSTED" ? adjusted : ctx.actualWeightKg;
+  }
 
-  // 3. % de grasa
-  const deurenberg = deurenbergBodyFatPercent({
-    bmi: bmiExact(ctx.actualWeightKg, ctx.heightCm),
-    ageYears: ctx.ageYears,
-    sex: ctx.sex,
-  });
-  const bodyFatPercent =
-    draft.bodyFatSource === "MEASURED"
+  // 3. % de grasa (HU-008: en menores no se usa)
+  const deurenberg = pediatric
+    ? null
+    : deurenbergBodyFatPercent({
+        bmi: bmiExact(ctx.actualWeightKg, ctx.heightCm),
+        ageYears: ctx.ageYears,
+        sex: ctx.sex,
+      });
+  const bodyFatPercent = pediatric
+    ? null
+    : draft.bodyFatSource === "MEASURED"
       ? ctx.measuredBodyFatPercent
       : draft.bodyFatSource === "DEURENBERG"
         ? deurenberg
@@ -416,14 +572,29 @@ export function calculateRequirement(ctx: RequirementContext, draft: Requirement
     ageYears: ctx.ageYears,
   };
   const leanMass = bodyFatPercent === null ? null : leanBodyMassKg(ctx.actualWeightKg, bodyFatPercent);
-  const bmrByFormula: Record<BmrFormula, number | null> = {
-    MIFFLIN_ST_JEOR: mifflinStJeorBmr(person),
-    HARRIS_BENEDICT: harrisBenedictBmr(person),
-    KATCH_MCARDLE: leanMass === null ? null : katchMcArdleBmr(leanMass),
-    CUNNINGHAM: leanMass === null ? null : cunninghamBmr(leanMass),
-  };
-  const bmrKcal = bmrByFormula[draft.bmrFormula];
-  if (bmrKcal === null) errors.push(REQUIREMENT_TEXT.bodyFatNeeded);
+  const bmrByFormula: Record<BmrFormula, number | null> = pediatric
+    ? {
+        MIFFLIN_ST_JEOR: null,
+        HARRIS_BENEDICT: null,
+        KATCH_MCARDLE: null,
+        CUNNINGHAM: null,
+        SCHOFIELD_WEIGHT_HEIGHT: schofieldWeightHeightBmr(person),
+        SCHOFIELD_WEIGHT: schofieldWeightBmr(person),
+      }
+    : {
+        MIFFLIN_ST_JEOR: mifflinStJeorBmr(person),
+        HARRIS_BENEDICT: harrisBenedictBmr(person),
+        KATCH_MCARDLE: leanMass === null ? null : katchMcArdleBmr(leanMass),
+        CUNNINGHAM: leanMass === null ? null : cunninghamBmr(leanMass),
+        SCHOFIELD_WEIGHT_HEIGHT: null,
+        SCHOFIELD_WEIGHT: null,
+      };
+  const formulaFits = isFormulaFor(draft.bmrFormula, ctx.population);
+  const bmrKcal = formulaFits ? bmrByFormula[draft.bmrFormula] : null;
+  if (!formulaFits) errors.push(REQUIREMENT_TEXT.formulaNotForAge);
+  else if (bmrKcal === null) {
+    errors.push(pediatric ? REQUIREMENT_TEXT.formulaNotForAge : REQUIREMENT_TEXT.bodyFatNeeded);
+  }
 
   // 5. Actividad, objetivo, rango y ajuste
   const activity = activityLevelOption(draft.activityLevel);
@@ -433,7 +604,9 @@ export function calculateRequirement(ctx: RequirementContext, draft: Requirement
     errors.push(REQUIREMENT_TEXT.goalMissing);
   } else {
     const range =
-      draft.adjustmentRange === null ? null : goalAdjustmentRange(draft.nutritionGoal, draft.adjustmentRange);
+      draft.adjustmentRange === null
+        ? null
+        : adjustmentRangeFor(draft.nutritionGoal, draft.adjustmentRange, ctx.population);
     if (range === null) {
       errors.push(REQUIREMENT_TEXT.rangeMissing);
     } else if (draft.adjustmentPercent === null || !Number.isFinite(draft.adjustmentPercent)) {
@@ -460,15 +633,23 @@ export function calculateRequirement(ctx: RequirementContext, draft: Requirement
   const vct = draft.prescribedVctKcal;
   if (vct === null || !Number.isFinite(vct)) errors.push(REQUIREMENT_TEXT.vctMissing);
   else if (!Number.isInteger(vct)) errors.push(REQUIREMENT_TEXT.vctNotInteger);
-  else if (vct < PRESCRIBED_VCT_BOUNDS.min || vct > PRESCRIBED_VCT_BOUNDS.max) {
-    errors.push(REQUIREMENT_TEXT.vctOutOfRange);
+  else {
+    const bounds = prescribedVctBoundsFor(ctx.population);
+    if (vct < bounds.min || vct > bounds.max) {
+      errors.push(pediatric ? REQUIREMENT_TEXT.vctOutOfRangePediatric : REQUIREMENT_TEXT.vctOutOfRange);
+    }
   }
 
   // 8. Macros sobre el VCT indicado
   const macros =
     vct === null || !Number.isFinite(vct)
       ? null
-      : computeMacros({ prescribedVctKcal: vct, weightKg: weightUsedKg, macros: draft.macros });
+      : computeMacros({
+          prescribedVctKcal: vct,
+          weightKg: weightUsedKg,
+          macros: draft.macros,
+          reference: macroReferenceFor(ctx.population),
+        });
   if (macros) errors.push(...macros.errors);
 
   return {
@@ -495,8 +676,8 @@ export interface PrescriptionSnapshot {
   ageYears: number;
   heightCm: number;
   actualWeightKg: number;
-  /** roundTo 2 */
-  idealWeightDevineKg: number;
+  /** roundTo 2; null en PEDIATRIC */
+  idealWeightDevineKg: number | null;
   weightBasis: WeightBasis;
   /** roundTo 2 */
   weightUsedKg: number;
@@ -506,10 +687,16 @@ export interface PrescriptionSnapshot {
   bmrFormula: BmrFormula;
   /** Math.round */
   bmrKcal: number;
-  bmrMifflinStJeorKcal: number;
-  bmrHarrisBenedictKcal: number;
+  /** null en PEDIATRIC */
+  bmrMifflinStJeorKcal: number | null;
+  /** null en PEDIATRIC */
+  bmrHarrisBenedictKcal: number | null;
   bmrKatchMcArdleKcal: number | null;
   bmrCunninghamKcal: number | null;
+  /** Math.round; null en ADULT */
+  bmrSchofieldWeightHeightKcal: number | null;
+  /** Math.round; null en ADULT */
+  bmrSchofieldWeightKcal: number | null;
   activityLevel: ActivityLevel;
   activityFactor: number;
   totalExpenditureKcal: number;
@@ -556,17 +743,19 @@ export function buildPrescriptionSnapshot(
       ageYears: ctx.ageYears,
       heightCm: roundTo(ctx.heightCm, 2),
       actualWeightKg: roundTo(ctx.actualWeightKg, 2),
-      idealWeightDevineKg: roundTo(calc.idealWeightDevineKg, 2),
+      idealWeightDevineKg: calc.idealWeightDevineKg === null ? null : roundTo(calc.idealWeightDevineKg, 2),
       weightBasis: choices.weightBasis,
       weightUsedKg: roundTo(calc.weightUsedKg, 2),
       bodyFatPercent: calc.bodyFatPercent === null ? null : roundTo(calc.bodyFatPercent, 1),
       bodyFatSource: calc.bodyFatPercent === null ? null : choices.bodyFatSource,
       bmrFormula: choices.bmrFormula,
       bmrKcal: Math.round(calc.bmrKcal),
-      bmrMifflinStJeorKcal: Math.round(calc.bmrByFormula.MIFFLIN_ST_JEOR!),
-      bmrHarrisBenedictKcal: Math.round(calc.bmrByFormula.HARRIS_BENEDICT!),
+      bmrMifflinStJeorKcal: roundOrNull(calc.bmrByFormula.MIFFLIN_ST_JEOR),
+      bmrHarrisBenedictKcal: roundOrNull(calc.bmrByFormula.HARRIS_BENEDICT),
       bmrKatchMcArdleKcal: roundOrNull(calc.bmrByFormula.KATCH_MCARDLE),
       bmrCunninghamKcal: roundOrNull(calc.bmrByFormula.CUNNINGHAM),
+      bmrSchofieldWeightHeightKcal: roundOrNull(calc.bmrByFormula.SCHOFIELD_WEIGHT_HEIGHT),
+      bmrSchofieldWeightKcal: roundOrNull(calc.bmrByFormula.SCHOFIELD_WEIGHT),
       activityLevel: choices.activityLevel,
       activityFactor: calc.activityFactor,
       totalExpenditureKcal: Math.round(calc.totalExpenditureKcal),
@@ -629,13 +818,14 @@ function defaultMacros(goal: NutritionGoal | null): MacroChoices {
 }
 
 /** Rango inicial de un objetivo: el único si hay uno; si hay varios, el preferido si es del
- *  objetivo, si no el primero. null sin objetivo. */
+ *  objetivo, si no el primero. null sin objetivo. HU-008: filtra por población (por defecto ADULT). */
 export function initialAdjustmentRange(
   goal: NutritionGoal | null,
   preferred: AdjustmentRangeKey | null,
+  population: RequirementPopulation = "ADULT",
 ): GoalAdjustmentRange | null {
   if (goal === null) return null;
-  const ranges = NUTRITION_GOALS.find((g) => g.value === goal)?.adjustmentRanges ?? [];
+  const ranges = adjustmentRangesFor(goal, population);
   if (ranges.length === 0) return null;
   if (ranges.length === 1) return ranges[0]!;
   return ranges.find((r) => r.key === preferred) ?? ranges[0]!;
@@ -658,12 +848,14 @@ export function initialRequirementDraft(p: {
   reference: ReferencePrescription | null;
 }): RequirementDraft {
   const { ctx, reference } = p;
+  const pediatric = ctx.population === "PEDIATRIC";
   const hasMeasuredBodyFat = ctx.measuredBodyFatPercent !== null;
-  let bmrFormula = reference?.bmrFormula ?? DEFAULT_BMR_FORMULA;
-  if (bmrFormulaOption(bmrFormula).needsBodyFat && !hasMeasuredBodyFat) bmrFormula = DEFAULT_BMR_FORMULA;
+  let bmrFormula = reference?.bmrFormula ?? defaultBmrFormula(ctx.population);
+  if (!isFormulaFor(bmrFormula, ctx.population) || (bmrFormulaOption(bmrFormula).needsBodyFat && !hasMeasuredBodyFat)) {
+    bmrFormula = defaultBmrFormula(ctx.population);
+  }
 
-  const ideal = devineIdealWeightKg(ctx.sex, ctx.heightCm);
-  const range = initialAdjustmentRange(p.patientNutritionGoal, reference?.adjustmentRange ?? null);
+  const range = initialAdjustmentRange(p.patientNutritionGoal, reference?.adjustmentRange ?? null, ctx.population);
   const adjustmentPercent =
     range === null
       ? null
@@ -671,10 +863,16 @@ export function initialRequirementDraft(p: {
         ? reference.adjustmentPercent
         : defaultAdjustmentPercent(range);
 
+  const weightBasis: WeightBasis = pediatric
+    ? "ACTUAL"
+    : shouldSuggestAdjustedWeight(ctx.actualWeightKg, devineIdealWeightKg(ctx.sex, ctx.heightCm))
+      ? "ADJUSTED"
+      : "ACTUAL";
+
   return {
     bmrFormula,
-    weightBasis: shouldSuggestAdjustedWeight(ctx.actualWeightKg, ideal) ? "ADJUSTED" : "ACTUAL",
-    bodyFatSource: hasMeasuredBodyFat ? "MEASURED" : null,
+    weightBasis,
+    bodyFatSource: !pediatric && hasMeasuredBodyFat ? "MEASURED" : null,
     activityLevel: p.patientActivityLevel,
     nutritionGoal: p.patientNutritionGoal,
     adjustmentRange: range?.key ?? null,
@@ -684,18 +882,30 @@ export function initialRequirementDraft(p: {
   };
 }
 
-/** Borrador desde una prescripción guardada ("Editar"). bodyFatSource MEASURED sin medido hoy → null. */
+/** Borrador desde una prescripción guardada ("Editar"). bodyFatSource MEASURED sin medido hoy → null.
+ *  HU-008: si la población de `ctx` no coincide con lo guardado (p. ej. se corrigió la fecha de
+ *  nacimiento), la fórmula y el rango que no son de la población pasan a los de por defecto, y en
+ *  PEDIATRIC el peso pasa a ACTUAL y la grasa a null. */
 export function draftFromPrescription(p: PrescriptionSnapshot, ctx: RequirementContext): RequirementDraft {
+  const pediatric = ctx.population === "PEDIATRIC";
   const bodyFatSource =
-    p.bodyFatSource === "MEASURED" && ctx.measuredBodyFatPercent === null ? null : p.bodyFatSource;
+    pediatric || (p.bodyFatSource === "MEASURED" && ctx.measuredBodyFatPercent === null) ? null : p.bodyFatSource;
+  const bmrFormula = isFormulaFor(p.bmrFormula, ctx.population) ? p.bmrFormula : defaultBmrFormula(ctx.population);
+  let adjustmentRange: AdjustmentRangeKey | null = p.adjustmentRange;
+  let adjustmentPercent: number | null = p.adjustmentPercent;
+  if (adjustmentRangeFor(p.nutritionGoal, p.adjustmentRange, ctx.population) === null) {
+    const range = initialAdjustmentRange(p.nutritionGoal, null, ctx.population);
+    adjustmentRange = range?.key ?? null;
+    adjustmentPercent = range === null ? null : defaultAdjustmentPercent(range);
+  }
   return {
-    bmrFormula: p.bmrFormula,
-    weightBasis: p.weightBasis,
+    bmrFormula,
+    weightBasis: pediatric ? "ACTUAL" : p.weightBasis,
     bodyFatSource,
     activityLevel: p.activityLevel,
     nutritionGoal: p.nutritionGoal,
-    adjustmentRange: p.adjustmentRange,
-    adjustmentPercent: p.adjustmentPercent,
+    adjustmentRange,
+    adjustmentPercent,
     prescribedVctKcal: p.prescribedVctKcal,
     macros:
       p.macroMode === "PROTEIN_PER_KG"
@@ -752,7 +962,7 @@ export function formatKgFixed1(value: number): string {
 
 /** "Peso usado: 66,5 kg (actual)" | "Peso usado: 85,7 kg (ajustado; ideal Devine 75,0 kg)". */
 export function prescriptionWeightLine(p: PrescriptionSnapshot): string {
-  if (p.weightBasis === "ADJUSTED") {
+  if (p.weightBasis === "ADJUSTED" && p.idealWeightDevineKg !== null) {
     return `Peso usado: ${formatKgFixed1(p.weightUsedKg)} kg (ajustado; ideal Devine ${formatKgFixed1(p.idealWeightDevineKg)} kg)`;
   }
   return `Peso usado: ${formatKgFixed1(p.weightUsedKg)} kg (actual)`;
