@@ -46,15 +46,53 @@
       "review": "progress/review_HU-001.md"
     },
     {
-      "id": "HU-002",
-      "slug": "rediseno-ui-empresarial",
-      "titulo": "Rediseño completo de UX/UI: estilo empresarial y minimalista",
-      "origen": "Pedido del usuario 2026-09-23 (la nutricionista prefiere algo empresarial y minimalista)",
-      "estado": "no_afinada",
+      "id": "HU-002a",
+      "slug": "rediseno-ui-fundaciones",
+      "titulo": "Rediseño UI (1/4): fundaciones y shell (tokens, shadcn/ui, sidebar, layouts, login, estados)",
+      "origen": "HU-002 partida (D8)",
+      "estado": "arquitectura_lista",
+      "rama": "hu-002-rediseno-ui-empresarial",
+      "notas": "HU compartida con 002b-d; esta SDD cubre solo la fila HU-002a de la partición.",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
       "intentos_revision": 0,
-      "hu": null,
-      "sdd": null,
-      "notas": "Reemplaza el lenguaje 'Spring-inspired' actual. Hacer antes de sumar muchas pantallas nuevas. Skill de catálogo: ui."
+      "sdd": "Refactorizaciones/rediseno-ui-fundaciones.md",
+      "skills_sdd": [
+        "refactor",
+        "ui"
+      ]
+    },
+    {
+      "id": "HU-002b",
+      "slug": "rediseno-ui-pacientes",
+      "titulo": "Rediseño UI (2/4): pacientes (ficha en pestañas, evolución con gráficos de barras, planes, diario, PDF)",
+      "origen": "HU-002 partida (D8)",
+      "estado": "validada",
+      "notas": "Incluye evaluar librería de gráficos (D14 bis) y PDF (D12).",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
+      "intentos_revision": 0,
+      "sdd": null
+    },
+    {
+      "id": "HU-002c",
+      "slug": "rediseno-ui-agenda-gestion",
+      "titulo": "Rediseño UI (3/4): agenda y gestión",
+      "origen": "HU-002 partida (D8)",
+      "estado": "validada",
+      "notas": "",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
+      "intentos_revision": 0,
+      "sdd": null
+    },
+    {
+      "id": "HU-002d",
+      "slug": "rediseno-ui-nutricion-portal",
+      "titulo": "Rediseño UI (4/4): nutrición y portal (tono cálido)",
+      "origen": "HU-002 partida (D8)",
+      "estado": "validada",
+      "notas": "",
+      "hu": "docs/hu-rediseno-ui-empresarial.md",
+      "intentos_revision": 0,
+      "sdd": null
     },
     {
       "id": "HU-003",
