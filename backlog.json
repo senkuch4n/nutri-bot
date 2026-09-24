@@ -209,10 +209,15 @@
       "titulo": "Base de alimentos argentina SARA 2 (importada del PDF) con kcal por Atwater",
       "origen": "Épica 20",
       "notas": "Importar del PDF con validaciones; reestructura Food y FoodGroup.",
-      "estado": "no_afinada",
+      "estado": "en_arquitectura",
       "intentos_revision": 0,
-      "hu": null,
-      "sdd": null
+      "hu": "docs/hu-base-alimentos-sara2.md",
+      "sdd": "Refactorizaciones/base-alimentos-sara2.md",
+      "rama": "hu-005-base-alimentos-sara2",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ]
     },
     {
       "id": "HU-006",
