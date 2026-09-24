@@ -98,3 +98,19 @@ orquestador, para que las revise a la mañana:
 - HU-008 afinada y validada (D1–D18 según las recomendaciones) → `en_arquitectura`.
 - HU-008: SDD lista (tablas OMS de who.int, con su hash) → `implementando` (Opus).
 - **HU-008 aprobada** (épica 56). Todas las HU del objetivo quedaron cerradas. Siguiente: merge a main, verify.sh y push.
+
+## Cierre del objetivo (2026-09-24)
+
+- Las 11 HU del backlog están aprobadas (001, 002a–d, 003, 004, 005, 006, 007, 008). Épicas 17,
+  18, 19, 20, 30, 44, 45, 46 y 56 cerradas.
+- `main` mergeado con la cadena hu-002…hu-008 (commit e2da8d9): typecheck limpio en los 4
+  workspaces, 505 tests en verde, verify.sh OK. **Pusheado a origin/main.**
+- Pendientes que quedan para el usuario:
+  - carga de servicios y horarios reales (épica 49; escribe en la base, necesita su ok);
+  - arreglar `apps/bot/scripts/test-confirm-attendance.ts`, que llama a crons sin filtrar por
+    paciente;
+  - webhook de Mercado Pago bloqueado por el middleware y sin validar la firma;
+  - cargar título y matrícula en /ajustes;
+  - probar a mano los flujos que escriben (completar un turno, guardar una prescripción, generar
+    el informe PDF);
+  - `docker-compose.prod.yml` es de otro proyecto y no se tocó.
