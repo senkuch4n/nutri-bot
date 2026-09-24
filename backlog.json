@@ -1,0 +1,65 @@
+{
+  "project": "nutri-bot",
+  "descripcion": "Backlog de HU del arnés RDD/SDD. Estado en disco — no vive en el chat.",
+  "reglas": {
+    "one_active_at_a_time": true,
+    "estados_activos": [
+      "afinando",
+      "en_arquitectura",
+      "implementando",
+      "en_revision"
+    ],
+    "valid_status": [
+      "no_afinada",
+      "afinando",
+      "afinada_pendiente_validacion",
+      "validada",
+      "en_arquitectura",
+      "arquitectura_lista",
+      "implementando",
+      "en_revision",
+      "aprobada",
+      "rechazada_reintentando",
+      "bloqueada"
+    ],
+    "max_intentos_revision": 2
+  },
+  "features": [
+    {
+      "id": "HU-001",
+      "slug": "datos-paciente-calculos",
+      "titulo": "Datos del paciente para cálculos (sexo, actividad, objetivo, contextura)",
+      "origen": "docs/historias-usuario-nutridesk.md — Épica 17",
+      "estado": "arquitectura_lista",
+      "intentos_revision": 0,
+      "hu": "docs/hu-datos-paciente-calculos.md",
+      "sdd": "Refactorizaciones/datos-paciente-calculos.md",
+      "notas": "Primera de la ronda 2. Destraba la calculadora (Épicas 18/19).",
+      "skills": [
+        "migracion-prisma"
+      ]
+    },
+    {
+      "id": "HU-002",
+      "slug": "rediseno-ui-empresarial",
+      "titulo": "Rediseño completo de UX/UI: estilo empresarial y minimalista",
+      "origen": "Pedido del usuario 2026-09-23 (la nutricionista prefiere algo empresarial y minimalista)",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null,
+      "notas": "Reemplaza el lenguaje 'Spring-inspired' actual. Hacer antes de sumar muchas pantallas nuevas. Skill de catálogo: ui."
+    },
+    {
+      "id": "HU-003",
+      "slug": "consulta-entidad-central",
+      "titulo": "La consulta como entidad central",
+      "origen": "docs/historias-usuario-nutridesk.md — Épica 30",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null,
+      "notas": "El usuario decidió reestructurar antes de la calculadora (Épica 18)."
+    }
+  ]
+}
