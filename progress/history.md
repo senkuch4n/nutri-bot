@@ -31,3 +31,24 @@
   llama a crons sin filtrar por paciente: puede encolar WhatsApp a JIDs reales (arreglar aparte).
   `calculateAge` de `apps/web/src/lib/age.ts` con desfase por zona horaria (arreglar aparte).
   Decidir si los scripts de prueba contra la base se conservan o se borran (SDD vs CHECKPOINTS).
+
+---
+
+## 2026-09-24 — HU-002a `rediseno-ui-fundaciones` — APROBADA (2ª ronda)
+
+- **Qué:** sistema de diseño nuevo al estilo Notion (tokens como variables CSS, Inter, acento neutro,
+  modo oscuro preparado sin activar), primitivos de shadcn/ui `new-york` v3 sobre Tailwind 3.4 en
+  `components/primitives/`, componentes de aplicación (DataTable, NumberInput, AdequacyBar,
+  confirmación, toasts, skeletons, callouts), sidebar agrupada colapsable con estado del bot,
+  portal con tono cálido y pestañas (suma "Plan"), login sobrio en `/login` e `/inicio`, y páginas
+  `loading`/`error`/`not-found`. Las pantallas todavía no están migradas: se ven renovadas por los
+  primitivos y los alias LEGACY de los tokens viejos.
+- **Ronda 1:** CHANGES_REQUESTED (espacio duro en `Quantity`, `aria-describedby` de `NumberInput`),
+  más la sidebar, que no entraba a 663 px de alto (encontrado en el recorrido del orquestador).
+- **Modelos:** implementer Fable (en las dos rondas); reviewer Opus (en las dos rondas).
+- **Docs:** `docs/hu-rediseno-ui-empresarial.md`, `Refactorizaciones/rediseno-ui-fundaciones.md`,
+  `progress/impl_HU-002a.md`, `progress/review_HU-002a.md`, `progress/recorrido_HU-002a.md`.
+- **Pendientes para el usuario:** login en ventana privada, portal a 360 px (DevTools), contraste.
+  El recorrido de la primera HU que consuma NumberInput, DataTable y `error.tsx` tiene que cubrirlos.
+- **Nota operativa:** con Tailwind 3.4 en Node 24, un cambio en `tailwind.config.ts` obliga a
+  reiniciar `npm run dev` (no se recarga solo).
