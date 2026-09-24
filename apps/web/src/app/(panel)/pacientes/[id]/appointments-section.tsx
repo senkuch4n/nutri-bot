@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CalendarX } from "lucide-react";
 import {
   Table,
@@ -16,6 +17,8 @@ export interface AppointmentRow {
   serviceName: string;
   priceLabel: string;
   status: { tone: "info" | "warning" | "success" | "neutral" | "danger"; label: string };
+  /** Detalle de la consulta del turno (HU-003); null si no tiene. */
+  consultationHref: string | null;
 }
 
 /** Pestaña Turnos. Server component: usa los primitivos de tabla, no DataTable. */
@@ -33,6 +36,7 @@ export function AppointmentsSection({ appointments }: { appointments: Appointmen
               <TableHead>Servicio</TableHead>
               <TableHead numeric>Precio</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead>Consulta</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -43,6 +47,18 @@ export function AppointmentsSection({ appointments }: { appointments: Appointmen
                 <TableCell numeric>{a.priceLabel}</TableCell>
                 <TableCell>
                   <Badge tone={a.status.tone}>{a.status.label}</Badge>
+                </TableCell>
+                <TableCell>
+                  {a.consultationHref ? (
+                    <Link
+                      href={a.consultationHref}
+                      className="rounded-sm font-medium text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Ver consulta
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

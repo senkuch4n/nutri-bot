@@ -1,5 +1,7 @@
 export interface EvolutionRow {
   id: string;
+  /** Consulta a la que pertenece la medición (HU-003). null solo en filas viejas sin vincular. */
+  consultationId: string | null;
   recordedAtISO: string;
   /** "lunes 1 de septiembre" */
   recordedAtLabel: string;

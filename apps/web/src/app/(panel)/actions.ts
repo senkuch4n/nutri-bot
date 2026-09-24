@@ -71,15 +71,23 @@ export async function sendReminderNowAction(id: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Cambia el estado del turno. La consulta del turno (HU-003) la crea o la quita el dominio
+ * (`setAppointmentStatus`), no esta action.
+ */
 export async function setStatusAction(
   id: string,
   status: "COMPLETED" | "NO_SHOW" | "CONFIRMED",
-): Promise<ActionResult> {
+): Promise<ActionResult & { consultation?: { id: string; created: boolean } | null }> {
+  let result: Awaited<ReturnType<typeof setAppointmentStatus>>;
   try {
-    await setAppointmentStatus({ id, status });
+    result = await setAppointmentStatus({ id, status });
   } catch {
     return { ok: false, error: "No se pudo actualizar el turno." };
   }
   revalidatePath("/");
-  return { ok: true };
+  if (result.consultation || result.removedEmptyConsultation) {
+    revalidatePath(`/pacientes/${result.appointment.patientId}`);
+  }
+  return { ok: true, consultation: result.consultation };
 }

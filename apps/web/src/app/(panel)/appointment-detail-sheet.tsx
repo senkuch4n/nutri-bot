@@ -2,7 +2,7 @@
 
 import { useState, type RefObject } from "react";
 import { es } from "date-fns/locale";
-import { Bell, Check, Undo2, UserX } from "lucide-react";
+import { Bell, Check, ClipboardList, Undo2, UserX } from "lucide-react";
 import { formatInTimeZone, formatPrice } from "@nutri-bot/core";
 import { Separator } from "@/components/primitives/separator";
 import {
@@ -13,7 +13,7 @@ import {
   SheetTitle,
 } from "@/components/primitives/sheet";
 import { useConfirm } from "@/components/confirm";
-import { Badge, Button, FormError } from "@/components/ui";
+import { Badge, Button, ButtonLink, FormError } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { cancelAppointmentAction, sendReminderNowAction, setStatusAction } from "./actions";
 
@@ -27,6 +27,9 @@ export interface SelectedAppointment {
   serviceName: string;
   price: string;
   googleSynced: boolean;
+  patientId: string;
+  /** Consulta del turno (HU-003). `hasContent`: tiene mediciones, plan o notas. */
+  consultation: { id: string; hasContent: boolean } | null;
 }
 
 const statusBadge: Record<
@@ -49,6 +52,7 @@ export function AppointmentDetailSheet({
   currency,
   onClose,
   onChanged,
+  onUpdated,
   interactionAreaRef,
   returnFocusRef,
 }: {
@@ -57,6 +61,8 @@ export function AppointmentDetailSheet({
   currency: string;
   onClose: () => void;
   onChanged: () => void;
+  /** Reemplaza el turno mostrado sin cerrar el panel (p. ej. después de "Marcar completado"). */
+  onUpdated: (next: SelectedAppointment) => void;
   interactionAreaRef?: RefObject<HTMLElement | null>;
   returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
@@ -95,6 +101,7 @@ export function AppointmentDetailSheet({
             currency={currency}
             onClose={onClose}
             onChanged={onChanged}
+            onUpdated={onUpdated}
           />
         ) : null}
       </SheetContent>
@@ -110,33 +117,76 @@ function AppointmentBody({
   currency,
   onClose,
   onChanged,
+  onUpdated,
 }: {
   appt: SelectedAppointment;
   tz: string;
   currency: string;
   onClose: () => void;
   onChanged: () => void;
+  onUpdated: (next: SelectedAppointment) => void;
 }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const confirm = useConfirm();
 
-  async function run(
+  async function run<R extends { ok: boolean; error?: string }>(
     kind: Exclude<Busy, null | "reminder">,
-    fn: () => Promise<{ ok: boolean; error?: string }>,
-    success: string,
+    fn: () => Promise<R>,
+    success: string | ((res: R) => string),
+    options?: { keepOpen?: boolean; onSuccess?: (res: R) => void },
   ) {
     setBusy(kind);
     setError(null);
     const res = await fn();
     setBusy(null);
     if (res.ok) {
-      notify.saved(success);
+      notify.saved(typeof success === "function" ? success(res) : success);
       onChanged();
-      onClose();
+      options?.onSuccess?.(res);
+      if (!options?.keepOpen) onClose();
     } else {
       setError(res.error ?? "No se pudo completar la acción.");
     }
+  }
+
+  // "Marcar completado": el dominio crea (o reusa) la consulta; el panel queda abierto con "Abrir consulta".
+  function markCompleted() {
+    run(
+      "completed",
+      () => setStatusAction(appt.id, "COMPLETED"),
+      (res) => (res.consultation?.created ? "Turno completado. Se creó su consulta." : "Turno completado."),
+      {
+        keepOpen: true,
+        onSuccess: (res) =>
+          onUpdated({
+            ...appt,
+            status: "COMPLETED",
+            consultation: res.consultation
+              ? {
+                  id: res.consultation.id,
+                  hasContent: res.consultation.created ? false : (appt.consultation?.hasContent ?? false),
+                }
+              : appt.consultation,
+          }),
+      },
+    );
+  }
+
+  // D3: si la consulta tiene contenido se conserva, pero se avisa antes. La confirmación va en el
+  // handler, fuera de toda transición (React 19). Sin contenido, no se pregunta.
+  async function backToConfirmed() {
+    if (appt.status === "COMPLETED" && appt.consultation?.hasContent) {
+      const ok = await confirm({
+        title: "¿Volver el turno a confirmado?",
+        description: `La consulta del ${formatInTimeZone(new Date(appt.start), tz, "dd/MM")} tiene mediciones o notas y se conserva.`,
+        confirmLabel: "Volver a confirmado",
+        cancelLabel: "Cancelar",
+        destructive: false,
+      });
+      if (!ok) return;
+    }
+    run("confirm", () => setStatusAction(appt.id, "CONFIRMED"), "Turno vuelto a confirmado");
   }
 
   async function sendReminder() {
@@ -187,9 +237,7 @@ function AppointmentBody({
               className="w-full justify-start"
               disabled={disabled}
               loading={busy === "completed"}
-              onClick={() =>
-                run("completed", () => setStatusAction(appt.id, "COMPLETED"), "Turno marcado como completado")
-              }
+              onClick={markCompleted}
             >
               {busy === "completed" ? null : <Check aria-hidden />}
               Marcar completado
@@ -237,18 +285,28 @@ function AppointmentBody({
             <p className="text-xs text-muted-foreground">El paciente recibe el aviso por WhatsApp.</p>
           </>
         ) : (
-          <Button
-            variant="secondary"
-            className="w-full justify-start"
-            disabled={disabled}
-            loading={busy === "confirm"}
-            onClick={() =>
-              run("confirm", () => setStatusAction(appt.id, "CONFIRMED"), "Turno vuelto a confirmado")
-            }
-          >
-            {busy === "confirm" ? null : <Undo2 aria-hidden />}
-            Volver a confirmado
-          </Button>
+          <>
+            {appt.status === "COMPLETED" && appt.consultation ? (
+              <ButtonLink
+                variant="secondary"
+                className="w-full justify-start"
+                href={`/pacientes/${appt.patientId}/consultas/${appt.consultation.id}`}
+              >
+                <ClipboardList aria-hidden />
+                Abrir consulta
+              </ButtonLink>
+            ) : null}
+            <Button
+              variant="secondary"
+              className="w-full justify-start"
+              disabled={disabled}
+              loading={busy === "confirm"}
+              onClick={backToConfirmed}
+            >
+              {busy === "confirm" ? null : <Undo2 aria-hidden />}
+              Volver a confirmado
+            </Button>
+          </>
         )}
         <FormError message={error} />
       </div>

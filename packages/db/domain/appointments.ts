@@ -1,5 +1,5 @@
-import { messages } from "@nutri-bot/core";
-import { prisma, type Actor, type AppointmentStatus } from "../index";
+import { isConsultationEmpty, messages } from "@nutri-bot/core";
+import { Prisma, prisma, type Actor, type Appointment, type AppointmentStatus } from "../index";
 import { getProfessional, checkSlotAvailable } from "./availability";
 import { enqueueMessage } from "./outbox";
 
@@ -130,9 +130,79 @@ export async function cancelAppointment(params: {
   return updated;
 }
 
+export type SetAppointmentStatusResult = {
+  appointment: Appointment;
+  /** Solo si el estado nuevo es COMPLETED. */
+  consultation: { id: string; created: boolean } | null;
+  /** true si al salir de COMPLETED se borró la consulta vacía. */
+  removedEmptyConsultation: boolean;
+};
+
+/**
+ * Cambia el estado de un turno y mantiene su consulta (HU-003), en una transacción:
+ * - a COMPLETED: crea la consulta del turno si no tiene (una por turno, `appointmentId` único).
+ * - de COMPLETED a otro estado: borra la consulta solo si está vacía; si tiene contenido, la conserva (D3).
+ * Cualquier camino (web, bot o cron) que complete o descomplete un turno tiene que pasar por acá.
+ */
 export async function setAppointmentStatus(params: {
   id: string;
   status: Extract<AppointmentStatus, "COMPLETED" | "NO_SHOW" | "CONFIRMED">;
-}) {
-  return prisma.appointment.update({ where: { id: params.id }, data: { status: params.status } });
+}): Promise<SetAppointmentStatusResult> {
+  const run = () =>
+    prisma.$transaction(async (tx): Promise<SetAppointmentStatusResult> => {
+      const prev = await tx.appointment.findUniqueOrThrow({
+        where: { id: params.id },
+        include: { consultation: { include: { _count: { select: { evolutionEntries: true } } } } },
+      });
+      const appointment = await tx.appointment.update({
+        where: { id: params.id },
+        data: { status: params.status },
+      });
+
+      let consultation: SetAppointmentStatusResult["consultation"] = null;
+      let removedEmptyConsultation = false;
+
+      if (params.status === "COMPLETED") {
+        if (prev.consultation) {
+          consultation = { id: prev.consultation.id, created: false };
+        } else {
+          const created = await tx.consultation.create({
+            data: { patientId: prev.patientId, appointmentId: prev.id, consultedAt: prev.startsAt },
+          });
+          consultation = { id: created.id, created: true };
+        }
+      } else if (prev.status === "COMPLETED" && prev.consultation) {
+        const c = prev.consultation;
+        if (
+          isConsultationEmpty({
+            measurementCount: c._count.evolutionEntries,
+            hasPlan: c.planId != null,
+            notes: c.notes,
+          })
+        ) {
+          // El filtro repite la condición por si alguien cargó algo entre la lectura y el borrado.
+          const { count } = await tx.consultation.deleteMany({
+            where: { id: c.id, notes: null, planId: null, evolutionEntries: { none: {} } },
+          });
+          removedEmptyConsultation = count === 1;
+        }
+      }
+
+      return { appointment, consultation, removedEmptyConsultation };
+    });
+
+  try {
+    return await run();
+  } catch (err) {
+    // Carrera: otro request creó la consulta del turno entre la lectura y el create. La
+    // transacción se revirtió entera; al reintentar, la consulta ya existe (created: false).
+    if (
+      params.status === "COMPLETED" &&
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      return run();
+    }
+    throw err;
+  }
 }

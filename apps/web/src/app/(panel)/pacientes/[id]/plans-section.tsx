@@ -13,13 +13,24 @@ export interface PlanRow {
   title: string;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
   updatedAtLabel: string;
+  /** "Indicado en la consulta del dd/MM" (primera consulta que lo indicó, HU-003); null si ninguna. */
+  consultationLabel: string | null;
 }
 
 const statusTone = { DRAFT: "neutral", ACTIVE: "success", ARCHIVED: "neutral" } as const;
 const statusLabel = { DRAFT: "Borrador", ACTIVE: "Activo", ARCHIVED: "Archivado" } as const;
 
 const columns: DataTableColumn<PlanRow>[] = [
-  { id: "titulo", header: "Título", cell: (p) => <span className="font-medium">{p.title}</span> },
+  {
+    id: "titulo",
+    header: "Título",
+    cell: (p) => (
+      <div className="min-w-0">
+        <span className="font-medium">{p.title}</span>
+        {p.consultationLabel ? <p className="text-xs text-muted-foreground">{p.consultationLabel}</p> : null}
+      </div>
+    ),
+  },
   { id: "estado", header: "Estado", cell: (p) => <Badge tone={statusTone[p.status]}>{statusLabel[p.status]}</Badge> },
   {
     id: "actualizado",

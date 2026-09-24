@@ -4,6 +4,8 @@ import { ArrowLeft } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
 import {
   computeAgeYears,
+  consultationChips,
+  dayKeyInTz,
   formatDate,
   formatDateTime,
   formatInTimeZone,
@@ -11,6 +13,7 @@ import {
 } from "@nutri-bot/core";
 import {
   getLatestFormulaMeasurements,
+  listPatientConsultations,
   listPatientPlans,
   listTemplates,
   listDiaryEntries,
@@ -18,9 +21,11 @@ import {
 } from "@nutri-bot/db/domain";
 import { Card, SectionLabel, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
+import { toEvolutionRow } from "@/lib/evolution-rows";
 import { AppointmentsSection } from "./appointments-section";
 import { ClinicalAlert } from "./clinical-alert";
 import { ClinicalRecordForm } from "./clinical-record-form";
+import { ConsultationsSection } from "./consultations-section";
 import { DiarySection } from "./diary-section";
 import { EvolutionSection } from "./evolution-section";
 import { EvolutionSummary } from "./evolution-summary";
@@ -42,12 +47,15 @@ const statusMeta = {
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [pro, patient, plans, templates, diaryEntries, measurements] = await Promise.all([
+  const [pro, patient, plans, templates, diaryEntries, measurements, consultations] = await Promise.all([
     getProfessional(),
     prisma.patient.findUnique({
       where: { id },
       include: {
-        appointments: { include: { service: true }, orderBy: { startsAt: "desc" } },
+        appointments: {
+          include: { service: true, consultation: { select: { id: true } } },
+          orderBy: { startsAt: "desc" },
+        },
         clinicalRecord: true,
         evolutionEntries: { orderBy: { recordedAt: "desc" } },
       },
@@ -56,6 +64,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     listTemplates(),
     listDiaryEntries(id),
     getLatestFormulaMeasurements(id),
+    listPatientConsultations(id),
   ]);
   if (!patient) notFound();
 
@@ -83,28 +92,21 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
       ? patient.clinicalRecord.background
       : null;
 
-  const evolutionRows = patient.evolutionEntries.map((e) => ({
-    id: e.id,
-    recordedAtISO: e.recordedAt.toISOString(),
-    recordedAtLabel: formatDate(e.recordedAt, pro.timezone),
-    recordedAtShortLabel: formatInTimeZone(e.recordedAt, pro.timezone, "dd/MM/yyyy"),
-    weightKg: e.weightKg !== null ? Number(e.weightKg) : null,
-    heightCm: e.heightCm !== null ? Number(e.heightCm) : null,
-    waistCm: e.waistCm !== null ? Number(e.waistCm) : null,
-    hipCm: e.hipCm !== null ? Number(e.hipCm) : null,
-    armCm: e.armCm !== null ? Number(e.armCm) : null,
-    thighCm: e.thighCm !== null ? Number(e.thighCm) : null,
-    calfCm: e.calfCm !== null ? Number(e.calfCm) : null,
-    tricepsSkinfoldMm: e.tricepsSkinfoldMm !== null ? Number(e.tricepsSkinfoldMm) : null,
-    subscapularSkinfoldMm: e.subscapularSkinfoldMm !== null ? Number(e.subscapularSkinfoldMm) : null,
-    abdominalSkinfoldMm: e.abdominalSkinfoldMm !== null ? Number(e.abdominalSkinfoldMm) : null,
-    bodyFatPercent: e.bodyFatPercent !== null ? Number(e.bodyFatPercent) : null,
-    muscleMassKg: e.muscleMassKg !== null ? Number(e.muscleMassKg) : null,
-    bodyWaterPercent: e.bodyWaterPercent !== null ? Number(e.bodyWaterPercent) : null,
-    visceralFatLevel: e.visceralFatLevel !== null ? Number(e.visceralFatLevel) : null,
-    boneMassKg: e.boneMassKg !== null ? Number(e.boneMassKg) : null,
-    basalMetabolicRateKcal: e.basalMetabolicRateKcal,
-    note: e.note,
+  const evolutionRows = patient.evolutionEntries.map((e) => toEvolutionRow(e, pro.timezone));
+  // Hoy en la zona de la profesional (no en UTC: después de las 21 hs en ART ya sería mañana).
+  const todayKey = dayKeyInTz(now, pro.timezone);
+
+  const consultationRows = consultations.map((c) => ({
+    id: c.id,
+    consultedAtISO: c.consultedAt.toISOString(),
+    dateLabel: formatInTimeZone(c.consultedAt, pro.timezone, "dd/MM/yyyy"),
+    timeLabel: c.appointment ? formatInTimeZone(c.consultedAt, pro.timezone, "HH:mm") : null,
+    originLabel: c.appointment ? c.appointment.service.name : null,
+    chips: consultationChips({
+      measurements: c.evolutionEntries.map((e) => toEvolutionRow(e, pro.timezone)),
+      hasPlan: c.planId !== null,
+      notes: c.notes,
+    }),
   }));
 
   const diaryRows = diaryEntries.map((e) => ({
@@ -143,6 +145,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
           />
         }
         counts={{
+          consultas: consultationRows.length,
           evolucion: evolutionRows.length,
           planes: plans.length,
           diario: diaryRows.length,
@@ -175,6 +178,9 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 </div>
               </section>
             </div>
+          ),
+          consultas: (
+            <ConsultationsSection patientId={patient.id} todayKey={todayKey} consultations={consultationRows} />
           ),
           datos: (
             <div>
@@ -211,7 +217,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
           ),
-          evolucion: <EvolutionSection patientId={patient.id} entries={evolutionRows} />,
+          evolucion: <EvolutionSection patientId={patient.id} entries={evolutionRows} todayKey={todayKey} />,
           planes: (
             <PlansSection
               patientId={patient.id}
@@ -220,6 +226,9 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 title: p.title,
                 status: p.status,
                 updatedAtLabel: formatDate(p.updatedAt, pro.timezone),
+                consultationLabel: p.consultations[0]
+                  ? `Indicado en la consulta del ${formatInTimeZone(p.consultations[0].consultedAt, pro.timezone, "dd/MM")}`
+                  : null,
               }))}
               templates={templates.map((t) => ({ id: t.id, title: t.title }))}
             />
@@ -233,6 +242,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 serviceName: a.service.name,
                 priceLabel: formatPrice(a.priceSnapshot.toString(), pro.currency),
                 status: statusMeta[a.status],
+                consultationHref: a.consultation ? `/pacientes/${patient.id}/consultas/${a.consultation.id}` : null,
               }))}
             />
           ),

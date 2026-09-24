@@ -14,6 +14,10 @@ export function listPatientPlans(patientId: string) {
   return prisma.nutritionPlan.findMany({
     where: { patientId },
     orderBy: { createdAt: "desc" },
+    // HU-003: la primera consulta que indicó el plan ("Indicado en la consulta del dd/MM").
+    include: {
+      consultations: { select: { id: true, consultedAt: true }, orderBy: { consultedAt: "asc" }, take: 1 },
+    },
   });
 }
 

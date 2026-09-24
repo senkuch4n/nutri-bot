@@ -48,6 +48,7 @@ model Patient {
   clinicalRecord ClinicalRecord?
   evolutionEntries EvolutionEntry[]
   diaryEntries DiaryEntry[]
+  consultations Consultation[]
 }
 
 model DiaryEntry {
@@ -95,9 +96,34 @@ model EvolutionEntry {
   boneMassKg              Decimal? @db.Decimal(4, 2)  // masa ósea en kg (bioimpedancia)
   basalMetabolicRateKcal  Int?                        // metabolismo basal en kcal (bioimpedancia)
   note       String?
+  consultationId String?
+  consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
 
   @@index([patientId, recordedAt])
+  @@index([consultationId])
+}
+
+/// Una visita del paciente (HU-003). Viene de un turno (appointmentId, único) o es "Sin turno".
+/// Extensiones futuras cuelgan de acá: prescripción (HU-004), estudios ISAK / bioimpedancia (HU-006).
+model Consultation {
+  id            String          @id @default(cuid())
+  patientId     String
+  patient       Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId String?         @unique
+  appointment   Appointment?    @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  /// Turno: = Appointment.startsAt. Sin turno: el día elegido a las 12:00 en Professional.timezone.
+  consultedAt   DateTime
+  notes         String?
+  planId        String?
+  plan          NutritionPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  evolutionEntries EvolutionEntry[]
+
+  @@index([patientId, consultedAt])
+  @@index([planId])
 }
 
 model Service {
@@ -226,6 +252,7 @@ model Appointment {
 
   messages OutboundMessage[]
   payments Payment[]
+  consultation Consultation?
 
   @@index([startsAt])
   @@index([status, startsAt])
@@ -346,6 +373,7 @@ model NutritionPlan {
 
   meals          PlanMeal[]
   messages       OutboundMessage[]
+  consultations  Consultation[]
 
   @@index([patientId, status])
 }

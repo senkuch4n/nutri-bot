@@ -15,12 +15,13 @@ import { cn } from "@/lib/utils";
 
 export const PATIENT_TABS = [
   { value: "resumen", label: "Resumen" },
+  { value: "consultas", label: "Consultas" },
   { value: "datos", label: "Datos y ficha clínica" },
   { value: "evolucion", label: "Evolución" },
   { value: "planes", label: "Planes" },
   { value: "diario", label: "Diario" },
   { value: "turnos", label: "Turnos" },
-] as const; // HU-003 suma { value: "consultas", label: "Consultas" } acá
+] as const;
 
 export type PatientTabValue = (typeof PATIENT_TABS)[number]["value"];
 
@@ -33,8 +34,8 @@ function isTab(value: string | null): value is PatientTabValue {
 const TabContext = createContext<((tab: PatientTabValue) => void) | null>(null);
 
 /**
- * Encabezado persistente (sticky) + seis pestañas. La pestaña activa vive en `?tab=` con
- * `history.replaceState` (sin ida al servidor, sin entradas en el historial). Los seis paneles
+ * Encabezado persistente (sticky) + siete pestañas. La pestaña activa vive en `?tab=` con
+ * `history.replaceState` (sin ida al servidor, sin entradas en el historial). Los siete paneles
  * quedan montados (`forceMount`) para no perder lo escrito en un formulario al cambiar.
  */
 export function PatientTabs({
@@ -90,7 +91,7 @@ export function PatientTabs({
             className="sticky top-14 z-20 -mx-6 bg-background px-6 pt-4 lg:top-0 lg:-mx-10 lg:px-10"
           >
             {header}
-            {/* A 768 px las seis pestañas pueden no entrar: scrollean dentro de la barra. */}
+            {/* A 768 px las siete pestañas pueden no entrar: scrollean dentro de la barra. */}
             <div className="mt-4 overflow-x-auto overflow-y-hidden">
               <TabsList className="w-max min-w-full">
               {PATIENT_TABS.map((t) => {

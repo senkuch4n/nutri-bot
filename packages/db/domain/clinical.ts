@@ -1,4 +1,13 @@
-import { prisma } from "../index";
+import {
+  CONSULTATION_TEXT,
+  dayKeyInTz,
+  dayKeyToNoonUtc,
+  isFutureDayKey,
+  isValidDayKey,
+} from "@nutri-bot/core";
+import { prisma, type Consultation, type EvolutionEntry } from "../index";
+import { getProfessional } from "./availability";
+import { FutureConsultationDateError, findOrCreateConsultationForDay } from "./consultations";
 
 export function getClinicalRecord(patientId: string) {
   return prisma.clinicalRecord.findUnique({
@@ -24,31 +33,75 @@ export function listEvolutionEntries(patientId: string) {
   });
 }
 
-export function addEvolutionEntry(
+export type EvolutionMeasures = {
+  weightKg?: number | null;
+  note?: string | null;
+  heightCm?: number | null;
+  waistCm?: number | null;
+  hipCm?: number | null;
+  armCm?: number | null;
+  thighCm?: number | null;
+  calfCm?: number | null;
+  tricepsSkinfoldMm?: number | null;
+  subscapularSkinfoldMm?: number | null;
+  abdominalSkinfoldMm?: number | null;
+  bodyFatPercent?: number | null;
+  muscleMassKg?: number | null;
+  bodyWaterPercent?: number | null;
+  visceralFatLevel?: number | null;
+  boneMassKg?: number | null;
+  basalMetabolicRateKcal?: number | null;
+};
+
+/**
+ * Alta desde Evolución (D4). `dayKey` "yyyy-MM-dd" en la zona de la profesional. La medición cae
+ * en la consulta de ese día o en una "Sin turno" nueva, todo en una transacción.
+ */
+export async function addEvolutionEntryOnDay(
   patientId: string,
-  data: {
-    recordedAt: Date;
-    weightKg?: number | null;
-    note?: string | null;
-    heightCm?: number | null;
-    waistCm?: number | null;
-    hipCm?: number | null;
-    armCm?: number | null;
-    thighCm?: number | null;
-    calfCm?: number | null;
-    tricepsSkinfoldMm?: number | null;
-    subscapularSkinfoldMm?: number | null;
-    abdominalSkinfoldMm?: number | null;
-    bodyFatPercent?: number | null;
-    muscleMassKg?: number | null;
-    bodyWaterPercent?: number | null;
-    visceralFatLevel?: number | null;
-    boneMassKg?: number | null;
-    basalMetabolicRateKcal?: number | null;
-  },
-) {
+  dayKey: string,
+  measures: EvolutionMeasures,
+): Promise<{ entry: EvolutionEntry; consultation: Consultation; consultationCreated: boolean }> {
+  if (!isValidDayKey(dayKey)) throw new Error("Fecha inválida");
+  const pro = await getProfessional();
+  if (isFutureDayKey(dayKey, new Date(), pro.timezone)) {
+    throw new FutureConsultationDateError(CONSULTATION_TEXT.futureMeasurementDate);
+  }
+  return prisma.$transaction(async (tx) => {
+    const { consultation, created } = await findOrCreateConsultationForDay(tx, {
+      patientId,
+      dayKey,
+      tz: pro.timezone,
+    });
+    const entry = await tx.evolutionEntry.create({
+      data: {
+        ...measures,
+        patientId,
+        recordedAt: dayKeyToNoonUtc(dayKey, pro.timezone),
+        consultationId: consultation.id,
+      },
+    });
+    return { entry, consultation, consultationCreated: created };
+  });
+}
+
+/** Alta desde el detalle de la consulta. La fecha es el mediodía del día de la consulta. */
+export async function addEvolutionEntryToConsultation(
+  consultationId: string,
+  measures: EvolutionMeasures,
+): Promise<EvolutionEntry> {
+  const pro = await getProfessional();
+  const consultation = await prisma.consultation.findUniqueOrThrow({
+    where: { id: consultationId },
+    select: { id: true, patientId: true, consultedAt: true },
+  });
   return prisma.evolutionEntry.create({
-    data: { patientId, ...data },
+    data: {
+      ...measures,
+      patientId: consultation.patientId,
+      recordedAt: dayKeyToNoonUtc(dayKeyInTz(consultation.consultedAt, pro.timezone), pro.timezone),
+      consultationId: consultation.id,
+    },
   });
 }
 

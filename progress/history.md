@@ -117,3 +117,25 @@
   diario del portal.
 - **Pendientes directos:** confirmación en "Borrar comida" (O-d1) y en el borrado del diario del
   portal (O-d2).
+
+---
+
+## 2026-09-24 — HU-003 `consulta-entidad-central` — APROBADA (1ª ronda) · Épica 30
+
+- **Qué:** entidad `Consultation` (una por turno, o "Sin turno"). Agrupa las mediciones
+  (`EvolutionEntry.consultationId`), las notas y el plan indicado. Al completar un turno se crea
+  su consulta (dominio compartido web/bot en `setAppointmentStatus`); al revertir, se borra si
+  está vacía y si tiene contenido se conserva y se pide confirmación. Pestaña **Consultas**
+  (segunda) y detalle `/pacientes/[id]/consultas/[consultationId]`. Las mediciones nuevas desde
+  Evolución caen en la consulta de ese día o crean una "Sin turno".
+- **Migración** `20260924072056_consultation_entity`: aditiva e idempotente. Creó 18 consultas y
+  vinculó las 15 mediciones existentes, sin cambiar valores. Respaldo previo (`pg_dump`) en el
+  scratchpad de la sesión.
+- **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
+  autónomo).
+- **Pendiente para el usuario:** recorrer en el navegador los flujos que escriben (completar o
+  revertir un turno, agregar mediciones, notas, plan, nueva consulta) con un paciente de prueba.
+  El orquestador reinició el `next dev` (cliente de Prisma viejo).
+- **Pendiente técnico:** `apps/bot/scripts/test-confirm-attendance.ts` borra con
+  `deleteMany({ where: { patientId } })`, en contra de la regla de AGENTS.md, y además puede
+  encolar WhatsApp real (se vio en la HU-001).

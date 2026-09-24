@@ -88,6 +88,8 @@ export function CalendarClient({
       serviceName: p.serviceName,
       price: p.price,
       googleSynced: p.googleSynced,
+      patientId: p.patientId,
+      consultation: p.consultation ?? null,
     });
   }, []);
 
@@ -222,6 +224,7 @@ export function CalendarClient({
         currency={currency}
         onClose={() => setSelected(null)}
         onChanged={refetch}
+        onUpdated={setSelected}
         interactionAreaRef={calendarAreaRef}
         returnFocusRef={lastEventElRef}
       />

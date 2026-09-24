@@ -12,14 +12,17 @@ export type { EvolutionRow } from "./evolution-types";
 export function EvolutionSection({
   patientId,
   entries,
+  todayKey,
 }: {
   patientId: string;
   entries: EvolutionRow[];
+  /** "yyyy-MM-dd" de hoy en la zona de la profesional (calculado en el server). */
+  todayKey: string;
 }) {
   return (
     <div className="space-y-8">
       <Card title="Nueva medición" description="Fecha, peso y nota. El resto de las medidas es opcional.">
-        <EvolutionForm patientId={patientId} />
+        <EvolutionForm patientId={patientId} todayKey={todayKey} />
       </Card>
       <EvolutionCharts entries={entries} />
       <EvolutionTable patientId={patientId} entries={entries} />

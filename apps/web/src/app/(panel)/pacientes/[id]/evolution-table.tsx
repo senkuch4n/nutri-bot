@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { computeBmi, computeWaistHipRatio } from "@nutri-bot/core";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
@@ -88,9 +89,26 @@ export function EvolutionTable({
         },
       },
     ];
-    if (readOnly) return base;
+    const consultationColumn: DataTableColumn<EvolutionRow> = {
+      id: "consulta",
+      header: "Consulta",
+      cell: (e) =>
+        e.consultationId ? (
+          <Link
+            href={`/pacientes/${patientId}/consultas/${e.consultationId}`}
+            aria-label={`Ver la consulta del ${e.recordedAtShortLabel}`}
+            className="rounded-sm text-sm font-medium text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Ver
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    };
+    if (readOnly) return [...base, consultationColumn];
     return [
       ...base,
+      consultationColumn,
       {
         id: "acciones",
         header: "",

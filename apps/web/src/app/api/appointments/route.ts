@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@nutri-bot/db";
+import { isConsultationEmpty } from "@nutri-bot/core";
 import { auth } from "@/auth";
 
 export async function GET(req: Request) {
@@ -19,7 +20,13 @@ export async function GET(req: Request) {
       startsAt: { gte: from, lt: to },
       status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] },
     },
-    include: { patient: true, service: true },
+    include: {
+      patient: true,
+      service: true,
+      consultation: {
+        select: { id: true, notes: true, planId: true, _count: { select: { evolutionEntries: true } } },
+      },
+    },
     orderBy: { startsAt: "asc" },
   });
 
@@ -43,6 +50,17 @@ export async function GET(req: Request) {
       serviceName: a.service.name,
       price: a.priceSnapshot.toString(),
       googleSynced: Boolean(a.googleEventId),
+      patientId: a.patientId,
+      consultation: a.consultation
+        ? {
+            id: a.consultation.id,
+            hasContent: !isConsultationEmpty({
+              measurementCount: a.consultation._count.evolutionEntries,
+              hasPlan: a.consultation.planId !== null,
+              notes: a.consultation.notes,
+            }),
+          }
+        : null,
     },
   }));
 
