@@ -15,6 +15,8 @@
     "db:deploy": "npm run migrate:deploy --workspace packages/db",
     "db:seed": "npm run seed --workspace packages/db",
     "db:studio": "npm run studio --workspace packages/db",
+    "sara2:read": "npm run sara2:read --workspace packages/db",
+    "sara2:load": "npm run sara2:load --workspace packages/db --",
     "dev:all": "npm run db:generate && concurrently -n web,bot -c blue,green \"npm:dev\" \"npm:dev:bot\"",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

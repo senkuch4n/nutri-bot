@@ -45,6 +45,7 @@ docker compose up -d db
 npm run db:generate
 npm run db:deploy       # aplica la migración inicial (o `npm run db:migrate` en desarrollo)
 npm run db:seed         # crea la ficha de la profesional, servicios y horario de ejemplo
+npm run sara2:load      # carga la base de alimentos SARA 2 (idempotente)
 
 # 4. Levantar todo
 npm run dev             # panel en http://localhost:3000
@@ -98,6 +99,9 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 | `npm run test` | Tests de `packages/core` |
 | `npm run typecheck` | `tsc` en todos los workspaces |
 | `npm run build` | Build de `core` + `web` + `bot` |
+| `npm run sara2:read` | Lee el PDF de SARA 2 (`pdftotext -bbox`, poppler) y regenera `packages/db/data/sara2/alimentos.json` y `reporte.md`. Solo desarrollo; no toca la base |
+| `npm run sara2:load` | Carga `alimentos.json` en la base: upsert por clave de origen, idempotente, no toca los alimentos propios ni borra (desactiva los que salieron). `-- --dry-run` para ver qué haría |
+| `npm run test:foods --workspace packages/db` | Prueba contra la base de desarrollo la carga de SARA 2 (en transacción revertida) y los alimentos propios (borra por id lo que crea) |
 | `npm run test:confirm-flow --workspace apps/bot` | Simula sin WhatsApp real el flujo de confirmación de turno (sí/no) y las recomendaciones previas a un estudio; crea y borra sus propios datos de prueba |
 
 ## Despliegue (VPS con Docker)
@@ -106,11 +110,17 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 cp .env.example .env         # con los valores de producción y AUTH_URL público
 docker compose --profile deploy up -d --build
 docker compose run --rm web npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+docker compose run --rm bot npm run sara2:load:prod --workspace packages/db   # base SARA 2 (idempotente)
 docker compose run --rm web node -e "require('child_process')"  # (opcional) seed manual
 docker compose logs -f bot   # para escanear el QR la primera vez
 ```
 
 El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
+
+La carga de SARA 2 va **después** de `migrate deploy` y se puede repetir en cada deploy: lee
+`packages/db/data/sara2/alimentos.json` (versionado), no necesita `pdftotext` y nunca toca los
+alimentos propios. Si la imagen del bot no trae `tsx`, correrla desde una máquina de desarrollo
+con la `DATABASE_URL` de producción por túnel: `DATABASE_URL=… npx tsx packages/db/scripts/sara2/load.ts`.
 
 ## Historias de usuario cubiertas
 
