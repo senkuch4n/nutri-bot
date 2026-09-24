@@ -2,15 +2,18 @@
 
 ## 2026-09-23
 
-- Ronda 2 de ideas volcada en `docs/historias-usuario-nutridesk.md` (épicas 17–42).
-- Decisiones del usuario:
-  - La nutricionista trabaja sola → Épica 41 (equipo) descartada.
-  - Atiende solo adultos.
-  - La consulta como entidad central (Épica 30) va antes de la calculadora (Épica 18).
-  - Rediseño completo de UX/UI a estilo empresarial y minimalista (HU-002).
-- Orden: HU-001 (Épica 17) → HU-002 (rediseño UI) → HU-003 (Épica 30) → Épicas 18/19 → Épica 20.
+- Ronda 2 de ideas en `docs/historias-usuario-nutridesk.md` (épicas 17–43). La nutricionista
+  trabaja sola (Épica 41 descartada) y atiende solo adultos.
+- Reglas nuevas del usuario: antes de cada implementer, preguntar modelo + skills; antes de cada
+  reviewer, preguntar modelo (CLAUDE.md, AGENTS.md).
+- Orden: HU-001 → HU-002 (rediseño UI) → HU-003 (Épica 30) → Épicas 18/19 → Épica 20.
+- **HU-001 aprobada** (ver progress/history.md). Rama `hu-001-datos-paciente-calculos`, cambios
+  sin commitear: falta prueba en navegador del usuario, commit y merge.
 
-## En curso
+## Pendientes fuera de HU
 
-- **HU-001** `datos-paciente-calculos` — validada por el usuario (resoluciones D1–D10 al final de la HU) → `arquitectura_lista`: SDD en Refactorizaciones/datos-paciente-calculos.md (23 pasos). Esperando confirmación del usuario para implementar.
-- Cambios sin commitear en nav.tsx, nav-links.tsx y (panel)/layout.tsx: descartados a pedido del usuario.
+- `apps/bot/scripts/test-confirm-attendance.ts` puede encolar WhatsApp a pacientes reales
+  (crons sin filtrar por paciente). Arreglar antes de volver a correrlo.
+- `apps/web/src/lib/age.ts` `calculateAge`: desfase de un día por zona horaria.
+- Scripts de prueba contra la base: ¿se conservan o se borran? (SDD vs CHECKPOINTS C5).
+- `docker-compose.prod.yml` es de otro proyecto: queda sin tocar.

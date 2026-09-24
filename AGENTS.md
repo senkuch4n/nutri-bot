@@ -108,9 +108,10 @@ sesión nueva puede retomar donde quedó otra. Mapa:
 | `.claude/agents/{afinador,architect,implementer,reviewer}.md` | Subagentes | — |
 | `ops/harness/verify.sh` | Verificación (typecheck/tests de los workspaces con cambios + chequeos de `backlog.json`). Corre en el hook `Stop` | — |
 
-**Motor:** todo el arnés corre en Claude **Opus** (decisión del usuario
-2026-09-23): orquestador, afinador, architect, implementer y reviewer. No se
-usa Codex ni otro motor externo. Por eso hay **un solo implementador** para
+**Motor:** el arnés corre en modelos Claude. Afinador y architect van en
+**Opus**. El modelo del `implementer` y del `reviewer` (Fable, Opus o Sonnet)
+lo elige el usuario en cada HU, junto con los skills del implementer (decisión del usuario
+2026-09-23). No se usa Codex ni otro motor externo. Por eso hay **un solo implementador** para
 todo el monorepo, en vez de separar backend/frontend.
 
 **Regla anti-teléfono-descompuesto:** los subagentes escriben su resultado

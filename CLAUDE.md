@@ -33,9 +33,15 @@ código vos, salvo en los casos de "Cuándo NO aplica".
 
 ### Modelo
 
-Todos los subagentes corren en **Opus** (`model: opus` en su frontmatter;
-al lanzarlos con el tool `Agent`, pasar `model: "opus"`). No hay pregunta de
-modelo por HU ni motor externo (Codex).
+Por defecto los subagentes corren en **Opus** (`model: opus` en su
+frontmatter). **Antes de lanzar cada `implementer`, preguntale al usuario
+(con `AskUserQuestion`) qué modelo usar (Fable, Opus o Sonnet) y qué skills
+(los de `skills/CATALOGO.md` y los de UI de Claude Code), con una
+recomendación. Antes de lanzar cada `reviewer`, preguntale qué modelo
+usar.** Pasá el modelo elegido en el parámetro `model` del tool `Agent` y
+registralo en `backlog.json` (campos `modelo` y `modelo_reviewer` de la HU).
+El afinador y el architect siguen en Opus salvo que el usuario pida otra
+cosa. No hay motor externo (Codex).
 
 ### Datos de desarrollo
 

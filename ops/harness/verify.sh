@@ -79,7 +79,7 @@ fi
 
 if echo "$CHANGED" | grep -q '^packages/db/prisma/schema.prisma'; then
   echo "  schema.prisma cambió -> prisma validate + generate"
-  if (cd packages/db && npx prisma validate >/dev/null 2>&1); then ok "schema.prisma válido"; else fail "schema.prisma inválido (npx prisma validate)"; fi
+  if (cd packages/db && npx dotenv -e ../../.env -- prisma validate >/dev/null 2>&1); then ok "schema.prisma válido"; else fail "schema.prisma inválido (npx prisma validate)"; fi
   if npm run db:generate >/dev/null 2>&1; then ok "cliente Prisma regenerado"; else fail "npm run db:generate falló"; fi
 fi
 
