@@ -35,3 +35,36 @@
 - HU-002c: implementer (Fable) `done`. Recorrido en progress/recorrido_HU-002c.md: OK. **Bug anterior encontrado: el calendario muestra los turnos 3 h corridos (FullCalendar sin plugin de zona horaria)**; se arregla directo después de la 002c. → `en_revision`.
 - **HU-002c aprobada** y commiteada en la rama. Siguiente: arreglo directo de la zona horaria del calendario, después confirmaciones de Cancelar turno/Reintentar y después HU-002d.
 - **Arreglado (directo):** zona horaria del calendario con @fullcalendar/luxon3. Verificado en Chrome: Brenda a las 09:00 en el calendario y en el panel.
+
+## Modo autónomo (autorizado por el usuario, 2026-09-24, solo por esta ocasión)
+
+- El orquestador **valida las HU** en lugar del usuario y resuelve solo lo que surja.
+- Elecciones fijas: architect con `refactor` + `ui` (en HU de UI; en otras, lo que aplique del
+  catálogo); **implementer en Opus** con `ui-ux-pro-max`, `ui-styling` y `web-design-guidelines`
+  cuando haya UI; reviewer en Opus.
+- Límites que se mantienen: no push; no merge a `main` (lo revisa el usuario); nada que borre
+  datos, mande WhatsApp o escriba datos de negocio en la base; nada de `migrate reset`.
+- Orden: (1) confirmación en "Cancelar turno" y "Reintentar"; (2) HU-002d; (3) HU-003 (consulta
+  como entidad central), y lo que siga del backlog mientras no dependa de datos que solo tiene la
+  nutricionista.
+- (1) Confirmación en Cancelar turno / Reintentar: hecha (commit ea8694a). No se probó con un clic real, para no arriesgar una cancelación.
+- (2) **HU-002d** → `en_arquitectura` (refactor + ui).
+
+### Ampliación del modo autónomo (pedido del usuario, 2026-09-24)
+
+El usuario pide resolver **sí o sí** también lo que antes quedaba para él. Decisiones del
+orquestador, para que las revise a la mañana:
+- **SARA 2:** importar desde el PDF (`pdftotext -layout`), con validaciones (macros cerca de 100 g,
+  kcal ≈ 4·CHO + 4·P + 9·G + 7·alcohol) y un reporte de las filas que no se pudieron leer.
+- **Informe ISAK:** se usan los métodos de **ISAKMetry**, que es lo que ella usa: Kerr (1991),
+  Lee (2000), Rocha (1974), residual por diferencia, Durnin-Womersley (1974), Phantom y
+  Heath-Carter. ArgoRef queda como alternativa futura. Se valida localmente contra los archivos
+  de ISAKMetry, que están en el gitignore; esos datos personales no se commitean.
+- **Pediatría (5 a 18 años):** referencia OMS 2007 (IMC para la edad y talla para la edad, puntaje
+  Z con tablas LMS públicas de la OMS) y ecuaciones de **Schofield** para la TMB en chicos.
+- **Merge a `main` y push:** al final, cuando todas las HU estén aprobadas y `verify.sh` dé OK.
+  Antes del push, revisar el remoto.
+- **Condición de parada:** ninguna HU pendiente en `backlog.json`, más las épicas priorizadas
+  (18/19, 20, 30, 44–46 y 56) convertidas en HU y cerradas.
+- HU-002d: SDD lista; el orquestador acepta D-d1..D-d8 (modo autónomo) → `implementando` (Opus). Pendiente directo después: confirmación en "Borrar comida" (O-d1).
+- Backlog: se sumaron HU-004 (18/19), HU-005 (20), HU-006 (44/45), HU-007 (46) y HU-008 (56).

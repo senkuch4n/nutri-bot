@@ -134,11 +134,22 @@
       "slug": "rediseno-ui-nutricion-portal",
       "titulo": "Rediseño UI (4/4): nutrición y portal (tono cálido)",
       "origen": "HU-002 partida (D8)",
-      "estado": "validada",
+      "estado": "implementando",
       "notas": " REGLA: nunca await confirm() dentro de <form action> ni startTransition (deadlock en React 19, ver review_HU-002b). Pasárselo al architect. INCLUIR (pedido del usuario 2026-09-24): formato es-AR del \"Total del plan\" en el PDF (lib/plan-pdf.tsx macrosLine: coma decimal, espacio duro antes de la unidad, kcal sin decimales). Cambia lo que recibe el paciente.",
       "hu": "docs/hu-rediseno-ui-empresarial.md",
       "intentos_revision": 0,
-      "sdd": null
+      "sdd": "Refactorizaciones/rediseno-ui-nutricion-portal.md",
+      "skills_sdd": [
+        "refactor",
+        "ui"
+      ],
+      "rama": "hu-002-rediseno-ui-empresarial",
+      "modelo": "opus",
+      "skills": [
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines"
+      ]
     },
     {
       "id": "HU-003",
@@ -149,7 +160,62 @@
       "intentos_revision": 0,
       "hu": null,
       "sdd": null,
-      "notas": "El usuario decidió reestructurar antes de la calculadora (Épica 18)."
+      "notas": "El usuario decidió reestructurar antes de la calculadora (Épica 18). Épica 30."
+    },
+    {
+      "id": "HU-004",
+      "slug": "calculadora-requerimiento",
+      "titulo": "Calculadora de requerimiento energético y diagnóstico antropométrico (adultos)",
+      "origen": "docs/historias-usuario-nutridesk.md — Épicas 18 y 19",
+      "notas": "Depende de HU-001 y HU-003. TMB con las 4 fórmulas lado a lado; peso ideal y ajustado; IMC, cintura, ICC, Deurenberg.",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null
+    },
+    {
+      "id": "HU-005",
+      "slug": "base-alimentos-sara2",
+      "titulo": "Base de alimentos argentina SARA 2 (importada del PDF) con kcal por Atwater",
+      "origen": "Épica 20",
+      "notas": "Importar del PDF con validaciones; reestructura Food y FoodGroup.",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null
+    },
+    {
+      "id": "HU-006",
+      "slug": "antropometria-isak",
+      "titulo": "Antropometría ISAK completa, composición corporal (Kerr/Lee/Rocha), somatotipo e índices",
+      "origen": "Épicas 44 y 45",
+      "notas": "Métodos de ISAKMetry; validar local contra docs/ISAKMetry_* (gitignored). Depende de HU-003.",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null
+    },
+    {
+      "id": "HU-007",
+      "slug": "informe-antropometrico",
+      "titulo": "Informe antropométrico automático en PDF (actual vs anterior)",
+      "origen": "Épica 46",
+      "notas": "Depende de HU-006.",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null
+    },
+    {
+      "id": "HU-008",
+      "slug": "pediatria-oms",
+      "titulo": "Pacientes pediátricos (5–18): OMS 2007 IMC/talla para la edad y Schofield",
+      "origen": "Épica 56",
+      "notas": "Depende de HU-004 y HU-006.",
+      "estado": "no_afinada",
+      "intentos_revision": 0,
+      "hu": null,
+      "sdd": null
     }
   ]
 }
