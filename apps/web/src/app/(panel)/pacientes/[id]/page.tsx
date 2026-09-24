@@ -1,12 +1,25 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@nutri-bot/db";
-import { formatDate, formatDateTime, formatInTimeZone, formatPrice } from "@nutri-bot/core";
-import { listPatientPlans, listTemplates, listDiaryEntries } from "@nutri-bot/db/domain";
+import {
+  computeAgeYears,
+  formatDate,
+  formatDateTime,
+  formatInTimeZone,
+  formatPrice,
+} from "@nutri-bot/core";
+import {
+  getLatestFormulaMeasurements,
+  listPatientPlans,
+  listTemplates,
+  listDiaryEntries,
+  type LatestMeasurement,
+} from "@nutri-bot/db/domain";
 import { Badge, Card, SectionLabel, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { PatientForm } from "./patient-form";
 import { ClinicalRecordForm } from "./clinical-record-form";
+import { FormulaDataSection } from "./formula-data-section";
 import { ClinicalAlert } from "./clinical-alert";
 import { EvolutionSection } from "./evolution-section";
 import { PlansSection } from "./plans-section";
@@ -24,7 +37,7 @@ const statusMeta = {
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [pro, patient, plans, templates, diaryEntries] = await Promise.all([
+  const [pro, patient, plans, templates, diaryEntries, measurements] = await Promise.all([
     getProfessional(),
     prisma.patient.findUnique({
       where: { id },
@@ -37,8 +50,12 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     listPatientPlans(id),
     listTemplates(),
     listDiaryEntries(id),
+    getLatestFormulaMeasurements(id),
   ]);
   if (!patient) notFound();
+
+  const summaryMeasurement = (m: LatestMeasurement | null) =>
+    m ? { value: m.value, dateLabel: formatInTimeZone(m.recordedAt, pro.timezone, "dd/MM/yyyy") } : null;
 
   const appts = patient.appointments;
   const count = (s: keyof typeof statusMeta) => appts.filter((a) => a.status === s).length;
@@ -90,6 +107,25 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
             notes: patient.notes,
             birthDateISO: patient.birthDate ? patient.birthDate.toISOString().slice(0, 10) : null,
           }}
+        />
+      </Card>
+
+      <Card>
+        <SectionLabel>Datos para cálculos</SectionLabel>
+        <FormulaDataSection
+          patientId={patient.id}
+          values={{
+            sex: patient.sex,
+            activityLevel: patient.activityLevel,
+            nutritionGoal: patient.nutritionGoal,
+            bodyFrame: patient.bodyFrame,
+          }}
+          ageYears={
+            patient.birthDate ? computeAgeYears(patient.birthDate, new Date(), pro.timezone) : null
+          }
+          weight={summaryMeasurement(measurements.weightKg)}
+          height={summaryMeasurement(measurements.heightCm)}
+          bodyFat={summaryMeasurement(measurements.bodyFatPercent)}
         />
       </Card>
 

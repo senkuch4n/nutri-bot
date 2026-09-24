@@ -27,7 +27,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "resumen_paciente",
       description:
-        "Ficha clínica, último peso registrado, plan activo y próximo turno de un paciente puntual, dado su id.",
+        "Ficha clínica, sexo, edad, actividad física, objetivo nutricional, último peso registrado, plan activo y próximo turno de un paciente puntual, dado su id.",
       parameters: {
         type: "object",
         properties: { patientId: { type: "string" } },

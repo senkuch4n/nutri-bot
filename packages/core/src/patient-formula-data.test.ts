@@ -1,0 +1,193 @@
+import { describe, expect, it } from "vitest";
+import {
+  ACTIVITY_LEVELS,
+  ACTIVITY_LEVEL_VALUES,
+  BODY_FRAMES,
+  BODY_FRAME_VALUES,
+  NUTRITION_GOALS,
+  NUTRITION_GOAL_VALUES,
+  SEX_OPTIONS,
+  SEX_VALUES,
+  activityLevelOption,
+  bodyFrameLabel,
+  computeAgeYears,
+  effectiveBodyFrame,
+  formatDecimalEs,
+  getMissingFormulaData,
+  isMinor,
+  missingFormulaDataMessage,
+  nutritionGoalLabel,
+  sexLabel,
+  type FormulaDataPresence,
+} from "./patient-formula-data";
+
+const complete: FormulaDataPresence = {
+  sex: "FEMALE",
+  activityLevel: "LIGHT",
+  nutritionGoal: "LOSE_WEIGHT",
+  hasBirthDate: true,
+  weightKg: 66.5,
+  heightCm: 162,
+};
+
+describe("constantes", () => {
+  it("ACTIVITY_LEVELS tiene los 5 factores en orden", () => {
+    expect(ACTIVITY_LEVELS.map((a) => a.factor)).toEqual([1.2, 1.375, 1.55, 1.725, 1.9]);
+    expect(ACTIVITY_LEVELS.find((a) => a.value === "LIGHT")?.description).toBe(
+      "Ejercicio ligero 1-3 días/semana",
+    );
+  });
+
+  it("NUTRITION_GOALS tiene los 4 objetivos con sus rangos", () => {
+    expect(NUTRITION_GOALS.map((g) => g.value)).toEqual([
+      "LOSE_WEIGHT",
+      "MAINTAIN",
+      "GAIN_WEIGHT",
+      "GAIN_MUSCLE",
+    ]);
+    expect(NUTRITION_GOALS.find((g) => g.value === "GAIN_MUSCLE")?.label).toBe("Ganar masa muscular");
+    const lose = NUTRITION_GOALS.find((g) => g.value === "LOSE_WEIGHT")!;
+    expect(lose.adjustmentRanges.map((r) => [r.minPercent, r.maxPercent])).toEqual([
+      [-25, -15],
+      [-30, -25],
+    ]);
+    const maintain = NUTRITION_GOALS.find((g) => g.value === "MAINTAIN")!;
+    expect(maintain.adjustmentRanges.map((r) => [r.minPercent, r.maxPercent])).toEqual([[0, 0]]);
+  });
+
+  it("BODY_FRAMES ajusta Hamwi -10 / 0 / +10", () => {
+    expect(BODY_FRAMES.map((b) => [b.value, b.hamwiAdjustmentPercent])).toEqual([
+      ["SMALL", -10],
+      ["MEDIUM", 0],
+      ["LARGE", 10],
+    ]);
+  });
+
+  it("los *_VALUES coinciden con los value de sus opciones", () => {
+    expect(SEX_OPTIONS.map((o) => o.value)).toEqual([...SEX_VALUES]);
+    expect(ACTIVITY_LEVELS.map((o) => o.value)).toEqual([...ACTIVITY_LEVEL_VALUES]);
+    expect(NUTRITION_GOALS.map((o) => o.value)).toEqual([...NUTRITION_GOAL_VALUES]);
+    expect(BODY_FRAMES.map((o) => o.value)).toEqual([...BODY_FRAME_VALUES]);
+  });
+});
+
+describe("etiquetas y contextura", () => {
+  it("effectiveBodyFrame asume Mediana si falta", () => {
+    expect(effectiveBodyFrame(null)).toBe("MEDIUM");
+    expect(effectiveBodyFrame("LARGE")).toBe("LARGE");
+  });
+
+  it("etiquetas", () => {
+    expect(sexLabel(null)).toBeNull();
+    expect(sexLabel("FEMALE")).toBe("Femenino");
+    expect(activityLevelOption("MODERATE")?.factor).toBe(1.55);
+    expect(activityLevelOption(null)).toBeNull();
+    expect(nutritionGoalLabel("GAIN_WEIGHT")).toBe("Subir de peso");
+    expect(nutritionGoalLabel(null)).toBeNull();
+    expect(bodyFrameLabel("SMALL")).toBe("Pequeña");
+    expect(bodyFrameLabel(null)).toBeNull();
+  });
+});
+
+describe("computeAgeYears", () => {
+  const tz = "America/Argentina/Buenos_Aires";
+  const birth = new Date("1990-09-23T00:00:00Z");
+
+  it("el día del cumpleaños ya cumplió", () => {
+    expect(computeAgeYears(birth, new Date("2026-09-23T15:00:00Z"), tz)).toBe(36);
+  });
+
+  it("el día anterior todavía no cumplió", () => {
+    expect(computeAgeYears(birth, new Date("2026-09-22T15:00:00Z"), tz)).toBe(35);
+  });
+
+  it("toma el 'hoy' en la zona de la profesional, no en UTC", () => {
+    // 02:00 UTC del 23/09 = 23:00 del 22/09 en Buenos Aires.
+    expect(computeAgeYears(birth, new Date("2026-09-23T02:00:00Z"), tz)).toBe(35);
+  });
+
+  it("nacido un 29/02 cumple el 01/03 en años no bisiestos", () => {
+    const leap = new Date("2000-02-29T00:00:00Z");
+    expect(computeAgeYears(leap, new Date("2026-02-28T15:00:00Z"), tz)).toBe(25);
+    expect(computeAgeYears(leap, new Date("2026-03-01T15:00:00Z"), tz)).toBe(26);
+  });
+
+  it("isMinor", () => {
+    expect(isMinor(17)).toBe(true);
+    expect(isMinor(18)).toBe(false);
+    expect(isMinor(null)).toBe(false);
+  });
+});
+
+describe("faltantes", () => {
+  it("todo cargado → sin faltantes ni aviso", () => {
+    const items = getMissingFormulaData(complete);
+    expect(items).toEqual([]);
+    expect(missingFormulaDataMessage(items)).toBeNull();
+  });
+
+  it("paciente preexistente sin nada", () => {
+    const items = getMissingFormulaData({
+      sex: null,
+      activityLevel: null,
+      nutritionGoal: null,
+      hasBirthDate: false,
+      weightKg: null,
+      heightCm: null,
+    });
+    expect(items.map((i) => i.key)).toEqual([
+      "sex",
+      "activityLevel",
+      "nutritionGoal",
+      "birthDate",
+      "weight",
+      "height",
+    ]);
+    expect(missingFormulaDataMessage(items)).toBe(
+      'Faltan datos para los cálculos: sexo, actividad física, objetivo, fecha de nacimiento, peso, talla. La fecha de nacimiento se carga en "Datos". El peso y la talla se cargan en "Evolución".',
+    );
+  });
+
+  it("preexistente con fecha, peso y talla", () => {
+    const items = getMissingFormulaData({
+      ...complete,
+      sex: null,
+      activityLevel: null,
+      nutritionGoal: null,
+    });
+    expect(missingFormulaDataMessage(items)).toBe(
+      "Faltan datos para los cálculos: sexo, actividad física, objetivo.",
+    );
+  });
+
+  it("sin fecha de nacimiento y sin talla", () => {
+    const items = getMissingFormulaData({ ...complete, hasBirthDate: false, heightCm: null });
+    expect(missingFormulaDataMessage(items)).toBe(
+      'Faltan datos para los cálculos: fecha de nacimiento, talla. La fecha de nacimiento se carga en "Datos". La talla se carga en "Evolución".',
+    );
+  });
+
+  it("solo falta el peso", () => {
+    const message = missingFormulaDataMessage(getMissingFormulaData({ ...complete, weightKg: null }));
+    expect(message).toBe('Faltan datos para los cálculos: peso. El peso se carga en "Evolución".');
+  });
+
+  it("peso 0 cuenta como cargado (se decide por null, no por falsy)", () => {
+    expect(getMissingFormulaData({ ...complete, weightKg: 0 })).toEqual([]);
+  });
+
+  it("contextura y % de grasa ausentes no son faltantes", () => {
+    const withExtras = { ...complete, bodyFrame: null, bodyFatPercent: null };
+    const input: FormulaDataPresence = withExtras;
+    expect(getMissingFormulaData(input)).toEqual([]);
+  });
+});
+
+describe("formatDecimalEs", () => {
+  it("formatea con coma decimal", () => {
+    expect(formatDecimalEs(66.5)).toBe("66,5");
+    expect(formatDecimalEs(162)).toBe("162");
+    expect(formatDecimalEs(1.375)).toBe("1,375");
+    expect(formatDecimalEs(29.4)).toBe("29,4");
+  });
+});
