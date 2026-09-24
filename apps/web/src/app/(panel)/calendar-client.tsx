@@ -5,6 +5,7 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import luxonPlugin from "@fullcalendar/luxon3";
 import type { EventClickArg, DateSelectArg } from "@fullcalendar/core";
 import { Plus } from "lucide-react";
 import { Separator } from "@/components/primitives/separator";
@@ -15,7 +16,8 @@ import { AppointmentDetailSheet, type SelectedAppointment } from "./appointment-
 
 // Referencias estables: si se crean inline en el render, FullCalendar cree que
 // la config cambió y vuelve a pedir los eventos → loop infinito con `loading`.
-const PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
+// luxonPlugin: sin él, FullCalendar no puede convertir a una zona con nombre (timeZone={tz}) y muestra UTC.
+const PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin, luxonPlugin];
 const HEADER_TOOLBAR = {
   left: "prev,next today",
   center: "title",

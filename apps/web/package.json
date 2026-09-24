@@ -14,6 +14,7 @@
     "@fullcalendar/core": "^6.1.15",
     "@fullcalendar/daygrid": "^6.1.15",
     "@fullcalendar/interaction": "^6.1.15",
+    "@fullcalendar/luxon3": "^6.1.21",
     "@fullcalendar/react": "^6.1.15",
     "@fullcalendar/timegrid": "^6.1.15",
     "@nutri-bot/core": "*",
@@ -38,6 +39,7 @@
     "date-fns-tz": "^3.2.0",
     "googleapis": "^144.0.0",
     "lucide-react": "^1.47.0",
+    "luxon": "^3.7.2",
     "next": "^15.1.2",
     "next-auth": "^5.0.0-beta.25",
     "openai": "^7.15.0",
@@ -51,6 +53,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/luxon": "^3.7.5",
     "@types/node": "^22.10.1",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
