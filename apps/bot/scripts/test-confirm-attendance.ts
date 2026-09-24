@@ -7,6 +7,9 @@
  * corre los crons de encolado y feedea las respuestas a handleIncoming como
  * si fueran mensajes entrantes reales, y al final borra todo lo que creó.
  *
+ * Los crons se corren acotados al paciente de prueba (`scope.patientIds`): nunca encolan
+ * mensajes para turnos de pacientes reales que caigan en la misma ventana.
+ *
  * Uso: npm run test:confirm-flow --workspace apps/bot
  */
 import assert from "node:assert/strict";
@@ -74,7 +77,7 @@ async function main() {
   });
 
   await step("cron enqueueAttendanceConfirmations encola el pedido de confirmación", async () => {
-    const count = await enqueueAttendanceConfirmations();
+    const count = await enqueueAttendanceConfirmations(30, { patientIds: [patient.id] });
     assert.ok(count >= 1, "esperaba al menos 1 turno encolado");
     const state = await prisma.conversationState.findUnique({ where: { patientJid: TEST_JID } });
     assert.equal(state?.step, "CONFIRM_ATTENDANCE");
@@ -111,7 +114,7 @@ async function main() {
   });
 
   await step("cron enqueueAttendanceConfirmations encola el segundo turno (no duplica el primero)", async () => {
-    const count = await enqueueAttendanceConfirmations();
+    const count = await enqueueAttendanceConfirmations(30, { patientIds: [patient.id] });
     assert.equal(count, 1, "no debería re-encolar el turno A, que ya tiene su mensaje");
     const state = await prisma.conversationState.findUnique({ where: { patientJid: TEST_JID } });
     assert.equal((state?.context as { apptId?: string } | null)?.apptId, apptB.id);
@@ -142,7 +145,7 @@ async function main() {
   });
 
   await step("cron enqueuePrepInstructions manda las recomendaciones previas al estudio", async () => {
-    const count = await enqueuePrepInstructions();
+    const count = await enqueuePrepInstructions(20, { patientIds: [patient.id] });
     assert.ok(count >= 1, "esperaba al menos 1 recomendación encolada");
     const outbound = await prisma.outboundMessage.findFirst({
       where: { appointmentId: apptC.id, kind: "PREP_INSTRUCTIONS" },

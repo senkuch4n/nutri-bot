@@ -43,7 +43,12 @@ export async function enqueueDueReminders(windowMinutes = 20): Promise<number> {
 }
 
 /** Pide confirmar asistencia a los turnos que empiezan en ~3 días. */
-export async function enqueueAttendanceConfirmations(windowMinutes = 30): Promise<number> {
+/** Filtro opcional para pruebas: limita los crons a estos pacientes (nunca toca turnos ajenos). */
+export interface EnqueueScope {
+  patientIds?: string[];
+}
+
+export async function enqueueAttendanceConfirmations(windowMinutes = 30, scope: EnqueueScope = {}): Promise<number> {
   const pro = await getProfessional();
   const now = Date.now();
   const from = new Date(now + 72 * 3_600_000);
@@ -53,6 +58,7 @@ export async function enqueueAttendanceConfirmations(windowMinutes = 30): Promis
       status: "CONFIRMED",
       startsAt: { gte: from, lt: to },
       messages: { none: { kind: "CONFIRMATION_REQUEST" } },
+      ...(scope.patientIds ? { patientId: { in: scope.patientIds } } : {}),
     },
     include: { patient: true, service: true },
   });
@@ -84,7 +90,7 @@ export async function enqueueAttendanceConfirmations(windowMinutes = 30): Promis
 }
 
 /** Manda las recomendaciones previas a estudios que las tengan configuradas. */
-export async function enqueuePrepInstructions(windowMinutes = 20): Promise<number> {
+export async function enqueuePrepInstructions(windowMinutes = 20, scope: EnqueueScope = {}): Promise<number> {
   const pro = await getProfessional();
   const now = Date.now();
   const due = await prisma.appointment.findMany({
@@ -96,6 +102,7 @@ export async function enqueuePrepInstructions(windowMinutes = 20): Promise<numbe
         prepLeadHours: { not: null },
       },
       messages: { none: { kind: "PREP_INSTRUCTIONS" } },
+      ...(scope.patientIds ? { patientId: { in: scope.patientIds } } : {}),
     },
     include: { patient: true, service: true },
   });
