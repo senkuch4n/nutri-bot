@@ -1,16 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Apple, Plus, Search, SearchX } from "lucide-react";
-import { normalize } from "@nutri-bot/core";
+import { foodSearchText, matchesFoodQuery } from "@nutri-bot/core";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { FoodSourceBadge } from "@/components/food-source-badge";
+import { Label } from "@/components/primitives/label";
+import { Switch } from "@/components/primitives/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
 import { Badge, Button, ButtonLink, Card, EmptyState, Input, Quantity, Select } from "@/components/ui";
-import { FOOD_GROUP_LABELS, FOOD_GROUPS } from "@/lib/food-groups";
+import { FOOD_GROUP_LABELS, FOOD_GROUPS, foodGroupLabel, foodGroupShortLabel } from "@/lib/food-groups";
 
 export interface FoodRow {
   id: string;
   name: string;
   group: string;
+  source: "SARA2" | "PROPIO";
   kcalPer100: string;
   proteinPer100: string;
   carbsPer100: string;
@@ -18,15 +23,12 @@ export interface FoodRow {
   active: boolean;
 }
 
-function groupLabel(group: string): string {
-  return FOOD_GROUP_LABELS[group as keyof typeof FOOD_GROUP_LABELS] ?? group;
-}
+type SourceFilter = "ALL" | "SARA2" | "PROPIO";
 
-function numericColumn(
-  id: string,
-  header: string,
-  pick: (f: FoodRow) => string,
-): DataTableColumn<FoodRow> {
+const PAGE_SIZE = 50;
+const countFormat = new Intl.NumberFormat("es-AR");
+
+function numericColumn(id: string, header: string, pick: (f: FoodRow) => string): DataTableColumn<FoodRow> {
   return {
     id,
     header,
@@ -55,10 +57,21 @@ const columns: DataTableColumn<FoodRow>[] = [
     sortValue: (f) => f.name,
   },
   {
+    id: "fuente",
+    header: "Fuente",
+    cell: (f) => <FoodSourceBadge source={f.source} />,
+    sortValue: (f) => f.source,
+    className: "whitespace-nowrap",
+  },
+  {
     id: "grupo",
     header: "Grupo",
-    cell: (f) => <span className="text-muted-foreground">{groupLabel(f.group)}</span>,
-    sortValue: (f) => groupLabel(f.group),
+    cell: (f) => (
+      <span className="text-muted-foreground" title={foodGroupLabel(f.group)}>
+        {foodGroupShortLabel(f.group)}
+      </span>
+    ),
+    sortValue: (f) => foodGroupShortLabel(f.group),
   },
   numericColumn("kcal", "Energía (kcal)", (f) => f.kcalPer100),
   numericColumn("proteinas", "Proteínas (g)", (f) => f.proteinPer100),
@@ -68,19 +81,30 @@ const columns: DataTableColumn<FoodRow>[] = [
 
 export function FoodsList({ foods }: { foods: FoodRow[] }) {
   const [q, setQ] = useState("");
+  const [source, setSource] = useState<SourceFilter>("ALL");
   const [group, setGroup] = useState<string>("");
+  const [showInactive, setShowInactive] = useState(false);
+  const inactiveId = useId();
 
-  const filtered = useMemo(() => {
-    const n = normalize(q);
-    return foods.filter((f) => {
-      if (group && f.group !== group) return false;
-      if (n && !normalize(f.name).includes(n)) return false;
-      return true;
-    });
-  }, [foods, q, group]);
+  // El texto de búsqueda se calcula una sola vez por alimento.
+  const searchable = useMemo(() => foods.map((f) => ({ row: f, text: foodSearchText(f.name) })), [foods]);
+
+  const filtered = useMemo(
+    () =>
+      searchable
+        .filter(({ row, text }) => {
+          if (!showInactive && !row.active) return false;
+          if (source !== "ALL" && row.source !== source) return false;
+          if (group && row.group !== group) return false;
+          return matchesFoodQuery(text, q);
+        })
+        .map(({ row }) => row),
+    [searchable, q, source, group, showInactive],
+  );
 
   function clearFilters() {
     setQ("");
+    setSource("ALL");
     setGroup("");
   }
 
@@ -100,8 +124,8 @@ export function FoodsList({ foods }: { foods: FoodRow[] }) {
     ) : (
       <EmptyState
         icon={SearchX}
-        title="Ningún alimento coincide con la búsqueda"
-        description="Probá con otro nombre o con otro grupo."
+        title="No hay alimentos que coincidan"
+        description="Probá con otro nombre, otra fuente u otro grupo."
         action={
           <Button variant="secondary" onClick={clearFilters}>
             Limpiar filtros
@@ -127,24 +151,48 @@ export function FoodsList({ foods }: { foods: FoodRow[] }) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Buscar alimento…"
+            autoComplete="off"
+            spellCheck={false}
             className="pl-9"
           />
         </div>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={source}
+          onValueChange={(v) => v && setSource(v as SourceFilter)}
+          aria-label="Filtrar por fuente"
+          className="rounded-md border border-input p-0.5 [&>button]:border-0"
+        >
+          <ToggleGroupItem value="ALL" className="data-[state=on]:font-semibold">
+            Todas
+          </ToggleGroupItem>
+          <ToggleGroupItem value="SARA2" className="data-[state=on]:font-semibold">
+            SARA 2
+          </ToggleGroupItem>
+          <ToggleGroupItem value="PROPIO" className="data-[state=on]:font-semibold">
+            Propios
+          </ToggleGroupItem>
+        </ToggleGroup>
         <Select
           aria-label="Filtrar por grupo"
           value={group}
           onChange={(e) => setGroup(e.target.value)}
-          className="w-full sm:w-56"
+          className="w-full sm:w-64"
         >
           <option value="">Todos los grupos</option>
           {FOOD_GROUPS.map((g) => (
             <option key={g} value={g}>
-              {FOOD_GROUP_LABELS[g as keyof typeof FOOD_GROUP_LABELS]}
+              {FOOD_GROUP_LABELS[g]}
             </option>
           ))}
         </Select>
-        <span className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">
-          {filtered.length} de {foods.length}
+        <div className="flex items-center gap-2">
+          <Switch id={inactiveId} checked={showInactive} onCheckedChange={setShowInactive} />
+          <Label htmlFor={inactiveId}>Mostrar inactivos</Label>
+        </div>
+        <span className="whitespace-nowrap text-sm tabular-nums text-muted-foreground" aria-live="polite">
+          Mostrando {countFormat.format(filtered.length)} de {countFormat.format(foods.length)} alimentos
         </span>
       </div>
 
@@ -156,8 +204,10 @@ export function FoodsList({ foods }: { foods: FoodRow[] }) {
           rowHref={(f) => `/alimentos/${f.id}`}
           initialSort={{ columnId: "nombre", direction: "asc" }}
           caption="Alimentos, valores cada 100 g"
-          maxHeightClassName="max-h-[calc(100vh-15rem)]"
+          maxHeightClassName="max-h-[calc(100vh-17rem)]"
           empty={empty}
+          pageSize={PAGE_SIZE}
+          pageResetKey={[q, source, group, showInactive].join("|")}
         />
       </Card>
     </div>

@@ -401,37 +401,80 @@ model OutboundMessage {
   @@index([status, createdAt])
 }
 
+/// Grupos de SARA 2 (tablas 1 a 26) + OTROS (solo propios). El orden es el de la tabla.
 enum FoodGroup {
-  CEREALES
-  LACTEOS
-  CARNES_Y_HUEVOS
-  FRUTAS
   VERDURAS
-  LEGUMBRES
+  FRUTAS
+  LEGUMBRES_CEREALES
+  LECHE_Y_POSTRES
+  YOGURES
+  QUESOS
+  CARNES
+  HUEVOS
+  PESCADOS_Y_MARISCOS
+  ACEITES
+  FRUTAS_SECAS_Y_SEMILLAS
+  AZUCARES_MERMELADAS_Y_DULCES
+  GOLOSINAS_Y_CHOCOLATES
   GRASAS
-  AZUCARES_Y_DULCES
-  BEBIDAS
+  SNACKS_SALADOS
+  ADEREZOS
+  CALDOS_Y_SOPAS
+  POSTRES_Y_HELADOS
+  SALES
+  BEBIDAS_CON_AZUCAR
+  BEBIDAS_SIN_AZUCAR
+  BEBIDAS_ALCOHOLICAS_Y_ENERGIZANTES
+  BEBIDAS_DE_FRUTAS
+  INFUSIONES
+  COMIDAS_RAPIDAS
+  SUPLEMENTOS
   OTROS
 }
 
+enum FoodSource {
+  SARA2
+  PROPIO
+}
+
 model Food {
-  id            String    @id @default(cuid())
-  name          String
-  group         FoodGroup
-  kcalPer100    Decimal   @db.Decimal(6, 2)
-  proteinPer100 Decimal   @db.Decimal(5, 2)
-  carbsPer100   Decimal   @db.Decimal(5, 2)
-  fatPer100     Decimal   @db.Decimal(5, 2)
-  fiberPer100   Decimal?  @db.Decimal(5, 2)
-  unitHint      String?
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                  String     @id @default(cuid())
+  name                String
+  group               FoodGroup
+  /// SARA2 = dato oficial (no se edita, D3). PROPIO = cargado por la profesional.
+  source              FoodSource @default(PROPIO)
+  /// Solo SARA2, único: "sara2:t03:arroz-blanco-hervido". Lo usa el cargador para el upsert (D14).
+  sourceKey           String?    @unique
+  /// Solo propios: marca, rótulo, de dónde salió el dato (D13).
+  reference           String?
+  /// true = el grupo lo asignó la migración de la HU-005 (D2); se apaga al guardar el propio.
+  groupAutoAssigned   Boolean    @default(false)
+  /// SARA2: Atwater calculado sobre los valores guardados (D5). Propio nuevo/editado: Atwater.
+  /// Propio anterior a la HU-005: el valor cargado a mano, hasta que ella lo cambie (D1).
+  kcalPer100          Decimal    @db.Decimal(6, 2)
+  proteinPer100       Decimal    @db.Decimal(5, 2)
+  /// Carbohidratos DISPONIBLES (sin fibra), como SARA 2 y el rótulo argentino (D15).
+  carbsPer100         Decimal    @db.Decimal(5, 2)
+  fatPer100           Decimal    @db.Decimal(5, 2)
+  fiberPer100         Decimal?   @db.Decimal(5, 2)
+  alcoholPer100       Decimal?   @db.Decimal(5, 2)
+  sodiumMgPer100      Decimal?   @db.Decimal(8, 2)
+  addedSugarPer100    Decimal?   @db.Decimal(5, 2)
+  saturatedFatPer100  Decimal?   @db.Decimal(6, 3)
+  cholesterolMgPer100 Decimal?   @db.Decimal(7, 2)
+  /// Resto de los 39 componentes + kcalPublicada (D4, D5). Claves fijas: FOOD_EXTRA_NUTRIENTS
+  /// de packages/core. null = propio sin estos datos.
+  nutrients           Json?
+  unitHint            String?
+  active              Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   planItems     PlanMealItem[]
   templateItems TemplateMealItem[]
 
   @@index([group])
+  @@index([source, active])
 }
 
 enum PlanStatus {

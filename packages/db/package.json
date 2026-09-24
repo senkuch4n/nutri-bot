@@ -16,7 +16,11 @@
     "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
     "seed:demo": "dotenv -e ../../.env -- tsx prisma/seed-demo.ts",
     "studio": "dotenv -e ../../.env -- prisma studio",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sara2:read": "tsx scripts/sara2/read-pdf.ts",
+    "sara2:load": "dotenv -e ../../.env -- tsx scripts/sara2/load.ts",
+    "sara2:load:prod": "tsx scripts/sara2/load.ts",
+    "test:foods": "dotenv -e ../../.env -- tsx scripts/test-foods-sara2.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

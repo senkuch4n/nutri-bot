@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/primitives/table";
-import { EmptyState } from "@/components/ui";
+import { Button, EmptyState } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export type DataTableColumn<T> = {
@@ -57,6 +57,8 @@ export function DataTable<T>({
   maxHeightClassName,
   initialSort,
   caption,
+  pageSize,
+  pageResetKey,
 }: {
   columns: DataTableColumn<T>[];
   rows: T[];
@@ -66,9 +68,20 @@ export function DataTable<T>({
   maxHeightClassName?: string;
   initialSort?: SortState;
   caption?: string;
+  /** Si está, muestra solo esa cantidad de filas por página, con un pie "Página 1 de N". */
+  pageSize?: number;
+  /** Al cambiar (p. ej. los filtros concatenados), vuelve a la página 1. */
+  pageResetKey?: string;
 }) {
   const router = useRouter();
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
+  const [page, setPage] = useState(0);
+  const [lastResetKey, setLastResetKey] = useState(pageResetKey);
+  if (pageResetKey !== lastResetKey) {
+    // Ajuste durante el render (patrón de React para derivar estado de props).
+    setLastResetKey(pageResetKey);
+    setPage(0);
+  }
 
   const sorted = useMemo(() => {
     if (!sort) return rows;
@@ -88,6 +101,10 @@ export function DataTable<T>({
       .map((x) => x.row);
   }, [rows, columns, sort]);
 
+  const pageCount = pageSize ? Math.max(1, Math.ceil(sorted.length / pageSize)) : 1;
+  const currentPage = Math.min(page, pageCount - 1);
+  const visible = pageSize ? sorted.slice(currentPage * pageSize, (currentPage + 1) * pageSize) : sorted;
+
   function toggleSort(columnId: string) {
     setSort((prev) => {
       if (!prev || prev.columnId !== columnId) return { columnId, direction: "asc" };
@@ -106,7 +123,7 @@ export function DataTable<T>({
     return <>{empty ?? <EmptyState title="No hay datos para mostrar" />}</>;
   }
 
-  return (
+  const table = (
     <Table containerClassName={maxHeightClassName}>
       {caption ? <caption className="sr-only">{caption}</caption> : null}
       <TableHeader>
@@ -145,7 +162,7 @@ export function DataTable<T>({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sorted.map((row) => {
+        {visible.map((row) => {
           const id = getRowId(row);
           const href = rowHref?.(row);
           return (
@@ -173,5 +190,40 @@ export function DataTable<T>({
         })}
       </TableBody>
     </Table>
+  );
+
+  if (!pageSize || pageCount <= 1) return table;
+  return (
+    <>
+      {table}
+      <nav
+        aria-label="Paginación"
+        className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-sm"
+      >
+        <span className="tabular-nums text-muted-foreground" aria-live="polite">
+          Página {currentPage + 1} de {pageCount}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setPage(currentPage - 1)}
+            disabled={currentPage === 0}
+          >
+            Anterior
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setPage(currentPage + 1)}
+            disabled={currentPage >= pageCount - 1}
+          >
+            Siguiente
+          </Button>
+        </div>
+      </nav>
+    </>
   );
 }

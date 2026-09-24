@@ -49,7 +49,7 @@ export default async function TemplateDetailPage({
           ownerId={template.id}
           ownerField="templateId"
           meals={meals}
-          foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group }))}
+          foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source }))}
           addMealAction={addTemplateMealAction}
           deleteMealAction={deleteTemplateMealAction}
           addItemAction={addTemplateMealItemAction}

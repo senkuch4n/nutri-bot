@@ -11,3 +11,8 @@ export * from "./consultations";
 export * from "./formula-measurements";
 export * from "./anthropometric-diagnosis";
 export * from "./energy-requirement";
+export * from "./food-groups";
+export * from "./food-nutrients";
+export * from "./food-search";
+export * from "./es-ar-number";
+export * from "./ai-food-catalog";

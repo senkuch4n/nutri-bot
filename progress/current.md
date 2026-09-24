@@ -80,3 +80,4 @@ orquestador, para que las revise a la mañana:
 - **HU-004 aprobada** (épicas 18/19). Siguiente: HU-005 (SARA 2, épica 20).
 - HU-005 afinada y validada (D1–D16 según las recomendaciones) → `en_arquitectura`.
 - HU-005: el architect paró con 2 preguntas; el orquestador resolvió Q1=b (90–110 g) y Q2=5 % (entra la banana) → `implementando` (Opus).
+- **HU-005 aprobada** (épica 20). Siguiente: HU-006 (ISAK, épicas 44/45).

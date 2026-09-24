@@ -1,16 +1,21 @@
-import type { FoodGroup } from "@nutri-bot/db";
+import type { FoodGroup, FoodSource } from "@nutri-bot/db";
+import {
+  FOOD_GROUP_LABELS as CORE_LABELS,
+  FOOD_GROUP_SHORT_LABELS as CORE_SHORT_LABELS,
+  FOOD_GROUP_VALUES,
+  FOOD_SOURCE_LABELS as CORE_SOURCE_LABELS,
+} from "@nutri-bot/core";
 
-export const FOOD_GROUP_LABELS: Record<FoodGroup, string> = {
-  CEREALES: "Cereales y derivados",
-  LACTEOS: "Lácteos",
-  CARNES_Y_HUEVOS: "Carnes y huevos",
-  FRUTAS: "Frutas",
-  VERDURAS: "Verduras",
-  LEGUMBRES: "Legumbres",
-  GRASAS: "Grasas",
-  AZUCARES_Y_DULCES: "Azúcares y dulces",
-  BEBIDAS: "Bebidas",
-  OTROS: "Otros",
-};
+// Re-exporta las etiquetas de packages/core con los tipos de Prisma (HU-005).
+export const FOOD_GROUP_LABELS: Record<FoodGroup, string> = CORE_LABELS;
+export const FOOD_GROUP_SHORT_LABELS: Record<FoodGroup, string> = CORE_SHORT_LABELS;
+export const FOOD_GROUPS: FoodGroup[] = [...FOOD_GROUP_VALUES];
+export const FOOD_SOURCE_LABELS: Record<FoodSource, string> = CORE_SOURCE_LABELS;
 
-export const FOOD_GROUPS = Object.keys(FOOD_GROUP_LABELS) as FoodGroup[];
+export function foodGroupLabel(group: string): string {
+  return FOOD_GROUP_LABELS[group as FoodGroup] ?? group;
+}
+
+export function foodGroupShortLabel(group: string): string {
+  return FOOD_GROUP_SHORT_LABELS[group as FoodGroup] ?? group;
+}

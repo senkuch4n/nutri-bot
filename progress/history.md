@@ -158,3 +158,23 @@
   coincidan con el PDF.
 - **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
   autónomo).
+
+---
+
+## 2026-09-24 — HU-005 `base-alimentos-sara2` — APROBADA (1ª ronda) · Épica 20
+
+- **Qué:** base de alimentos argentina SARA 2 importada del PDF oficial. El lector
+  (`pdftotext -layout`) genera un JSON versionado (`packages/db/data/sara2/`) y un reporte; el
+  cargador es idempotente, con upsert por clave de origen. **890 alimentos importados, 16
+  rechazados** (inconsistencias de la tabla) y la tabla 26 (suplementos) excluida. Los 90
+  alimentos propios se conservan con id y datos (huella igual) como "Propio". Grupos de la Guía
+  Alimentaria, nutrientes nuevos (saturadas, azúcar agregado, sodio, colesterol y el resto),
+  kcal por Atwater, fuente SARA 2 / Propio, SARA 2 no editable (desactivar o duplicar como
+  propio), selector con búsqueda en planes y plantillas, y popover de desglose de kcal.
+- **Decisiones del orquestador:** Q1, suma de macros entre 90 y 110 g (la tabla oficial no
+  cumple 97–103); Q2, Atwater con tolerancia de 5 % (entra la banana).
+- **Verificación:** el reviewer comparó 16 alimentos contra el PDF y todos coinciden.
+- **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
+  autónomo).
+- **Arreglo directo al cierre:** `seed-demo.ts` busca solo alimentos propios (nombres repetidos
+  con SARA 2).

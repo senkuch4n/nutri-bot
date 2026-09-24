@@ -83,7 +83,7 @@ export default async function PlanDetailPage({
             ownerId={plan.id}
             ownerField="planId"
             meals={meals}
-            foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group }))}
+            foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source }))}
             addMealAction={addPlanMealAction}
             deleteMealAction={deletePlanMealAction}
             addItemAction={addPlanMealItemAction}

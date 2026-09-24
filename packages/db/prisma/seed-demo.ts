@@ -36,7 +36,8 @@ async function main() {
     throw new Error("Corré primero `npm run db:seed` para tener los servicios base.");
   }
 
-  const foods = await prisma.food.findMany();
+  // Solo los propios del seed: SARA 2 repite nombres ("Palta", "Frutilla"…).
+  const foods = await prisma.food.findMany({ where: { source: "PROPIO" } });
   const byFoodName = new Map(foods.map((f) => [f.name, f]));
   function food(name: string) {
     const f = byFoodName.get(name);
