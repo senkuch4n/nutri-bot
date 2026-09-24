@@ -455,3 +455,173 @@ Notas: surge de la HU-001 (D5); la nutricionista hace antropometría.
 6. ~~¿Va a trabajar con otros profesionales o secretaria (Épica 41)?~~ No: trabaja sola.
 7. ¿Atiende pacientes bariátricos (Épica 38)? ¿Hace teleconsulta (Épica 33)?
 8. ¿Qué umbral usa para pasar a peso ajustado: 120% o 130% del peso ideal?
+
+---
+
+# Ronda 3 (2026-09-24) — informe antropométrico y datos del consultorio
+
+Fuentes (provistas por la nutricionista):
+- `docs/EJEMPLO DE INFORME ANTROPOMETRICO.pdf` — informe real de 6 páginas que hoy arma en Canva.
+- `docs/INFORMACIÓN APP PROVISTA POR LA NUTRICIONISTA.pdf` — plus por obra social, precios
+  particulares, horarios, política de seña, recordatorios y mensajes para pacientes.
+
+Datos del consultorio que aparecen: **Lic. Daiana Ponce, M.P. 852**.
+
+## Épica 44 — Antropometría completa (protocolo ISAK)
+
+- Yo como profesional necesito registrar la antropometría completa que hago en consulta para
+  poder calcular composición corporal, somatotipo e índices sin planillas aparte.
+
+Qué mide hoy (según el informe) y no está en el modelo (`EvolutionEntry` tiene solo 3 pliegues y 5
+perímetros):
+- **Pliegues (mm):** tríceps, subescapular, supraespinal, abdominal, muslo medio, pierna
+  (sumatoria de 6), bíceps y cresta ilíaca.
+- **Perímetros (cm):** brazo relajado, brazo flexionado y contraído, muslo medio, pierna, cintura
+  y cadera.
+- **Calculados:** perímetros corregidos (perímetro − π × pliegue: brazo, muslo y pierna),
+  sumatoria de 6 pliegues, IMC con clasificación OMS e índice cintura/cadera.
+- Para somatotipo y fraccionamiento hacen falta **diámetros óseos** (húmero, fémur, etc.) que el
+  informe no muestra: confirmar cuáles toma.
+
+Notas: la Épica 31 (estudios por tipo, bilaterales) y la Épica 9 se solapan con esta; conviene
+unificarlas al afinar. Reestructura `EvolutionEntry`, así que va junto con (o después de) la
+Épica 30 (la consulta como entidad central).
+
+## Épica 45 — Composición corporal, somatotipo e índices
+
+- Yo como profesional necesito que el sistema calcule la composición corporal en 4 componentes
+  (adiposo, muscular, óseo y residual, en % y en kg) con la referencia **ArgoRef (Holway, 2005)**
+  para poder no calcularla a mano.
+- Yo como profesional necesito el **somatotipo de Heath-Carter** (endomorfia, mesomorfia,
+  ectomorfia) con su **somatocarta** para poder clasificar el biotipo del paciente.
+- Yo como profesional necesito el **índice adiposo muscular** y el **índice músculo óseo (IMO)**
+  con su categoría (p. ej. "muy alto", "medio") y la **distribución adiposa** (superior, central,
+  inferior) y **muscular** (brazo, muslo, pierna) en % para poder evaluar la evolución.
+
+Notas: lógica pura en `packages/core` con tests. Pedir a la nutricionista las fórmulas exactas y
+las tablas de referencia que usa (ArgoRef, categorías de los índices, fórmula de distribución
+adiposa/muscular). Sin eso no se puede validar el cálculo.
+
+## Épica 46 — Informe antropométrico automático (PDF)
+
+- Yo como profesional necesito generar el informe antropométrico en PDF comparando la medición
+  actual con la anterior para poder entregárselo al paciente sin armarlo en Canva.
+
+Estructura del informe real (a replicar):
+1. Datos personales (nombre, edad, fecha de evaluación).
+2. Mediciones (peso, talla, IMC, clasificación) de la medición anterior y la actual, con la
+   diferencia ("2 kg menos").
+3. Pliegues (indicadores de grasa subcutánea) y "otros pliegues", las dos mediciones lado a lado.
+4. Perímetros (musculares y de grasa visceral) y perímetros corregidos, con un texto
+   interpretativo.
+5. Distribución adiposo-muscular: **gráfico de barras horizontales** (anterior vs. actual por
+   perímetro) + figura del cuerpo con los % por zona.
+6. Indicadores de salud (índice adiposo muscular, IMO, ICC) con categoría y variación comentada.
+7. Composición corporal: dos tortas (actual vs. anterior) + los 4 componentes en % y kg.
+8. Somatotipo: somatocarta con los dos puntos + los 3 valores y un texto.
+9. Conclusiones (texto libre).
+- Pie en cada página: "LIC. DAIANA PONCE M.P 852".
+
+Notas: los textos interpretativos pueden ser borradores generados por IA que ella edita antes de
+emitir (Épica 7). Depende de 44 y 45. Relacionado con la Épica 15 (plantilla propia de informes).
+Estilo: el informe real usa una plantilla verde de Canva; decidir si el PDF sigue el estilo
+neutro nuevo (D12 de la HU-002) o uno propio del informe.
+
+## Épica 47 — Datos profesionales: matrícula y firma
+
+- Yo como profesional necesito cargar mi título y matrícula ("Lic. Daiana Ponce, M.P. 852") para
+  poder mostrarlos en informes, planes y el portal.
+
+## Épica 48 — Obras sociales con plus y derivación médica
+
+- Yo como profesional necesito cargar cada obra social con su **plus** ($5.000, $10.000, $12.000 o
+  $15.000) y si **requiere derivación médica** para poder informarle al paciente cuánto paga y qué
+  tiene que traer.
+- Yo como paciente necesito saber, antes del turno, cuánto es el plus de mi obra social y si
+  necesito derivación.
+
+Lista actual:
+- **Plus $15.000:** SCIS (derivación), Jerárquicos Salud, Avalian, Prevención Salud, Personal de
+  Farmacia (derivación), Meplife, Medicus, Ciencias Económicas (derivación), Colegio de
+  Escribanos (derivación), Agente de Propaganda Médica (derivación), Nobis Medical (derivación).
+- **Plus $12.000:** Swiss Medical, IPS, Luz y Fuerza (derivación).
+- **Plus $10.000:** Omint, Poder Judicial de la Nación (derivación), Medifé (derivación), OSUNSA
+  (derivación).
+- **Plus $5.000:** Avera, OSPE, Red de Seguros Médicos (derivación).
+- Además: **atención con reintegro médico (se hace factura)**.
+
+Notas: extiende la Épica 13. Hoy `Professional.acceptedInsurances` es texto libre.
+
+## Épica 49 — Servicios, precios y horarios reales
+
+- Yo como profesional necesito tener cargados mis servicios particulares y mis horarios reales
+  para que el bot ofrezca turnos y precios correctos.
+
+Datos:
+- Primera consulta (InBody) + plan alimentario: $50.000
+- Control (InBody): $35.000
+- Primera consulta + antropometría: $60.000
+- Antropometría: $40.000
+- Control + antropometría: $60.000
+- InBody: $25.000
+- Horarios: lunes, miércoles y viernes de 9 a 13 y de 16 a 20; martes de 16 a 20; jueves de 9 a
+  12; sábados de 10 a 13.
+
+Notas: es **carga de datos** (servicios y disponibilidad ya existen), no código. Se hace desde el
+panel o con un script aprobado por el usuario. No va al arnés.
+
+## Épica 50 — Recordatorios según el tipo de turno
+
+- Yo como profesional necesito que el recordatorio dependa del tipo de consulta (**control: 1
+  semana antes**; **primera consulta: 2 días antes y 24 hs antes**) para poder reducir ausencias
+  sin molestar de más.
+
+Notas: hoy hay un solo `reminderLeadHours` y una confirmación 3 días antes (Épica 8). Configurable
+por servicio.
+
+## Épica 51 — Seña con saldo a favor y política de cancelación
+
+- Yo como profesional necesito cobrar una **seña de $10.000** que se descuenta del total de la
+  consulta para poder confirmar el turno.
+- Si el paciente reprograma con **24 hs o más** de anticipación, la seña **queda a favor** para el
+  nuevo turno. Si cancela con menos de 24 hs o no asiste, **no se reintegra**.
+- Yo como paciente necesito conocer esta política al reservar.
+
+Notas: extiende la Épica 4 (ya existe la seña con Mercado Pago, `deposits.ts`). Lo nuevo es el
+saldo a favor y la regla de las 24 hs. Depende de arreglar el webhook de Mercado Pago (bloqueado
+por el middleware y sin validar la firma, ver `progress/current.md`).
+
+## Épica 52 — Motivo de consulta al reservar
+
+- Yo como profesional necesito que el paciente escriba el motivo de consulta al reservar para
+  poder preparar el turno.
+
+## Épica 53 — Ofrecer InBody a los pacientes
+
+- Yo como profesional necesito mandar a mis pacientes un mensaje que ofrece el análisis de
+  composición corporal (InBody), con su costo, para poder sumar ese servicio.
+
+Texto provisto por la nutricionista (en el PDF). Ojo: el mensaje dice **$20.000 adicionales**,
+pero la lista de precios dice **InBody $25.000**. Confirmar cuál es el valor.
+
+## Épica 54 — Textos reales de preparación para InBody y antropometría
+
+- Yo como profesional necesito que los mensajes de preparación que se mandan antes del turno sean
+  los míos (InBody/bioimpedancia y antropometría) para poder obtener mediciones comparables.
+
+Notas: la Épica 14 ya envía `PREP_INSTRUCTIONS`. Esto es **reemplazar los textos** por los del
+PDF, que es un cambio directo, sin arnés.
+
+## Épica 55 — Planes e informes que hoy arma en Canva o Word
+
+- Yo como profesional necesito generar desde la app los planes y los informes que hoy armo en
+  Canva o Word para poder no duplicar el trabajo.
+
+Notas: cubierto en parte por el PDF del plan y la Épica 46.
+
+## Contradicción a resolver
+
+- El PDF dice **"Atención a partir de los 5 años de edad"**, pero el alcance acordado era **solo
+  adultos**. Si atiende chicos, las fórmulas de adultos (TMB, IMC con clasificación OMS de
+  adultos, somatotipo) no alcanzan: harían falta percentiles de la OMS y otras ecuaciones. Hay que
+  confirmarlo con ella.
