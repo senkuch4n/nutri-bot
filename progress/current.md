@@ -106,9 +106,12 @@ orquestador, para que las revise a la mañana:
 - `main` mergeado con la cadena hu-002…hu-008 (commit e2da8d9): typecheck limpio en los 4
   workspaces, 505 tests en verde, verify.sh OK. **Pusheado a origin/main.**
 - Pendientes que quedan para el usuario:
-  - carga de servicios y horarios reales (épica 49; escribe en la base, necesita su ok);
-  - arreglar `apps/bot/scripts/test-confirm-attendance.ts`, que llama a crons sin filtrar por
-    paciente;
+  - ~~carga de servicios y horarios reales~~ **hecha (2026-09-24, con el ok del usuario)**: 6
+    servicios reales activos (duraciones estimadas, sin seña mientras el webhook de MP esté
+    roto), los 3 de prueba desactivados (tienen turnos), y 9 franjas horarias reales. Respaldo
+    previo: `backup-antes-servicios-reales.sql`;
+  - ~~arreglar `test-confirm-attendance.ts`~~ **hecho**: los crons aceptan
+    `scope.patientIds` y el script los acota al paciente de prueba (5/5 OK, la cola sigue en 4);
   - webhook de Mercado Pago bloqueado por el middleware y sin validar la firma;
   - cargar título y matrícula en /ajustes;
   - probar a mano los flujos que escriben (completar un turno, guardar una prescripción, generar
