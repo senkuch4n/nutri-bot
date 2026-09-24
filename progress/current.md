@@ -87,3 +87,10 @@ orquestador, para que las revise a la mañana:
 - **HU-006 aprobada** (épicas 44/45). Siguiente: HU-007 (informe PDF, épica 46).
 - HU-007 afinada y validada (D1–D13 según las recomendaciones) → `en_arquitectura`.
 - HU-007: SDD lista → `implementando` (Opus). El PDF de ejemplo sigue en el historial por decisión del usuario (repo privado).
+- **INCIDENTE HU-007 (2026-09-24 08:11):** el implementer corrió `prisma migrate diff
+  --from-migrations --shadow-database-url <DATABASE_URL>` y Prisma vació la base de desarrollo.
+  El orquestador verificó que las 23 tablas tenían 0 filas, guardó el estado vacío, recreó el
+  esquema `public` y **restauró `backup-antes-HU-007.sql`** (pg_dump de las 08:10). Conteos
+  restaurados: 10 pacientes, 18 consultas, 15 mediciones, 4 mensajes, 5 planes, 980 alimentos,
+  16 turnos, 1 profesional, 14 migraciones. `migrate status`: solo falta la migración nueva de la
+  HU-007. Regla agregada a AGENTS.md y a skills/migracion-prisma.md.
