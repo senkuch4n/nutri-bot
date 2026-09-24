@@ -15,12 +15,15 @@ export function DeleteIsakStudyButton({
   consultationId,
   entryId,
   redirectTo,
+  hasReport = false,
 }: {
   patientId: string;
   consultationId: string;
   entryId: string;
   /** Si viene, al borrar bien se navega ahí (la página del estudio deja de existir). */
   redirectTo?: string;
+  /** HU-007: si el estudio tiene informe, el confirm avisa que también se borra. */
+  hasReport?: boolean;
 }) {
   const confirm = useConfirm();
   const router = useRouter();
@@ -30,7 +33,7 @@ export function DeleteIsakStudyButton({
   async function handleClick() {
     const ok = await confirm({
       title: ISAK_TEXT.deleteTitle,
-      description: ISAK_TEXT.deleteDescription,
+      description: hasReport ? ISAK_TEXT.deleteWithReportDescription : ISAK_TEXT.deleteDescription,
       confirmLabel: ISAK_TEXT.deleteLabel,
     });
     if (!ok) return;

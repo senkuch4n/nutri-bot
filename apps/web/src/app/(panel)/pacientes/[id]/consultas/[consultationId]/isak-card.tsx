@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ISAK_TEXT, type IsakMeasures, type buildIsakSummary } from "@nutri-bot/core";
+import { FileText } from "lucide-react";
+import { ISAK_REPORT_TEXT, ISAK_TEXT, type IsakMeasures, type buildIsakSummary } from "@nutri-bot/core";
 import { Badge, Button, ButtonLink, Card } from "@/components/ui";
 import { DeleteIsakStudyButton } from "./delete-isak-study-button";
 import { MUSCLE_BONE_TONES } from "./diagnosis-rows";
@@ -22,6 +23,8 @@ export function IsakCard({
     /** Para precargar el formulario al editar. */
     values: IsakMeasures;
     summary: ReturnType<typeof buildIsakSummary>;
+    /** HU-007: informe del estudio. generatedAtLabel = fecha del último PDF (null si no hay). */
+    report: { generatedAtLabel: string | null; exists: boolean };
   };
   prefill: { weightKg: number | null; heightCm: number | null };
   startEditing: boolean;
@@ -65,11 +68,23 @@ export function IsakCard({
               <ButtonLink href={`/pacientes/${patientId}/consultas/${consultationId}/antropometria`}>
                 {ISAK_TEXT.viewFull}
               </ButtonLink>
+              <ButtonLink href={`/pacientes/${patientId}/consultas/${consultationId}/antropometria/informe`} variant="secondary">
+                <FileText aria-hidden />
+                {ISAK_TEXT.reportButton}
+              </ButtonLink>
               <Button type="button" variant="secondary" onClick={() => setMode("form")}>
                 Editar
               </Button>
-              <DeleteIsakStudyButton patientId={patientId} consultationId={consultationId} entryId={study.entryId} />
+              <DeleteIsakStudyButton
+                patientId={patientId}
+                consultationId={consultationId}
+                entryId={study.entryId}
+                hasReport={study.report.exists}
+              />
             </div>
+            {study.report.generatedAtLabel ? (
+              <p className="text-xs text-muted-foreground">{ISAK_REPORT_TEXT.cardGenerated(study.report.generatedAtLabel)}</p>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-4">

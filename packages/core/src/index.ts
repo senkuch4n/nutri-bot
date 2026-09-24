@@ -19,3 +19,5 @@ export * from "./ai-food-catalog";
 export * from "./isak";
 export * from "./isak-study";
 export * from "./isak-form";
+export * from "./isak-report";
+export * from "./isak-report-charts";

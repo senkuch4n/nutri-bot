@@ -2,12 +2,14 @@ import { notFound } from "next/navigation";
 import { CalendarDays } from "lucide-react";
 import {
   CONSULTATION_TEXT,
+  ISAK_REPORT_TEXT,
   buildAnthropometricDiagnosis,
   buildIsakStudy,
   buildIsakSummary,
   canDeleteConsultation,
   computeAgeYears,
   dayKeyInTz,
+  formatDateTime,
   formatInTimeZone,
   getRequirementBlockingMissing,
   initialRequirementDraft,
@@ -15,6 +17,7 @@ import {
   type SourcedMeasurement,
 } from "@nutri-bot/core";
 import {
+  getAnthropometricReportMeta,
   getConsultation,
   getPreviousIsakStudy,
   getReferencePrescription,
@@ -47,9 +50,9 @@ export default async function ConsultationPage({
   searchParams,
 }: {
   params: Promise<{ id: string; consultationId: string }>;
-  searchParams: Promise<{ isak?: string | string[] }>;
+  searchParams: Promise<{ isak?: string | string[]; aviso?: string | string[] }>;
 }) {
-  const [{ id, consultationId }, { isak }] = await Promise.all([params, searchParams]);
+  const [{ id, consultationId }, { isak, aviso }] = await Promise.all([params, searchParams]);
   const [consultation, pro, plans] = await Promise.all([
     getConsultation(consultationId),
     getProfessional(),
@@ -141,7 +144,10 @@ export default async function ConsultationPage({
   if (isakEntry) {
     const values = toIsakMeasures(isakEntry);
     const result = buildIsakStudy({ measures: values, sex: patient.sex, ageYears: age });
-    const previousEntry = await getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt });
+    const [previousEntry, report] = await Promise.all([
+      getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt }),
+      getAnthropometricReportMeta(isakEntry.id),
+    ]);
     const previousAt = previousEntry?.consultation?.consultedAt ?? null;
     const previous =
       previousEntry && previousAt
@@ -154,7 +160,15 @@ export default async function ConsultationPage({
             dateLabel: dateLabel(previousAt),
           }
         : null;
-    isakStudy = { entryId: isakEntry.id, values, summary: buildIsakSummary(result, previous) };
+    isakStudy = {
+      entryId: isakEntry.id,
+      values,
+      summary: buildIsakSummary(result, previous),
+      report: {
+        exists: report !== null,
+        generatedAtLabel: report?.pdfGeneratedAt ? formatDateTime(report.pdfGeneratedAt, tz) : null,
+      },
+    };
   }
   // Precarga del alta: el peso y la talla más recientes de las mediciones comunes de la consulta.
   const commonByNewest = consultation.evolutionEntries
@@ -212,6 +226,12 @@ export default async function ConsultationPage({
       {appointment && appointment.status !== "COMPLETED" ? (
         <Alert tone="warning" className="mb-6">
           {CONSULTATION_TEXT.appointmentNotCompleted}
+        </Alert>
+      ) : null}
+
+      {aviso === "sin-isak" ? (
+        <Alert tone="info" className="mb-6">
+          {ISAK_REPORT_TEXT.noStudyNotice}
         </Alert>
       ) : null}
 

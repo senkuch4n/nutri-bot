@@ -202,3 +202,27 @@
   (encontrado por el orquestador en el navegador).
 - **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
   autónomo).
+
+---
+
+## 2026-09-24 — HU-007 `informe-antropometrico` — APROBADA (1ª ronda) · Épica 46
+
+- **Qué:** informe antropométrico en PDF que compara el estudio ISAK actual con el anterior:
+  datos personales, mediciones con diferencia, pliegues, perímetros y corregidos, distribución,
+  indicadores de salud, composición y somatotipo. Gráficos SVG en react-pdf: perímetros en barras
+  horizontales, composición en barras apiladas, silueta con los % por zona y somatocarta. Textos
+  por plantilla y conclusiones editables obligatorias. Página
+  `.../antropometria/informe` con Guardar textos, Generar PDF y Enviar por WhatsApp (nuevo
+  `MessageKind.ANTHROPOMETRIC_REPORT_PDF`, con un cambio mínimo en el bot). Título y matrícula en
+  `Professional` (épica 47, acotada) y en `/ajustes`. Se extrajo `pdf-common.tsx` sin cambiar el
+  PDF del plan.
+- **Incidente:** el implementer vació la base de desarrollo al usarla como shadow de Prisma. Se
+  restauró por completo desde el `pg_dump` previo y se agregó la regla a AGENTS.md y a
+  skills/migracion-prisma.md.
+- **Verificación:** 407 tests; renders del PDF en 5 variantes revisados en PNG por el implementer.
+  En el navegador, solo la página (Chrome en segundo plano no hidrataba).
+- **Pendiente para el usuario:** cargar título y matrícula en `/ajustes` ("Lic.", "852"); probar
+  "Generar PDF" en el navegador. En el PDF, "→" se reemplaza por "a" porque Inter latin no tiene
+  la flecha.
+- **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
+  autónomo).

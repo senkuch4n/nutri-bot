@@ -259,7 +259,7 @@
       "titulo": "Informe antropométrico automático en PDF (actual vs anterior)",
       "origen": "Épica 46",
       "notas": "Depende de HU-006.",
-      "estado": "implementando",
+      "estado": "aprobada",
       "intentos_revision": 0,
       "hu": "docs/hu-informe-antropometrico.md",
       "sdd": "Refactorizaciones/informe-antropometrico.md",
@@ -274,7 +274,9 @@
         "ui-ux-pro-max",
         "ui-styling",
         "web-design-guidelines"
-      ]
+      ],
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-007.md"
     },
     {
       "id": "HU-008",

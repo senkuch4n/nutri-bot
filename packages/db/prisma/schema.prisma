@@ -20,6 +20,10 @@ model Professional {
   logoMimeType       String?
   pdfAccentColor     String? // color de acento (hex, ej "#3c7a24") para el PDF del plan; null = default
   pdfFooterText      String? // texto de pie de página del PDF; null = texto default del código
+  /// HU-007 (D1): título que va antes del nombre en el pie del informe, p. ej. "Lic.". null = sin título.
+  title              String?
+  /// HU-007 (D1): matrícula, p. ej. "M.P. 852". null = no cargada (aviso en la página del informe).
+  licenseNumber      String?
   reminderLeadHours  Int      @default(24)
   /// Si está en true, el bot no responde ningún mensaje entrante.
   botPaused          Boolean  @default(false)
@@ -120,6 +124,37 @@ model EvolutionEntry {
   /// Un solo estudio ISAK por consulta (D1). En Postgres los NULL son distintos entre sí: las
   /// mediciones comunes (study NULL) y las filas sin consulta no chocan.
   @@unique([consultationId, study])
+
+  /// HU-007: informe antropométrico del estudio ISAK (solo filas con study = ISAK).
+  anthropometricReport AnthropometricReport?
+}
+
+/// HU-007: informe antropométrico de un estudio ISAK (1:1 con la fila ISAK de EvolutionEntry).
+/// Guarda los textos que escribió o revisó la profesional y el último PDF. Los números NO se
+/// guardan: se calculan con buildIsakStudy al generar (D18 de la HU-006).
+/// Texto null = nunca guardado (la pantalla muestra el borrador automático).
+/// "" = guardado vacío a propósito (la sección sale sin párrafo).
+model AnthropometricReport {
+  id                String         @id @default(cuid())
+  isakEntryId       String         @unique
+  isakEntry         EvolutionEntry @relation(fields: [isakEntryId], references: [id], onDelete: Cascade)
+  girthsText        String?
+  distributionText  String?
+  adiposeMuscleText String?
+  muscleBoneText    String?
+  waistHipText      String?
+  somatotypeText    String?
+  conclusionsText   String?
+  pdfData           Bytes?
+  pdfFileName       String?
+  pdfGeneratedAt    DateTime?
+  /// Huella de los datos de entrada al generar el PDF (isakReportSourceKey). Si difiere de la
+  /// actual, la página avisa que el PDF está desactualizado (D13).
+  pdfSourceKey      String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  messages OutboundMessage[]
 }
 
 /// Una visita del paciente (HU-003). Viene de un turno (appointmentId, único) o es "Sin turno".
@@ -375,6 +410,7 @@ enum MessageKind {
   PAYMENT_LINK
   CONFIRMATION_REQUEST
   PREP_INSTRUCTIONS
+  ANTHROPOMETRIC_REPORT_PDF
 }
 
 model Payment {
@@ -417,6 +453,9 @@ model OutboundMessage {
   appointmentId String?
   plan          NutritionPlan? @relation(fields: [planId], references: [id])
   planId        String?
+  /// HU-007: informe que manda un mensaje ANTHROPOMETRIC_REPORT_PDF.
+  anthropometricReport   AnthropometricReport? @relation(fields: [anthropometricReportId], references: [id], onDelete: SetNull)
+  anthropometricReportId String?
   sentAt        DateTime?
   createdAt     DateTime      @default(now())
 

@@ -19,6 +19,9 @@ export type SettingsDefaults = {
   acceptedInsurances: string;
   pdfAccentColor: string;
   pdfFooterText: string;
+  /** HU-007 (D1). */
+  title: string;
+  licenseNumber: string;
 };
 
 const SettingsContext = createContext<{ pending: boolean; error?: string } | null>(null);
@@ -123,7 +126,7 @@ export function SettingsGeneralFields({ defaults }: { defaults: SettingsDefaults
 export function SettingsPdfFields({ defaults }: { defaults: SettingsDefaults }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Field label="Color de acento del PDF" hint="Se usa en los títulos y separadores del PDF del plan">
+      <Field label="Color de acento del PDF" hint="Se usa en los títulos, separadores y gráficos de los PDFs">
         <input
           type="color"
           name="pdfAccentColor"
@@ -144,6 +147,43 @@ export function SettingsPdfFields({ defaults }: { defaults: SettingsDefaults }) 
 
       <SettingsSubmit />
       <p className="text-xs text-muted-foreground sm:col-span-2">Se guarda junto con los ajustes generales.</p>
+    </div>
+  );
+}
+
+/** HU-007 (D1): título y matrícula para el pie del informe antropométrico. */
+export function SettingsSignatureFields({
+  defaults,
+  signaturePreview,
+}: {
+  defaults: SettingsDefaults;
+  /** Pie armado con los valores guardados (professionalSignature). */
+  signaturePreview: string;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Field label="Título" hint='Va antes de tu nombre. Ej: "Lic."'>
+        <Input
+          name="title"
+          form={SETTINGS_FORM_ID}
+          maxLength={20}
+          placeholder="Lic."
+          autoComplete="honorific-prefix"
+          defaultValue={defaults.title}
+        />
+      </Field>
+      <Field label="Matrícula">
+        <Input
+          name="licenseNumber"
+          form={SETTINGS_FORM_ID}
+          maxLength={40}
+          placeholder="M.P. 852"
+          autoComplete="off"
+          defaultValue={defaults.licenseNumber}
+        />
+      </Field>
+      <p className="text-xs text-muted-foreground sm:col-span-2">{`Pie del informe: ${signaturePreview}`}</p>
+      <SettingsSubmit />
     </div>
   );
 }

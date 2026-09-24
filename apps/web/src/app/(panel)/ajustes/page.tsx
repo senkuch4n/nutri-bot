@@ -1,4 +1,5 @@
 import { QrCode } from "lucide-react";
+import { professionalSignature } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { signIn } from "@/auth";
 import { Separator } from "@/components/primitives/separator";
@@ -9,6 +10,7 @@ import {
   SettingsFormProvider,
   SettingsGeneralFields,
   SettingsPdfFields,
+  SettingsSignatureFields,
   type SettingsDefaults,
 } from "./settings-form";
 import { GoogleCalendarForm } from "./google-calendar-form";
@@ -35,6 +37,8 @@ export default async function AjustesPage() {
     acceptedInsurances: pro.acceptedInsurances ?? "",
     pdfAccentColor: pro.pdfAccentColor ?? "",
     pdfFooterText: pro.pdfFooterText ?? "",
+    title: pro.title ?? "",
+    licenseNumber: pro.licenseNumber ?? "",
   };
 
   const general = (
@@ -101,6 +105,15 @@ export default async function AjustesPage() {
 
   const pdf = (
     <div className="space-y-6">
+      <Card
+        title="Firma de los informes"
+        description="Tu título y matrícula aparecen al pie del informe antropométrico."
+      >
+        <SettingsSignatureFields
+          defaults={defaults}
+          signaturePreview={professionalSignature({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}
+        />
+      </Card>
       <Card
         title="Logo"
         description="Este logo aparece en los PDFs de los planes alimentarios que le enviás a tus pacientes."

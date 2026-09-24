@@ -94,3 +94,4 @@ orquestador, para que las revise a la mañana:
   restaurados: 10 pacientes, 18 consultas, 15 mediciones, 4 mensajes, 5 planes, 980 alimentos,
   16 turnos, 1 profesional, 14 migraciones. `migrate status`: solo falta la migración nueva de la
   HU-007. Regla agregada a AGENTS.md y a skills/migracion-prisma.md.
+- **HU-007 aprobada** (épica 46). Siguiente: HU-008 (pediatría, épica 56).

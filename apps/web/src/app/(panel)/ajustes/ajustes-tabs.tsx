@@ -9,7 +9,7 @@ export const AJUSTES_TABS = [
   { value: "general", label: "General" },
   { value: "whatsapp", label: "Bot de WhatsApp" },
   { value: "google", label: "Google Calendar" },
-  { value: "pdf", label: "PDF del plan" },
+  { value: "pdf", label: "PDF" },
 ] as const;
 
 export type AjustesTabValue = (typeof AJUSTES_TABS)[number]["value"];

@@ -20,7 +20,14 @@ import {
   type IsakTissue,
   type IsakValue,
 } from "@nutri-bot/core";
-import { getConsultation, getIsakStudy, getPreviousIsakStudy, toIsakMeasures } from "@nutri-bot/db/domain";
+import { FileText } from "lucide-react";
+import {
+  getAnthropometricReportMeta,
+  getConsultation,
+  getIsakStudy,
+  getPreviousIsakStudy,
+  toIsakMeasures,
+} from "@nutri-bot/db/domain";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/primitives/table";
 import { Alert, Badge, Button, ButtonLink, Card, PageHeader, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
@@ -67,7 +74,10 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
   const age = ageAt(consultation.consultedAt);
   const current = buildIsakStudy({ measures: toIsakMeasures(entry), sex: patient.sex, ageYears: age });
 
-  const previousEntry = await getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt });
+  const [previousEntry, report] = await Promise.all([
+    getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt }),
+    getAnthropometricReportMeta(entry.id),
+  ]);
   const previousAt = previousEntry?.consultation?.consultedAt ?? null;
   const previous: IsakStudyResult | null =
     previousEntry && previousAt
@@ -176,10 +186,20 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
         back={{ href: consultationHref, label: "Volver a la consulta" }}
         action={
           <>
+            <ButtonLink href={`${consultationHref}/antropometria/informe`} variant="secondary" size="sm">
+              <FileText aria-hidden />
+              {ISAK_TEXT.reportButton}
+            </ButtonLink>
             <ButtonLink href={`${consultationHref}?isak=editar#antropometria-isak`} variant="secondary" size="sm">
               Editar
             </ButtonLink>
-            <DeleteIsakStudyButton patientId={id} consultationId={consultationId} entryId={entry.id} redirectTo={consultationHref} />
+            <DeleteIsakStudyButton
+              patientId={id}
+              consultationId={consultationId}
+              entryId={entry.id}
+              redirectTo={consultationHref}
+              hasReport={report !== null}
+            />
           </>
         }
       />

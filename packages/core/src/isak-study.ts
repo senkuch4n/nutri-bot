@@ -166,6 +166,8 @@ export const ISAK_TEXT = {
   discardDescription: "Se pierden las medidas que cargaste.",
   deleteTitle: "¿Borrar el estudio ISAK de esta consulta?",
   deleteDescription: "No se puede deshacer.",
+  deleteWithReportDescription: "También se borra su informe. No se puede deshacer.",
+  reportButton: "Informe PDF",
   deleteLabel: "Borrar estudio",
   viewFull: "Ver estudio completo",
   measurementRow: "Antropometría ISAK",
@@ -220,6 +222,13 @@ const SKINFOLDS_6 = [
   "calfSkinfoldMm",
 ] as const satisfies readonly IsakMeasureKey[];
 const SKINFOLDS_8 = [...SKINFOLDS_6, "bicepsSkinfoldMm", "iliacCrestSkinfoldMm"] as const;
+
+/** Medidas que necesita cada componente del somatotipo (las mismas que usa buildIsakStudy). */
+export const SOMATOTYPE_MEASURE_KEYS = {
+  endo: ["tricepsSkinfoldMm", "subscapularSkinfoldMm", "supraspinaleSkinfoldMm", "heightCm"],
+  meso: ["humerusBreadthCm", "femurBreadthCm", "armFlexedCm", "tricepsSkinfoldMm", "calfCm", "calfSkinfoldMm", "heightCm"],
+  ecto: ["heightCm", "weightKg"],
+} as const satisfies Record<"endo" | "meso" | "ecto", readonly IsakMeasureKey[]>;
 
 const TISSUE_MISSING_LABEL = { adipose: "tejido adiposo", muscle: "tejido muscular", bone: "tejido óseo" } as const;
 const SOMATO_MISSING_LABEL = { endo: "endomorfia", meso: "mesomorfia", ecto: "ectomorfia" } as const;
@@ -479,7 +488,7 @@ export function buildIsakStudy(input: IsakStudyInput): IsakStudyResult {
 
   // Somatotipo.
   const endoExact =
-    check({ keys: ["tricepsSkinfoldMm", "subscapularSkinfoldMm", "supraspinaleSkinfoldMm", "heightCm"] }) ??
+    check({ keys: SOMATOTYPE_MEASURE_KEYS.endo }) ??
     endomorphy({
       tricepsSkinfoldMm: v("tricepsSkinfoldMm"),
       subscapularSkinfoldMm: v("subscapularSkinfoldMm"),
@@ -487,9 +496,7 @@ export function buildIsakStudy(input: IsakStudyInput): IsakStudyResult {
       heightCm: v("heightCm"),
     });
   const mesoExact =
-    check({
-      keys: ["humerusBreadthCm", "femurBreadthCm", "armFlexedCm", "tricepsSkinfoldMm", "calfCm", "calfSkinfoldMm", "heightCm"],
-    }) ??
+    check({ keys: SOMATOTYPE_MEASURE_KEYS.meso }) ??
     mesomorphy({
       humerusBreadthCm: v("humerusBreadthCm"),
       femurBreadthCm: v("femurBreadthCm"),
@@ -499,7 +506,7 @@ export function buildIsakStudy(input: IsakStudyInput): IsakStudyResult {
       calfSkinfoldMm: v("calfSkinfoldMm"),
       heightCm: v("heightCm"),
     });
-  const ectoExact = check({ keys: ["heightCm", "weightKg"] }) ?? ectomorphy(v("heightCm"), v("weightKg"));
+  const ectoExact = check({ keys: SOMATOTYPE_MEASURE_KEYS.ecto }) ?? ectomorphy(v("heightCm"), v("weightKg"));
   const asValue = (x: number | Blocked): IsakValue => (typeof x === "number" ? ok(roundTo(x, 2)) : x);
   const endo = asValue(endoExact);
   const meso = asValue(mesoExact);
