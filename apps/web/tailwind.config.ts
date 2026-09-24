@@ -1,53 +1,63 @@
 import type { Config } from "tailwindcss";
+import animate from "tailwindcss-animate";
+
+// Tokens como variables CSS en canales HSL (convención shadcn/ui para Tailwind v3).
+// Los valores viven en src/app/globals.css.
+const token = (name: string) => `hsl(var(--${name}) / <alpha-value>)`;
 
 export default {
+  darkMode: ["class"], // preparado; ningún código agrega la clase `dark` (D4)
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["var(--font-display)", "var(--font-sans)", "sans-serif"],
+        // LEGACY (HU-002d la elimina): alias a la sans; Space Grotesk ya no existe.
+        display: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       colors: {
-        // Sistema "Spring-inspired": verde hoja + tinta casi negra + fondo salvia.
-        ink: {
-          DEFAULT: "#14181f",
-          soft: "#4a5460",
-          faint: "#8a94a0",
+        border: token("border"),
+        input: token("input"),
+        ring: token("ring"),
+        background: token("background"),
+        foreground: token("foreground"),
+        primary: { DEFAULT: token("primary"), foreground: token("primary-foreground") },
+        secondary: { DEFAULT: token("secondary"), foreground: token("secondary-foreground") },
+        muted: { DEFAULT: token("muted"), foreground: token("muted-foreground") },
+        accent: { DEFAULT: token("accent"), foreground: token("accent-foreground") },
+        popover: { DEFAULT: token("popover"), foreground: token("popover-foreground") },
+        card: { DEFAULT: token("card"), foreground: token("card-foreground") },
+        destructive: {
+          DEFAULT: token("destructive"),
+          foreground: token("destructive-foreground"),
+          muted: token("destructive-muted"),
         },
-        leaf: {
-          DEFAULT: "#5aa832",
-          bright: "#93cf52",
-          deep: "#3c7a24",
-          tint: "#e9f2e6",
-        },
-        mint: "#eef4ec",
-        paper: "#ffffff",
-        line: "#dbe2d8",
-        link: "#2563eb",
-        // Alias histórico usado por components/ui.tsx, ahora en verde.
-        brand: {
-          DEFAULT: "#5aa832",
-          dark: "#3c7a24",
-        },
+        success: { DEFAULT: token("success"), muted: token("success-muted") },
+        warning: { DEFAULT: token("warning"), muted: token("warning-muted") },
+        info: { DEFAULT: token("info"), muted: token("info-muted") },
+        link: token("link"),
+        sidebar: token("sidebar"),
+
+        // ── LEGACY: compatibilidad con el sistema "Spring" mientras 002b/c/d migran.
+        // HU-002d borra este bloque cuando `grep` no encuentre más usos.
+        ink: { DEFAULT: token("foreground"), soft: token("muted-foreground"), faint: token("muted-foreground") },
+        leaf: { DEFAULT: token("primary"), bright: token("primary"), deep: token("primary"), tint: token("accent") },
+        mint: token("muted"),
+        paper: token("card"),
+        line: token("border"),
+        brand: { DEFAULT: token("primary"), dark: token("primary") },
       },
       borderRadius: {
-        card: "12px",
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+        card: "var(--radius)", // LEGACY
       },
       boxShadow: {
-        card: "0 1px 2px rgba(20,24,31,0.04), 0 12px 32px -12px rgba(20,24,31,0.12)",
-        lift: "0 24px 60px -20px rgba(20,24,31,0.28)",
-      },
-      keyframes: {
-        "float-slow": {
-          "0%, 100%": { transform: "translate3d(0,0,0)" },
-          "50%": { transform: "translate3d(0,-14px,0)" },
-        },
-      },
-      animation: {
-        "float-slow": "float-slow 9s ease-in-out infinite",
+        card: "none", // LEGACY: el sistema nuevo no usa sombra en tarjetas
+        lift: "0 10px 30px -10px hsl(var(--foreground) / 0.18)", // LEGACY
       },
     },
   },
-  plugins: [],
+  plugins: [animate],
 } satisfies Config;

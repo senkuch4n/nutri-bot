@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/primitives/dialog";
 
+/**
+ * Modal de compatibilidad (API conservada) sobre Dialog de Radix: foco atrapado, devolución
+ * de foco al disparador y bloqueo del scroll del body. Escape y el clic afuera siguen cerrando.
+ */
 export function Modal({
   open,
   onClose,
@@ -13,37 +18,19 @@ export function Modal({
   title: string;
   children: ReactNode;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 backdrop-blur-sm sm:p-8"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
     >
-      <div
-        className="w-full max-w-lg rounded-card border border-line bg-paper p-7 shadow-lift"
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <h3 className="font-display text-xl font-bold tracking-tight text-ink">{title}</h3>
-          <button
-            onClick={onClose}
-            className="-mr-1 -mt-1 p-1.5 text-ink-faint transition-colors hover:bg-mint hover:text-ink"
-            aria-label="Cerrar"
-          >
-            ✕
-          </button>
-        </div>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

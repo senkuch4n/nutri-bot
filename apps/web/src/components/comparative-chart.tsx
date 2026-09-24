@@ -1,6 +1,7 @@
 "use client";
 
 import { LineChart } from "@mui/x-charts/LineChart";
+import { chartSx } from "@/lib/chart-theme";
 
 const dateFormatter = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit" });
 
@@ -72,12 +73,7 @@ export function ComparativeChart({
       height={height}
       grid={{ horizontal: true }}
       margin={{ top: 10, right: 48, bottom: 24, left: 48 }}
-      sx={{
-        fontFamily: "inherit",
-        "& .MuiChartsAxis-tickLabel": { fill: "#4a5460", fontSize: 11 },
-        "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": { stroke: "#dbe2d8" },
-        "& .MuiChartsGrid-line": { stroke: "#dbe2d8" },
-      }}
+      sx={chartSx}
     />
   );
 }

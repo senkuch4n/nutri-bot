@@ -1,6 +1,7 @@
 "use client";
 
 import { LineChart } from "@mui/x-charts/LineChart";
+import { chartDefaultColor, chartMargin, chartSx } from "@/lib/chart-theme";
 
 export interface EvolutionPoint {
   date: Date;
@@ -12,7 +13,7 @@ const dateFormatter = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: 
 export function EvolutionChart({
   points,
   seriesLabel,
-  color = "#3c7a24",
+  color = chartDefaultColor,
   height = 160,
 }: {
   points: EvolutionPoint[];
@@ -43,13 +44,8 @@ export function EvolutionChart({
       height={height}
       hideLegend
       grid={{ horizontal: true }}
-      margin={{ top: 10, right: 16, bottom: 24, left: 44 }}
-      sx={{
-        fontFamily: "inherit",
-        "& .MuiChartsAxis-tickLabel": { fill: "#4a5460", fontSize: 11 },
-        "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": { stroke: "#dbe2d8" },
-        "& .MuiChartsGrid-line": { stroke: "#dbe2d8" },
-      }}
+      margin={chartMargin}
+      sx={chartSx}
     />
   );
 }
