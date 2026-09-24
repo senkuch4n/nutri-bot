@@ -218,6 +218,8 @@ pediátricos ni fórmulas de embarazo/lactancia.
 
 ## Épica 17 — Datos del paciente para cálculos
 
+> **Estado: CERRADA** — convertida en HU-001 y aprobada (2026-09-24). Ver `progress/history.md`.
+
 - Yo como profesional necesito registrar el sexo, el nivel de actividad física, el objetivo
   (bajar, mantener, subir) y la contextura del paciente para poder aplicar las fórmulas de
   requerimiento sin pedirle los datos de nuevo en cada consulta.
@@ -226,6 +228,8 @@ Notas: `Patient` ya tiene `birthDate` (edad) pero no sexo. Peso, talla y % de gr
 última medición. Base de las épicas 18, 19 y 23.
 
 ## Épica 18 — Calculadora de requerimiento energético
+
+> **Estado: CERRADA** — convertida en HU-004 y aprobada (2026-09-24). Ver `progress/history.md`.
 
 - Yo como profesional necesito calcular la TMB con Mifflin-St Jeor, Harris-Benedict,
   Katch-McArdle y Cunningham lado a lado para poder elegir la más adecuada a cada paciente.
@@ -241,6 +245,8 @@ Notas: lógica pura en `packages/core` con tests. Katch-McArdle y Cunningham req
 
 ## Épica 19 — Diagnóstico antropométrico automático
 
+> **Estado: CERRADA** — convertida en HU-004 y aprobada (2026-09-24). Ver `progress/history.md`.
+
 - Yo como profesional necesito ver automáticamente IMC con su clasificación OMS, riesgo por
   circunferencia de cintura, índice cintura/cadera y % de grasa estimado (Deurenberg) para poder
   diagnosticar sin calcular a mano.
@@ -252,6 +258,8 @@ Notas: el Word repite la sección de peso ajustado (secciones 5, 6 y 8) y numera
 sección 7; confirmar con la nutricionista que es la misma fórmula y qué umbral usa (120 o 130%).
 
 ## Épica 20 — Base de alimentos argentina (SARA 2)
+
+> **Estado: CERRADA** — convertida en HU-005 y aprobada (2026-09-24). Ver `progress/history.md`.
 
 - Yo como profesional necesito una base con los alimentos de la tabla SARA 2 para poder armar
   planes con datos oficiales argentinos sin cargar alimentos a mano.
@@ -338,6 +346,8 @@ Notas: extiende las épicas 5 y 12.
   organizarme en el súper.
 
 ## Épica 30 — La consulta como entidad central (reestructura)
+
+> **Estado: CERRADA** — convertida en HU-003 y aprobada (2026-09-24). Ver `progress/history.md`.
 
 - Yo como profesional necesito que cada turno atendido genere una consulta que agrupe
   mediciones, cálculo de requerimiento, plan indicado y notas para poder ver cada visita completa
@@ -469,6 +479,8 @@ Datos del consultorio que aparecen: **Lic. Daiana Ponce, M.P. 852**.
 
 ## Épica 44 — Antropometría completa (protocolo ISAK)
 
+> **Estado: CERRADA** — convertida en HU-006 y aprobada (2026-09-24). Ver `progress/history.md`.
+
 - Yo como profesional necesito registrar la antropometría completa que hago en consulta para
   poder calcular composición corporal, somatotipo e índices sin planillas aparte.
 
@@ -488,6 +500,8 @@ unificarlas al afinar. Reestructura `EvolutionEntry`, así que va junto con (o d
 Épica 30 (la consulta como entidad central).
 
 ## Épica 45 — Composición corporal, somatotipo e índices
+
+> **Estado: CERRADA** — convertida en HU-006 y aprobada (2026-09-24). Ver `progress/history.md`.
 
 - Yo como profesional necesito que el sistema calcule la composición corporal en 4 componentes
   (adiposo, muscular, óseo y residual, en % y en kg) con la referencia **ArgoRef (Holway, 2005)**
@@ -524,6 +538,8 @@ las tablas de referencia que usa (ArgoRef, categorías de los índices, fórmula
 adiposa/muscular). Sin eso no se puede validar el cálculo.
 
 ## Épica 46 — Informe antropométrico automático (PDF)
+
+> **Estado: CERRADA** — convertida en HU-007 y aprobada (2026-09-24). Ver `progress/history.md`.
 
 - Yo como profesional necesito generar el informe antropométrico en PDF comparando la medición
   actual con la anterior para poder entregárselo al paciente sin armarlo en Canva.
@@ -653,6 +669,8 @@ Notas: cubierto en parte por el PDF del plan y la Épica 46.
 
 ## Épica 56 — Pacientes pediátricos (desde los 5 años)
 
+> **Estado: CERRADA** — convertida en HU-008 y aprobada (2026-09-24). Ver `progress/history.md`.
+
 - Yo como profesional necesito que el sistema distinga a los pacientes menores de 18 años y use
   para ellos las referencias pediátricas (IMC para la edad con puntaje Z / percentiles de la OMS,
   talla para la edad) en lugar de las fórmulas de adultos, para poder atender desde los 5 años.
@@ -663,3 +681,16 @@ diagnóstico (Épica 19: la clasificación OMS de IMC de adultos no aplica a chi
 (Épicas 44–46) y el aviso de menor de 18 de la HU-001 (hoy dice "Las fórmulas son para adultos",
 que sigue siendo cierto, pero a futuro tiene que ofrecer la alternativa pediátrica). Pedir a la
 nutricionista qué ecuaciones usa en chicos (p. ej. Schofield o FAO/OMS) y qué tablas de la OMS.
+
+## Estado de las épicas (2026-09-24)
+
+| Épica | HU | Estado |
+|---|---|---|
+| 17 | HU-001 | Cerrada (aprobada y mergeada a main) |
+| 18, 19 | HU-004 | Cerradas |
+| 20 | HU-005 | Cerrada |
+| 30 | HU-003 | Cerrada |
+| 44, 45 | HU-006 | Cerradas |
+| 46 | HU-007 | Cerrada |
+| 56 | HU-008 | Cerrada |
+| 4, 51 (seña con Mercado Pago) | HU-009 | Pendiente por decisión del usuario (sin tiempo ahora) |
