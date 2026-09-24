@@ -259,10 +259,15 @@
       "titulo": "Informe antropométrico automático en PDF (actual vs anterior)",
       "origen": "Épica 46",
       "notas": "Depende de HU-006.",
-      "estado": "no_afinada",
+      "estado": "en_arquitectura",
       "intentos_revision": 0,
-      "hu": null,
-      "sdd": null
+      "hu": "docs/hu-informe-antropometrico.md",
+      "sdd": "Refactorizaciones/informe-antropometrico.md",
+      "rama": "hu-007-informe-antropometrico",
+      "skills_sdd": [
+        "migracion-prisma",
+        "ui"
+      ]
     },
     {
       "id": "HU-008",
