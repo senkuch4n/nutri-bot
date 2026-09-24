@@ -110,9 +110,10 @@ export async function enqueuePrepInstructions(windowMinutes = 20, scope: Enqueue
   let count = 0;
   for (const appt of due) {
     if (!appt.service.prepInstructions || appt.service.prepLeadHours === null) continue;
-    const from = new Date(now + appt.service.prepLeadHours * 3_600_000);
-    const to = new Date(from.getTime() + windowMinutes * 60_000);
-    if (appt.startsAt < from || appt.startsAt >= to) continue;
+    // Todo turno futuro que ya entró en las `prepLeadHours` previas y todavía no las recibió:
+    // así también las reciben los turnos reservados con menos anticipación que el aviso.
+    const horizon = new Date(now + appt.service.prepLeadHours * 3_600_000 + windowMinutes * 60_000);
+    if (appt.startsAt >= horizon) continue;
     await enqueueMessage({
       toJid: appt.patient.whatsappJid,
       kind: "PREP_INSTRUCTIONS",

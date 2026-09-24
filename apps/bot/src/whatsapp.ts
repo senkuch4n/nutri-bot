@@ -92,6 +92,11 @@ export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
   });
 
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
+    // Diagnóstico (LOG_LEVEL=debug): cada evento que entrega WhatsApp, antes de cualquier filtro.
+    logger.debug(
+      { type, count: messages.length, from: messages.map((x) => x.key.remoteJid), fromMe: messages.map((x) => x.key.fromMe) },
+      "Evento de mensajes recibido",
+    );
     if (type !== "notify") return;
     for (const m of messages) {
       if (m.key.fromMe) continue;
