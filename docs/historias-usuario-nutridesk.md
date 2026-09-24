@@ -498,7 +498,28 @@ unificarlas al afinar. Reestructura `EvolutionEntry`, así que va junto con (o d
   con su categoría (p. ej. "muy alto", "medio") y la **distribución adiposa** (superior, central,
   inferior) y **muscular** (brazo, muslo, pierna) en % para poder evaluar la evolución.
 
-Notas: lógica pura en `packages/core` con tests. Pedir a la nutricionista las fórmulas exactas y
+Notas (2026-09-24): **hoy calcula esto con ISAKMetry** (software oficial de ISAK). Hay un
+ejemplo de su exportación en `docs/ISAKMetry_*.pdf` (7 páginas) y `docs/ISAKMetry_*.xlsx` (valores,
+casi sin fórmulas). Qué dice:
+- **Mediciones:** masa, talla, talla sentado, envergadura; 8 pliegues (tríceps, subescapular,
+  bíceps, cresta ilíaca, supraespinal, abdominal, muslo, pierna); 6 perímetros (brazo relajado,
+  flexionado y contraído, cintura, caderas, muslo medio, pierna); **3 diámetros (húmero,
+  biestiloideo, fémur)**.
+- **Referencias con nombre:** masa grasa por Durnin-Womersley (1974); tejido adiposo por Kerr
+  (1991), muscular por Lee (2000) y óseo por Rocha (1974), y residual por diferencia; puntuación Z
+  contra el **Phantom** (Ross y Wilson); somatotipo de Heath-Carter.
+- **Índices con su tabla:** IMO (<2,34 muy bajo; 2,34–2,44 bajo; 2,44–3,11 medio; 3,11–3,29
+  alto; >3,29 muy alto), índice adiposo muscular, perímetros corregidos con Z, sumatoria de 6 y 8
+  pliegues, índice córmico, Manouvrier, envergadura relativa, y de salud: ICC, índice de
+  conicidad, cintura/talla, IMC e índice de distribución grasa.
+- **Ojo:** el informe de Canva cita "ArgoRef, Holway (2005)", pero ISAKMetry usa Kerr/Lee/Rocha.
+  Confirmar con ella cuál vale.
+Dos caminos a decidir: Dos
+caminos a decidir: (a) replicar los cálculos en `packages/core` (las fórmulas son publicadas y están
+nombradas), usando las exportaciones de ISAKMetry como casos de prueba con los números exactos, o
+(b) importar el Excel que exporta ISAKMetry, sin recalcular. Recomendado: (a) + (b) para migrar el
+historial.
+Si se replica: lógica pura en `packages/core` con tests. Pedir a la nutricionista las fórmulas exactas y
 las tablas de referencia que usa (ArgoRef, categorías de los índices, fórmula de distribución
 adiposa/muscular). Sin eso no se puede validar el cálculo.
 

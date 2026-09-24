@@ -14,3 +14,6 @@ npm-debug.log*
 .whatsapp-auth/
 packages/db/generated/
 .turbo/
+
+# Exportaciones de ISAKMetry con datos de salud de pacientes: no se versionan
+docs/ISAKMetry_*
