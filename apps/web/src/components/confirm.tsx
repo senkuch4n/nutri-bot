@@ -90,6 +90,17 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Devuelve `confirm(options)`: abre el diálogo y resuelve `true`/`false` según lo que elija el usuario.
+ *
+ * ⚠️ **No** hacer `await confirm()` dentro de `<form action>` ni de `startTransition`: en React 19 la
+ * action corre en una transición, el `setPending` del diálogo toma ese lane y React no lo confirma
+ * hasta que la promesa termine; como la promesa espera al diálogo, queda en deadlock (el diálogo
+ * nunca se monta y el botón queda colgado).
+ *
+ * Patrón correcto: `onClick={async () => { if (!(await confirm(...))) return; startTransition(() => action(...)); }}`
+ * (o `onSubmit` con `preventDefault` incondicional y la action despachada después en `startTransition`).
+ */
 export function useConfirm(): (options: ConfirmOptions) => Promise<boolean> {
   const confirm = useContext(ConfirmContext);
   if (!confirm) {

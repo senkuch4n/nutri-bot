@@ -80,10 +80,10 @@
       "slug": "rediseno-ui-pacientes",
       "titulo": "Rediseño UI (2/4): pacientes (ficha en pestañas, evolución con gráficos de barras, planes, diario, PDF)",
       "origen": "HU-002 partida (D8)",
-      "estado": "implementando",
+      "estado": "aprobada",
       "notas": "Incluye evaluar librería de gráficos (D14 bis) y PDF (D12).",
       "hu": "docs/hu-rediseno-ui-empresarial.md",
-      "intentos_revision": 0,
+      "intentos_revision": 1,
       "sdd": "Refactorizaciones/rediseno-ui-pacientes.md",
       "skills_sdd": [
         "refactor",
@@ -95,7 +95,15 @@
         "ui-ux-pro-max",
         "ui-styling",
         "web-design-guidelines"
-      ]
+      ],
+      "modelo_reviewer": "opus",
+      "modelo_ronda2": "fable",
+      "skills_ronda2": [
+        "web-design-guidelines",
+        "ui-ux-pro-max",
+        "ui-styling"
+      ],
+      "review": "progress/review_HU-002b.md"
     },
     {
       "id": "HU-002c",
@@ -103,7 +111,7 @@
       "titulo": "Rediseño UI (3/4): agenda y gestión",
       "origen": "HU-002 partida (D8)",
       "estado": "validada",
-      "notas": "",
+      "notas": " REGLA: nunca await confirm() dentro de <form action> ni startTransition (deadlock en React 19, ver review_HU-002b). Pasárselo al architect.",
       "hu": "docs/hu-rediseno-ui-empresarial.md",
       "intentos_revision": 0,
       "sdd": null
@@ -114,7 +122,7 @@
       "titulo": "Rediseño UI (4/4): nutrición y portal (tono cálido)",
       "origen": "HU-002 partida (D8)",
       "estado": "validada",
-      "notas": "",
+      "notas": " REGLA: nunca await confirm() dentro de <form action> ni startTransition (deadlock en React 19, ver review_HU-002b). Pasárselo al architect. INCLUIR (pedido del usuario 2026-09-24): formato es-AR del \"Total del plan\" en el PDF (lib/plan-pdf.tsx macrosLine: coma decimal, espacio duro antes de la unidad, kcal sin decimales). Cambia lo que recibe el paciente.",
       "hu": "docs/hu-rediseno-ui-empresarial.md",
       "intentos_revision": 0,
       "sdd": null

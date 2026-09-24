@@ -1,20 +1,32 @@
-import type { SxProps, Theme } from "@mui/material/styles";
-
-// Único lugar donde viven los colores de serie. Van en hex porque el SVG de MUI los necesita
-// resueltos. Todos ≥ 3:1 sobre blanco (AA para elementos no textuales).
+// Único lugar donde viven los colores de serie. Van en hex porque se usan como atributo SVG
+// (fill de las barras) y como variable CSS de ChartStyle. Todos ≥ 3:1 sobre blanco (AA para
+// elementos no textuales).
 // info · success · ámbar · violeta · destructive
 export const chartSeriesColors = ["#2C6890", "#396F51", "#B37D19", "#7959A6", "#B53A36"] as const;
 
 export const chartDefaultColor = "#2C6890";
 
-/** sx para MUI X Charts: ejes, ticks, grilla y leyenda sobre los tokens. */
-export const chartSx = {
-  fontFamily: "inherit",
-  "& .MuiChartsAxis-tickLabel": { fill: "hsl(var(--muted-foreground))", fontSize: 12 },
-  "& .MuiChartsAxis-label": { fill: "hsl(var(--muted-foreground))" },
-  "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": { stroke: "hsl(var(--border))" },
-  "& .MuiChartsGrid-line": { stroke: "hsl(var(--border))" },
-  "& .MuiChartsLegend-label": { fill: "hsl(var(--foreground))" },
-} satisfies SxProps<Theme>;
+/**
+ * Estudios comparados, de más viejo a más nuevo. Grises de más claro a más oscuro para los
+ * anteriores; el último estudio siempre va en `chartDefaultColor`.
+ * Contrastes sobre blanco: 3,41 / 5,98 / 12,25 : 1.
+ */
+export const chartStudyColors = ["#8C8B87", "#65635D", "#37352F"] as const;
 
-export const chartMargin = { top: 12, right: 16, bottom: 28, left: 44 };
+/** Color del estudio `index` (0 = más viejo) entre `total` estudios. El último es el azul. */
+export function studyColor(index: number, total: number): string {
+  if (index === total - 1) return chartDefaultColor;
+  const offset = chartStudyColors.length - (total - 1) + index;
+  return chartStudyColors[Math.max(0, Math.min(offset, chartStudyColors.length - 1))] ?? chartDefaultColor;
+}
+
+/** Un color fijo por métrica, así el peso es siempre azul y la grasa siempre ámbar. */
+export const chartMetricColors = {
+  weightKg: "#2C6890",
+  bodyFatPercent: "#B37D19",
+  muscleMassKg: "#396F51",
+  bodyWaterPercent: "#7959A6",
+  visceralFatLevel: "#B53A36",
+  boneMassKg: "#65635D",
+  basalMetabolicRateKcal: "#37352F",
+} as const;

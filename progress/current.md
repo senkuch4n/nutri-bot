@@ -23,3 +23,7 @@
 - HU-002a: reviewer (Opus) CHANGES_REQUESTED (2 puntos chicos: espacio duro en `Quantity` y `aria-describedby` de `NumberInput`). Recorrido del orquestador en progress/recorrido_HU-002a.md: la sidebar no entra a 663 px de alto. → `rechazada_reintentando` (intento 1 de 2).
 - **HU-002a aprobada** en la 2ª ronda (ver history). El usuario validó el login y el email truncado. Commiteada en la rama `hu-002-rediseno-ui-empresarial`, sin mergear a main (002b sale de esta rama). Siguiente: HU-002b (pacientes).
 - **HU-002b** `rediseno-ui-pacientes` → `arquitectura_lista`: SDD en Refactorizaciones/rediseno-ui-pacientes.md. Recomienda Recharts 3 y sacar MUI. Usuario confirmó (acepta D-b1..D-b4) → `implementando` (Fable; ui-ux-pro-max, ui-styling, web-design-guidelines).
+- Ronda 3 de épicas (44–55) a partir de los 2 PDF de la nutricionista. Contradicción abierta: ¿atiende desde los 5 años o solo adultos?
+- HU-002b: implementer (Fable) `done`. Recorrido en progress/recorrido_HU-002b.md: todo OK salvo **Borrar plan sin diálogo** (probable deadlock de useConfirm dentro de una form action). → `en_revision`.
+- HU-002b: reviewer (Opus) CHANGES_REQUESTED: (1) deadlock de useConfirm en delete-plan-button, confirmado; (2) subtítulo falso en peso vs. grasa. → `rechazada_reintentando` (intento 1 de 2).
+- **HU-002b aprobada** (2ª ronda). Rutas `prueba-*` borradas. Commiteada en la rama, sin mergear. Siguiente: HU-002c (agenda y gestión).

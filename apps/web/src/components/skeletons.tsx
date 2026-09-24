@@ -9,6 +9,20 @@ function Loading({ children, className }: { children: React.ReactNode; className
   );
 }
 
+/** Con `bare`, el esqueleto no anuncia nada: lo hace el contenedor que lo anida. */
+function Wrapper({
+  bare,
+  children,
+  className,
+}: {
+  bare?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  if (bare) return <div className={className}>{children}</div>;
+  return <Loading className={className}>{children}</Loading>;
+}
+
 /** Encabezado + 2 bloques. Es el `loading.tsx` genérico del panel y del portal. */
 export function PageSkeleton() {
   return (
@@ -18,16 +32,24 @@ export function PageSkeleton() {
         <Skeleton className="h-4 w-80 max-w-full" />
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
-        <CardSkeleton lines={4} />
-        <CardSkeleton lines={4} />
+        <CardSkeleton lines={4} bare />
+        <CardSkeleton lines={4} bare />
       </div>
     </Loading>
   );
 }
 
-export function TableSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: number }) {
+export function TableSkeleton({
+  rows = 6,
+  columns = 4,
+  bare,
+}: {
+  rows?: number;
+  columns?: number;
+  bare?: boolean;
+}) {
   return (
-    <Loading className="rounded-lg border">
+    <Wrapper bare={bare} className="rounded-lg border">
       <div className="flex gap-6 border-b px-3 py-3">
         {Array.from({ length: columns }, (_, i) => (
           <Skeleton key={i} className="h-3 flex-1" />
@@ -40,19 +62,19 @@ export function TableSkeleton({ rows = 6, columns = 4 }: { rows?: number; column
           ))}
         </div>
       ))}
-    </Loading>
+    </Wrapper>
   );
 }
 
-export function CardSkeleton({ lines = 3 }: { lines?: number }) {
+export function CardSkeleton({ lines = 3, bare }: { lines?: number; bare?: boolean }) {
   return (
-    <Loading className="rounded-lg border bg-card p-6">
+    <Wrapper bare={bare} className="rounded-lg border bg-card p-6">
       <Skeleton className="mb-4 h-5 w-40" />
       <div className="space-y-3">
         {Array.from({ length: lines }, (_, i) => (
           <Skeleton key={i} className="h-4" style={{ width: `${100 - (i % 3) * 15}%` }} />
         ))}
       </div>
-    </Loading>
+    </Wrapper>
   );
 }

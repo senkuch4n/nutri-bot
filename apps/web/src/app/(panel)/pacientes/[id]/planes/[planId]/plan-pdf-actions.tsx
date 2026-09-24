@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button } from "@/components/ui";
+import { FileDown, Send } from "lucide-react";
+import { Button, FormError } from "@/components/ui";
+import { notify } from "@/lib/notify";
 import { generatePlanPdfAction, sendPlanWhatsAppAction } from "./actions";
 
 export function PlanPdfActions({
@@ -17,46 +19,56 @@ export function PlanPdfActions({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [running, setRunning] = useState<"pdf" | "whatsapp" | null>(null);
 
-  function run(action: (id: string) => Promise<{ ok: boolean; error?: string }>, successMsg: string) {
+  function run(
+    kind: "pdf" | "whatsapp",
+    action: (id: string) => Promise<{ ok: boolean; error?: string }>,
+    onSuccess: () => void,
+  ) {
     setError(null);
-    setNotice(null);
+    setRunning(kind);
     startTransition(async () => {
       const res = await action(planId);
       if (!res.ok) setError(res.error ?? "Ocurrió un error");
-      else setNotice(successMsg);
+      else onSuccess();
+      setRunning(null);
     });
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           variant="secondary"
           size="sm"
           disabled={pending}
-          onClick={() => run(generatePlanPdfAction, "PDF generado.")}
+          loading={pending && running === "pdf"}
+          onClick={() => run("pdf", generatePlanPdfAction, () => notify.saved("PDF generado"))}
         >
-          {pending ? "Generando…" : "Generar PDF"}
+          {pending && running === "pdf" ? null : <FileDown aria-hidden />}
+          {pending && running === "pdf" ? "Generando…" : "Generar PDF"}
         </Button>
         <Button
           type="button"
           size="sm"
           disabled={pending}
+          loading={pending && running === "whatsapp"}
           onClick={() =>
-            run(sendPlanWhatsAppAction, `Encolado para enviar por WhatsApp a ${patientPhone}.`)
+            run("whatsapp", sendPlanWhatsAppAction, () =>
+              notify.info(`Encolado para enviar por WhatsApp a ${patientPhone}.`),
+            )
           }
         >
-          {pending ? "Enviando…" : "Enviar por WhatsApp"}
+          {pending && running === "whatsapp" ? null : <Send aria-hidden />}
+          {pending && running === "whatsapp" ? "Enviando…" : "Enviar por WhatsApp"}
         </Button>
-        <span className="text-xs text-ink-faint">
-          {hasPdf ? `Último PDF: ${pdfGeneratedAtLabel}` : "Todavía no generaste el PDF."}
-        </span>
       </div>
-      {error ? <p className="reveal text-sm text-red-600">{error}</p> : null}
-      {notice ? <p className="reveal text-sm font-medium text-leaf-deep">✓ {notice}</p> : null}
+      <p className="text-xs text-muted-foreground">
+        {hasPdf ? `Último PDF: ${pdfGeneratedAtLabel}` : "Todavía no generaste el PDF."}
+      </p>
+      <FormError message={error} />
     </div>
   );
 }

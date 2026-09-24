@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Field, Input, Textarea } from "@/components/ui";
+import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
+import { useActionToast } from "@/lib/notify";
 import { updatePatientAction, type PatientState } from "../actions";
 
 const initial: PatientState = { ok: false };
@@ -12,6 +13,7 @@ export function PatientForm({
   patient: { id: string; name: string | null; notes: string | null; birthDateISO: string | null };
 }) {
   const [state, action, pending] = useActionState(updatePatientAction, initial);
+  useActionToast(state, { success: "Datos del paciente guardados" });
 
   return (
     <form action={action} className="space-y-4">
@@ -28,16 +30,11 @@ export function PatientForm({
         <Textarea name="notes" rows={4} defaultValue={patient.notes ?? ""} />
       </Field>
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" loading={pending}>
           {pending ? "Guardando…" : "Guardar"}
         </Button>
-        {state.error ? (
-          <span className="reveal text-sm text-red-600">{state.error}</span>
-        ) : null}
-        {state.ok ? (
-          <span className="reveal text-sm font-medium text-leaf-deep">✓ Guardado</span>
-        ) : null}
       </div>
+      <FormError message={state.error} />
     </form>
   );
 }

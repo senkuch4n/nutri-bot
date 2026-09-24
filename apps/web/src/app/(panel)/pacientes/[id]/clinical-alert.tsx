@@ -1,15 +1,33 @@
-export function ClinicalAlert({ background }: { background: string }) {
-  return (
-    <div className="flex items-start gap-3 border-2 border-amber-400 bg-amber-50 px-4 py-3">
-      <span aria-hidden className="mt-0.5 text-lg">
-        ⚠️
-      </span>
-      <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-[0.06em] text-amber-800">
-          Antecedentes a tener en cuenta
-        </p>
-        <p className="mt-0.5 whitespace-pre-wrap text-sm text-amber-900">{background}</p>
+import { TriangleAlert } from "lucide-react";
+import { Alert } from "@/components/ui";
+import { PatientTabLink } from "./patient-tabs";
+
+/**
+ * Antecedentes de riesgo. `compact` es la versión de una línea del encabezado persistente;
+ * sin `compact` es el callout completo de la pestaña "Datos y ficha clínica".
+ */
+export function ClinicalAlert({ background, compact }: { background: string; compact?: boolean }) {
+  if (compact) {
+    return (
+      <div
+        role="note"
+        className="mt-3 flex items-center gap-2 rounded-md border border-warning/30 bg-warning-muted px-3 py-1.5 text-sm"
+      >
+        <TriangleAlert className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+        <span className="shrink-0 font-medium text-warning">Antecedentes:</span>
+        <span className="min-w-0 flex-1 truncate text-foreground" title={background}>
+          {background}
+        </span>
+        <PatientTabLink tab="datos" className="shrink-0">
+          Ver ficha clínica
+        </PatientTabLink>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <Alert tone="warning" title="Antecedentes a tener en cuenta">
+      <p className="whitespace-pre-wrap">{background}</p>
+    </Alert>
   );
 }

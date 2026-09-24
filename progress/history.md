@@ -52,3 +52,25 @@
   El recorrido de la primera HU que consuma NumberInput, DataTable y `error.tsx` tiene que cubrirlos.
 - **Nota operativa:** con Tailwind 3.4 en Node 24, un cambio en `tailwind.config.ts` obliga a
   reiniciar `npm run dev` (no se recarga solo).
+
+---
+
+## 2026-09-24 — HU-002b `rediseno-ui-pacientes` — APROBADA (2ª ronda)
+
+- **Qué:** la ficha del paciente pasa a un encabezado fijo con 6 pestañas (`?tab=`); *Resumen*
+  prioriza la evolución y los datos para cálculos (este último, editable en un Sheet); la lista de
+  pacientes y las mediciones pasan a DataTable; el detalle del plan tiene una franja de totales y
+  una columna lateral; toasts y `useConfirm`. Gráficos de evolución en **barras con Recharts 3.10.1**
+  (peso, perímetros y pliegues por estudio, bioimpedancia, peso vs. grasa con doble eje).
+  **Se desinstalaron `@mui/*` y `@emotion/*`.** El PDF del plan usa Inter y el estilo nuevo, con
+  el nombre de la nutricionista y "NutriBot".
+- **Ronda 1:** CHANGES_REQUESTED. (1) Deadlock de `useConfirm` dentro de una form action de React
+  19 ("Borrar plan" no abría el diálogo; lo encontró el recorrido del orquestador y el reviewer
+  confirmó la causa); venía del fragmento de la SDD. (2) Subtítulo falso en peso vs. grasa. Se
+  sumó un JSDoc en `useConfirm` con la regla.
+- **Modelos:** implementer Fable (en las dos rondas); reviewer Opus (en las dos rondas).
+- **Docs:** `Refactorizaciones/rediseno-ui-pacientes.md`, `progress/impl_HU-002b.md`,
+  `progress/review_HU-002b.md`, `progress/recorrido_HU-002b.md`.
+- **Pendientes:** formato es-AR del total del PDF (anotado en HU-002d); perímetros en barras
+  horizontales anterior vs. actual (evaluar con el informe, épicas 44–46); regla de `useConfirm`
+  para las SDD de 002c y 002d (anotada en el backlog).

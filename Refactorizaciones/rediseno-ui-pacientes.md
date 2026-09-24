@@ -814,6 +814,13 @@ Ana Pérez · 34 años · 70,5 kg
     paciente"` → `PlanPdfActions`.
 - **`DeletePlanButton`** (reemplaza `confirm()`):
 
+  > ⚠️ **CORREGIDO en la review (ronda 1).** El fragmento de abajo tiene un bug: `useConfirm`
+  > dentro de una form action de React 19 queda en deadlock (la action corre en una transición y el
+  > diálogo nunca se monta). La confirmación se pide en un handler de evento (`onClick` de un
+  > `Button type="button"`) y, solo si da `true`, se llama a la action dentro de `startTransition`.
+  > Ver `progress/review_HU-002b.md`. **Regla para toda HU:** nunca `await confirm()` dentro de
+  > `<form action>` ni de `startTransition`.
+
   ```tsx
   const confirm = useConfirm();
   <form action={async () => {
