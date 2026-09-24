@@ -29,3 +29,6 @@
 - **HU-002b aprobada** (2ª ronda). Rutas `prueba-*` borradas. Commiteada en la rama, sin mergear. Siguiente: HU-002c (agenda y gestión).
 - Usuario: la nutricionista atiende desde los 5 años (Épica 56, pediatría). InBody: $25.000 provisorio.
 - **HU-002c** `rediseno-ui-agenda-gestion` → `en_arquitectura` (refactor + ui).
+- HU-002c: SDD lista → usuario confirmó (acepta D-c1..D-c7) → `implementando` (Fable; ui-ux-pro-max, ui-styling, web-design-guidelines).
+- El usuario no quiere sacar del historial el PDF de ejemplo con sus datos.
+- Pendiente fuera de HU (después de 002c): confirmación con useConfirm para "Cancelar turno" y "Reintentar N fallidos" (O-c1).
