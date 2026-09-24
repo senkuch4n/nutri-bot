@@ -76,3 +76,4 @@ orquestador, para que las revise a la mañana:
 - HU-003 implementada (18 consultas migradas, sin pérdida). El orquestador reinició el `next dev` (proceso nuevo en segundo plano). → `en_revision`.
 - **HU-003 aprobada** (épica 30). Siguiente: HU-004 (épicas 18/19).
 - HU-004 afinada y validada (D1–D14 según las recomendaciones) → `en_arquitectura`.
+- HU-004: SDD lista (formato de kcal unificado con separador de miles) → `implementando` (Opus).
