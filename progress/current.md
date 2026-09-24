@@ -95,3 +95,4 @@ orquestador, para que las revise a la mañana:
   16 turnos, 1 profesional, 14 migraciones. `migrate status`: solo falta la migración nueva de la
   HU-007. Regla agregada a AGENTS.md y a skills/migracion-prisma.md.
 - **HU-007 aprobada** (épica 46). Siguiente: HU-008 (pediatría, épica 56).
+- HU-008 afinada y validada (D1–D18 según las recomendaciones) → `en_arquitectura`.
