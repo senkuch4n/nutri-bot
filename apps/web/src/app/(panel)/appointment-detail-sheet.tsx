@@ -12,6 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/primitives/sheet";
+import { useConfirm } from "@/components/confirm";
 import { Badge, Button, FormError } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { cancelAppointmentAction, sendReminderNowAction, setStatusAction } from "./actions";
@@ -118,6 +119,7 @@ function AppointmentBody({
 }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   async function run(
     kind: Exclude<Busy, null | "reminder">,
@@ -220,7 +222,15 @@ function AppointmentBody({
               className="w-full"
               disabled={disabled}
               loading={busy === "cancel"}
-              onClick={() => run("cancel", () => cancelAppointmentAction(appt.id), "Turno cancelado")}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "¿Cancelar este turno?",
+                  description: "El paciente recibe el aviso de cancelación por WhatsApp. No se puede deshacer.",
+                  confirmLabel: "Cancelar turno",
+                  cancelLabel: "Volver",
+                });
+                if (ok) run("cancel", () => cancelAppointmentAction(appt.id), "Turno cancelado");
+              }}
             >
               Cancelar turno
             </Button>

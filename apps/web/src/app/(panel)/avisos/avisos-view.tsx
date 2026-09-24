@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Inbox, RotateCw } from "lucide-react";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { useConfirm } from "@/components/confirm";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
 import { Badge, Button, Card, EmptyState, cn } from "@/components/ui";
@@ -50,6 +51,7 @@ export function AvisosView({
   const [filter, setFilter] = useState<Filter>("ALL");
   const [live, setLive] = useState(true);
   const [retryingAll, startRetryAll] = useTransition();
+  const confirm = useConfirm();
 
   const visible = useMemo(
     () => (filter === "ALL" ? rows : rows.filter((r) => r.status === filter)),
@@ -179,7 +181,17 @@ export function AvisosView({
             loading={retryingAll}
             disabled={readOnly}
             title={readOnly ? READ_ONLY_TITLE : undefined}
-            onClick={() => startRetryAll(() => retryAllFailedAction())}
+            onClick={async () => {
+              // Confirmación fuera de la transición (ver JSDoc de useConfirm).
+              const ok = await confirm({
+                title: `¿Reintentar ${counts.FAILED} mensaje${counts.FAILED === 1 ? "" : "s"}?`,
+                description: "Se vuelven a enviar por WhatsApp a los pacientes.",
+                confirmLabel: "Reintentar",
+                cancelLabel: "Volver",
+                destructive: false,
+              });
+              if (ok) startRetryAll(() => retryAllFailedAction());
+            }}
           >
             {retryingAll ? null : <RotateCw aria-hidden />}
             {retryingAll
