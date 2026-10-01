@@ -12,6 +12,7 @@ export * from "./nutritionPlans";
 export * from "./planTemplates";
 export * from "./professionalAssets";
 export * from "./payments";
+export * from "./mercadopago-signature";
 export * from "./patientAuth";
 export * from "./diary";
 export * from "./prescriptions";

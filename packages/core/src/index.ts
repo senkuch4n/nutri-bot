@@ -6,6 +6,7 @@ export * as messages from "./messages";
 export * from "./nutrition";
 export * from "./anthropometry";
 export * from "./deposits";
+export * from "./payment-status";
 export * from "./patient-formula-data";
 export * from "./consultations";
 export * from "./formula-measurements";

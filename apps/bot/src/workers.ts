@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, expireStalePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, expireStalePendingPayments, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
@@ -8,6 +8,24 @@ import { logger } from "./logger";
 
 const MAX_ATTEMPTS = 5;
 let outboxRunning = false;
+let paymentsRunning = false;
+
+async function reconcilePayments(expire = false): Promise<void> {
+  if (paymentsRunning) return;
+  paymentsRunning = true;
+  try {
+    const result = await reconcilePendingPayments((paymentId) => {
+      logger.warn({ paymentId }, "Error conciliando pago de Mercado Pago");
+    });
+    if (result.processed || result.failed) logger.info(result, "Conciliación Mercado Pago");
+    // Do not expire reservations when the provider could not be consulted.
+    if (expire && result.failed === 0) await expireStalePendingPayments();
+  } catch {
+    logger.error("Error en conciliación Mercado Pago");
+  } finally {
+    paymentsRunning = false;
+  }
+}
 
 /** Consume la tabla OutboundMessage y envía por WhatsApp. */
 export function startOutboxConsumer(): void {
@@ -65,6 +83,7 @@ async function tick(): Promise<void> {
 }
 
 export function startCron(): void {
+  cron.schedule("* * * * *", () => reconcilePayments(new Date().getMinutes() % 5 === 0));
   cron.schedule("*/15 * * * *", async () => {
     try {
       const n = await enqueueDueReminders();
@@ -100,25 +119,16 @@ export function startCron(): void {
       logger.error({ err }, "Error en sync de Google Calendar");
     }
   });
-
-  cron.schedule("*/5 * * * *", async () => {
-    try {
-      const n = await expireStalePendingPayments();
-      if (n > 0) logger.info({ n }, "Reservas con seña vencida liberadas");
-    } catch (err) {
-      logger.error({ err }, "Error liberando reservas con seña vencida");
-    }
-  });
 }
 
 /** Barre pendientes al arrancar, sin esperar al primer tick del cron. */
 export async function runStartupJobs(): Promise<void> {
+  await reconcilePayments(true);
   try {
     await enqueueDueReminders();
     await enqueueAttendanceConfirmations();
     await enqueuePrepInstructions();
     await syncGoogleCalendar();
-    await expireStalePendingPayments();
   } catch (err) {
     logger.error({ err }, "Error en tareas de arranque");
   }
