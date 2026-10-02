@@ -1,4 +1,4 @@
-import { atwaterBreakdown, computeItemMacros } from "@nutri-bot/core";
+import { atwaterBreakdown, computeItemMacros, type MicronutrientPlanItem } from "@nutri-bot/core";
 import type { MealItemView, MealView } from "@/components/meals-editor";
 
 interface RawFood {
@@ -25,6 +25,22 @@ interface RawMeal {
   id: string;
   name: string;
   items: RawItem[];
+}
+
+/** Convert Prisma decimal quantities without turning missing values into zero. */
+export function toMicronutrientItems(meals: readonly {
+  items: readonly {
+    quantityGrams: unknown;
+    food: { nutrients: unknown; sodiumMgPer100: unknown } | null;
+  }[];
+}[]): MicronutrientPlanItem[] {
+  return meals.flatMap((meal) => meal.items.map((item) => ({
+    quantityGrams: item.quantityGrams == null ? null : Number(item.quantityGrams),
+    food: item.food ? {
+      nutrients: item.food.nutrients,
+      sodiumMgPer100: item.food.sodiumMgPer100 == null ? null : Number(item.food.sodiumMgPer100),
+    } : null,
+  })));
 }
 
 export function toMealView(meals: RawMeal[]): MealView[] {
