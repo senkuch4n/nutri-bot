@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Label } from "@/components/primitives/label";
 import { Switch } from "@/components/primitives/switch";
 import { Button, Field, FormError, Input } from "@/components/ui";
@@ -24,8 +24,16 @@ export function AfterHoursForm({
   const [enabled, setEnabled] = useState(defaults.enabled);
   const [attendFrom, setAttendFrom] = useState(defaults.attendFrom);
 
+  // Se despacha a mano (no `<form action>`) para que React 19 no resetee el form después de
+  // enviar: con un error de validación, lo tipeado tiene que quedar en los inputs.
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(() => action(formData));
+  }
+
   return (
-    <form action={action} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <p className="text-sm font-medium">Horario de consultas</p>
         <p className="mt-1 text-sm text-muted-foreground">

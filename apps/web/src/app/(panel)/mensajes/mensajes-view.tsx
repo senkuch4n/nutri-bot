@@ -39,7 +39,7 @@ const statusMeta: Record<Status, { tone: "warning" | "success"; label: string }>
 
 const EMPTY_PENDING = {
   title: "No hay consultas pendientes.",
-  description: "Las consultas que te dejen fuera de horario por el bot aparecen acá.",
+  description: "Acá aparecen las consultas que te dejan los pacientes por el bot con la opción “Hablar con la nutricionista”.",
 };
 
 /** HU-011: bandeja "Mensajes" (consultas de la opción 0 del bot). */

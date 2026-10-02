@@ -131,3 +131,4 @@ orquestador, para que las revise a la mañana:
 - HU-011: usuario acepta P1–P4/P6–P9; P5 → la bandeja se llama **Mensajes** (/mensajes). → `implementando` (Opus; migracion-prisma, ui-ux-pro-max, ui-styling, web-design-guidelines).
 - HU-011: implementer (Opus) `done` en 2 tramos (el 1º se colgó). 780 tests, test:after-hours 12/12. Recorrido en progress/recorrido_HU-011.md: OK con 2 observaciones (texto del vacío, mapeo Desde/Hasta). → `en_revision`.
 - **HU-011 aprobada** (1ª ronda, reviewer Opus). Ver history. Siguiente: commit, PR a develop, Notion → Hecha.
+- Directo (fix/hu-011-detalles): texto del vacío de /mensajes y form de /ajustes sin reset de React 19 tras error (probado en Chrome: el error se ve y los inputs conservan lo tipeado; config intacta).
