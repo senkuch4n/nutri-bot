@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@nutri-bot/db";
+import { countPendingInquiries } from "@nutri-bot/db/domain";
 
 export type BotShellStatus = "connected" | "paused" | "disconnected";
 
@@ -27,5 +28,14 @@ export async function getBotShellStatus(): Promise<BotShellStatus> {
     return "disconnected";
   } catch {
     return "disconnected";
+  }
+}
+
+/** HU-011: consultas pendientes para el badge de "Mensajes" en la sidebar. Nunca tira: ante error, 0. */
+export async function getPendingInquiryCount(): Promise<number> {
+  try {
+    return await countPendingInquiries();
+  } catch {
+    return 0;
   }
 }

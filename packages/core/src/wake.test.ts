@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isExitWord, isWakeWord, normalize } from "./wake";
+import { isExitCommand, isExitWord, isMenuCommand, isWakeWord, normalize } from "./wake";
 
 describe("normalize", () => {
   it("saca acentos y pasa a minúsculas", () => {
@@ -41,5 +41,33 @@ describe("isExitWord", () => {
     expect(isExitWord("listo gracias")).toBe(true);
     expect(isExitWord("chau")).toBe(true);
     expect(isExitWord("1")).toBe(false);
+  });
+});
+
+describe("isExitCommand (HU-011, estricto)", () => {
+  it("es true solo si el mensaje entero es un comando de salida", () => {
+    for (const t of ["salir", "Salir!", " chau ", "Listo, gracias", "nada más", "terminar 👋"]) {
+      expect(isExitCommand(t), t).toBe(true);
+    }
+  });
+
+  it("no cierra cuando la palabra aparece dentro de una consulta", () => {
+    for (const t of ["¿Puedo salir a correr?", "chau, una cosa más: ¿el yogur?", "menú", ""]) {
+      expect(isExitCommand(t), t).toBe(false);
+    }
+  });
+});
+
+describe("isMenuCommand (HU-011, estricto)", () => {
+  it("es true para menú/MENU/menu.", () => {
+    for (const t of ["menú", "MENU", "menu.", "  Menú!! "]) {
+      expect(isMenuCommand(t), t).toBe(true);
+    }
+  });
+
+  it("no vuelve al menú si la palabra está dentro de una pregunta", () => {
+    for (const t of ["¿qué menú me conviene para la cena?", "salir", "menu menu"]) {
+      expect(isMenuCommand(t), t).toBe(false);
+    }
   });
 });

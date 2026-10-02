@@ -244,3 +244,27 @@
   recorrido coincidió en todo.
 - **Modelos:** implementer Opus; reviewer Opus. Validación de la HU, del orquestador (modo
   autónomo).
+
+---
+
+## 2026-10-02 — HU-011 `mensajes-fuera-de-horario` — APROBADA (1ª ronda) · senkuch4n
+
+- **Qué:** franja "fuera de horario" configurable en `/ajustes` → Bot (por defecto 22:00–09:00,
+  con interruptor). De noche, la opción 0 no alerta: el bot pide la consulta y la guarda en
+  `PatientInquiry` (paso `AWAIT_INQUIRY`, se agrega a la misma consulta por sesión y por noche).
+  De día la alerta sigue inmediata y la consulta también se guarda (arregla el "no entendí"
+  después del 0). Resumen único a fin de franja por WhatsApp a `phoneJid`, idempotente. Bandeja
+  **Mensajes** (`/mensajes`) con Pendientes/Respondidas/Todas y badge en la sidebar. Audios y
+  fotos: el bot pide que lo escriba.
+- **Migración** `after_hours_inquiries`: aditiva (enum, tabla, 3 columnas con DEFAULT).
+  Respaldo `~/nutribot-backups/pre-hu011-20261002-1850.dump`.
+- **Verificación:** 780 tests (61 nuevos), `test:after-hours` 12/12, `test:confirm-flow` 5/5,
+  base sin restos. Recorrido del orquestador en `progress/recorrido_HU-011.md`.
+- **Pendiente (no bloqueante, ver `progress/review_HU-011.md`):** texto del estado vacío de
+  `/mensajes` (dice "fuera de horario" pero también entran las de día); el form de `/ajustes`
+  puede perder lo tipeado cuando hay error de validación; "Anoche" fijo en el resumen; confirmar
+  que Postgres de producción está en UTC; P7 (`phoneJid` ≠ número del bot).
+- **Primera HU del arnés para dos personas** (rama `feat/*` desde `develop`, Notion como lock).
+- **Modelos:** afinador y architect Opus; implementer Opus (se colgó una vez y se retomó);
+  reviewer Opus. Skills: migracion-prisma, ui (SDD); migracion-prisma, ui-ux-pro-max,
+  ui-styling, web-design-guidelines (impl).

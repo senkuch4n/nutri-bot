@@ -12,6 +12,7 @@ import {
   SheetTrigger,
 } from "@/components/primitives/sheet";
 import type { BotShellStatus } from "@/lib/shell";
+import type { NavBadges } from "./nav-config";
 import { SidebarContent } from "./sidebar-content";
 
 /** Barra superior en pantallas de menos de 1024 px: abre el menú en un Sheet lateral. */
@@ -20,11 +21,14 @@ export function MobileTopbar({
   email,
   botStatus,
   account,
+  badges,
 }: {
   professionalName: string | null;
   email?: string | null;
   botStatus: BotShellStatus;
   account: ReactNode;
+  /** HU-011: contadores de la sidebar (se ven dentro del menú, no en la hamburguesa: P8). */
+  badges?: NavBadges;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -46,6 +50,7 @@ export function MobileTopbar({
             email={email}
             botStatus={botStatus}
             account={account}
+            badges={badges}
             onNavigate={() => setOpen(false)}
           />
         </SheetContent>

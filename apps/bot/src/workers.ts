@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, expireStalePendingPayments, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, expireStalePendingPayments, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
@@ -119,6 +119,9 @@ export function startCron(): void {
       logger.error({ err }, "Error en sync de Google Calendar");
     }
   });
+
+  // HU-011: resumen de consultas fuera de horario (último cron: los tests miran calls[0]).
+  cron.schedule("* * * * *", () => runAfterHoursDigest());
 }
 
 /** Barre pendientes al arrancar, sin esperar al primer tick del cron. */
@@ -131,5 +134,27 @@ export async function runStartupJobs(): Promise<void> {
     await syncGoogleCalendar();
   } catch (err) {
     logger.error({ err }, "Error en tareas de arranque");
+  }
+  // HU-011: si el bot estuvo caído al terminar la franja, el resumen sale al arrancar.
+  try {
+    await runAfterHoursDigest();
+  } catch (err) {
+    logger.error({ err }, "Error en el resumen de consultas fuera de horario (arranque)");
+  }
+}
+
+let digestRunning = false;
+
+/** HU-011: resumen de fin de franja. Idempotente (digestedAt + transacción); no se solapa. */
+export async function runAfterHoursDigest(): Promise<void> {
+  if (digestRunning) return;
+  digestRunning = true;
+  try {
+    const { digested, outboundId } = await enqueueAfterHoursDigest();
+    if (digested > 0) logger.info({ digested, outboundId }, "Resumen de consultas fuera de horario");
+  } catch (err) {
+    logger.error({ err }, "Error en el resumen de consultas fuera de horario");
+  } finally {
+    digestRunning = false;
   }
 }

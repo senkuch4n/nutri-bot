@@ -19,3 +19,27 @@ export function isWakeWord(text: string): boolean {
 export function isExitWord(text: string): boolean {
   return /\b(salir|terminar|cancelar todo|chau|listo gracias|nada mas)\b/.test(normalize(text));
 }
+
+/** Normalización "de comando": sin acentos, sin signos ni emojis, espacios colapsados. */
+function normalizeCommand(text: string): string {
+  return normalize(text)
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const EXIT_COMMANDS = new Set(["salir", "terminar", "cancelar todo", "chau", "listo gracias", "nada mas"]);
+
+/**
+ * Comando de salida "estricto": el mensaje ENTERO (normalizado, sin signos ni emojis, espacios
+ * colapsados) es una de: "salir", "terminar", "cancelar todo", "chau", "listo gracias", "nada mas".
+ * Se usa solo en AWAIT_INQUIRY, para que "¿puedo salir a correr?" no cierre la conversación.
+ */
+export function isExitCommand(text: string): boolean {
+  return EXIT_COMMANDS.has(normalizeCommand(text));
+}
+
+/** Ídem para "menu"/"menú": el mensaje entero es "menu". "¿qué menú me conviene?" → false. */
+export function isMenuCommand(text: string): boolean {
+  return normalizeCommand(text) === "menu";
+}

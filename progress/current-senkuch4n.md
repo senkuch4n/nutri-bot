@@ -129,3 +129,5 @@ orquestador, para que las revise a la mañana:
 - HU-011 → `en_arquitectura` (migracion-prisma + ui). Leo no tiene migraciones abiertas.
 - HU-011: SDD lista (Refactorizaciones/mensajes-fuera-de-horario.md, modelo PatientInquiry, 9 preguntas con default) → `arquitectura_lista`.
 - HU-011: usuario acepta P1–P4/P6–P9; P5 → la bandeja se llama **Mensajes** (/mensajes). → `implementando` (Opus; migracion-prisma, ui-ux-pro-max, ui-styling, web-design-guidelines).
+- HU-011: implementer (Opus) `done` en 2 tramos (el 1º se colgó). 780 tests, test:after-hours 12/12. Recorrido en progress/recorrido_HU-011.md: OK con 2 observaciones (texto del vacío, mapeo Desde/Hasta). → `en_revision`.
+- **HU-011 aprobada** (1ª ronda, reviewer Opus). Ver history. Siguiente: commit, PR a develop, Notion → Hecha.

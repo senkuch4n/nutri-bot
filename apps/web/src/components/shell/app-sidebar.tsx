@@ -6,7 +6,7 @@ import { Wordmark } from "@/components/brand";
 import { Button } from "@/components/primitives/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/primitives/tooltip";
 import type { BotShellStatus } from "@/lib/shell";
-import { SIDEBAR_COOKIE } from "./nav-config";
+import { SIDEBAR_COOKIE, type NavBadges } from "./nav-config";
 import { SidebarContent } from "./sidebar-content";
 import "./sidebar-layout.css";
 
@@ -17,6 +17,7 @@ export function AppSidebar({
   email,
   botStatus,
   account,
+  badges,
   children,
 }: {
   initialCollapsed: boolean;
@@ -24,6 +25,8 @@ export function AppSidebar({
   email?: string | null;
   botStatus: BotShellStatus;
   account: ReactNode;
+  /** HU-011: contadores de los ítems de la sidebar (p. ej. mensajes pendientes). */
+  badges?: NavBadges;
   children: ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -124,7 +127,7 @@ export function AppSidebar({
             </div>
           </div>
 
-          <SidebarContent collapsed={collapsed} email={email} botStatus={botStatus} account={account} />
+          <SidebarContent collapsed={collapsed} email={email} botStatus={botStatus} account={account} badges={badges} />
         </aside>
       </div>
       <div ref={workspace} className="panel-sidebar-workspace flex min-w-0 flex-1 flex-col">

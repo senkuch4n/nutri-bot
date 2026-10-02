@@ -1,13 +1,16 @@
 import "./env";
 import { logger } from "./logger";
 import { sendText, startWhatsApp } from "./whatsapp";
-import { handleIncoming } from "./conversation";
+import { handleIncoming, handleIncomingMedia } from "./conversation";
 import { runStartupJobs, startCron, startOutboxConsumer } from "./workers";
 
 async function main(): Promise<void> {
   logger.info("Iniciando NutriBot (bot de WhatsApp)…");
 
-  await startWhatsApp((jid, text) => handleIncoming(jid, text, (t) => sendText(jid, t)));
+  await startWhatsApp(
+    (jid, text) => handleIncoming(jid, text, (t) => sendText(jid, t)),
+    (jid) => handleIncomingMedia(jid, (t) => sendText(jid, t)),
+  );
 
   startOutboxConsumer();
   startCron();

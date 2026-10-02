@@ -8,7 +8,7 @@ import { AppSidebar } from "@/components/shell/app-sidebar";
 import { MobileTopbar } from "@/components/shell/mobile-topbar";
 import { SIDEBAR_COOKIE } from "@/components/shell/nav-config";
 import { SignOutButton } from "@/components/shell/sign-out-button";
-import { getBotShellStatus, getProfessionalDisplayName } from "@/lib/shell";
+import { getBotShellStatus, getPendingInquiryCount, getProfessionalDisplayName } from "@/lib/shell";
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -16,11 +16,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
 
   // El estado del bot se calcula en cada render del layout: en navegación cliente puede quedar
   // desactualizado hasta recargar (aceptado, ver SDD O3).
-  const [professionalName, botStatus, cookieStore] = await Promise.all([
+  const [professionalName, botStatus, pendingInquiries, cookieStore] = await Promise.all([
     getProfessionalDisplayName(),
     getBotShellStatus(),
+    getPendingInquiryCount(),
     cookies(),
   ]);
+  const badges = { pendingInquiries };
   const collapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === "collapsed";
   const email = session.user.email;
   const account = <SignOutButton />;
@@ -40,12 +42,14 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           email={email}
           botStatus={botStatus}
           account={account}
+          badges={badges}
         >
           <MobileTopbar
             professionalName={professionalName}
             email={email}
             botStatus={botStatus}
             account={account}
+            badges={badges}
           />
           <main
             id="contenido"

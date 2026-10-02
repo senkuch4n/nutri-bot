@@ -15,6 +15,7 @@ import {
 } from "./settings-form";
 import { GoogleCalendarForm } from "./google-calendar-form";
 import { BotToggle } from "./bot-toggle";
+import { AfterHoursForm } from "./after-hours-form";
 import { LogoForm } from "./logo-form";
 import { disconnectGoogleAction } from "./actions";
 
@@ -64,6 +65,14 @@ export default async function AjustesPage() {
       </div>
       <Separator className="my-4" />
       <BotToggle paused={pro.botPaused} />
+      <Separator className="my-4" />
+      <AfterHoursForm
+        defaults={{
+          enabled: pro.afterHoursEnabled,
+          attendFrom: pro.afterHoursEnd,
+          attendTo: pro.afterHoursStart,
+        }}
+      />
     </Card>
   );
 
