@@ -8,6 +8,7 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test:confirm-flow": "dotenv -e ../../.env -- tsx scripts/test-confirm-attendance.ts",
+    "test:after-hours": "dotenv -e ../../.env -- tsx scripts/test-after-hours-inquiry.ts",
     "test:mercadopago-sandbox": "dotenv -e ../../.env -- tsx scripts/test-mercadopago-sandbox.ts",
     "test:report-outbox": "dotenv -e ../../.env -- tsx scripts/test-report-outbox.ts"
   },

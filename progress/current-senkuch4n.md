@@ -117,3 +117,17 @@ orquestador, para que las revise a la mañana:
   - probar a mano los flujos que escriben (completar un turno, guardar una prescripción, generar
     el informe PDF);
   - `docker-compose.prod.yml` es de otro proyecto y no se tocó.
+
+## 2026-10-02 — Arnés para dos personas
+
+- Arnés pasado a dos personas (PR #1 y #2 mergeados a `develop`): `backlog/<id>.json` con
+  `responsable`, Notion como lock, ramas `feat/*` desde `develop`, CI en GitHub.
+- **HU-011** `mensajes-fuera-de-horario` (de `hus-last-meet.md`) → reservada en Notion a mi nombre,
+  rama `feat/hu-011-mensajes-fuera-de-horario` → `afinando`.
+- HU-011 afinada (D1–D12) → `afinada_pendiente_validacion`. Hallazgo: hoy, después de la opción 0, el bot contesta "no entendí" durante 20 min (D4).
+- HU-011 **validada**: el usuario acepta D1–D12 según las recomendaciones.
+- HU-011 → `en_arquitectura` (migracion-prisma + ui). Leo no tiene migraciones abiertas.
+- HU-011: SDD lista (Refactorizaciones/mensajes-fuera-de-horario.md, modelo PatientInquiry, 9 preguntas con default) → `arquitectura_lista`.
+- HU-011: usuario acepta P1–P4/P6–P9; P5 → la bandeja se llama **Mensajes** (/mensajes). → `implementando` (Opus; migracion-prisma, ui-ux-pro-max, ui-styling, web-design-guidelines).
+- HU-011: implementer (Opus) `done` en 2 tramos (el 1º se colgó). 780 tests, test:after-hours 12/12. Recorrido en progress/recorrido_HU-011.md: OK con 2 observaciones (texto del vacío, mapeo Desde/Hasta). → `en_revision`.
+- **HU-011 aprobada** (1ª ronda, reviewer Opus). Ver history. Siguiente: commit, PR a develop, Notion → Hecha.

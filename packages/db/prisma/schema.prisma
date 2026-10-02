@@ -27,6 +27,13 @@ model Professional {
   reminderLeadHours  Int      @default(24)
   /// Si está en true, el bot no responde ningún mensaje entrante.
   botPaused          Boolean  @default(false)
+  /// HU-011 (D1): franja "fuera de horario" de la opción 0 del bot. Dentro de la franja, la opción 0
+  /// no alerta en el momento: toma la consulta y la resume al terminar la franja.
+  afterHoursEnabled  Boolean  @default(true)
+  /// Inicio de la franja, "HH:mm" en `timezone` (p. ej. "22:00").
+  afterHoursStart    String   @default("22:00")
+  /// Fin de la franja, "HH:mm" en `timezone` (p. ej. "09:00"). A esta hora sale el resumen.
+  afterHoursEnd      String   @default("09:00")
   googleRefreshToken String?
   googleCalendarId   String?
   googleSyncError    String?
@@ -53,6 +60,7 @@ model Patient {
   evolutionEntries EvolutionEntry[]
   diaryEntries DiaryEntry[]
   consultations Consultation[]
+  inquiries    PatientInquiry[]
 }
 
 model DiaryEntry {
@@ -644,4 +652,36 @@ model BotStatus {
   qr              String?
   lastConnectedAt DateTime?
   updatedAt       DateTime  @updatedAt
+}
+
+/// HU-011: estado de una consulta dejada por WhatsApp (opción 0 del bot).
+enum InquiryStatus {
+  PENDING
+  ANSWERED
+}
+
+/// HU-011: consulta que el paciente le dejó a la profesional por la opción 0 del bot.
+/// Una fila por paciente y por sesión (y por noche, ver D7). No es la `Consultation` clínica.
+model PatientInquiry {
+  id                 String        @id @default(cuid())
+  patient            Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId          String
+  /// Texto de la consulta. Los mensajes siguientes se concatenan con "\n".
+  body               String
+  /// Instante del primer mensaje.
+  receivedAt         DateTime
+  /// Instante del último mensaje agregado.
+  lastMessageAt      DateTime
+  /// true si el primer mensaje llegó dentro de la franja fuera de horario: entra al resumen.
+  receivedAfterHours Boolean
+  status             InquiryStatus @default(PENDING)
+  answeredAt         DateTime?
+  /// Cuándo la procesó el resumen de fin de franja (se haya encolado o no el WhatsApp, según
+  /// haya `phoneJid`). null = todavía no se resumió. Solo aplica si `receivedAfterHours`.
+  digestedAt         DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([status, receivedAt])
+  @@index([patientId, status])
 }

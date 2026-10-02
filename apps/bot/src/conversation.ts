@@ -7,8 +7,21 @@ import {
   createPatientToken,
   findOrCreatePatientByJid,
   getProfessional,
+  recordInquiryMessage,
 } from "@nutri-bot/db/domain";
-import { formatServiceList, isExitWord, isWakeWord, messages, normalize } from "@nutri-bot/core";
+import {
+  afterHoursConfigFrom,
+  formatClock,
+  formatServiceList,
+  isExitCommand,
+  isExitWord,
+  isMenuCommand,
+  isWakeWord,
+  isWithinAfterHours,
+  messages,
+  normalize,
+  type AfterHoursConfig,
+} from "@nutri-bot/core";
 import {
   cancelableAppointments,
   listActiveServices,
@@ -19,6 +32,19 @@ import {
 import { logger } from "./logger";
 
 type Send = (text: string) => Promise<void>;
+
+type Professional = Awaited<ReturnType<typeof getProfessional>>;
+type PatientRow = Awaited<ReturnType<typeof findOrCreatePatientByJid>>;
+
+/** Opciones inyectables. En producción no se pasan. */
+export type ConversationOptions = {
+  /** Hora "actual" (default new Date()). Afecta el timeout de sesión, la franja y `at` de la consulta. */
+  now?: Date;
+  /** SOLO pruebas: reemplaza la franja de Professional. */
+  afterHours?: AfterHoursConfig;
+  /** SOLO pruebas: reemplaza Professional.phoneJid como destino de las alertas (null = sin alertas). */
+  alertJid?: string | null;
+};
 
 const STEP = {
   /** El bot no está atendiendo a este contacto: ignora todo salvo una palabra clave. */
@@ -32,6 +58,8 @@ const STEP = {
   CANCEL_PICK: "CANCEL_PICK",
   CANCEL_CONFIRM: "CANCEL_CONFIRM",
   CONFIRM_ATTENDANCE: "CONFIRM_ATTENDANCE",
+  /** HU-011: el paciente eligió 0; lo que escriba en la sesión se guarda como consulta. */
+  AWAIT_INQUIRY: "AWAIT_INQUIRY",
 } as const;
 
 /** Tras este tiempo de inactividad, una conversación abierta vuelve a DORMANT. */
@@ -45,6 +73,12 @@ type Ctx = {
   startsAt?: string;
   apptIds?: string[];
   apptId?: string;
+  /** HU-011: consulta de esta sesión. */
+  inquiryId?: string;
+  /** HU-011: ya se encoló la alerta inmediata en esta sesión. */
+  alerted?: boolean;
+  /** HU-011: ya se mandó la confirmación en esta sesión. */
+  confirmed?: boolean;
 };
 
 async function loadState(jid: string): Promise<{ step: string; ctx: Ctx; updatedAt: Date }> {
@@ -81,7 +115,13 @@ function isYes(text: string): boolean {
 function isNo(text: string): boolean {
   return /^(no|n|nel|mejor no)(?!\p{L})/iu.test(text.trim());
 }
-export async function handleIncoming(jid: string, text: string, send: Send): Promise<void> {
+export async function handleIncoming(
+  jid: string,
+  text: string,
+  send: Send,
+  opts: ConversationOptions = {},
+): Promise<void> {
+  const now = opts.now ?? new Date();
   const pro = await getProfessional();
 
   // Interruptor global: la nutricionista puede apagar el bot desde el panel.
@@ -93,7 +133,7 @@ export async function handleIncoming(jid: string, text: string, send: Send): Pro
   let step = state.step;
 
   // Una conversación abierta pero inactiva vuelve a estar "dormida".
-  if (step !== STEP.DORMANT && Date.now() - state.updatedAt.getTime() > SESSION_TIMEOUT_MS) {
+  if (step !== STEP.DORMANT && now.getTime() - state.updatedAt.getTime() > SESSION_TIMEOUT_MS) {
     step = STEP.DORMANT;
   }
 
@@ -111,6 +151,22 @@ export async function handleIncoming(jid: string, text: string, send: Send): Pro
   }
 
   // --- Conversación abierta ---
+  // HU-011 (P3): esperando la consulta, salir/menú solo si el mensaje ENTERO es el comando,
+  // para que "¿puedo salir a correr?" se guarde como consulta.
+  if (step === STEP.AWAIT_INQUIRY) {
+    if (isExitCommand(text)) {
+      await save(jid, STEP.DORMANT);
+      await send(messages.DORMANT_BYE);
+      return;
+    }
+    if (isMenuCommand(text)) {
+      await save(jid, STEP.MENU);
+      await send(messages.MENU);
+      return;
+    }
+    return handleInquiryText(jid, text, ctx, patient, pro, send, opts, now);
+  }
+
   if (isExitWord(text)) {
     await save(jid, STEP.DORMANT);
     await send(messages.DORMANT_BYE);
@@ -137,7 +193,7 @@ export async function handleIncoming(jid: string, text: string, send: Send): Pro
 
   switch (step) {
     case STEP.MENU:
-      return handleMenu(jid, text, send);
+      return handleMenu(jid, text, send, pro, opts, now);
     case STEP.BOOK_SERVICE:
       return handleBookService(jid, text, send);
     case STEP.BOOK_DAY:
@@ -158,9 +214,15 @@ export async function handleIncoming(jid: string, text: string, send: Send): Pro
   }
 }
 
-async function handleMenu(jid: string, text: string, send: Send): Promise<void> {
+async function handleMenu(
+  jid: string,
+  text: string,
+  send: Send,
+  pro: Professional,
+  opts: ConversationOptions,
+  now: Date,
+): Promise<void> {
   const choice = text.trim().replace(/\D/g, "");
-  const pro = await getProfessional();
 
   if (choice === "1") {
     const services = await listActiveServices();
@@ -225,21 +287,23 @@ async function handleMenu(jid: string, text: string, send: Send): Promise<void> 
   }
 
   if (choice === "0") {
-    await send(messages.HANDOFF);
-    if (pro.phoneJid) {
-      const patient = await prisma.patient.findUniqueOrThrow({ where: { whatsappJid: jid } });
-      await prisma.outboundMessage.create({
-        data: {
-          toJid: pro.phoneJid,
-          kind: "PROFESSIONAL_ALERT",
-          body: messages.professionalHandoffAlert({
-            patientName: patient.name,
-            patientPhone: patient.phone,
-          }),
-        },
-      });
+    const config = afterHoursConfigFor(pro, opts);
+    const alertJid = alertJidFor(pro, opts);
+    if (isWithinAfterHours(now, config, pro.timezone)) {
+      // HU-011: fuera de horario no se alerta en el momento; se pide la consulta.
+      await send(
+        messages.afterHoursHandoff({ attendFrom: formatClock(config.end), attendTo: formatClock(config.start) }),
+      );
+      await save(jid, STEP.AWAIT_INQUIRY, { alerted: false, confirmed: false });
+      return;
     }
-    await save(jid, STEP.MENU);
+    await send(messages.HANDOFF);
+    if (alertJid) {
+      const patient = await prisma.patient.findUniqueOrThrow({ where: { whatsappJid: jid } });
+      await enqueueHandoffAlert(patient, alertJid);
+    }
+    // HU-011 (D4): de día también se captura lo que escriba después.
+    await save(jid, STEP.AWAIT_INQUIRY, { alerted: Boolean(alertJid), confirmed: false });
     return;
   }
 
@@ -456,4 +520,87 @@ async function handleConfirmAttendance(jid: string, text: string, ctx: Ctx, send
     return;
   }
   await send("Respondé *sí* si vas a poder venir, o *no* si no vas a poder.");
+}
+
+// --- HU-011: consultas por la opción 0 ---
+
+function afterHoursConfigFor(pro: Professional, opts: ConversationOptions): AfterHoursConfig {
+  return opts.afterHours ?? afterHoursConfigFrom(pro);
+}
+
+function alertJidFor(pro: Professional, opts: ConversationOptions): string | null {
+  return opts.alertJid !== undefined ? opts.alertJid : pro.phoneJid;
+}
+
+/** Alerta inmediata "quiere hablar con vos" (la misma de antes de la HU-011). */
+async function enqueueHandoffAlert(
+  patient: { name: string | null; phone: string },
+  alertJid: string,
+): Promise<void> {
+  await prisma.outboundMessage.create({
+    data: {
+      toJid: alertJid,
+      kind: "PROFESSIONAL_ALERT",
+      body: messages.professionalHandoffAlert({ patientName: patient.name, patientPhone: patient.phone }),
+    },
+  });
+}
+
+async function handleInquiryText(
+  jid: string,
+  text: string,
+  ctx: Ctx,
+  patient: PatientRow,
+  pro: Professional,
+  send: Send,
+  opts: ConversationOptions,
+  now: Date,
+): Promise<void> {
+  // P4: un dígito suelto es una opción del menú, no una consulta.
+  if (/^[0-4]$/.test(text.trim())) return handleMenu(jid, text, send, pro, opts, now);
+
+  const config = afterHoursConfigFor(pro, opts);
+  const alertJid = alertJidFor(pro, opts);
+  const afterHours = isWithinAfterHours(now, config, pro.timezone); // según la hora de ESTE mensaje
+  const { inquiry } = await recordInquiryMessage({
+    patientId: patient.id,
+    text,
+    at: now,
+    afterHours,
+    inquiryId: ctx.inquiryId,
+  });
+
+  let alerted = ctx.alerted ?? false;
+  // Cruce de franja (empezó de noche, escribe de día): alerta inmediata, salvo que la consulta
+  // ya sea nocturna (entonces va en el resumen y no se notifica dos veces).
+  if (!afterHours && !alerted && !inquiry.receivedAfterHours && alertJid) {
+    await enqueueHandoffAlert(patient, alertJid);
+    alerted = true;
+  }
+  if (!ctx.confirmed) {
+    await send(
+      afterHours
+        ? messages.inquirySavedAfterHours({ attendFrom: formatClock(config.end) })
+        : messages.INQUIRY_SAVED_DAY,
+    );
+  }
+  // El save renueva updatedAt: la sesión de 20 minutos sigue abierta.
+  await save(jid, STEP.AWAIT_INQUIRY, { inquiryId: inquiry.id, alerted, confirmed: true });
+}
+
+/** Mensaje entrante sin texto (audio, foto sin epígrafe, sticker, documento…). D8. */
+export async function handleIncomingMedia(
+  jid: string,
+  send: Send,
+  opts: ConversationOptions = {},
+): Promise<void> {
+  const now = opts.now ?? new Date();
+  const pro = await getProfessional();
+  if (pro.botPaused) return;
+  // findUnique (no loadState): no crea pacientes ni estado para contactos desconocidos.
+  const row = await prisma.conversationState.findUnique({ where: { patientJid: jid } });
+  if (!row || row.step !== STEP.AWAIT_INQUIRY) return;
+  if (now.getTime() - row.updatedAt.getTime() > SESSION_TIMEOUT_MS) return; // silencio, como hoy
+  await send(messages.INQUIRY_TEXT_ONLY);
+  await save(jid, STEP.AWAIT_INQUIRY, (row.context ?? {}) as Ctx);
 }

@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn() }));
+const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
 vi.mock("@nutri-bot/db/domain", () => ({
   reconcilePendingPayments: mocks.reconcile, expireStalePendingPayments: mocks.expire,
   enqueueDueReminders: vi.fn(), enqueueAttendanceConfirmations: vi.fn(),
   enqueuePrepInstructions: vi.fn(), syncGoogleCalendar: vi.fn(),
+  enqueueAfterHoursDigest: mocks.digest,
 }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
 vi.mock("./outbound-payload", () => ({ OUTBOX_INCLUDE: {}, resolveOutboundPayload: vi.fn() }));
@@ -58,5 +59,41 @@ describe("payment cron without Baileys or database", () => {
     finish({ processed: 0, failed: 0 });
     await first;
     vi.useRealTimers();
+  });
+});
+
+describe("after-hours digest cron (HU-011)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+  it("is the last schedule, runs every minute and calls enqueueAfterHoursDigest once per tick", async () => {
+    mocks.digest.mockResolvedValue({ digested: 2, outboundId: "out1" });
+    startCron();
+    const last = mocks.schedule.mock.calls.at(-1)!;
+    expect(last[0]).toBe("* * * * *");
+    await last[1]();
+    expect(mocks.digest).toHaveBeenCalledTimes(1);
+    // La conciliación de pagos sigue siendo la primera.
+    expect(mocks.schedule.mock.calls.length).toBeGreaterThan(1);
+  });
+  it("contains errors and releases the flag for the next tick", async () => {
+    mocks.digest.mockRejectedValueOnce(new Error("db down")).mockResolvedValueOnce({ digested: 0, outboundId: null });
+    startCron();
+    const tick = mocks.schedule.mock.calls.at(-1)![1];
+    await expect(tick()).resolves.toBeUndefined();
+    expect(mocks.error).toHaveBeenCalled();
+    await tick();
+    expect(mocks.digest).toHaveBeenCalledTimes(2);
+  });
+  it("skips overlapping ticks", async () => {
+    let finish!: (r: { digested: number; outboundId: null }) => void;
+    mocks.digest.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    startCron();
+    const tick = mocks.schedule.mock.calls.at(-1)![1];
+    const first = tick();
+    await tick();
+    expect(mocks.digest).toHaveBeenCalledTimes(1);
+    finish({ digested: 0, outboundId: null });
+    await first;
   });
 });

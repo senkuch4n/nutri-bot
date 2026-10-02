@@ -3,6 +3,7 @@ import {
   CalendarDays,
   Clock,
   Files,
+  Inbox,
   Megaphone,
   Settings,
   Sparkles,
@@ -12,7 +13,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type NavItem = { href: string; label: string; icon: LucideIcon };
+/** Contadores que puede mostrar un ítem de la sidebar (HU-011). */
+export type NavBadgeKey = "pendingInquiries";
+export type NavBadges = Partial<Record<NavBadgeKey, number>>;
+
+export type NavItem = { href: string; label: string; icon: LucideIcon; badge?: NavBadgeKey };
 export type NavGroup = { label: string; items: NavItem[] };
 
 /** Grupos de la sidebar del panel (D3). */
@@ -25,7 +30,14 @@ export const navGroups: NavGroup[] = [
       { href: "/servicios", label: "Servicios", icon: Tag },
     ],
   },
-  { label: "Pacientes", items: [{ href: "/pacientes", label: "Pacientes", icon: Users }] },
+  {
+    label: "Pacientes",
+    items: [
+      { href: "/pacientes", label: "Pacientes", icon: Users },
+      // HU-011: bandeja de consultas que dejan los pacientes por la opción 0 del bot.
+      { href: "/mensajes", label: "Mensajes", icon: Inbox, badge: "pendingInquiries" },
+    ],
+  },
   {
     label: "Nutrición",
     items: [

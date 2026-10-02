@@ -213,3 +213,29 @@ export function professionalHandoffAlert(params: {
   const who = params.patientName ?? params.patientPhone;
   return `🔔 ${who} quiere hablar con vos por WhatsApp.`;
 }
+
+// --- HU-011: consultas fuera de horario (opción 0) ---
+
+export function afterHoursHandoff(params: { attendFrom: string; attendTo: string }): string {
+  return `🌙 La nutricionista responde consultas de *${params.attendFrom} a ${params.attendTo}*.\n\nSi querés, escribime ahora tu consulta en un mensaje y se la dejo para que la vea a primera hora. 🙂\n\nSi era para un turno, escribí *menú* y lo resolvemos ya mismo.`;
+}
+
+export function inquirySavedAfterHours(params: { attendFrom: string }): string {
+  return `¡Listo! Le dejé tu consulta a la nutricionista. Te va a responder por acá a partir de las *${params.attendFrom}*. 🙌\n\nSi querés agregar algo más, escribilo ahora.`;
+}
+
+export const INQUIRY_SAVED_DAY = `¡Listo! Le pasé tu consulta a la nutricionista. Te va a responder por acá lo antes posible. 🙌\n\nSi querés agregar algo más, escribilo ahora.`;
+
+export const INQUIRY_TEXT_ONLY = `Por ahora solo puedo guardar mensajes de texto. ¿Me la escribís? 🙏`;
+
+export function afterHoursDigest(params: {
+  items: { patientName?: string | null; patientPhone: string; receivedAt: Date }[];
+  tz: string;
+}): string {
+  const n = params.items.length;
+  const head = `🌙 Anoche te dejaron ${n} ${n === 1 ? "consulta" : "consultas"} fuera de horario:`;
+  const lines = params.items.map(
+    (i) => `• ${i.patientName ?? i.patientPhone} (${formatTime(i.receivedAt, params.tz)})`,
+  );
+  return `${head}\n${lines.join("\n")}\n\nLas ves completas en el panel → Mensajes.`;
+}

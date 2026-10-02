@@ -46,8 +46,24 @@ function extractText(m: WAMessage): string | null {
 }
 
 export type IncomingHandler = (jid: string, text: string) => Promise<void>;
+/** HU-011 (D8): mensaje entrante sin texto (audio, foto sin epígrafe, sticker, documento…). */
+export type IncomingMediaHandler = (jid: string) => Promise<void>;
 
-export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
+/** Claves de contenido que cuentan como "medio sin texto" (D8). Lo demás se sigue ignorando. */
+const MEDIA_KEYS = [
+  "audioMessage",
+  "imageMessage",
+  "videoMessage",
+  "documentMessage",
+  "documentWithCaptionMessage",
+  "stickerMessage",
+  "ptvMessage",
+];
+
+export async function startWhatsApp(
+  onMessage: IncomingHandler,
+  onMedia?: IncomingMediaHandler,
+): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(env.authDir);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -86,7 +102,7 @@ export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
         );
       } else {
         logger.warn(`Conexión cerrada (código ${code ?? "?"}). Reconectando en 3s…`);
-        setTimeout(() => void startWhatsApp(onMessage), 3000);
+        setTimeout(() => void startWhatsApp(onMessage, onMedia), 3000);
       }
     }
   });
@@ -110,6 +126,14 @@ export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
       const text = extractText(m);
       if (!text) {
         const kinds = Object.keys(normalizeMessageContent(m.message) ?? {});
+        if (onMedia && kinds.some((k) => MEDIA_KEYS.includes(k))) {
+          try {
+            await onMedia(jid);
+          } catch (err) {
+            logger.error({ err, jid }, "Error procesando mensaje entrante sin texto");
+          }
+          continue;
+        }
         logger.info({ jid, kinds }, "Mensaje entrante sin texto: se ignora");
         continue;
       }

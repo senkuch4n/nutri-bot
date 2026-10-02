@@ -1,0 +1,27 @@
+{
+  "id": "HU-011",
+  "responsable": "senkuch4n",
+  "slug": "mensajes-fuera-de-horario",
+  "titulo": "Mensajes fuera de horario: la opción 0 después de las 22:00 queda en espera hasta las 09:00",
+  "origen": "hus-last-meet.md (reunión con la nutricionista)",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-mensajes-fuera-de-horario.md",
+  "sdd": "Refactorizaciones/mensajes-fuera-de-horario.md",
+  "rama": "feat/hu-011-mensajes-fuera-de-horario",
+  "notion": "https://app.notion.com/p/3ed6bad61c7981a39cc4e02db468c39c",
+  "notas": "Borrador: como nutricionista necesito que mis pacientes no puedan escribirme después de las 22:00 por consultas particulares (opción 0), para ver después la lista de esos mensajes. CA: si el bot recibe un mensaje pasadas las 22:00 con la opción 0, el mensaje se encola para que la nutricionista lo vea cuando esté activa (09:00). | P5: la bandeja se llama Mensajes (/mensajes).",
+  "skills_sdd": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "ui-ux-pro-max",
+    "ui-styling",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-011.md"
+}

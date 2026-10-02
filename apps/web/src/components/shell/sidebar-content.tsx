@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/primitives/tooltip";
 import type { BotShellStatus } from "@/lib/shell";
 import { cn } from "@/lib/utils";
-import { isActive, navGroups, settingsItem, sidebarItemClass, type NavItem } from "./nav-config";
+import { isActive, navGroups, settingsItem, sidebarItemClass, type NavBadges, type NavItem } from "./nav-config";
 
 const botStatusMeta: Record<BotShellStatus, { label: string; dot: string }> = {
   connected: { label: "WhatsApp conectado", dot: "bg-success" },
@@ -36,21 +36,27 @@ function SidebarLink({
   item,
   collapsed,
   active,
+  count,
   onNavigate,
 }: {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
+  /** HU-011: contador (p. ej. mensajes pendientes). 0 o undefined → no se muestra. */
+  count?: number;
   onNavigate?: () => void;
 }) {
   const Icon = item.icon;
+  const hasCount = typeof count === "number" && count > 0;
+  // El número va en el nombre accesible del link, con contexto ("3 pendientes"); el pill es visual.
+  const accessibleLabel = hasCount ? `${item.label} (${count} pendientes)` : item.label;
   return (
     <MaybeTooltip collapsed={collapsed} label={item.label}>
       <Link
         href={item.href}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
-        aria-label={item.label}
+        aria-label={accessibleLabel}
         className={cn(
           sidebarItemClass,
           active &&
@@ -58,7 +64,21 @@ function SidebarLink({
         )}
       >
         <Icon className="h-4 w-4 shrink-0" aria-hidden />
-        <span className="panel-sidebar-label truncate" aria-hidden="true">{item.label}</span>
+        {hasCount ? (
+          <>
+            <span className="panel-sidebar-label flex min-w-0 flex-1 items-center gap-2" aria-hidden="true">
+              <span className="truncate">{item.label}</span>
+              <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-[11px] font-medium leading-5 text-primary-foreground tabular-nums">
+                {(count ?? 0) > 99 ? "99+" : count}
+              </span>
+            </span>
+            {collapsed ? (
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
+            ) : null}
+          </>
+        ) : (
+          <span className="panel-sidebar-label truncate" aria-hidden="true">{item.label}</span>
+        )}
       </Link>
     </MaybeTooltip>
   );
@@ -73,6 +93,7 @@ export function SidebarContent({
   email,
   botStatus,
   account,
+  badges,
   onNavigate,
 }: {
   collapsed?: boolean;
@@ -80,6 +101,8 @@ export function SidebarContent({
   botStatus: BotShellStatus;
   /** Slot para el botón "Cerrar sesión" (server component con su action inline). */
   account: ReactNode;
+  /** HU-011: contadores por ítem (ver `NavItem.badge`). */
+  badges?: NavBadges;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -109,6 +132,7 @@ export function SidebarContent({
                     item={item}
                     collapsed={collapsed}
                     active={isActive(pathname, item.href)}
+                    count={item.badge ? badges?.[item.badge] : undefined}
                     onNavigate={onNavigate}
                   />
                 </li>

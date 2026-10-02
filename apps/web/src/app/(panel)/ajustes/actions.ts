@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
+import { validateAfterHoursConfig } from "@nutri-bot/core";
 
 export type SettingsState = { ok: boolean; error?: string };
 
@@ -120,4 +121,34 @@ export async function removeLogoAction(): Promise<void> {
     data: { logoData: null, logoMimeType: null },
   });
   revalidatePath("/ajustes");
+}
+
+// HU-011 (D1): franja "fuera de horario" de la opción 0 del bot.
+// attendFrom = fin de la franja (afterHoursEnd); attendTo = inicio (afterHoursStart).
+const afterHoursSchema = z.object({
+  afterHoursEnabled: z.enum(["0", "1"]),
+  attendFrom: z.string().trim(),
+  attendTo: z.string().trim(),
+});
+
+export async function saveAfterHoursAction(
+  _prev: SettingsState,
+  formData: FormData,
+): Promise<SettingsState> {
+  const parsed = afterHoursSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: "Datos inválidos" };
+  const { afterHoursEnabled, attendFrom, attendTo } = parsed.data;
+  // Las horas se validan aunque la franja esté desactivada, para no guardar basura.
+  const error = validateAfterHoursConfig({ start: attendTo, end: attendFrom });
+  if (error) return { ok: false, error };
+  await prisma.professional.update({
+    where: { id: 1 },
+    data: {
+      afterHoursEnabled: afterHoursEnabled === "1",
+      afterHoursStart: attendTo,
+      afterHoursEnd: attendFrom,
+    },
+  });
+  revalidatePath("/ajustes");
+  return { ok: true };
 }
