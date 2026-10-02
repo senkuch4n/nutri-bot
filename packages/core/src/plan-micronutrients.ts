@@ -26,6 +26,7 @@ export interface PlanMicronutrientResult {
 }
 
 export interface PlanMicronutrients {
+  totalItems: number;
   comparisonStatus: "AVAILABLE" | "MISSING_PATIENT_DATA" | "UNDER_19";
   nutrients: PlanMicronutrientResult[];
 }
@@ -66,5 +67,5 @@ export function computePlanMicronutrients(
       coverage: { knownItems, totalItems: items.length, complete: items.length > 0 && knownItems === items.length },
     };
   });
-  return { comparisonStatus, nutrients };
+  return { totalItems: items.length, comparisonStatus, nutrients };
 }

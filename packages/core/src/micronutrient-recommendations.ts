@@ -3,8 +3,8 @@ import type { Sex } from "./patient-formula-data";
 // Official Health Canada DRI tables, verified 2026-10-02. Calcium/D: 2011;
 // potassium/sodium: 2019. References are daily RDA/AI, never UL or CDRR.
 export const DRI_SOURCES = {
-  elements: "https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-elements-dietary-reference-intakes-tables-2005.html",
-  vitamins: "https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-vitamins-dietary-reference-intakes-tables-2005.html",
+  elements: "https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-elements.html",
+  vitamins: "https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/dietary-reference-intakes/tables/reference-values-vitamins.html",
 } as const;
 
 export type ComparableMicronutrientKey =

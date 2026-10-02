@@ -44,8 +44,17 @@ describe("plan micronutrients", () => {
     expect(calcium([item(NaN), item(-1), item(1, Infinity), item(1, -1)]).knownAmount).toBeNull();
   });
   it("has no known total for an empty plan", () => {
+    expect(calculate([]).totalItems).toBe(0);
     expect(calcium([]).knownAmount).toBeNull();
     expect(calcium([]).coverage.complete).toBe(false);
+  });
+  it("distinguishes an empty plan from custom items and foods without data", () => {
+    const result = calculate([
+      { quantityGrams: null, food: null },
+      { quantityGrams: 100, food: { nutrients: null, sodiumMgPer100: null } },
+    ]);
+    expect(result.totalItems).toBe(2);
+    expect(result.nutrients.every((n) => n.knownAmount === null && !n.coverage.complete)).toBe(true);
   });
   it("reads sodium from its direct column, and keeps nutrient coverage independent", () => {
     const results = calculate([{ quantityGrams: 50, food: { nutrients: null, sodiumMgPer100: 300 } }]).nutrients;
@@ -76,6 +85,33 @@ describe("plan micronutrients", () => {
 });
 
 describe("official adult DRI selection", () => {
+  // Independent expected values verified against the official Health Canada
+  // tables. Columns represent ages 19–30, 31–50, 51–70 and 71+.
+  const expected = [
+    ["calcio", "RDA", [1000, 1000, 1000, 1200], [1000, 1000, 1200, 1200]],
+    ["hierro", "RDA", [8, 8, 8, 8], [18, 18, 8, 8]],
+    ["magnesio", "RDA", [400, 420, 420, 420], [310, 320, 320, 320]],
+    ["fosforo", "RDA", [700, 700, 700, 700], [700, 700, 700, 700]],
+    ["zinc", "RDA", [11, 11, 11, 11], [8, 8, 8, 8]],
+    ["cobre", "RDA", [0.9, 0.9, 0.9, 0.9], [0.9, 0.9, 0.9, 0.9]],
+    ["potasio", "AI", [3400, 3400, 3400, 3400], [2600, 2600, 2600, 2600]],
+    ["sodio", "AI", [1500, 1500, 1500, 1500], [1500, 1500, 1500, 1500]],
+    ["vitaminaARae", "RDA", [900, 900, 900, 900], [700, 700, 700, 700]],
+    ["vitaminaC", "RDA", [90, 90, 90, 90], [75, 75, 75, 75]],
+    ["vitaminaD", "RDA", [15, 15, 15, 20], [15, 15, 15, 20]],
+    ["tiamina", "RDA", [1.2, 1.2, 1.2, 1.2], [1.1, 1.1, 1.1, 1.1]],
+    ["riboflavina", "RDA", [1.3, 1.3, 1.3, 1.3], [1.1, 1.1, 1.1, 1.1]],
+    ["vitaminaB12", "RDA", [2.4, 2.4, 2.4, 2.4], [2.4, 2.4, 2.4, 2.4]],
+    ["folatoEfd", "RDA", [400, 400, 400, 400], [400, 400, 400, 400]],
+  ] as const;
+  for (const sex of ["MALE", "FEMALE"] as const) {
+    for (const [index, age] of [25, 40, 60, 80].entries()) {
+      it.each(expected)(`${sex}, age ${age}: %s reference`, (key, kind, male, female) => {
+        const amount = (sex === "MALE" ? male : female)[index];
+        expect(getAdultMicronutrientReference(key, sex, age)).toEqual({ amount, kind });
+      });
+    }
+  }
   it.each([
     [19, 1000, 18, 310, 15], [30, 1000, 18, 310, 15],
     [31, 1000, 18, 320, 15], [50, 1000, 18, 320, 15],

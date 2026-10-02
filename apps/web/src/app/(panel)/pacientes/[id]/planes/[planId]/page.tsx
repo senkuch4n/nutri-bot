@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@nutri-bot/db";
 import { getPlan, listFoods } from "@nutri-bot/db/domain";
-import { computePlanMicronutrients, sumMacros } from "@nutri-bot/core";
+import { computeAgeYears, computePlanMicronutrients, sumMacros } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { formatDateTime } from "@nutri-bot/core";
 import { Card, PageHeader } from "@/components/ui";
@@ -9,7 +9,6 @@ import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
 import { toMealView, toMicronutrientItems } from "@/lib/meal-view";
 import { PlanMicronutrientsSection } from "@/components/plan-micronutrients";
-import { calculateAge } from "@/lib/age";
 import { PlanMetaForm } from "./plan-meta-form";
 import { PlanPdfActions } from "./plan-pdf-actions";
 import { DeletePlanButton } from "./delete-plan-button";
@@ -47,10 +46,11 @@ export default async function PlanDetailPage({
   ]);
   const meals = toMealView(plan.meals);
   const totals = sumMacros(meals.flatMap((m) => m.items.map((i) => i.macros).filter((m) => m !== null)));
+  const at = new Date();
   const micronutrients = computePlanMicronutrients(
-    toMicronutrientItems(plan.meals), patient, new Date(), pro.timezone,
+    toMicronutrientItems(plan.meals), patient, at, pro.timezone,
   );
-  const age = patient.birthDate ? calculateAge(patient.birthDate) : null;
+  const age = patient.birthDate ? computeAgeYears(patient.birthDate, at, pro.timezone) : null;
   const latestWeight = latestEntry?.weightKg ? Number(latestEntry.weightKg) : null;
 
   const description = [

@@ -2,6 +2,13 @@ import { DRI_SOURCES, formatDecimalEs, type PlanMicronutrients } from "@nutri-bo
 import { Card } from "@/components/ui";
 
 export function PlanMicronutrientsSection({ result }: { result: PlanMicronutrients }) {
+  if (result.totalItems === 0) {
+    return (
+      <Card title="Micronutrientes">
+        <p className="text-sm text-muted-foreground">Agregá alimentos al plan para calcular el aporte de micronutrientes.</p>
+      </Card>
+    );
+  }
   return (
     <Card title="Micronutrientes" description="Aporte estimado del plan frente a recomendaciones diarias para adultos sanos.">
       <div className="mb-4 space-y-2 text-sm text-muted-foreground">

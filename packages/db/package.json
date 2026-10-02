@@ -15,6 +15,7 @@
     "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
     "seed:demo": "dotenv -e ../../.env -- tsx prisma/seed-demo.ts",
+    "seed:hu010": "dotenv -e ../../.env -- tsx prisma/seed-hu010.ts",
     "studio": "dotenv -e ../../.env -- prisma studio",
     "typecheck": "tsc --noEmit",
     "sara2:read": "tsx scripts/sara2/read-pdf.ts",
