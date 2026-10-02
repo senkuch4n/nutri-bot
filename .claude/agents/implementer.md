@@ -53,7 +53,7 @@ marca como afectados. Nada más.
   desarrollo. Limpiá solo por los ids que insertaste vos.
 - ❌ Ningún mensaje de WhatsApp real. No levantes el bot conectado a
   WhatsApp para probar.
-- ❌ No toques `backlog.json` ni marques nada como `aprobada`.
+- ❌ No toques `backlog/` ni marques nada como `aprobada`.
 - ❌ No inventes nombres distintos a los del "Contrato compartido" de la SDD.
 - ❌ No salgas del scope del checklist.
 - ❌ No commitees: lo decide el orquestador con el usuario.

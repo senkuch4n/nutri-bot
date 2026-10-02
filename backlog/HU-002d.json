@@ -1,0 +1,25 @@
+{
+  "id": "HU-002d",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-ui-nutricion-portal",
+  "titulo": "Rediseño UI (4/4): nutrición y portal (tono cálido)",
+  "origen": "HU-002 partida (D8)",
+  "estado": "aprobada",
+  "notas": " REGLA: nunca await confirm() dentro de <form action> ni startTransition (deadlock en React 19, ver review_HU-002b). Pasárselo al architect. INCLUIR (pedido del usuario 2026-09-24): formato es-AR del \"Total del plan\" en el PDF (lib/plan-pdf.tsx macrosLine: coma decimal, espacio duro antes de la unidad, kcal sin decimales). Cambia lo que recibe el paciente.",
+  "hu": "docs/hu-rediseno-ui-empresarial.md",
+  "intentos_revision": 0,
+  "sdd": "Refactorizaciones/rediseno-ui-nutricion-portal.md",
+  "skills_sdd": [
+    "refactor",
+    "ui"
+  ],
+  "rama": "hu-002-rediseno-ui-empresarial",
+  "modelo": "opus",
+  "skills": [
+    "ui-ux-pro-max",
+    "ui-styling",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-002d.md"
+}

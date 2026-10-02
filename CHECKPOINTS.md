@@ -6,9 +6,11 @@
 
 ## C1 — El arnés está sano
 
-- [ ] `backlog.json` es válido y tiene como mucho 1 HU en estado activo
-      (`afinando`, `en_arquitectura`, `implementando`, `en_revision`).
-- [ ] `progress/current.md` refleja la HU en curso.
+- [ ] `backlog/` es válido y cada responsable tiene como mucho 1 HU en estado
+      activo (`afinando`, `en_arquitectura`, `implementando`, `en_revision`).
+- [ ] `progress/current-<responsable>.md` refleja la HU en curso.
+- [ ] El diff no toca archivos de HU de la otra persona (`backlog/<id>.json`,
+      su bitácora, sus docs).
 - [ ] `./ops/harness/verify.sh` termina con exit code 0.
 
 ## C2 — La HU tiene su cadena de documentos completa

@@ -21,41 +21,47 @@ fi
 cd "$REPO_ROOT" || exit 1
 
 echo "── 1. Archivos base del arnés ──────────────────────────"
-for f in AGENTS.md CLAUDE.md backlog.json progress/current.md progress/history.md CHECKPOINTS.md skills/CATALOGO.md; do
+for f in AGENTS.md CLAUDE.md backlog/_reglas.json progress/history.md CHECKPOINTS.md skills/CATALOGO.md; do
   if [ -f "$f" ]; then ok "Existe $f"; else fail "Falta archivo base: $f"; fi
 done
+YO="$(git config user.name)"
+if [ -f "progress/current-$YO.md" ]; then
+  ok "Existe progress/current-$YO.md"
+else
+  warn "No existe progress/current-$YO.md (bitácora de $YO): crearla al arrancar la sesión"
+fi
 
 echo ""
-echo "── 2. Validando backlog.json ───────────────────────────"
+echo "── 2. Validando backlog/ ───────────────────────────────"
 node -e '
 const fs = require("fs");
 try {
-  const data = JSON.parse(fs.readFileSync("backlog.json", "utf8"));
-  const activos = data.reglas.estados_activos;
-  const enCurso = data.features.filter(f => activos.includes(f.estado));
-  if (enCurso.length > 1) {
-    console.log("[FAIL]  Hay " + enCurso.length + " HU activas a la vez (máximo 1): " + enCurso.map(f => f.id).join(", "));
-    process.exit(1);
+  const { reglas } = JSON.parse(fs.readFileSync("backlog/_reglas.json", "utf8"));
+  const archivos = fs.readdirSync("backlog").filter(n => n.endsWith(".json") && n !== "_reglas.json");
+  const features = archivos.map(n => {
+    try { return { archivo: n, ...JSON.parse(fs.readFileSync("backlog/" + n, "utf8")) }; }
+    catch (e) { console.log("[FAIL]  backlog/" + n + " inválido: " + e.message); process.exit(1); }
+  });
+  for (const f of features) {
+    if (!f.id || !f.estado) { console.log("[FAIL]  HU sin id/estado: backlog/" + f.archivo); process.exit(1); }
+    if (f.archivo !== f.id + ".json") { console.log("[FAIL]  backlog/" + f.archivo + " tiene id " + f.id + " (el archivo tiene que llamarse <id>.json)"); process.exit(1); }
+    if (!reglas.valid_status.includes(f.estado)) { console.log("[FAIL]  Estado inválido en HU " + f.id + ": " + f.estado); process.exit(1); }
   }
-  const ids = new Set();
-  for (const f of data.features) {
-    if (!f.id || !f.estado) {
-      console.log("[FAIL]  HU sin id/estado: " + JSON.stringify(f));
-      process.exit(1);
-    }
-    if (ids.has(f.id)) {
-      console.log("[FAIL]  id de HU duplicado: " + f.id);
-      process.exit(1);
-    }
-    ids.add(f.id);
-    if (!data.reglas.valid_status.includes(f.estado)) {
-      console.log("[FAIL]  Estado inválido en HU " + f.id + ": " + f.estado);
+  const activas = features.filter(f => reglas.estados_activos.includes(f.estado));
+  const sinDueno = activas.filter(f => !f.responsable);
+  if (sinDueno.length) { console.log("[FAIL]  HU activas sin responsable: " + sinDueno.map(f => f.id).join(", ")); process.exit(1); }
+  const porPersona = {};
+  for (const f of activas) (porPersona[f.responsable] ??= []).push(f.id);
+  for (const [quien, ids] of Object.entries(porPersona)) {
+    if (ids.length > reglas.max_activas_por_responsable) {
+      console.log("[FAIL]  " + quien + " tiene " + ids.length + " HU activas a la vez (máximo " + reglas.max_activas_por_responsable + "): " + ids.join(", "));
       process.exit(1);
     }
   }
-  console.log("[OK]    backlog.json válido (" + data.features.length + " HU, " + enCurso.length + " activa)");
+  const resumen = Object.entries(porPersona).map(([q, ids]) => q + ": " + ids.join(",")).join("; ") || "ninguna activa";
+  console.log("[OK]    backlog/ válido (" + features.length + " HU; " + resumen + ")");
 } catch (e) {
-  console.log("[FAIL]  backlog.json inválido: " + e.message);
+  console.log("[FAIL]  backlog/ inválido: " + e.message);
   process.exit(1);
 }
 '

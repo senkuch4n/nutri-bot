@@ -93,16 +93,18 @@ modificar datos de negocio preexistentes.**
   (`prisma.$transaction` que termina tirando un error a propósito).
 - No correr `npm run db:seed` / `seed:demo` sin que el usuario lo pida.
 
-## Arnés de orquestación RDD/SDD (backlog.json + progress/)
+## Arnés de orquestación RDD/SDD (backlog/ + progress/ + Notion)
 
 Las HU nuevas pasan por un arnés con estado en disco, no en el chat, así una
 sesión nueva puede retomar donde quedó otra. Mapa:
 
 | Archivo / carpeta | Qué contiene | Quién lo escribe |
 |---|---|---|
-| `backlog.json` | Estado de cada HU (`no_afinada` → ... → `aprobada`/`bloqueada`), máx. 1 HU activa a la vez, tope de 2 reintentos de revisión | **Solo el orquestador** |
-| `progress/current.md` | Bitácora viva de la sesión en curso | Orquestador |
-| `progress/history.md` | Log append-only de HU cerradas | Orquestador, al cerrar cada HU |
+| `backlog/<id>.json` | Estado de cada HU (`no_afinada` → ... → `aprobada`/`bloqueada`), con su `responsable`. Un archivo por HU para no pisarse en los merges | **Solo el orquestador del responsable** |
+| `backlog/_reglas.json` | Estados válidos, máx. 1 HU activa **por responsable**, tope de 2 reintentos de revisión | — |
+| `progress/current-<usuario>.md` | Bitácora viva de cada persona (`<usuario>` = `git config user.name`) | Orquestador de esa persona |
+| `progress/history.md` | Log append-only de HU cerradas (`merge=union` en `.gitattributes`: los agregados de los dos se juntan solos) | Orquestador, al cerrar cada HU |
+| Tablero de Notion | Quién tiene cada HU, prioridad y dependencias. Es el **lock** para tomar una HU | Orquestador (vía MCP de Notion) y las personas |
 | `progress/impl_<id>.md` | Lo que hizo el implementador: archivos, verificación, bloqueos | Subagente `implementer` |
 | `progress/review_<id>.md` | Veredicto del reviewer | Subagente `reviewer` |
 | `docs/hu-<slug>.md` | RDD: Historia de Usuario completa (Contexto, Gherkin, Datos, UX, Fuera de alcance, Dudas) | Subagente `afinador`, validada por el usuario |
@@ -111,7 +113,7 @@ sesión nueva puede retomar donde quedó otra. Mapa:
 | `skills/CATALOGO.md` | Skills seleccionables por HU al lanzar el implementador | — |
 | `CHECKPOINTS.md` | Checklist objetiva del reviewer | — |
 | `.claude/agents/{afinador,architect,implementer,reviewer}.md` | Subagentes | — |
-| `ops/harness/verify.sh` | Verificación (typecheck/tests de los workspaces con cambios + chequeos de `backlog.json`). Corre en el hook `Stop` | — |
+| `ops/harness/verify.sh` | Verificación (typecheck/tests de los workspaces con cambios + chequeos de `backlog/`). Corre en el hook `Stop` | — |
 
 **Motor:** el arnés corre en modelos Claude. Afinador y architect van en
 **Opus**. El modelo del `implementer` y del `reviewer` (Fable, Opus o Sonnet)
@@ -127,20 +129,67 @@ referencia (`done -> progress/...`), nunca el contenido completo en el chat.
 un color o una config se hacen directo, sin backlog. HU + SDD + review son
 4 subagentes; no se gastan en un cambio de tres líneas.
 
-## Ramas de HU: encadenadas, no en paralelo
+## Dos personas en paralelo
 
-El estado del arnés vive en archivos versionados, así que dos ramas de HU
-abiertas a la vez fragmentan también el estado (`backlog.json`,
-`progress/history.md`), no solo el código. **Mientras haya una rama de HU sin
-mergear, la siguiente sale de esa rama**, no de `main`.
+El repo lo trabajan dos personas, cada una con su orquestador. Reglas:
 
-Ojo también con las migraciones de Prisma: dos ramas que crean migraciones a
-la vez generan carpetas con timestamps que se aplican en otro orden del
-esperado.
+- **Notion es el lock.** Base "Historias de usuario" (en "NutriBot — Desarrollo compartido"):
+  https://app.notion.com/p/57e6aaca24e3460782627b214ba9f848?v=023d5ffa27454127aa99d9225f152cce
+  (data source `collection://8f2aa2b0-bf72-4e53-82ae-a1e6da304c67`). Para tomar una HU hay que
+  asignarse como `Responsable` en Notion **antes** de lanzar el afinador. Si ya tiene otro
+  responsable, no se toca. El orquestador refleja cada cambio de estado de `backlog/<id>.json`
+  en la tarjeta de Notion.
+- **Personas** (`responsable` en `backlog/` = `git config user.name`):
+
+  | git (`responsable`) | Notion | Notion user id |
+  |---|---|---|
+  | `senkuch4n` | Joel Serrudo | `22240119-f3aa-47ba-8a5e-d2488f8e4c2d` |
+  | `imleticio` | leo martinez | `03f17f25-f17d-4de0-bfa3-3a1f83d96fb9` |
+
+- **Estados:** `backlog/<id>.json` tiene el estado fino; Notion, el grueso:
+
+  | Arnés (`backlog/<id>.json`) | Notion `Estado` |
+  |---|---|
+  | `no_afinada` | Backlog |
+  | `validada`, `arquitectura_lista` (sin arrancar) | Lista |
+  | `afinando`, `afinada_pendiente_validacion`, `en_arquitectura`, `implementando`, `rechazada_reintentando` | En curso |
+  | `en_revision` | En revisión |
+  | `aprobada` | Hecha |
+  | `bloqueada` | Bloqueada |
+
+  `Descartada` y las tarjetas `Tipo` = "Épica candidata"/"Tarea directa" viven solo en Notion.
+- **Cada uno toca solo sus HU:** su `backlog/<id>.json`, su `progress/current-<usuario>.md` y los
+  `docs/hu-*`, `Refactorizaciones/*`, `progress/{impl,review,recorrido}_<id>.md` de sus HU.
+- **IDs de HU:** se crean primero en Notion (la tarjeta reserva el número) y después en el repo,
+  para que los dos no usen el mismo `HU-0xx`.
+
+## Ramas: `develop` + `feat/*`, con PR
+
+- `develop` es la rama de integración. Cada HU (o tarea directa) sale de `develop` actualizado en
+  una rama `feat/<id>-<slug>` y vuelve por **PR a `develop`**, que revisa la otra persona antes
+  del merge. `develop` → `main` cuando se decide publicar.
+- Si una HU depende de otra que todavía no está en `develop`, se espera a que se mergee (lo marca
+  `Dependencias` en Notion). No se encadenan ramas de personas distintas.
+- HU chicas y merges frecuentes: antes de abrir el PR, `git rebase develop` (o merge de `develop`).
+
+**Migraciones de Prisma:** solo una HU que toque `schema.prisma` (`Workspaces` incluye
+`packages/db` en Notion) puede estar en `implementando` a la vez, en todo el equipo. Antes de
+crear la migración, traer `develop`. Si igual dos migraciones se cruzan, el segundo borra su
+carpeta de migración (que todavía no está en `develop`),
+hace rebase y la vuelve a generar.
+
+## Entorno local con dos personas
+
+- Cada uno tiene **su propia** Postgres en Docker. No hay base de desarrollo compartida. Las
+  reglas de datos de arriba valen igual.
+- **Solo una persona corre el bot con el número de WhatsApp real.** La otra prueba con los
+  scripts de simulación (`npm run test:confirm-flow --workspace apps/bot`) o con un número
+  propio y su propia carpeta de sesión de Baileys. Dos procesos con la misma sesión se pisan la
+  conexión.
 
 ## Git / flujo de trabajo
 
-- Nunca commitear directo a `main`: rama de feature → merge.
+- Nunca commitear directo a `main` ni a `develop`: rama `feat/*` → PR → merge.
 - Un commit no mezcla trabajo de tareas distintas: si el working tree tiene
   cambios ajenos, `git add` solo los archivos de la tarea actual.
 - Cada agente se identifica en el trailer del commit
