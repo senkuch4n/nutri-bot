@@ -1,0 +1,120 @@
+.panel-sidebar-slot {
+  display: none;
+}
+
+.panel-sidebar-workspace {
+  transform-origin: left center;
+}
+
+@media (min-width: 1024px) {
+  .panel-sidebar-layout {
+    --panel-sidebar-collapsed: 48px;
+    --panel-sidebar-expanded: 14rem;
+    height: 100dvh;
+    min-height: 0;
+    padding: 8px;
+    overflow: hidden;
+    background: hsl(var(--sidebar));
+  }
+
+  .panel-sidebar-workspace {
+    min-height: 0;
+    margin-top: 8px;
+    overflow-y: auto;
+    border: 1px solid hsl(var(--border));
+    border-radius: 24px;
+    background: hsl(var(--background));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  }
+
+  .panel-sidebar-slot {
+    display: block;
+    position: sticky;
+    top: 0;
+    height: 100%;
+    width: var(--panel-sidebar-expanded);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  .panel-sidebar-slot[data-collapsed="true"] {
+    width: var(--panel-sidebar-collapsed);
+  }
+
+  .panel-sidebar {
+    width: var(--panel-sidebar-expanded);
+    height: 100%;
+    border-right: 0;
+    clip-path: inset(0);
+    transition: clip-path 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .panel-sidebar[data-collapsed="true"] {
+    clip-path: inset(0 calc(var(--panel-sidebar-expanded) - var(--panel-sidebar-collapsed)) 0 0);
+  }
+
+  .panel-sidebar-header {
+    padding: 0 8px;
+    border-bottom: 0;
+  }
+
+  .panel-sidebar nav a,
+  .panel-sidebar > div:last-child > a,
+  .panel-sidebar button[type="submit"] {
+    position: relative;
+    padding-left: 8px;
+    justify-content: flex-start;
+  }
+
+  .panel-sidebar .panel-sidebar-label {
+    position: absolute;
+    left: 40px;
+    width: calc(var(--panel-sidebar-expanded) - 64px);
+    white-space: nowrap;
+  }
+
+  .panel-sidebar .panel-sidebar-label,
+  .panel-sidebar .panel-sidebar-detail {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 120ms ease-out 60ms, visibility 0s linear 60ms;
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-label,
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-detail {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 90ms ease, visibility 0s linear 90ms;
+  }
+
+  .panel-sidebar[data-collapsed="true"] nav a,
+  .panel-sidebar[data-collapsed="true"] > div:last-child > a,
+  .panel-sidebar[data-collapsed="true"] button[type="submit"] {
+    width: 32px;
+  }
+
+  .panel-sidebar .panel-sidebar-account {
+    position: relative;
+    min-height: 32px;
+    padding-top: 32px;
+  }
+
+  .panel-sidebar .panel-sidebar-signout {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  .panel-sidebar .panel-sidebar-email {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-sidebar,
+  .panel-sidebar .panel-sidebar-label,
+  .panel-sidebar .panel-sidebar-detail {
+    transition: none;
+  }
+}

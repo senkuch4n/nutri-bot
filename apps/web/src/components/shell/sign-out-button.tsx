@@ -13,10 +13,11 @@ export function SignOutButton() {
     >
       <button
         type="submit"
-        className={`${sidebarItemClass} group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0`}
+        aria-label="Cerrar sesión"
+        className={sidebarItemClass}
       >
         <LogOut className="h-4 w-4 shrink-0" aria-hidden />
-        <span className="group-data-[collapsed=true]/sidebar:sr-only">Cerrar sesión</span>
+        <span className="panel-sidebar-label" aria-hidden="true">Cerrar sesión</span>
       </button>
     </form>
   );

@@ -34,30 +34,27 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         >
           Saltar al contenido
         </a>
-        <div className="flex min-h-screen bg-background">
-          <AppSidebar
-            initialCollapsed={collapsed}
+        <AppSidebar
+          initialCollapsed={collapsed}
+          professionalName={professionalName}
+          email={email}
+          botStatus={botStatus}
+          account={account}
+        >
+          <MobileTopbar
             professionalName={professionalName}
             email={email}
             botStatus={botStatus}
             account={account}
           />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <MobileTopbar
-              professionalName={professionalName}
-              email={email}
-              botStatus={botStatus}
-              account={account}
-            />
-            <main
-              id="contenido"
-              tabIndex={-1}
-              className="mx-auto w-full max-w-screen-2xl px-6 py-8 focus-visible:outline-none lg:px-10"
-            >
-              {children}
-            </main>
-          </div>
-        </div>
+          <main
+            id="contenido"
+            tabIndex={-1}
+            className="mx-auto w-full max-w-screen-2xl px-6 py-8 focus-visible:outline-none lg:px-10"
+          >
+            {children}
+          </main>
+        </AppSidebar>
         <Toaster position="bottom-right" />
       </ConfirmProvider>
     </TooltipProvider>

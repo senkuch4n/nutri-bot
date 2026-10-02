@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Separator } from "@/components/primitives/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/primitives/tooltip";
 import type { BotShellStatus } from "@/lib/shell";
 import { cn } from "@/lib/utils";
@@ -15,7 +14,7 @@ const botStatusMeta: Record<BotShellStatus, { label: string; dot: string }> = {
   disconnected: { label: "WhatsApp desconectado", dot: "bg-destructive" },
 };
 
-/** Envuelve en Tooltip a la derecha solo cuando la barra está colapsada. */
+/** Keep the trigger mounted while labels fade; only show tooltips in rail mode. */
 function MaybeTooltip({
   collapsed,
   label,
@@ -25,11 +24,10 @@ function MaybeTooltip({
   label: string;
   children: ReactNode;
 }) {
-  if (!collapsed) return <>{children}</>;
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+      {collapsed ? <TooltipContent side="right">{label}</TooltipContent> : null}
     </Tooltip>
   );
 }
@@ -52,15 +50,15 @@ function SidebarLink({
         href={item.href}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
+        aria-label={item.label}
         className={cn(
           sidebarItemClass,
           active &&
             "bg-accent font-medium text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-foreground",
-          collapsed && "justify-center px-0",
         )}
       >
         <Icon className="h-4 w-4 shrink-0" aria-hidden />
-        <span className={cn("truncate", collapsed && "sr-only")}>{item.label}</span>
+        <span className="panel-sidebar-label truncate" aria-hidden="true">{item.label}</span>
       </Link>
     </MaybeTooltip>
   );
@@ -95,18 +93,15 @@ export function SidebarContent({
       <nav aria-label="Principal" className="flex-1 overflow-y-auto px-2 pb-2">
         {navGroups.map((group, i) => (
           <div key={group.label}>
-            {collapsed ? (
-              i > 0 ? <Separator className="my-2" /> : <div className="pt-2" />
-            ) : (
-              <p
-                className={cn(
-                  "px-2 pb-1 text-xs font-medium text-muted-foreground",
-                  i > 0 ? "pt-3" : "pt-2",
-                )}
-              >
-                {group.label}
-              </p>
-            )}
+            <p
+              className={cn(
+                "panel-sidebar-detail px-2 pb-1 text-xs font-medium text-muted-foreground",
+                i > 0 ? "pt-3" : "pt-2",
+              )}
+              aria-hidden={collapsed}
+            >
+              {group.label}
+            </p>
             <ul className="space-y-0.5">
               {group.items.map((item) => (
                 <li key={item.href}>
@@ -134,34 +129,31 @@ export function SidebarContent({
         <MaybeTooltip collapsed={collapsed} label={status.label}>
           <Link
             href="/ajustes/whatsapp"
+            aria-label={status.label}
             onClick={onNavigate}
-            className={cn(
-              "flex h-7 items-center gap-2.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              collapsed && "justify-center px-0",
-            )}
+            className="flex h-7 items-center gap-2.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="flex h-4 w-4 shrink-0 items-center justify-center">
               <span className={cn("h-2 w-2 rounded-full", status.dot)} aria-hidden />
             </span>
-            <span className={cn("truncate", collapsed && "sr-only")}>{status.label}</span>
+            <span className="panel-sidebar-label truncate" aria-hidden="true">{status.label}</span>
           </Link>
         </MaybeTooltip>
 
-        {collapsed ? (
-          <MaybeTooltip collapsed label="Cerrar sesión">
-            {account}
-          </MaybeTooltip>
-        ) : (
-          // Cuenta en una sola fila: email (truncado, con title) + botón "Cerrar sesión".
-          <div className="flex items-center gap-1">
-            {email ? (
-              <p className="min-w-0 flex-1 truncate px-2 text-xs text-muted-foreground" title={email}>
-                {email}
-              </p>
-            ) : null}
-            <div className={cn("min-w-0", email ? "shrink-0" : "flex-1")}>{account}</div>
+        <div className="panel-sidebar-account flex items-center gap-1">
+          {email ? (
+            <p
+              className="panel-sidebar-email panel-sidebar-detail min-w-0 flex-1 truncate px-2 text-xs text-muted-foreground"
+              title={email}
+              aria-hidden={collapsed}
+            >
+              {email}
+            </p>
+          ) : null}
+          <div className={cn("panel-sidebar-signout min-w-0", email ? "shrink-0" : "flex-1")}>
+            <MaybeTooltip collapsed={collapsed} label="Cerrar sesión">{account}</MaybeTooltip>
           </div>
-        )}
+        </div>
       </div>
     </>
   );
