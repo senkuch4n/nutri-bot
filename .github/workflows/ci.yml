@@ -1,0 +1,27 @@
+# Chequeo de PRs: corre igual con cualquier agente (Claude Code, Codex, gentle-ai) o a mano.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    env:
+      # prisma generate no se conecta, pero el schema lee la variable.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - name: Arnés (backlog/ y archivos base)
+        run: ./ops/harness/verify.sh
+      - run: npm run typecheck
+      - run: npm run test

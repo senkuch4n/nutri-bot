@@ -25,7 +25,9 @@ for f in AGENTS.md CLAUDE.md backlog/_reglas.json progress/history.md CHECKPOINT
   if [ -f "$f" ]; then ok "Existe $f"; else fail "Falta archivo base: $f"; fi
 done
 YO="$(git config user.name)"
-if [ -f "progress/current-$YO.md" ]; then
+if [ -z "$YO" ]; then
+  warn "git config user.name vacío (normal en CI): no se chequea la bitácora personal"
+elif [ -f "progress/current-$YO.md" ]; then
   ok "Existe progress/current-$YO.md"
 else
   warn "No existe progress/current-$YO.md (bitácora de $YO): crearla al arrancar la sesión"
@@ -102,8 +104,8 @@ else
   rm -f /tmp/nutribot_tsc_err.log
 fi
 
-if echo "$CHANGED" | grep -q '^packages/core/'; then
-  if npm run test >/dev/null 2>&1; then ok "packages/core: tests OK"; else fail "packages/core: tests fallando (npm run test)"; fi
+if [ -n "$WS_TO_CHECK" ]; then
+  if npm run test >/dev/null 2>&1; then ok "tests OK (vitest en todo el monorepo)"; else fail "tests fallando (npm run test)"; fi
 fi
 
 echo ""
