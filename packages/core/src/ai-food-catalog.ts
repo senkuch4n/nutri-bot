@@ -1,10 +1,16 @@
-import { FOOD_GROUP_SHORT_LABELS, type FoodGroupKey } from "./food-groups";
+import { FOOD_GROUP_SHORT_LABELS, type FoodGroupKey, type FoodSourceKey } from "./food-groups";
 
 export interface AiCatalogFood {
   id: string;
   name: string;
   group: FoodGroupKey;
   kcalPer100: number;
+}
+
+/** AI-only preference. Caller supplies active foods; manual selection stays unfiltered. */
+export function selectAiCatalogFoods<T extends { source: FoodSourceKey }>(foods: readonly T[]): readonly T[] {
+  const saraFoods = foods.filter((food) => food.source === "SARA2");
+  return saraFoods.length > 0 ? saraFoods : foods;
 }
 
 export const AI_CATALOG_MAX_CHARS = 60_000;

@@ -15,6 +15,7 @@ import {
   buildAiFoodCatalog,
   computeAgeYears,
   nutritionGoalLabel,
+  selectAiCatalogFoods,
   sexLabel,
 } from "@nutri-bot/core";
 import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
@@ -84,7 +85,7 @@ export async function generateAiPlanAction(
   // Formato compacto "ref|nombre|grupo|kcal" (HU-005, D10): con ~1000 alimentos el JSON con ids
   // no entra razonablemente en el pedido. La IA responde con `ref`; acá se traduce al id.
   const catalog = buildAiFoodCatalog(
-    foods.map((f) => ({ id: f.id, name: f.name, group: f.group, kcalPer100: Number(f.kcalPer100) })),
+    selectAiCatalogFoods(foods).map((f) => ({ id: f.id, name: f.name, group: f.group, kcalPer100: Number(f.kcalPer100) })),
   );
 
   const act = activityLevelOption(p?.activityLevel ?? null);

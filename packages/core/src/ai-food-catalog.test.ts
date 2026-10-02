@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAiFoodCatalog, type AiCatalogFood } from "./ai-food-catalog";
+import { buildAiFoodCatalog, selectAiCatalogFoods, type AiCatalogFood } from "./ai-food-catalog";
+import type { FoodSourceKey } from "./food-groups";
 
 const foods: AiCatalogFood[] = [
   { id: "a1", name: "Arroz blanco, hervido", group: "LEGUMBRES_CEREALES", kcalPer100: 125.8 },
@@ -7,6 +8,52 @@ const foods: AiCatalogFood[] = [
   { id: "c3", name: "Caramelos", group: "GOLOSINAS_Y_CHOCOLATES", kcalPer100: 390 },
   { id: "d4", name: "Limón", group: "FRUTAS", kcalPer100: 29.5 },
 ];
+
+describe("AI-only food source selection", () => {
+  const mixed: (AiCatalogFood & { source: FoodSourceKey })[] = foods.map((food, index) => ({
+    ...food, source: index % 2 === 0 ? "PROPIO" : "SARA2",
+  }));
+
+  it("uses only SARA2 when both sources are available, preserving order and refs", () => {
+    const selected = selectAiCatalogFoods(mixed);
+    const catalog = buildAiFoodCatalog(selected);
+    expect(selected.map((food) => food.source)).toEqual(["SARA2", "SARA2"]);
+    expect(catalog.idsByRef).toEqual(["b2", "d4"]);
+    expect(catalog.text.split("\n")).toEqual([
+      "1|Hamburguesa / doble|Comidas rápidas|250",
+      "2|Limón|Frutas|30",
+    ]);
+    expect(catalog.idsByRef[2 - 1]).toBe("d4");
+  });
+
+  it("falls back to all supplied foods when SARA2 is unavailable", () => {
+    const own = mixed.filter((food) => food.source === "PROPIO");
+    const selected = selectAiCatalogFoods(own);
+    expect(selected).toEqual(own);
+    const catalog = buildAiFoodCatalog(selected);
+    expect(catalog.idsByRef).toEqual(["a1", "c3"]);
+    expect(catalog.idsByRef[2 - 1]).toBe("c3");
+  });
+
+  it("preserves ref resolution when catalog size exclusions renumber SARA2 foods", () => {
+    const catalog = buildAiFoodCatalog(selectAiCatalogFoods(mixed), { maxChars: 30 });
+    expect(catalog.excludedGroups).toEqual(["COMIDAS_RAPIDAS"]);
+    expect(catalog.text).toBe("1|Limón|Frutas|30");
+    expect(catalog.idsByRef[1 - 1]).toBe("d4");
+  });
+
+  it("does not modify the mixed food list retained for manual selection", () => {
+    const original = mixed.map((food) => ({ ...food }));
+    const manualFoods = Object.freeze(mixed.map((food) => Object.freeze({ ...food })));
+    selectAiCatalogFoods(manualFoods);
+    expect(manualFoods).toEqual(original);
+    expect(manualFoods.map((food) => food.id)).toEqual(["a1", "b2", "c3", "d4"]);
+  });
+
+  it("keeps an empty input empty", () => {
+    expect(selectAiCatalogFoods([])).toEqual([]);
+  });
+});
 
 describe("catálogo compacto para la IA", () => {
   it("una línea por alimento con ref, nombre, grupo corto y kcal enteras", () => {
