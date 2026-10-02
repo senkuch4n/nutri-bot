@@ -11,7 +11,7 @@ El detalle funcional está en `README.md`.
 |---|---|
 | `apps/web` | Next.js 15 (App Router) + React 19 + Tailwind. Panel de la profesional (`(panel)`) y portal del paciente (`(portal)`). Login con Google (Auth.js). |
 | `apps/bot` | Proceso Node (tsx): Baileys, cola de envíos (`OutboundMessage`), crons de recordatorios/confirmación, sync con Google Calendar. |
-| `packages/core` | Lógica de dominio **pura** (disponibilidad, formato, textos, antropometría, nutrición). Único workspace con tests (vitest). |
+| `packages/core` | Lógica de dominio **pura** (disponibilidad, formato, textos, antropometría, nutrición). El lugar natural para los tests (vitest); también hay tests con mocks en web, bot y db. |
 | `packages/db` | Prisma: `prisma/schema.prisma`, migraciones, seeds, y `domain/` con operaciones compartidas por web y bot. |
 
 - **La base de datos es la única fuente de verdad.** El bot y el panel no se
@@ -26,7 +26,7 @@ El detalle funcional está en `README.md`.
 npm run dev                 # panel en :3000
 npm run dev:bot             # bot
 npm run typecheck           # tsc en todos los workspaces
-npm run test                # vitest de packages/core
+npm run test                # vitest en todo el monorepo (sin base ni red: todo mockeado)
 npm run db:generate         # regenerar cliente Prisma (después de tocar el schema)
 npm run test:confirm-flow --workspace apps/bot   # simula el flujo sí/no sin WhatsApp real
 ```
@@ -162,6 +162,25 @@ El repo lo trabajan dos personas, cada una con su orquestador. Reglas:
   `docs/hu-*`, `Refactorizaciones/*`, `progress/{impl,review,recorrido}_<id>.md` de sus HU.
 - **IDs de HU:** se crean primero en Notion (la tarjeta reserva el número) y después en el repo,
   para que los dos no usen el mismo `HU-0xx`.
+
+## Si usás otro agente (Codex, gentle-ai) o trabajás a mano
+
+El orquestador, los subagentes (`.claude/agents/`) y el hook `Stop` son de Claude Code. Con otra
+herramienta no corren, así que esto es lo **obligatorio para todos**, sin importar el agente:
+
+1. Asignarse la HU en Notion antes de empezar (y reservar el ID ahí si es nueva).
+2. Crear o actualizar `backlog/<id>.json` con `responsable` = tu `git config user.name` y el
+   `estado` que corresponda; reflejar el estado en la tarjeta de Notion (tabla de arriba).
+3. Rama `feat/<id>-<slug>` desde `develop`, PR a `develop` revisado por la otra persona.
+4. Las reglas de este archivo valen igual: migraciones, datos de la base de desarrollo,
+   WhatsApp sin mensajes reales, un commit por tarea.
+5. El PR tiene que pasar el CI (`.github/workflows/ci.yml`: `verify.sh`, `typecheck`, `test`).
+   Es el único control que corre con cualquier herramienta.
+
+Lo propio del orquestador de Claude (afinador → architect → implementer → reviewer, con
+`docs/hu-*.md`, `Refactorizaciones/*.md` y `progress/review_*.md`) es el flujo completo de una
+HU formal. Si una HU se hace con otra herramienta, el PR tiene que decir qué documentos la
+respaldan.
 
 ## Ramas: `develop` + `feat/*`, con PR
 
