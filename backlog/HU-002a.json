@@ -1,0 +1,31 @@
+{
+  "id": "HU-002a",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-ui-fundaciones",
+  "titulo": "Rediseño UI (1/4): fundaciones y shell (tokens, shadcn/ui, sidebar, layouts, login, estados)",
+  "origen": "HU-002 partida (D8)",
+  "estado": "aprobada",
+  "rama": "hu-002-rediseno-ui-empresarial",
+  "notas": "HU compartida con 002b-d; esta SDD cubre solo la fila HU-002a de la partición.",
+  "hu": "docs/hu-rediseno-ui-empresarial.md",
+  "intentos_revision": 1,
+  "sdd": "Refactorizaciones/rediseno-ui-fundaciones.md",
+  "skills_sdd": [
+    "refactor",
+    "ui"
+  ],
+  "modelo": "fable",
+  "skills": [
+    "ui-ux-pro-max",
+    "ui-styling",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "modelo_ronda2": "fable",
+  "skills_ronda2": [
+    "web-design-guidelines",
+    "ui-ux-pro-max",
+    "ui-styling"
+  ],
+  "review": "progress/review_HU-002a.md"
+}

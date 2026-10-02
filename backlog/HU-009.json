@@ -1,0 +1,12 @@
+{
+  "id": "HU-009",
+  "responsable": "imleticio",
+  "slug": "mercadopago-sandbox-seña",
+  "titulo": "Seña con Mercado Pago funcionando (sandbox primero): conciliación por consulta periódica + webhook con firma",
+  "origen": "Épicas 4 y 51; pedido del usuario 2026-09-24",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": null,
+  "sdd": null,
+  "notas": "Implementación directa solicitada: webhook público solo en /api/webhooks/mercadopago, firma HMAC oficial, notification URL independiente, conciliación transaccional compartida y cron cada minuto. Tests aislados sin red/base/WhatsApp y runner sandbox con fixtures propios. Sin migración ni cambios en datos preexistentes. Pendiente validación sandbox por el usuario; activación de señas en servicios reales queda a su cargo."
+}

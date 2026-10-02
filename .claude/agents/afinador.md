@@ -36,7 +36,7 @@ escritas para que el orquestador se las traslade.
      el `architect`
    - **Dudas para validar con el usuario**: cada ambigüedad real, numerada
      (D1, D2…). No inventes la respuesta: si algo no está claro, es una duda.
-5. No toques `backlog.json`: solo el orquestador cambia estados.
+5. No toques `backlog/`: solo el orquestador cambia estados.
 
 ## Reglas duras
 

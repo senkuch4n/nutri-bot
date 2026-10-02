@@ -1,0 +1,26 @@
+{
+  "id": "HU-007",
+  "responsable": "senkuch4n",
+  "slug": "informe-antropometrico",
+  "titulo": "Informe antropométrico automático en PDF (actual vs anterior)",
+  "origen": "Épica 46",
+  "notas": "Depende de HU-006.",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-informe-antropometrico.md",
+  "sdd": "Refactorizaciones/informe-antropometrico.md",
+  "rama": "hu-007-informe-antropometrico",
+  "skills_sdd": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "ui-ux-pro-max",
+    "ui-styling",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-007.md"
+}

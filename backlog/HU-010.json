@@ -1,0 +1,13 @@
+{
+  "id": "HU-010",
+  "responsable": "imleticio",
+  "slug": "micronutrientes-recomendaciones",
+  "titulo": "Micronutrientes del plan contra recomendaciones nutricionales",
+  "origen": "Épica 26 (EP-026)",
+  "estado": "implementando",
+  "intentos_revision": 0,
+  "hu": null,
+  "sdd": null,
+  "rama": "feat/hu-010-recomen-micronut",
+  "notas": "Cargada desde Notion (En curso, Leo) al pasar el arnés a dos personas. Depende de HU-001 y HU-005. Estado fino a confirmar por imleticio."
+}

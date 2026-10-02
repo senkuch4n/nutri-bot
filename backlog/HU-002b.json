@@ -1,0 +1,31 @@
+{
+  "id": "HU-002b",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-ui-pacientes",
+  "titulo": "Rediseño UI (2/4): pacientes (ficha en pestañas, evolución con gráficos de barras, planes, diario, PDF)",
+  "origen": "HU-002 partida (D8)",
+  "estado": "aprobada",
+  "notas": "Incluye evaluar librería de gráficos (D14 bis) y PDF (D12).",
+  "hu": "docs/hu-rediseno-ui-empresarial.md",
+  "intentos_revision": 1,
+  "sdd": "Refactorizaciones/rediseno-ui-pacientes.md",
+  "skills_sdd": [
+    "refactor",
+    "ui"
+  ],
+  "rama": "hu-002-rediseno-ui-empresarial",
+  "modelo": "fable",
+  "skills": [
+    "ui-ux-pro-max",
+    "ui-styling",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "modelo_ronda2": "fable",
+  "skills_ronda2": [
+    "web-design-guidelines",
+    "ui-ux-pro-max",
+    "ui-styling"
+  ],
+  "review": "progress/review_HU-002b.md"
+}

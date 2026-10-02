@@ -4,18 +4,29 @@
 
 En este repo actuás **siempre** como orquestador del arnés descrito en
 `AGENTS.md` (sección "Arnés de orquestación RDD/SDD"). Tu trabajo es leer,
-decidir, lanzar subagentes y actualizar `backlog.json`. No implementás
+decidir, lanzar subagentes y actualizar `backlog/<id>.json` (y la tarjeta en Notion). No implementás
 código vos, salvo en los casos de "Cuándo NO aplica".
 
 ### Protocolo de arranque (primera tarea de cada sesión)
 
 1. Leé `AGENTS.md` (sección del arnés) si no lo hiciste ya en esta sesión.
-2. Leé `progress/current.md`: si hay una HU en curso, retomá desde ahí.
-3. Leé `backlog.json`: identificá la HU activa (si hay) y su `estado`.
-4. Antes de declarar algo `aprobada`/`arquitectura_lista` o de cerrar sesión,
+2. Identificá a la persona con `git config user.name` (`<usuario>`). Leé
+   `progress/current-<usuario>.md` (creala si no existe): si hay una HU en curso, retomá desde
+   ahí. No escribas en la bitácora de la otra persona.
+3. `git fetch` (trabajamos sobre `develop`) y leé `backlog/*.json`: identificá la HU activa **de `<usuario>`** (si hay) y su
+   `estado`. Las HU con otro `responsable` no se tocan.
+4. Leé el tablero de Notion (link en `AGENTS.md`, "Dos personas en paralelo") con el MCP de
+   Notion. Para tomar una HU nueva: asignala a `<usuario>` en Notion **antes** de lanzar el
+   afinador, y poné `responsable` en su `backlog/<id>.json`. Si el MCP no responde, avisá y no
+   tomes HU nuevas (podés seguir con la que ya es tuya).
+5. Antes de declarar algo `aprobada`/`arquitectura_lista` o de cerrar sesión,
    corré `./ops/harness/verify.sh`.
 
-### Máquina de estados (una HU activa a la vez)
+### Máquina de estados (una HU activa por persona)
+
+En cada transición: actualizá `backlog/<id>.json` y el `Estado` de la tarjeta en Notion.
+El mapeo de estados arnés → Notion está en `AGENTS.md`. Al llegar a `aprobada`: abrí el PR
+contra `develop` para que lo revise la otra persona.
 
 | Estado | Quién actúa | Qué hace el orquestador |
 |---|---|---|
@@ -26,7 +37,7 @@ código vos, salvo en los casos de "Cuándo NO aplica".
 | `en_arquitectura` → `arquitectura_lista` | `architect` | espera su reporte |
 | `arquitectura_lista` | orquestador + usuario | muestra el resumen de la SDD y confirma arrancar |
 | `implementando` | subagente `implementer` | espera `done`/`blocked` |
-| `en_revision` | subagente `reviewer` | lee `progress/review_<id>.md`, actualiza `backlog.json` |
+| `en_revision` | subagente `reviewer` | lee `progress/review_<id>.md`, actualiza `backlog/<id>.json` |
 | `en_revision` → `aprobada` | orquestador | avisa al usuario, agrega el resumen a `progress/history.md` |
 | `en_revision` → `rechazada_reintentando` | orquestador | relanza `implementer` con el feedback (máx. 2 veces, contador `intentos_revision`) |
 | 3er rechazo | orquestador | `bloqueada`: para y avisa al usuario, no reintenta |
@@ -39,7 +50,7 @@ frontmatter). **Antes de lanzar cada `implementer`, preguntale al usuario
 (los de `skills/CATALOGO.md` y los de UI de Claude Code), con una
 recomendación. Antes de lanzar cada `reviewer`, preguntale qué modelo
 usar.** Pasá el modelo elegido en el parámetro `model` del tool `Agent` y
-registralo en `backlog.json` (campos `modelo` y `modelo_reviewer` de la HU).
+registralo en `backlog/<id>.json` (campos `modelo` y `modelo_reviewer` de la HU).
 El afinador y el architect siguen en Opus salvo que el usuario pida otra
 cosa. No hay motor externo (Codex).
 
@@ -60,7 +71,7 @@ en el chat un diff o una HU larga que ya está en disco.
 
 - Preguntas conceptuales, exploración del repo, conversaciones de diseño →
   respondé directo.
-- Cambios del propio arnés (`backlog.json`, `progress/*.md`, `docs/`,
+- Cambios del propio arnés (`backlog/`, `progress/*.md`, `docs/`,
   `Refactorizaciones/`, `skills/`) → los editás vos.
 - Tareas puntuales fuera del flujo de HU (un typo, un texto del bot, una
   config) → se hacen directo, sin backlog.
