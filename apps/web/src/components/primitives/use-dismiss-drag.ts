@@ -1,34 +1,25 @@
 "use client";
 
-import { useCallback, useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { animate, useMotionValue, type MotionValue } from "motion/react";
-import { dragOffset, fades, gestureIntent, resolveDismiss, springs } from "@/lib/motion";
-
-type Side = "left" | "right" | "top" | "bottom";
-
-type DragState = {
-  pointerId: number;
-  startAxis: number;
-  startCross: number;
-  startValue: number;
-  size: number;
-  captured: boolean;
-};
+import { createDismissDrag, type DismissSide } from "@/lib/dismiss-drag";
+import { fades, springs } from "@/lib/motion";
 
 const IGNORE = "input, textarea, select, [contenteditable], [contenteditable=''], [data-sheet-drag-ignore]";
 
 /**
  * Arrastrar para cerrar un sheet (HU-017a §9.8). `value` es el desplazamiento en px **hacia el borde
- * por donde se cierra** (0 = abierto, `size` = afuera). Sigue al dedo 1:1 respetando el punto de
- * agarre (§2), toma el valor presente si el sheet estaba animando (§3), espera 10 px de histéresis y
- * bloquea el eje (§10), resiste hacia adentro con rubber-band (§9) y al soltar decide con la velocidad
- * y la proyección de momentum (§5, §6).
+ * por donde se cierra** (0 = abierto, `size` = afuera). La lógica del gesto vive en
+ * `lib/dismiss-drag.ts`: sigue al dedo 1:1 respetando el punto de agarre (§2), toma el valor presente
+ * recién cuando el gesto se captura (§3; un toque o un scroll no frenan la entrada ni la salida),
+ * espera 10 px de histéresis y bloquea el eje (§10), resiste hacia adentro con rubber-band (§9) y al
+ * soltar decide con la velocidad y la proyección de momentum (§5, §6).
  *
- * Con mouse solo se arrastra desde el handle (sheets inferiores): en los laterales el mouse cierra con
- * la X, Esc o el clic afuera (§16 Flexibility; no rompe la selección de texto en formularios).
+ * `enabled` tiene que ser `false` mientras el sheet sale: los gestos que empiecen ahí se ignoran.
+ * Con mouse solo se arrastra desde el handle (sheets inferiores).
  */
 export function useDismissDrag(opts: {
-  side: Side;
+  side: DismissSide;
   enabled: boolean;
   onDismiss: (velocity: number) => void;
   handleOnly: boolean;
@@ -44,78 +35,55 @@ export function useDismissDrag(opts: {
   };
   style: { touchAction: string };
 } {
-  const { side, enabled, onDismiss, handleOnly, reducedMotion = false } = opts;
+  const { side, handleOnly } = opts;
   const value = useMotionValue(0);
-  const drag = useRef<DragState | null>(null);
+  // Lo que cambia entre renders se lee por ref: el controlador se crea una sola vez por lado.
+  const latest = useRef(opts);
+  latest.current = opts;
   const horizontal = side === "left" || side === "right";
-  // +1 si el eje del puntero crece hacia el borde de cierre.
-  const sign = side === "right" || side === "bottom" ? 1 : -1;
 
-  const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
-
-  const finish = useCallback(
-    (e: ReactPointerEvent<HTMLElement>, cancelled: boolean) => {
-      const state = drag.current;
-      drag.current = null;
-      if (!state?.captured) return;
-      if (e.currentTarget.hasPointerCapture?.(state.pointerId)) e.currentTarget.releasePointerCapture(state.pointerId);
-      const velocity = cancelled ? 0 : value.getVelocity();
-      const decision = resolveDismiss({ offset: value.get(), velocity, size: state.size });
-      if (decision === "dismiss") onDismissRef.current(velocity);
-      else animate(value, 0, reducedMotion ? fades.fast : { ...springs.fling, velocity });
-    },
-    [value, reducedMotion],
-  );
-
-  const handlers = useMemo(
-    () => ({
+  const handlers = useMemo(() => {
+    const drag = createDismissDrag({
+      side,
+      value,
+      handleOnly,
+      isEnabled: () => latest.current.enabled,
+      onDismiss: (velocity) => latest.current.onDismiss(velocity),
+      onRestore: (velocity) => {
+        animate(value, 0, latest.current.reducedMotion ? fades.fast : { ...springs.fling, velocity });
+      },
+    });
+    const release = (e: ReactPointerEvent<HTMLElement>) => {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    };
+    return {
       onPointerDown(e: ReactPointerEvent<HTMLElement>) {
-        if (!enabled || e.button !== 0) return;
         const target = e.target as Element;
-        const fromHandle = Boolean(target.closest("[data-sheet-handle]"));
-        if (handleOnly && !fromHandle) return;
-        if (e.pointerType === "mouse" && !fromHandle) return;
-        if (target.closest(IGNORE)) return;
-        value.stop(); // agarrar en vuelo
         const rect = e.currentTarget.getBoundingClientRect();
-        drag.current = {
+        drag.down({
           pointerId: e.pointerId,
-          startAxis: horizontal ? e.clientX : e.clientY,
-          startCross: horizontal ? e.clientY : e.clientX,
-          startValue: value.get(),
+          button: e.button,
+          pointerType: e.pointerType,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          fromHandle: Boolean(target.closest("[data-sheet-handle]")),
+          ignored: Boolean(target.closest(IGNORE)),
           size: horizontal ? rect.width : rect.height,
-          captured: false,
-        };
+        });
       },
       onPointerMove(e: ReactPointerEvent<HTMLElement>) {
-        const state = drag.current;
-        if (!state || e.pointerId !== state.pointerId) return;
-        const axis = horizontal ? e.clientX : e.clientY;
-        const cross = horizontal ? e.clientY : e.clientX;
-        if (!state.captured) {
-          const intent = gestureIntent((axis - state.startAxis) * sign, cross - state.startCross);
-          if (intent === null) return;
-          if (intent === "cross") {
-            drag.current = null; // gana el scroll
-            return;
-          }
-          state.captured = true;
-          state.startAxis = axis; // desde acá 1:1, sin salto por la histéresis
+        if (drag.move({ pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY }) === "capture") {
           e.currentTarget.setPointerCapture(e.pointerId);
         }
-        const raw = state.startValue + (axis - state.startAxis) * sign;
-        value.set(dragOffset(raw, state.size));
       },
       onPointerUp(e: ReactPointerEvent<HTMLElement>) {
-        finish(e, false);
+        if (drag.up({ pointerId: e.pointerId }, false)) release(e);
       },
       onPointerCancel(e: ReactPointerEvent<HTMLElement>) {
-        finish(e, true);
+        if (drag.up({ pointerId: e.pointerId }, true)) release(e);
       },
-    }),
-    [enabled, handleOnly, horizontal, sign, value, finish],
-  );
+    };
+  }, [side, handleOnly, horizontal, value]);
 
   return { value, handlers, style: { touchAction: horizontal ? "pan-y" : "auto" } };
 }

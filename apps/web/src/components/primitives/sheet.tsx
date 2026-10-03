@@ -129,7 +129,8 @@ const SheetPanel = React.forwardRef<
 
   const { value: offset, handlers, style: dragStyle } = useDismissDrag({
     side,
-    enabled: dismissOnDrag,
+    // Mientras sale no se arrastra: un toque no puede frenar la salida (review HU-017a, punto 1).
+    enabled: dismissOnDrag && isPresent,
     handleOnly: side === "bottom" || side === "top",
     reducedMotion: reduced,
     onDismiss: (velocity) => {
