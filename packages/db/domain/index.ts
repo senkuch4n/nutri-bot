@@ -10,6 +10,7 @@ export * from "./foods";
 export * from "./foodImport";
 export * from "./nutritionPlans";
 export * from "./planTemplates";
+export * from "./weeklyMenu";
 export * from "./professionalAssets";
 export * from "./payments";
 export * from "./mercadopago-signature";
