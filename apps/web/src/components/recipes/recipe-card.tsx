@@ -33,6 +33,9 @@ export function RecipeCard({
           <h3 className="line-clamp-2 text-headline group-hover/card:underline group-hover/card:underline-offset-2">
             {card.name}
           </h3>
+          {card.status === "DRAFT" && card.importLabel ? (
+            <p className="text-footnote text-muted-foreground">{card.importLabel}</p>
+          ) : null}
           {card.portionHousehold ? (
             <p className="text-subheadline text-muted-foreground">1 porción: {card.portionHousehold}</p>
           ) : null}

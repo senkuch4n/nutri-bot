@@ -3,7 +3,11 @@ import type { RecipeCard } from "@nutri-bot/db/domain";
 // HU-018a: tarjeta de receta lista para dibujar (panel o portal). La URL de la foto depende de dónde
 // se muestre: el portal tiene su propia ruta, bajo /portal (la cookie del paciente vive ahí).
 
-export type RecipeCardView = RecipeCard & { photoUrl: string | null };
+export type RecipeCardView = RecipeCard & {
+  photoUrl: string | null;
+  /** Solo borradores de la carga asistida: "Almuerzos y cenas 2 · pág. 7" (lo arma el server). */
+  importLabel?: string | null;
+};
 
 export function recipePhotoUrl(
   photoId: string,

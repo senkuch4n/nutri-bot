@@ -1,99 +1,33 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
-import {
-  RECIPE_MOMENTS,
-  RECIPE_TAGS,
-  RECIPE_TEXT,
-  RECIPE_TYPES,
-  recipePhotoSizeError,
-  validateRecipePhoto,
-  type RecipePublishIssue,
-} from "@nutri-bot/core";
+import { RECIPE_TEXT } from "@nutri-bot/core";
 import {
   RecipeNotFoundError,
   RecipeNotPublishableError,
   archiveRecipe,
   createRecipe,
-  removeRecipePhoto,
-  setRecipePhoto,
-  setRecipePhotoCredit,
   unarchiveRecipe,
   updateRecipe,
-  type RecipeInput,
 } from "@nutri-bot/db/domain";
-import { processRecipePhoto } from "@nutri-bot/db/media";
-import { auth } from "@/auth";
 import { errorCode } from "@/lib/error-code";
+import {
+  NOT_FOUND,
+  INVALID_PAYLOAD,
+  SAVE_ERROR,
+  applyPhotoIntent,
+  hasPanelSession,
+  parsePayload,
+  readPhotoIntent,
+  toRecipeInput,
+  type RecipeActionState,
+} from "./recipe-save";
 
 // HU-018a: guardar, archivar y volver a publicar recetas. Los errores se loguean SOLO con
-// errorCode(err): el payload puede llevar los bytes de la foto.
+// errorCode(err): el payload puede llevar los bytes de la foto. El esquema del payload y la foto
+// viven en recipe-save.ts (los comparte la revisión de borradores, 018a-2).
 
-export type RecipeActionState =
-  | { ok: true; id: string }
-  | { ok: false; error?: string; issues?: RecipePublishIssue[]; photoError?: string; id?: string };
-
-const SAVE_ERROR = "No se pudo guardar la receta. Probá de nuevo.";
-const INVALID_PAYLOAD = "Revisá los datos de la receta.";
-const NOT_FOUND = "La receta ya no existe.";
-
-const text = (max: number) => z.string().max(max).nullable();
-const amount = (max: number) => z.number().finite().min(0).max(max).nullable();
-
-const payloadSchema = z.object({
-  id: z.string().min(1).max(64).optional(),
-  name: z.string().max(200),
-  type: z.enum(RECIPE_TYPES).nullable(),
-  moments: z.array(z.enum(RECIPE_MOMENTS)).max(RECIPE_MOMENTS.length),
-  tags: z.array(z.enum(RECIPE_TAGS)).max(RECIPE_TAGS.length),
-  // Topes de las columnas (DECIMAL(5,1) y DECIMAL(7,2)): un valor más grande daría un error genérico de la base.
-  yieldPortions: z.number().finite().min(-1).max(9999).nullable(),
-  portionHousehold: text(200),
-  portionGrams: amount(99999),
-  preparation: text(20000),
-  tips: text(5000),
-  sourceName: text(300),
-  published: z
-    .object({
-      portionText: text(200),
-      kcal: amount(99999),
-      protein: amount(9999),
-      carbs: amount(9999),
-      fat: amount(9999),
-      fiber: amount(9999),
-    })
-    .nullable(),
-  ingredients: z
-    .array(
-      z.object({
-        foodId: z.string().min(1).max(64).nullable(),
-        label: text(200),
-        grams: z.number().finite().min(-1).max(99999).nullable(),
-        noQuantity: z.boolean(),
-        household: text(120),
-        rawText: text(2000),
-      }),
-    )
-    .max(100),
-});
-
-export type RecipeFormPayload = z.infer<typeof payloadSchema>;
-
-async function hasPanelSession(): Promise<boolean> {
-  const session = await auth();
-  return Boolean(session?.user);
-}
-
-function parsePayload(raw: FormDataEntryValue | null): RecipeFormPayload | null {
-  if (typeof raw !== "string") return null;
-  try {
-    const parsed = payloadSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
+export type { RecipeActionState, RecipeFormPayload } from "./recipe-save";
 
 function revalidateRecipe(id: string) {
   revalidatePath("/recetas");
@@ -113,21 +47,10 @@ export async function saveRecipeAction(formData: FormData): Promise<RecipeAction
   if (!payload) return { ok: false, error: INVALID_PAYLOAD };
 
   // Foto: se valida antes de guardar la receta para no dejar a medias un envío con un archivo inválido.
-  const file = formData.get("photo");
-  let photoBytes: Buffer | null = null;
-  if (file instanceof File && file.size > 0) {
-    if (recipePhotoSizeError(file.size)) return { ok: false, photoError: RECIPE_TEXT.photoInvalid };
-    // Se ignoran file.type y file.name: manda el tipo detectado por magic bytes.
-    const bytes = Buffer.from(await file.arrayBuffer());
-    if (!validateRecipePhoto(bytes).ok) return { ok: false, photoError: RECIPE_TEXT.photoInvalid };
-    photoBytes = bytes;
-  }
-  const removePhoto = formData.get("removePhoto") === "1";
-  const creditRaw = formData.get("photoCredit");
-  const credit = typeof creditRaw === "string" ? creditRaw.trim().slice(0, 200) || null : undefined;
+  const photo = await readPhotoIntent(formData);
+  if (!photo.ok) return { ok: false, photoError: photo.photoError };
 
-  const { id: existingId, ...rest } = payload;
-  const input: RecipeInput = rest;
+  const { id: existingId, input } = toRecipeInput(payload);
   let id: string;
   try {
     if (existingId) {
@@ -144,19 +67,7 @@ export async function saveRecipeAction(formData: FormData): Promise<RecipeAction
   }
 
   try {
-    if (photoBytes) {
-      const processed = await processRecipePhoto(photoBytes);
-      await setRecipePhoto(id, {
-        data: processed.data,
-        thumbData: processed.thumbData,
-        byteSize: processed.byteSize,
-        credit: credit ?? null,
-      });
-    } else if (removePhoto) {
-      await removeRecipePhoto(id);
-    } else if (credit !== undefined) {
-      await setRecipePhotoCredit(id, credit);
-    }
+    await applyPhotoIntent(id, photo.photo);
   } catch (err) {
     console.error("saveRecipeAction: no se pudo guardar la foto", errorCode(err));
     revalidateRecipe(id);

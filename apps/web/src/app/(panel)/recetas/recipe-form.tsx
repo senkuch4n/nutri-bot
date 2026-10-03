@@ -51,10 +51,47 @@ import { cn } from "@/lib/utils";
 import { archiveRecipeAction, saveRecipeAction, unarchiveRecipeAction } from "./actions";
 import { recipeFormSnapshot, rowHasContent, snapshotAfterSave } from "./recipe-form-state";
 import { RecipePortionSummary } from "./recipe-portion-summary";
+import type { RecipeActionState } from "./recipe-save";
+import {
+  OriginalPanel,
+  PhotoCandidates,
+  ReviewBar,
+  SuggestionLine,
+  reviewHref,
+  type PhotoChoice,
+  type RecipeReview,
+} from "./revisar/[id]/review-parts";
 
 // HU-018a: ficha / editor de una receta (SDD 7.3). Los macros se calculan en vivo con
 // computeRecipeMacros; no hay ningún campo para cargarlos a mano (D4). Una acción principal
 // ("Guardar"), objetivos de 44 px y lo opcional plegado en "Más datos".
+// HU-018a-2 (SDD 7.5): con `review`, el mismo form es la pantalla de revisión de un borrador de la
+// carga asistida (original al lado, fotos encontradas, sugerencias de alimento, "Publicar y seguir").
+// Lo propio de la revisión (sugerencias, avisos del parser y actions) llega por `review`, así el
+// parser no entra al bundle del editor.
+
+/** Modo revisión: los datos de la cola + el comportamiento que arma review-screen.tsx. */
+export interface RecipeReviewProps extends RecipeReview {
+  /** suggestFood(label, catálogo). NUNCA se aplica sola: la acepta la persona. */
+  suggest: (label: string) => { foodId: string } | null;
+  /** Avisos del parser para la línea original ("El texto no dice los gramos."). */
+  flagsFor: (rawText: string) => string[];
+  saveDraft: (fd: FormData) => Promise<RecipeActionState>;
+  publish: (fd: FormData) => Promise<RecipeActionState & { nextId?: string | null }>;
+  discard: (id: string, file: string | null) => Promise<{ ok: boolean; nextId: string | null; error?: string }>;
+}
+
+function useIsDesktop(): boolean {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return desktop;
+}
 
 type Row = {
   key: string;
@@ -65,6 +102,8 @@ type Row = {
   household: string;
   rawText: string | null;
   showLabel: boolean;
+  /** Revisión: "Dejar como texto" oculta la sugerencia hasta recargar (12-D12). */
+  dismissed: boolean;
 };
 
 type PublishedText = { portionText: string; kcal: string; protein: string; carbs: string; fat: string; fiber: string };
@@ -75,7 +114,7 @@ let rowSeq = 0;
 const newKey = () => `r${++rowSeq}`;
 
 function emptyRow(): Row {
-  return { key: newKey(), foodId: null, label: "", grams: "", noQuantity: false, household: "", rawText: null, showLabel: false };
+  return { key: newKey(), foodId: null, label: "", grams: "", noQuantity: false, household: "", rawText: null, showLabel: false, dismissed: false };
 }
 
 /** "" → null; número válido → number; texto inválido → undefined. */
@@ -170,6 +209,7 @@ export function RecipeForm(props: {
   foods: RecipeCatalogFood[];
   usage: { plans: number; templates: number };
   initialPhotoError?: string | null;
+  review?: RecipeReviewProps;
 }) {
   return (
     <FoodCatalogProvider foods={props.foods}>
@@ -183,13 +223,16 @@ function RecipeFormInner({
   foods,
   usage,
   initialPhotoError,
+  review,
 }: {
   recipe: RecipeDetail | null;
   foods: RecipeCatalogFood[];
   usage: { plans: number; templates: number };
   initialPhotoError?: string | null;
+  review?: RecipeReviewProps;
 }) {
   const router = useRouter();
+  const isDesktop = useIsDesktop();
   const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
   const [archiving, startArchive] = useTransition();
@@ -225,6 +268,7 @@ function RecipeFormInner({
           household: i.household ?? "",
           rawText: i.rawText,
           showLabel: false,
+          dismissed: false,
         }))
       : [emptyRow()],
   );
@@ -240,6 +284,8 @@ function RecipeFormInner({
   const [credit, setCredit] = useState(recipe?.photo?.credit ?? "");
   const [photoError, setPhotoError] = useState<string | null>(initialPhotoError ?? null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Revisión: una de las "Fotos encontradas" (se copia a la foto de la receta al guardar).
+  const [candidateId, setCandidateId] = useState<string | null>(null);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -249,8 +295,35 @@ function RecipeFormInner({
     setPreviewUrl(null);
   }, [existingPhotoId]);
 
+  const candidateUrl = review && candidateId ? (review.candidates.find((c) => c.id === candidateId)?.fullUrl ?? null) : null;
   const displayUrl =
-    previewUrl ?? (existingPhotoId && !removePhoto ? recipePhotoUrl(existingPhotoId, "panel", "full") : null);
+    previewUrl ??
+    candidateUrl ??
+    (existingPhotoId && !removePhoto ? recipePhotoUrl(existingPhotoId, "panel", "full") : null);
+  const photoChoice: PhotoChoice = photoFile
+    ? "upload"
+    : candidateId
+      ? `cand:${candidateId}`
+      : existingPhotoId && !removePhoto
+        ? "current"
+        : "none";
+
+  function onPhotoChoice(choice: PhotoChoice) {
+    setPhotoError(null);
+    if (choice === "upload") return;
+    setPhotoFile(null);
+    setPreviewUrl(null);
+    if (choice === "none") {
+      setCandidateId(null);
+      setRemovePhoto(Boolean(existingPhotoId));
+    } else if (choice === "current") {
+      setCandidateId(null);
+      setRemovePhoto(false);
+    } else {
+      setCandidateId(choice.slice("cand:".length));
+      setRemovePhoto(false);
+    }
+  }
 
   function onPickPhoto(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -264,11 +337,13 @@ function RecipeFormInner({
     }
     setPhotoError(null);
     setPhotoFile(file);
+    setCandidateId(null);
     setRemovePhoto(false);
     setPreviewUrl(URL.createObjectURL(file));
   }
 
   function onRemovePhoto() {
+    setCandidateId(null);
     setPhotoFile(null);
     setPreviewUrl(null);
     setRemovePhoto(Boolean(existingPhotoId));
@@ -372,22 +447,29 @@ function RecipeFormInner({
   }, [payload, origin, filledRowKeys, rows, yieldValue, portionGramsText]);
 
   const [tried, setTried] = useState(false);
+  // Revisión: "Guardar borrador" solo exige números bien escritos; "Publicar" valida todo.
+  const [attempt, setAttempt] = useState<"save" | "draft" | "publish">("save");
+  const [pendingKind, setPendingKind] = useState<"save" | "draft" | "publish" | "discard" | null>(null);
   const [serverIssues, setServerIssues] = useState<RecipePublishIssue[] | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const issues = tried ? localIssues : [];
+  const issues = tried ? (attempt === "draft" ? localIssues.filter((i) => i.message === BAD_NUMBER) : localIssues) : [];
   const errorFor = (field: string) => issues.find((i) => i.field === field)?.message;
 
   // ── Cambios sin guardar ──
   const dirtyState = {
     payload,
     credit,
-    photo: photoFile ? { name: photoFile.name, size: photoFile.size } : null,
+    photo: photoFile
+      ? { name: photoFile.name, size: photoFile.size }
+      : candidateId
+        ? { name: `candidata:${candidateId}`, size: 0 }
+        : null,
     removePhoto,
   };
   const snapshot = recipeFormSnapshot(dirtyState);
   const [baseline, setBaseline] = useState(snapshot);
   const dirty = snapshot !== baseline;
-  useUnsavedChangesGuard(dirty && !pending, {
+  const { guardNavigation } = useUnsavedChangesGuard(dirty && !pending, {
     title: "¿Salir sin guardar?",
     description: "Los cambios de esta receta se van a perder.",
     confirmLabel: "Salir sin guardar",
@@ -463,19 +545,39 @@ function RecipeFormInner({
     setFocusTarget(next ? `ing-${next.key}-food` : "recipe-add-ingredient");
   }
 
-  // ── Guardar ──
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  // ── Revisión: sugerencias de alimento (se calculan en el cliente, nunca se guardan solas) ──
+  const suggestions = useMemo(() => {
+    const out = new Map<string, RecipeCatalogFood>();
+    if (!review) return out;
+    for (const r of rows) {
+      if (r.foodId || r.dismissed || r.label.trim() === "") continue;
+      const hit = review.suggest(r.label);
+      const food = hit ? catalog.get(hit.foodId) : undefined;
+      if (food) out.set(r.key, food);
+    }
+    return out;
+  }, [review, rows, catalog]);
+
+  function acceptAllSuggestions() {
+    const n = suggestions.size;
+    setRows((rs) => rs.map((r) => (suggestions.has(r.key) ? { ...r, foodId: suggestions.get(r.key)!.id } : r)));
+    notify.info(n === 1 ? "1 alimento aceptado" : `${n} alimentos aceptados`);
+  }
+
+  // ── Guardar / Guardar borrador / Publicar y seguir ──
+  async function submit(kind: "save" | "draft" | "publish") {
     if (pending) return;
+    setAttempt(kind);
     setTried(true);
     setServerIssues(null);
     setFormError(null);
-    if (localIssues.length > 0) {
+    const blocking = kind === "draft" ? localIssues.filter((i) => i.message === BAD_NUMBER) : localIssues;
+    if (blocking.length > 0) {
       requestAnimationFrame(() => summaryRef.current?.focus());
       return;
     }
     const warning = recipeUsageWarning(usage);
-    if (warning && usageKey(payload) !== usageBaseline) {
+    if (kind === "save" && warning && usageKey(payload) !== usageBaseline) {
       const ok = await confirm({ title: "¿Guardar los cambios?", description: warning, confirmLabel: "Guardar igual", destructive: false });
       if (!ok) return;
     }
@@ -484,18 +586,36 @@ function RecipeFormInner({
     if (photoFile) fd.set("photo", photoFile);
     if (removePhoto) fd.set("removePhoto", "1");
     if (displayUrl) fd.set("photoCredit", credit);
+    if (review) {
+      if (candidateId) fd.set("candidateId", candidateId);
+      if (review.file) fd.set("queueFile", review.file);
+    }
     // Referencia para "sin guardar" una vez guardado: sin foto pendiente ni "Quitar foto" pendiente.
     const savedSnapshot = snapshotAfterSave(dirtyState);
     const removedPhotoId = removePhoto ? existingPhotoId : null;
+    setPendingKind(kind);
     startTransition(async () => {
-      const res = await saveRecipeAction(fd);
+      const res =
+        kind === "publish" && review
+          ? await review.publish(fd)
+          : kind === "draft" && review
+            ? await review.saveDraft(fd)
+            : await saveRecipeAction(fd);
+      setPendingKind(null);
       if (res.ok) {
-        notify.saved(RECIPE_TEXT.saved);
         setBaseline(savedSnapshot);
         setPhotoFile(null);
+        setCandidateId(null);
         setRemovePhoto(false);
         if (removedPhotoId) setGonePhotoId(removedPhotoId);
         setTried(false);
+        if (kind === "publish" && review) {
+          notify.saved(RECIPE_TEXT.published);
+          const nextId = "nextId" in res && typeof res.nextId === "string" ? res.nextId : null;
+          router.push(reviewHref(nextId, review.file));
+          return;
+        }
+        notify.saved(kind === "draft" ? "Borrador guardado" : RECIPE_TEXT.saved);
         if (!recipe) router.replace(`/recetas/${res.id}`);
         else router.refresh();
         return;
@@ -510,6 +630,7 @@ function RecipeFormInner({
           // La receta se guardó pero la foto no: se descarta la vista previa para no mostrar una foto que no está.
           setBaseline(savedSnapshot);
           setPhotoFile(null);
+          setCandidateId(null);
           setPreviewUrl(null);
           setRemovePhoto(false);
           if (!recipe) router.replace(`/recetas/${res.id}?foto=error`);
@@ -522,6 +643,55 @@ function RecipeFormInner({
       }
     });
   }
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    // En la revisión no hay botón submit: Enter en un campo no publica por accidente.
+    if (review) return;
+    void submit("save");
+  }
+
+  async function onDiscard() {
+    if (!review || !recipe || pending) return;
+    const ok = await confirm({
+      title: "¿Descartar el borrador?",
+      description: "Se borra este borrador. Lo podés volver a extraer.",
+      confirmLabel: "Descartar",
+      destructive: true,
+    });
+    if (!ok) return;
+    setPendingKind("discard");
+    startTransition(async () => {
+      const res = await review.discard(recipe.id, review.file);
+      setPendingKind(null);
+      if (!res.ok) {
+        notify.error(res.error);
+        return;
+      }
+      setBaseline(snapshot);
+      notify.saved(RECIPE_TEXT.draftDiscarded);
+      router.push(reviewHref(res.nextId, review.file));
+    });
+  }
+
+  // Atajos de la revisión: funcionan aunque el foco esté en un campo (llevan Cmd/Ctrl).
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    if (!review) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void submitRef.current("publish");
+      } else if (e.key.toLowerCase() === "s" && !e.shiftKey) {
+        e.preventDefault();
+        void submitRef.current("draft");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [review]);
 
   function onArchive() {
     if (!recipe) return;
@@ -563,14 +733,40 @@ function RecipeFormInner({
   const status = recipe?.status ?? null;
 
   return (
-    <form onSubmit={onSubmit} noValidate className="pb-4 [&_:is(input,textarea,button,summary)]:scroll-mb-28">
-      <PageHeader
-        title={recipe ? recipe.name : "Nueva receta"}
-        back={{ href: "/recetas", label: "Recetas" }}
-        action={
-          status ? <Badge tone={status === "PUBLISHED" ? "success" : "neutral"}>{RECIPE_STATUS_LABELS[status]}</Badge> : null
-        }
-      />
+    <form
+      onSubmit={onSubmit}
+      noValidate
+      className={cn(
+        "pb-4",
+        review
+          ? "[&_:is(input,textarea,button,summary)]:scroll-mt-40"
+          : "[&_:is(input,textarea,button,summary)]:scroll-mb-28",
+      )}
+    >
+      {review ? (
+        <>
+          <ReviewBar
+            review={review}
+            saving={pendingKind === "draft"}
+            publishing={pendingKind === "publish"}
+            discarding={pendingKind === "discard"}
+            kcalText={perPortion ? `${formatMacroAmount(perPortion.kcal, "kcal")} / porción` : ""}
+            onNavigate={(href) => void guardNavigation(href)}
+            onSave={() => void submit("draft")}
+            onPublish={() => void submit("publish")}
+            onDiscard={() => void onDiscard()}
+          />
+          <h1 className="sr-only">Revisar borrador: {recipe?.name}</h1>
+        </>
+      ) : (
+        <PageHeader
+          title={recipe ? recipe.name : "Nueva receta"}
+          back={{ href: "/recetas", label: "Recetas" }}
+          action={
+            status ? <Badge tone={status === "PUBLISHED" ? "success" : "neutral"}>{RECIPE_STATUS_LABELS[status]}</Badge> : null
+          }
+        />
+      )}
 
       {summaryItems.length > 0 ? (
         <div
@@ -581,7 +777,13 @@ function RecipeFormInner({
           className="mb-6 rounded-lg bg-destructive-muted px-4 py-3 text-callout focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           <p id="recipe-errors-title" className="font-semibold text-destructive">
-            {summaryItems.length === 1 ? "Falta 1 dato para guardar" : `Faltan ${summaryItems.length} datos para guardar`}
+            {attempt === "publish"
+              ? summaryItems.length === 1
+                ? "Falta 1 dato para publicar"
+                : `Faltan ${summaryItems.length} datos para publicar`
+              : summaryItems.length === 1
+                ? "Falta 1 dato para guardar"
+                : `Faltan ${summaryItems.length} datos para guardar`}
           </p>
           <ul className="mt-1">
             {summaryItems.map((i, n) => (
@@ -599,10 +801,42 @@ function RecipeFormInner({
         </div>
       ) : null}
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,42rem)_20rem] lg:items-start">
+      <div
+        className={cn(
+          "grid gap-8 lg:items-start",
+          review ? "lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,42rem)_20rem]",
+        )}
+      >
+        {review ? (
+          // Revisión: a la izquierda lo de referencia (macros + original), fijo mientras se edita.
+          <div className="min-w-0 space-y-4 lg:sticky lg:top-[calc(var(--review-bar-h,7rem)+1rem)] lg:max-h-[calc(100dvh-var(--review-bar-h,7rem)-2rem)] lg:overflow-y-auto lg:pb-2">
+            <RecipePortionSummary
+              result={macroResult}
+              yieldPortions={yieldPortions}
+              published={recipe?.published ?? null}
+              recipeName={name}
+            />
+            {isDesktop ? (
+              <OriginalPanel original={review.original} />
+            ) : (
+              <details className="group rounded-xl bg-card shadow-card more-contrast:border more-contrast:border-input">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-5 py-3 text-headline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                  <span aria-hidden className="text-muted-foreground transition-transform duration-hover group-open:rotate-90">
+                    ›
+                  </span>
+                  Ver original
+                  <span className="text-callout font-normal text-muted-foreground">({review.original.label})</span>
+                </summary>
+                <div className="px-1 pb-1">
+                  <OriginalPanel original={review.original} />
+                </div>
+              </details>
+            )}
+          </div>
+        ) : null}
         <div className="min-w-0 space-y-8">
           {/* 1. Foto */}
-          <section aria-label="Foto" className="max-w-md">
+          <section aria-label="Foto" className={review ? undefined : "max-w-md"}>
             <input
               ref={fileRef}
               id="recipe-photo"
@@ -613,7 +847,17 @@ function RecipeFormInner({
               onChange={onPickPhoto}
               aria-describedby="recipe-photo-help"
             />
-            {displayUrl ? (
+            {review ? (
+              <PhotoCandidates
+                value={photoChoice}
+                candidates={review.candidates}
+                currentUrl={existingPhotoId ? recipePhotoUrl(existingPhotoId, "panel", "thumb") : null}
+                uploadUrl={previewUrl}
+                onChange={onPhotoChoice}
+                onUpload={() => fileRef.current?.click()}
+                recipeName={name}
+              />
+            ) : displayUrl ? (
               <div className="space-y-3">
                 <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-muted">
                   <Image src={displayUrl} alt={`Foto de ${name || "la receta"}`} fill unoptimized sizes="28rem" className="object-cover" />
@@ -767,6 +1011,17 @@ function RecipeFormInner({
               Ingredientes
             </h2>
             {errorFor("ingredients") ? <FormError message={errorFor("ingredients")} /> : null}
+            {review && suggestions.size > 0 ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-primary-soft/50 px-4 py-2">
+                <p className="text-callout">
+                  {suggestions.size === 1 ? "Hay 1 alimento sugerido." : `Hay ${suggestions.size} alimentos sugeridos.`} Revisalos antes de
+                  aceptar.
+                </p>
+                <Button type="button" variant="tinted" size="lg" className="ml-auto" onClick={acceptAllSuggestions}>
+                  {suggestions.size === 1 ? "Aceptar la sugerencia" : `Aceptar las ${suggestions.size} sugerencias`}
+                </Button>
+              </div>
+            ) : null}
             <ol className="space-y-3">
               {rows.map((row, index) => (
                 <IngredientRow
@@ -782,6 +1037,17 @@ function RecipeFormInner({
                   onCreateFood={() => {
                     refreshOnReturn.current = true;
                   }}
+                  review={
+                    review
+                      ? {
+                          suggestion: suggestions.get(row.key) ?? null,
+                          flags: row.rawText ? review.flagsFor(row.rawText) : [],
+                          onAccept: () => updateRow(row.key, { foodId: suggestions.get(row.key)?.id ?? null }),
+                          onDismiss: () => updateRow(row.key, { dismissed: true }),
+                          onChangeFood: () => focusById(`ing-${row.key}-food`),
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </ol>
@@ -903,18 +1169,27 @@ function RecipeFormInner({
           </details>
         </div>
 
-        {/* 5. Aside: 1 porción aporta (abajo en el celular) */}
-        <aside className="lg:sticky lg:top-6">
-          <RecipePortionSummary
-            result={macroResult}
-            yieldPortions={yieldPortions}
-            published={origin === "IMPORT" ? recipe?.published ?? null : null}
-            recipeName={name}
-          />
-        </aside>
+        {/* 5. Aside: 1 porción aporta (abajo en el celular). En la revisión va a la izquierda. */}
+        {review ? null : (
+          <aside className="lg:sticky lg:top-6">
+            <RecipePortionSummary
+              result={macroResult}
+              yieldPortions={yieldPortions}
+              published={origin === "IMPORT" ? recipe?.published ?? null : null}
+              recipeName={name}
+            />
+          </aside>
+        )}
       </div>
 
-      {/* 7. Barra inferior */}
+      {/* 7. Barra inferior (en la revisión las acciones están en la barra de arriba) */}
+      {review ? (
+        formError ? (
+          <div className="mt-6">
+            <FormError message={formError} />
+          </div>
+        ) : null
+      ) : (
       <div className="material-bar sticky bottom-0 z-10 -mx-6 mt-8 flex flex-wrap items-center gap-2 border-t px-6 py-3 lg:-mx-10 lg:px-10">
         <p className="mr-auto text-callout tabular-nums lg:hidden" aria-hidden>
           {perPortion ? `${formatMacroAmount(perPortion.kcal, "kcal")} / porción` : ""}
@@ -936,6 +1211,7 @@ function RecipeFormInner({
           </Button>
         </div>
       </div>
+      )}
     </form>
   );
 }
@@ -950,6 +1226,7 @@ function IngredientRow({
   onMove,
   onRemove,
   onCreateFood,
+  review,
 }: {
   row: Row;
   index: number;
@@ -960,6 +1237,13 @@ function IngredientRow({
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
   onCreateFood: () => void;
+  review?: {
+    suggestion: RecipeCatalogFood | null;
+    flags: string[];
+    onAccept: () => void;
+    onDismiss: () => void;
+    onChangeFood: () => void;
+  };
 }) {
   const id = (part: string) => `ing-${row.key}-${part}`;
   const grams = parseNumber(row.grams);
@@ -986,6 +1270,16 @@ function IngredientRow({
           {kcal !== null ? formatMacroAmount(kcal, "kcal") : "—"}
         </p>
       </div>
+
+      {review ? (
+        <SuggestionLine
+          rawText={row.rawText}
+          suggestion={review.suggestion ? { name: review.suggestion.name, grams: row.noQuantity ? "" : row.grams } : null}
+          onAccept={review.onAccept}
+          onChangeFood={review.onChangeFood}
+          onDismiss={review.onDismiss}
+        />
+      ) : null}
 
       {showLabel ? (
         <div>
@@ -1060,6 +1354,13 @@ function IngredientRow({
           Sin cantidad (c.n.)
         </label>
       </div>
+      {review && review.flags.length > 0 ? (
+        <ul className="space-y-0.5 text-footnote text-warning" aria-label={`Avisos del ingrediente ${n}`}>
+          {review.flags.map((f) => (
+            <li key={f}>{f}</li>
+          ))}
+        </ul>
+      ) : null}
       <FieldError id={errorId} message={error} />
 
       <div className="flex flex-wrap items-center gap-2 border-t pt-2">
