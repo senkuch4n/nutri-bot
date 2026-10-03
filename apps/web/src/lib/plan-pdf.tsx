@@ -1,7 +1,7 @@
 import "server-only";
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
-import { formatMacrosLine, sumMacros, type Macros } from "@nutri-bot/core";
-import type { MealView } from "@/components/meals-editor";
+import { WEEKDAYS, WEEKDAY_LABELS, computeWeeklyTotals, formatMacrosLine, itemsForDay } from "@nutri-bot/core";
+import type { MealItemView, MealView } from "@/components/meals-editor";
 import { PdfFooter, PdfHeader, buildCommonStyles, pdfLogoSrc } from "@/lib/pdf-common";
 import { DEFAULT_PDF_ACCENT, pdfColors } from "@/lib/pdf-theme";
 
@@ -16,6 +16,10 @@ function buildStyles(accentColor: string) {
     ...StyleSheet.create({
       generated: { fontSize: 8.5, color: pdfColors.muted, marginTop: 6 },
       meal: { marginTop: 18 },
+      // HU-018b: "Elegí una:" en comidas de opciones y subtítulo de cada día (provisional, HU-015).
+      optionsHint: { fontSize: 8.5, color: pdfColors.muted, marginTop: 4, marginBottom: 2 },
+      day: { marginTop: 8 },
+      dayTitle: { fontSize: 9.5, fontWeight: 600, marginBottom: 2 },
       itemRow: {
         flexDirection: "row",
         justifyContent: "space-between",
@@ -58,9 +62,74 @@ export interface PlanPdfInput {
   footerText?: string | null;
 }
 
+type PlanStyles = ReturnType<typeof buildStyles>;
+
+function ItemRows({ items, styles }: { items: MealItemView[]; styles: PlanStyles }) {
+  return (
+    <>
+      {items.map((item) => (
+        <View key={item.id} style={styles.itemRow}>
+          <View style={styles.itemName}>
+            <Text>{item.foodName ?? item.customLabel ?? "—"}</Text>
+            {item.notes ? <Text style={styles.itemNote}>{item.notes}</Text> : null}
+          </View>
+          <Text style={styles.itemQty}>{item.quantityGrams ? `${item.quantityGrams} g` : ""}</Text>
+        </View>
+      ))}
+    </>
+  );
+}
+
+function MealTitle({ title, styles }: { title: string; styles: PlanStyles }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionMark} />
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+  );
+}
+
+/** Comida "Igual todos los días" (o cualquier comida de un plan no semanal): un solo bloque. */
+function WholeMeal({ meal, title, styles }: { meal: MealView; title: string; styles: PlanStyles }) {
+  return (
+    <View style={styles.meal} wrap={false}>
+      <MealTitle title={title} styles={styles} />
+      {meal.isOptions ? <Text style={styles.optionsHint}>Elegí una:</Text> : null}
+      <ItemRows items={meal.items} styles={styles} />
+    </View>
+  );
+}
+
+/**
+ * HU-018b: comida "Cambia cada día". El bloque que no se corta entre páginas es el día (D10), no
+ * la comida. Se omiten los días sin ítems y la comida si no tiene ninguno.
+ */
+function PerDayMeal({ meal, styles }: { meal: MealView; styles: PlanStyles }) {
+  const days = WEEKDAYS.map((day) => ({ day, items: itemsForDay(meal, day) })).filter((d) => d.items.length > 0);
+  if (days.length === 0) return null;
+  return (
+    <View style={styles.meal}>
+      <MealTitle title={meal.name} styles={styles} />
+      {days.map(({ day, items }) => (
+        <View key={day} style={styles.day} wrap={false}>
+          <Text style={styles.dayTitle}>{WEEKDAY_LABELS[day].long}</Text>
+          <ItemRows items={items} styles={styles} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * PDF del plan. Provisional hasta la HU-015 (HU-018b, 7.8): un plan no semanal sale igual que antes
+ * ("Total del plan"); uno semanal lista primero las comidas de todos los días y después cada comida
+ * por día, con el "Promedio diario" de los días cargados.
+ */
 export function PlanDocument({ input }: { input: PlanPdfInput }) {
-  const allMacros = input.meals.flatMap((m) => m.items.map((i) => i.macros).filter((x): x is Macros => x !== null));
-  const totals = sumMacros(allMacros);
+  const weekly = computeWeeklyTotals(input.meals);
+  const totals = weekly.isWeekly
+    ? { label: "Promedio diario", macros: weekly.weeklyAverage }
+    : { label: "Total del plan", macros: weekly.days.MON.macros };
   const styles = buildStyles(input.accentColor || DEFAULT_PDF_ACCENT);
   const footerText = input.footerText || `Generado el ${input.generatedAtLabel} · NutriBot`;
 
@@ -77,28 +146,25 @@ export function PlanDocument({ input }: { input: PlanPdfInput }) {
           />
           <Text style={styles.generated}>Generado el {input.generatedAtLabel}</Text>
 
-          {input.meals.map((meal) => (
-            <View key={meal.id} style={styles.meal} wrap={false}>
-              <View style={styles.sectionHeader}>
-                <View style={styles.sectionMark} />
-                <Text style={styles.sectionTitle}>{meal.name}</Text>
-              </View>
-              {meal.items.map((item) => (
-                <View key={item.id} style={styles.itemRow}>
-                  <View style={styles.itemName}>
-                    <Text>{item.foodName ?? item.customLabel ?? "—"}</Text>
-                    {item.notes ? <Text style={styles.itemNote}>{item.notes}</Text> : null}
-                  </View>
-                  <Text style={styles.itemQty}>{item.quantityGrams ? `${item.quantityGrams} g` : ""}</Text>
-                </View>
+          {weekly.isWeekly ? (
+            <>
+              {input.meals.filter((meal) => meal.mode === "EVERY_DAY").map((meal) => (
+                <WholeMeal key={meal.id} meal={meal} title={`${meal.name} · Todos los días`} styles={styles} />
               ))}
-            </View>
-          ))}
+              {input.meals.filter((meal) => meal.mode === "PER_DAY").map((meal) => (
+                <PerDayMeal key={meal.id} meal={meal} styles={styles} />
+              ))}
+            </>
+          ) : (
+            input.meals.map((meal) => <WholeMeal key={meal.id} meal={meal} title={meal.name} styles={styles} />)
+          )}
 
-          <View style={styles.totals} wrap={false}>
-            <Text style={styles.totalsLabel}>Total del plan</Text>
-            <Text style={styles.totalsLine}>{formatMacrosLine(totals)}</Text>
-          </View>
+          {totals.macros ? (
+            <View style={styles.totals} wrap={false}>
+              <Text style={styles.totalsLabel}>{totals.label}</Text>
+              <Text style={styles.totalsLine}>{formatMacrosLine(totals.macros)}</Text>
+            </View>
+          ) : null}
 
           {input.planNotes ? (
             <View wrap={false}>

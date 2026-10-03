@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
 import { getTemplate, listFoods } from "@nutri-bot/db/domain";
-import { sumMacros } from "@nutri-bot/core";
 import { Card, PageHeader } from "@/components/ui";
 import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
-import { toMealView } from "@/lib/meal-view";
+import { toMealView, toPlanTotals } from "@/lib/meal-view";
 import { TemplateMetaForm } from "./template-meta-form";
 import { DeleteTemplateButton } from "./delete-template-button";
 import {
@@ -27,7 +26,8 @@ export default async function TemplateDetailPage({
   if (!template) notFound();
 
   const meals = toMealView(template.meals);
-  const totals = sumMacros(meals.flatMap((m) => m.items.map((i) => i.macros).filter((m) => m !== null)));
+  // HU-018b: plantilla no semanal → el mismo total de siempre; semanal → promedio diario.
+  const { totals, label: totalsLabel } = toPlanTotals(meals);
   const boundUpdate = updateTemplateAction.bind(null, template.id);
 
   return (
@@ -41,7 +41,7 @@ export default async function TemplateDetailPage({
 
       {/* Totales de la plantilla: quedan a la vista mientras se editan las comidas. */}
       <div className="sticky top-14 z-10 -mx-6 mb-6 bg-background px-6 py-3 lg:top-0 lg:-mx-10 lg:px-10">
-        <MacroTotals totals={totals} />
+        <MacroTotals totals={totals} label={totalsLabel} />
       </div>
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">

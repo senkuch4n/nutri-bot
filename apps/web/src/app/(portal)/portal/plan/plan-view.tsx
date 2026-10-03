@@ -1,24 +1,31 @@
 import { FileDown } from "lucide-react";
-import type { Macros } from "@nutri-bot/core";
+import type { Macros, Weekday } from "@nutri-bot/core";
 import type { MealView } from "@/components/meals-editor";
 import { MacroTotals } from "@/components/macro-totals";
 import { buttonVariants } from "@/components/primitives/button";
-import { Card, Quantity } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { PortalDayView, PortalMealItems } from "./portal-day-view";
 
-/** Plan del paciente en el portal (server-safe). La usan la página del plan y la de prueba. */
+/**
+ * Plan del paciente en el portal (server-safe). HU-018b: si el plan es semanal, muestra la vista por
+ * día (cliente); si no, igual que siempre, con el "Total del plan".
+ */
 export function PortalPlanView({
   title,
   notes,
   meals,
   totals,
   hasPdf,
+  weekly,
 }: {
   title: string;
   notes: string | null;
   meals: MealView[];
   totals: Macros;
   hasPdf: boolean;
+  /** HU-018b: datos del menú semanal; null o ausente = plan no semanal. */
+  weekly?: { today: Weekday; dayTotals: Record<Weekday, Macros>; loadedDays: Weekday[] } | null;
 }) {
   return (
     <div className="space-y-6">
@@ -38,27 +45,24 @@ export function PortalPlanView({
         </a>
       ) : null}
 
-      <MacroTotals totals={totals} label="Total del plan" />
+      {weekly ? (
+        <PortalDayView
+          meals={meals}
+          today={weekly.today}
+          dayTotals={weekly.dayTotals}
+          loadedDays={weekly.loadedDays}
+        />
+      ) : (
+        <>
+          <MacroTotals totals={totals} label="Total del plan" />
 
-      {meals.map((meal) => (
-        <Card key={meal.id} title={meal.name}>
-          <ul className="-my-3 divide-y">
-            {meal.items.map((item) => (
-              <li key={item.id} className="flex items-baseline justify-between gap-4 py-3 text-sm">
-                <span className="min-w-0 break-words">{item.foodName ?? item.customLabel ?? "—"}</span>
-                {item.quantityGrams ? (
-                  <Quantity
-                    value={Number(item.quantityGrams)}
-                    unit="g"
-                    decimals={1}
-                    className="shrink-0 text-muted-foreground"
-                  />
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ))}
+          {meals.map((meal) => (
+            <Card key={meal.id} title={meal.name}>
+              <PortalMealItems items={meal.items} />
+            </Card>
+          ))}
+        </>
+      )}
     </div>
   );
 }

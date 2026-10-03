@@ -1,8 +1,9 @@
 import { ClipboardList } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
-import { sumMacros } from "@nutri-bot/core";
+import { WEEKDAYS, computeWeeklyTotals, weekdayInTimeZone, type Macros, type Weekday } from "@nutri-bot/core";
 import { Card, EmptyState } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
+import { getProfessional } from "@/lib/professional";
 import { toMealView } from "@/lib/meal-view";
 import { PortalPlanView } from "./plan-view";
 
@@ -36,7 +37,18 @@ export default async function PortalPlanPage() {
   }
 
   const meals = toMealView(plan.meals);
-  const totals = sumMacros(meals.flatMap((m) => m.items.map((i) => i.macros).filter((x) => x !== null)));
+  // HU-018b: plan no semanal → el total de siempre; semanal → total por día y hoy seleccionado.
+  const weeklyTotals = computeWeeklyTotals(meals);
+  const totals = weeklyTotals.days.MON.macros;
+  let weekly: { today: Weekday; dayTotals: Record<Weekday, Macros>; loadedDays: Weekday[] } | null = null;
+  if (weeklyTotals.isWeekly) {
+    const pro = await getProfessional();
+    weekly = {
+      today: weekdayInTimeZone(new Date(), pro.timezone),
+      dayTotals: Object.fromEntries(WEEKDAYS.map((d) => [d, weeklyTotals.days[d].macros])) as Record<Weekday, Macros>,
+      loadedDays: weeklyTotals.loadedDays,
+    };
+  }
 
   return (
     <PortalPlanView
@@ -45,6 +57,7 @@ export default async function PortalPlanPage() {
       meals={meals}
       totals={totals}
       hasPdf={Boolean(plan.pdfData)}
+      weekly={weekly}
     />
   );
 }

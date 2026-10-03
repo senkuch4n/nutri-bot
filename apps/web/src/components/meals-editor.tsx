@@ -1,5 +1,5 @@
 import { Plus, UtensilsCrossed } from "lucide-react";
-import { formatMacroAmount, formatMacrosLine, type AtwaterBreakdown } from "@nutri-bot/core";
+import { formatMacroAmount, formatMacrosLine, type AtwaterBreakdown, type MealMode, type Weekday } from "@nutri-bot/core";
 import { Card, EmptyState, Field, Input, Quantity, Textarea } from "@/components/ui";
 import { DeleteMealButton } from "@/components/delete-meal-button";
 import { NumberInput } from "@/components/number-input";
@@ -20,11 +20,17 @@ export interface MealItemView {
   macros: { kcal: number; protein: number; carbs: number; fat: number; fiber: number } | null;
   /** Desglose de Atwater de la porción (popover de kcal). null si no hay alimento o cantidad. */
   kcalBreakdown: AtwaterBreakdown | null;
+  /** HU-018b: null = todos los días (comida EVERY_DAY). */
+  weekday: Weekday | null;
 }
 
 export interface MealView {
   id: string;
   name: string;
+  /** HU-018b: "Igual todos los días" (EVERY_DAY) o "Cambia cada día" (PER_DAY). */
+  mode: MealMode;
+  /** HU-018b: "Opciones (elige una)". Solo con EVERY_DAY. */
+  isOptions: boolean;
   items: MealItemView[];
 }
 

@@ -138,12 +138,14 @@ async function compare(file: string) {
   const diff = (owner: SnapOwner, what: string, before: unknown, after: unknown) =>
     diffs.push(`${owner.kind} ${owner.id}: ${what}\n  antes:   ${JSON.stringify(before)}\n  después: ${JSON.stringify(after)}`);
 
-  const [planCount, templateCount] = await Promise.all([prisma.nutritionPlan.count(), prisma.planTemplate.count()]);
-  const snapPlans = owners.filter((o) => o.kind === "plan").length;
-  if (planCount !== snapPlans) diffs.push(`Cantidad de planes: antes ${snapPlans}, después ${planCount}`);
-  if (templateCount !== owners.length - snapPlans) {
-    diffs.push(`Cantidad de plantillas: antes ${owners.length - snapPlans}, después ${templateCount}`);
-  }
+  // Los planes o plantillas creados después del snapshot (p. ej. a mano desde el panel) no son una
+  // pérdida: se informan aparte. Uno del snapshot que ya no existe sí es una diferencia (abajo).
+  const [planIds, templateIds] = await Promise.all([
+    prisma.nutritionPlan.findMany({ select: { id: true } }),
+    prisma.planTemplate.findMany({ select: { id: true } }),
+  ]);
+  const known = new Set(owners.map((o) => o.id));
+  const added = [...planIds, ...templateIds].filter((o) => !known.has(o.id)).map((o) => o.id);
 
   for (const owner of owners) {
     const loaded = owner.kind === "plan" ? await getPlan(owner.id) : await getTemplate(owner.id);
@@ -209,6 +211,7 @@ async function compare(file: string) {
     `OK — ${plans.length} planes, ${owners.length - plans.length} plantillas, ` +
     `${owners.reduce((s, o) => s + o.items.length, 0)} ítems, ${plans.filter((p) => p.pdfMd5).length} PDF sin cambios`,
   );
+  if (added.length > 0) console.log(`(Creados después del snapshot, no comparados: ${added.join(", ")})`);
 }
 
 const [mode, file] = process.argv.slice(2);
