@@ -33,7 +33,7 @@ describe("checkout return URL configuration", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("uses the independent return URL for every outcome and preserves the notification URL", async () => {
+  it("uses the independent return URL and preserves the exact notification URL", async () => {
     await createDepositCheckout("appointment");
     expect(mocks.createPreference).toHaveBeenCalledWith({ body: expect.objectContaining({
       back_urls: {
@@ -41,12 +41,17 @@ describe("checkout return URL configuration", () => {
         pending: "https://return.example.test/result",
         failure: "https://return.example.test/result",
       },
-      notification_url: "https://notifications.example.test/api/webhooks/mercadopago",
       auto_return: "approved",
+      notification_url: "https://notifications.example.test/api/webhooks/mercadopago",
       expires: true,
       expiration_date_to: "2026-10-02T12:15:00.000Z",
     }) });
     expect(process.env.AUTH_URL).toBe("http://localhost:3000");
+  });
+  it("creates checkout without a notification URL environment variable", async () => {
+    vi.stubEnv("MERCADOPAGO_NOTIFICATION_URL", undefined);
+    await expect(createDepositCheckout("appointment")).resolves.toEqual({ amount: 10000, paymentId: "internal", checkoutUrl: "https://checkout.example.test" });
+    expect(mocks.createPreference.mock.calls[0]?.[0].body).toHaveProperty("notification_url", undefined);
   });
   it.each(["PERCENT", "FIXED"])("uses the configured %s amount", async (depositKind) => {
     const appointment = await mocks.prisma.appointment.findUniqueOrThrow();
@@ -165,12 +170,18 @@ describe("payment reconciliation without database or network", () => {
     await syncMercadoPagoPayment("123", "other");
     expect(mocks.prisma.payment.update).not.toHaveBeenCalled();
   });
-  it("finds payments by external_reference before externalId is known", async () => {
+  it("confirms through polling when the Webhook is absent and ignores a later approval replay", async () => {
     mocks.prisma.payment.findMany.mockResolvedValue([{ id: "internal", preferenceId: "preference" }]);
     mocks.search.mockResolvedValue({ results: [{ id: 123 }], paging: { total: 1 } });
     expect(await reconcilePendingPayments()).toEqual({ processed: 1, failed: 0 });
     expect(mocks.search.mock.calls[0]?.[0].options.external_reference).toBe("internal");
     expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
+    expect(payment.status).toBe("APPROVED");
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: { status: "CONFIRMED", needsGoogleSync: true } });
+    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
+    await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" });
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
   });
   it("continues after one payment fails", async () => {
     mocks.prisma.payment.findMany.mockResolvedValue([{ id: "broken", externalId: "bad" }, { id: "internal", externalId: "123" }]);

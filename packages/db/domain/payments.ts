@@ -43,7 +43,7 @@ export async function createDepositCheckout(
       body: {
         items: [{ id: appointment.service.id, title: appointment.service.name, quantity: 1, unit_price: amount, currency_id: pro.currency }],
         external_reference: payment.id,
-        notification_url: process.env.MERCADOPAGO_NOTIFICATION_URL?.trim() || undefined,
+        notification_url: process.env.MERCADOPAGO_NOTIFICATION_URL || undefined,
         expires: true,
         expiration_date_to: new Date(appointment.createdAt.getTime() + 15 * 60_000).toISOString(),
         back_urls: {

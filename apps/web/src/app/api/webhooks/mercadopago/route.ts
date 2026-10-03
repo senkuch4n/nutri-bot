@@ -3,6 +3,12 @@ import { handleMercadoPagoWebhook, verifyMercadoPagoSignature } from "@nutri-bot
 
 async function handle(req: Request) {
   const params = new URL(req.url).searchParams;
+  // Acknowledge legacy retries without trusting or processing their payload.
+  // Mixed requests containing data.id must still pass modern signature validation.
+  if (!params.has("data.id") && params.getAll("topic").length === 1 &&
+    params.get("topic") === "merchant_order" && params.getAll("id").length === 1 && params.get("id")?.trim()) {
+    return NextResponse.json({ ok: true, ignored: "legacy_ipn" });
+  }
   const dataId = params.get("data.id");
   const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET;
   if (!secret) return NextResponse.json({ error: "unconfigured" }, { status: 503 });
