@@ -19,9 +19,10 @@ import { useDismissDrag } from "@/components/primitives/use-dismiss-drag"
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
 import { ModalScrim } from "@/components/primitives/modal-scrim"
-import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
+import { ignoreOutsideBeforeOpen, preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { runExit } from "@/lib/sheet-exit"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
+import { OverlayOpenInfoContext, useOverlayOpenInfo } from "@/lib/use-return-focus"
 import { cn } from "@/lib/utils"
 
 // HU-017a §9.7–§9.8. Un solo MotionValue (`offset`, px hacia el borde de cierre) maneja entrada,
@@ -44,9 +45,12 @@ function Sheet({
     onChange: onOpenChange,
   })
   const ctx = React.useMemo(() => ({ open, setOpen, modal }), [open, setOpen, modal])
+  const openInfo = useOverlayOpenInfo(open)
   return (
     <SheetContext.Provider value={ctx}>
-      <SheetPrimitive.Root open={open} onOpenChange={setOpen} modal={modal} {...props} />
+      <OverlayOpenInfoContext.Provider value={openInfo}>
+        <SheetPrimitive.Root open={open} onOpenChange={setOpen} modal={modal} {...props} />
+      </OverlayOpenInfoContext.Provider>
     </SheetContext.Provider>
   )
 }
@@ -121,8 +125,9 @@ SheetContent.displayName = SheetPrimitive.Content.displayName
 const SheetPanel = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   Omit<SheetContentProps, "side" | "forceMount"> & { side: Side }
->(({ side, className, children, style, dismissOnDrag = true, onCloseAutoFocus, ...props }, forwardedRef) => {
+>(({ side, className, children, style, dismissOnDrag = true, onCloseAutoFocus, onPointerDownOutside, ...props }, forwardedRef) => {
   const { setOpen, modal } = React.useContext(SheetContext)
+  const openInfo = React.useContext(OverlayOpenInfoContext)
   const reduced = Boolean(useReducedMotionConfig())
   const [isPresent, safeToRemove] = usePresence()
   const panelRef = React.useRef<HTMLDivElement | null>(null)
@@ -231,7 +236,8 @@ const SheetPanel = React.forwardRef<
         asChild
         ref={setRefs}
         {...props}
-        onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus)}
+        onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus, { returnTo: () => openInfo?.returnFocus.current ?? null })}
+        onPointerDownOutside={ignoreOutsideBeforeOpen(onPointerDownOutside, () => openInfo?.openedAt.current ?? 0)}
         forceMount
       >
         <m.div

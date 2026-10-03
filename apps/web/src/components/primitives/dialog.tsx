@@ -8,8 +8,9 @@ import { X } from "lucide-react"
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
 import { ExitFocusGuard, ModalScrim } from "@/components/primitives/modal-scrim"
-import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
+import { ignoreOutsideBeforeOpen, preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
+import { OverlayOpenInfoContext, useOverlayOpenInfo } from "@/lib/use-return-focus"
 import { cn } from "@/lib/utils"
 
 // HU-017a §9.0 (patrón Radix + Motion): el Root refleja `open` (controlado o no) en un contexto; el
@@ -29,9 +30,12 @@ function Dialog({
     defaultProp: defaultOpen ?? false,
     onChange: onOpenChange,
   })
+  const openInfo = useOverlayOpenInfo(open)
   return (
     <DialogOpenContext.Provider value={open}>
-      <DialogPrimitive.Root open={open} onOpenChange={setOpen} {...props} />
+      <OverlayOpenInfoContext.Provider value={openInfo}>
+        <DialogPrimitive.Root open={open} onOpenChange={setOpen} {...props} />
+      </OverlayOpenInfoContext.Provider>
     </DialogOpenContext.Provider>
   )
 }
@@ -74,8 +78,9 @@ function CloseX() {
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, style, onCloseAutoFocus, ...props }, ref) => {
+>(({ className, children, style, onCloseAutoFocus, onPointerDownOutside, ...props }, ref) => {
   const open = React.useContext(DialogOpenContext)
+  const openInfo = React.useContext(OverlayOpenInfoContext)
   const content = useExitSnapshot(children, open)
   const reduced = useReducedMotionConfig()
   const hidden = reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }
@@ -91,7 +96,8 @@ const DialogContent = React.forwardRef<
               asChild
               ref={ref}
               {...props}
-              onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus)}
+              onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus, { returnTo: () => openInfo?.returnFocus.current ?? null })}
+              onPointerDownOutside={ignoreOutsideBeforeOpen(onPointerDownOutside, () => openInfo?.openedAt.current ?? 0)}
               forceMount
             >
               <m.div
