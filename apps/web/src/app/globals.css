@@ -2,67 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Tokens (canales HSL, consumidos por tailwind.config.ts como hsl(var(--x) / alpha)) ─── */
+/* Los valores de los tokens viven en src/lib/design-tokens.ts; tailwind.config.ts los emite como
+   variables CSS (canales HSL). Este archivo solo los usa (HU-017a, D-T1). */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 45 8% 20%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 45 8% 20%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 45 8% 20%;
-
-    --primary: 45 4% 18%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 60 7% 94%;
-    --secondary-foreground: 45 8% 20%;
-    --muted: 60 11% 96%;
-    --muted-foreground: 50 4% 38%;
-    --accent: 60 6% 93%;
-    --accent-foreground: 45 8% 20%;
-
-    --destructive: 2 54% 46%;
-    --destructive-foreground: 0 0% 100%;
-    --destructive-muted: 357 82% 96%;
-    --success: 147 32% 33%;
-    --success-muted: 111 23% 94%;
-    --warning: 39 75% 30%;
-    --warning-muted: 45 80% 92%;
-    --info: 204 53% 37%;
-    --info-muted: 198 55% 94%;
-    --link: 211 73% 42%;
-
-    --border: 60 4% 91%;
-    --input: 48 2% 54%;
-    --ring: 210 77% 51%;
-    --sidebar: 60 11% 96%;
-    --radius: 0.5rem;
-
     color-scheme: light;
-  }
-
-  /* Tono cálido del portal (D11). El :root:has(...) alcanza también al body y a los
-     overlays de Radix, que se montan en un portal fuera del div con la clase. */
-  .theme-warm,
-  :root:has(.theme-warm) {
-    --background: 40 43% 99%;
-    --foreground: 30 14% 20%;
-    --card: 0 0% 100%;
-    --card-foreground: 30 14% 20%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 30 14% 20%;
-    --primary: 29 17% 25%;
-    --secondary: 37 31% 95%;
-    --secondary-foreground: 30 14% 20%;
-    --muted: 37 31% 95%;
-    --muted-foreground: 32 9% 38%;
-    --accent: 37 32% 92%;
-    --accent-foreground: 30 14% 20%;
-    --border: 37 25% 90%;
-    --input: 37 11% 50%;
-    --sidebar: 37 31% 95%;
-    --radius: 0.75rem;
   }
 }
 
@@ -71,10 +15,11 @@
     @apply border-border;
   }
   body {
-    @apply bg-background font-sans text-foreground antialiased;
+    @apply bg-background font-sans text-body text-foreground antialiased;
+    font-optical-sizing: auto;
   }
-  /* Foco visible también en los controles hechos a mano de las pantallas sin migrar.
-     Los primitivos usan focus-visible:outline-none + ring y pisan esta regla. */
+  /* Foco visible (§7.7): anillo tint de 2 px que sigue el radio del elemento. Lo usan también los
+     controles hechos a mano de las pantallas sin migrar. */
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
@@ -87,73 +32,26 @@
   }
 }
 
-/* ─── Movimiento reducido global ─── */
+/* ─── Movimiento reducido (§7.7, §14): política por componente, no "todo a 0 ms" ───
+   Motion ya anula transform/layout (MotionConfig reducedMotion="user") y cada overlay pasa a fundido.
+   Acá: lo que vive en CSS. Se conservan los fundidos (opacidad) y el spinner (es estado). */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  html {
+    scroll-behavior: auto;
+  }
+  /* Toasts de Sonner: aparecen y se van con fundido, sin desplazarse. */
+  [data-sonner-toast] {
+    transition-property: opacity, height !important;
   }
 }
 
-/* ─── FullCalendar sobre los tokens ─── */
-.fc {
-  --fc-border-color: hsl(var(--border));
-  --fc-today-bg-color: hsl(var(--muted));
-  --fc-now-indicator-color: hsl(var(--destructive));
-  --fc-page-bg-color: hsl(var(--background));
-  --fc-neutral-bg-color: hsl(var(--muted));
-  --fc-highlight-color: hsl(var(--accent) / 0.7);
-  font-size: 0.8125rem;
-}
-.fc .fc-toolbar-title {
-  @apply text-lg font-semibold tracking-tight text-foreground;
-}
-.fc .fc-col-header-cell-cushion {
-  @apply py-2 text-xs font-medium text-muted-foreground;
-}
-.fc .fc-timegrid-slot-label-cushion,
-.fc .fc-list-day-text {
-  @apply text-xs text-muted-foreground;
-}
-.fc .fc-button-primary {
-  @apply h-8 rounded-md border border-input bg-background px-3 text-sm font-medium normal-case
-    text-foreground shadow-none transition-colors;
-}
-.fc .fc-button-primary:hover {
-  @apply border-input bg-accent text-foreground;
-}
-.fc .fc-button-primary:not(:disabled):active,
-.fc .fc-button-primary:not(:disabled).fc-button-active {
-  @apply border-input bg-secondary font-semibold text-foreground; /* activo: fondo + peso */
-}
-.fc .fc-button-primary:focus {
-  @apply shadow-none;
-}
-.fc .fc-button-primary:focus-visible {
-  @apply outline-none ring-2 ring-ring ring-offset-1;
-}
-.fc .fc-button-primary:disabled {
-  @apply border-border bg-background text-muted-foreground opacity-100;
-}
-.fc .fc-daygrid-event,
-.fc .fc-timegrid-event {
-  @apply rounded-sm border-0 px-1.5 py-0.5 text-xs font-medium;
-}
-.fc .fc-non-business {
-  background: hsl(var(--muted)); /* plano, sin rayado */
-}
-.fc .fc-timegrid-now-indicator-arrow {
-  display: none;
-}
-.fc .fc-event:focus-visible {
-  @apply outline-none ring-2 ring-ring ring-offset-1;
+/* ─── Contenido nuevo entra con un fundido corto (skeleton → contenido, §9.3) ─── */
+#contenido > *,
+[data-portal-main] > * {
+  animation: fade-in var(--duration-fade) var(--ease-out) both;
 }
 
-/* ═══ HU-017a: lenguaje Apple (convive con lo anterior hasta el "flip", SDD §7.8) ═══ */
+/* ═══ HU-017a: lenguaje Apple ═══ */
 
 @layer base {
   /* El flash gris de iOS no es nuestro feedback: lo dan .press / pressed: (§1). */
@@ -312,9 +210,8 @@
   }
 }
 
-/* ─── FullCalendar con el lenguaje Apple (§11). Hasta el "flip" solo dentro del alcance de la demo;
-   en la fase 7 estas reglas reemplazan al tema anterior y pierden el prefijo. ─── */
-:root:has([data-apple-preview]) .fc {
+/* ─── FullCalendar sobre los tokens (§11) ─── */
+.fc {
   --fc-border-color: hsl(var(--border));
   --fc-today-bg-color: hsl(var(--primary) / 0.05);
   --fc-now-indicator-color: hsl(var(--destructive));
@@ -323,49 +220,56 @@
   --fc-highlight-color: hsl(var(--primary) / 0.12);
   font-size: 0.8125rem;
 }
-:root:has([data-apple-preview]) .fc .fc-toolbar-title {
+.fc .fc-toolbar-title {
   @apply text-title-3 text-foreground;
 }
-:root:has([data-apple-preview]) .fc .fc-col-header-cell-cushion {
+.fc .fc-col-header-cell-cushion {
   @apply py-2 text-footnote font-semibold text-muted-foreground;
 }
-:root:has([data-apple-preview]) .fc .fc-timegrid-slot-label-cushion,
-:root:has([data-apple-preview]) .fc .fc-list-day-text {
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-list-day-text {
   @apply text-footnote text-muted-foreground;
 }
-:root:has([data-apple-preview]) .fc .fc-button-primary {
+.fc .fc-button-primary {
   @apply relative h-8 rounded-md border-0 bg-secondary px-3 text-subheadline font-medium normal-case text-foreground shadow-none press;
 }
 @media (hover: hover) and (pointer: fine) {
-  :root:has([data-apple-preview]) .fc .fc-button-primary:hover {
+  .fc .fc-button-primary:hover {
     @apply border-0 bg-fill-hover text-foreground;
   }
 }
-:root:has([data-apple-preview]) .fc .fc-button-primary:not(:disabled):active {
+.fc .fc-button-primary:not(:disabled):active {
   @apply bg-fill-pressed;
 }
 /* Activo: segmento elevado (anticipa el control segmentado de 017b). */
-:root:has([data-apple-preview]) .fc .fc-button-primary:not(:disabled).fc-button-active {
+.fc .fc-button-primary:not(:disabled).fc-button-active {
   @apply bg-background font-semibold text-foreground shadow-thumb;
 }
-:root:has([data-apple-preview]) .fc .fc-button-primary:focus {
+.fc .fc-button-primary:focus {
   @apply shadow-none;
 }
-:root:has([data-apple-preview]) .fc .fc-button-primary.fc-button-active:focus {
+.fc .fc-button-primary.fc-button-active:focus {
   @apply shadow-thumb;
 }
-:root:has([data-apple-preview]) .fc .fc-button-primary:focus-visible {
+.fc .fc-button-primary:focus-visible {
   @apply outline outline-2 outline-offset-2 outline-ring ring-0;
 }
-:root:has([data-apple-preview]) .fc .fc-button-primary:disabled {
+.fc .fc-button-primary:disabled {
   @apply border-0 bg-secondary text-foreground opacity-40;
 }
-:root:has([data-apple-preview]) .fc .fc-daygrid-event,
-:root:has([data-apple-preview]) .fc .fc-timegrid-event {
+.fc .fc-daygrid-event,
+.fc .fc-timegrid-event {
   @apply rounded-sm border-0 px-1.5 py-0.5 text-footnote font-medium;
 }
-:root:has([data-apple-preview]) .fc .fc-event:focus-visible {
+.fc .fc-event:focus-visible {
   @apply outline outline-2 outline-offset-2 outline-ring ring-0;
+}
+
+.fc .fc-non-business {
+  background: hsl(var(--muted)); /* plano, sin rayado (017b lo aliviana: C1) */
+}
+.fc .fc-timegrid-now-indicator-arrow {
+  display: none;
 }
 
 /* ─── Inputs sin zoom en Safari iOS (§9.2, T17): ≥ 16 px en táctil; 17 px en el portal ───

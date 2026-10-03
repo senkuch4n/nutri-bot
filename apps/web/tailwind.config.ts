@@ -9,7 +9,6 @@ import {
   legacyTypeScale,
   materials,
   moreContrastOverrides,
-  newColorTokens,
   overlayAlpha,
   portalColorOverrides,
   radii,
@@ -22,16 +21,8 @@ import {
 const token = (name: string) => `hsl(var(--${name}) / <alpha-value>)`;
 const fixed = (name: string, alpha: number) => `hsl(var(--${name}) / ${alpha})`;
 
-// ─── Convivencia (SDD §7.8, fases 2–6) ─────────────────────────────────────────
-// `:root` recibe solo los nombres nuevos. Los nombres shadcn conservan los valores Notion de
-// globals.css hasta el "flip" (fase 7). La demo (`/dev-diseno*`) marca su raíz con
-// `data-apple-preview` y ve el lenguaje completo: el selector `:root:has([data-apple-preview])`
-// aplica también los nombres shadcn, radios y escala tipográfica nuevos (alcanza a los overlays
-// de Radix porque viven en un portal bajo <body>).
-const PREVIEW = ":root:has([data-apple-preview])";
-
-const newColorVars = cssVariablesFor(Object.fromEntries(newColorTokens.map((k) => [k, colors[k]])));
-
+// Variables de color, materiales y movimiento en `:root` (el "flip" de la fase 7, SDD §7.8). El portal
+// cambia solo el fondo agrupado (D2). Más contraste sube el separador.
 const materialVars = Object.fromEntries(
   Object.entries(materials).flatMap(([name, m]) => [
     [`--material-${name}-alpha`, String(m.alpha)],
@@ -46,43 +37,11 @@ const motionVars = {
   "--ease-in-out": easings.inOut,
 };
 
-// Radios y escala por defecto detrás de variables: sin la variable definida valen exactamente lo
-// de antes (fallback). La demo las define con los valores Apple.
-const radiusVars = {
-  "--radius-sm": radii.sm,
-  "--radius-default": radii.DEFAULT,
-  "--radius-md": radii.md,
-  "--radius-lg": radii.lg,
-  "--radius-xl": radii.xl,
-  "--radius-2xl": radii["2xl"],
-};
-const legacyTypeVars = Object.fromEntries(
-  Object.entries(legacyTypeScale).flatMap(([k, s]) => [
-    [`--text-${k}`, s.size],
-    [`--text-${k}-lh`, s.lineHeight],
-    [`--text-${k}-tracking`, s.tracking],
-  ]),
-);
-
-const tailwindDefaultSizes: Record<keyof typeof legacyTypeScale, [string, string]> = {
-  xs: ["0.75rem", "1rem"],
-  sm: ["0.875rem", "1.25rem"],
-  base: ["1rem", "1.5rem"],
-  lg: ["1.125rem", "1.75rem"],
-  xl: ["1.25rem", "1.75rem"],
-  "2xl": ["1.5rem", "2rem"],
-  "3xl": ["1.875rem", "2.25rem"],
-  "4xl": ["2.25rem", "2.5rem"],
-};
-// letter-spacing sin fallback: si la variable no existe la declaración es inválida y se hereda,
-// igual que hoy (Tailwind no declara tracking en text-*).
 type FontSizeValue = [string, { lineHeight: string; letterSpacing: string; fontWeight?: string }];
 
+// Escala por defecto de Tailwind re-mapeada (tracking y leading por tamaño, §7.2), sin peso.
 const legacyFontSize: Record<string, FontSizeValue> = Object.fromEntries(
-  Object.entries(tailwindDefaultSizes).map(([k, [size, lh]]) => [
-    k,
-    [`var(--text-${k}, ${size})`, { lineHeight: `var(--text-${k}-lh, ${lh})`, letterSpacing: `var(--text-${k}-tracking)` }],
-  ]),
+  Object.entries(legacyTypeScale).map(([k, s]) => [k, [s.size, { lineHeight: s.lineHeight, letterSpacing: s.tracking }]]),
 );
 
 const semanticFontSize: Record<string, FontSizeValue> = Object.fromEntries(
@@ -94,12 +53,10 @@ const semanticFontSize: Record<string, FontSizeValue> = Object.fromEntries(
 
 const designTokens = plugin(({ addBase, addVariant }) => {
   addBase({
-    ":root": { ...newColorVars, ...materialVars, ...motionVars },
+    ":root": { ...cssVariablesFor(colors), ...materialVars, ...motionVars },
     ".theme-portal, :root:has(.theme-portal)": cssVariablesFor(portalColorOverrides),
-    [PREVIEW]: { ...cssVariablesFor(colors), ...radiusVars, ...legacyTypeVars },
-    [`${PREVIEW}:has(.theme-portal)`]: cssVariablesFor(portalColorOverrides),
-    [`@media (prefers-contrast: more)`]: { [PREVIEW]: cssVariablesFor(moreContrastOverrides) },
-    [`${PREVIEW}:has(.a11y-more-contrast)`]: cssVariablesFor(moreContrastOverrides),
+    "@media (prefers-contrast: more)": { ":root": cssVariablesFor(moreContrastOverrides) },
+    ":root:has(.a11y-more-contrast)": cssVariablesFor(moreContrastOverrides),
   });
 
   // Estado presionado (§1): en puntero fino exige :hover además de :active, así arrastrar fuera
@@ -169,16 +126,17 @@ export default {
         overlay: { hover: fixed("overlay", overlayAlpha.hover), pressed: fixed("overlay", overlayAlpha.pressed) },
         scrim: fixed("overlay", overlayAlpha.scrim),
       },
-      borderRadius: {
-        xs: radii.xs,
-        DEFAULT: "var(--radius-default, 0.25rem)",
-        sm: "var(--radius-sm, calc(var(--radius) - 4px))",
-        md: "var(--radius-md, calc(var(--radius) - 2px))",
-        lg: "var(--radius-lg, var(--radius))",
-        xl: "var(--radius-xl, 0.75rem)",
-        "2xl": "var(--radius-2xl, 1rem)",
+      borderRadius: { ...radii },
+      // Las sombras por defecto toman la escala nueva (así `shadow-md` de pantallas sin migrar, como el
+      // popover propio de food-picker, queda en el nivel 2).
+      boxShadow: {
+        ...shadows,
+        sm: shadows.card,
+        DEFAULT: shadows.float,
+        md: shadows.float,
+        lg: shadows.modal,
+        xl: shadows.modal,
       },
-      boxShadow: { ...shadows },
       transitionDuration: Object.fromEntries(Object.keys(durations).map((k) => [k, `var(--duration-${k})`])),
       transitionTimingFunction: { "out-soft": "var(--ease-out)", "in-out-soft": "var(--ease-in-out)" },
       keyframes: {
