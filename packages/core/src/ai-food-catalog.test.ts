@@ -26,13 +26,13 @@ describe("AI-only food source selection", () => {
     expect(catalog.idsByRef[2 - 1]).toBe("d4");
   });
 
-  it("falls back to all supplied foods when SARA2 is unavailable", () => {
+  it("returns an empty catalog rather than falling back to PROPIO", () => {
     const own = mixed.filter((food) => food.source === "PROPIO");
     const selected = selectAiCatalogFoods(own);
-    expect(selected).toEqual(own);
+    expect(selected).toEqual([]);
     const catalog = buildAiFoodCatalog(selected);
-    expect(catalog.idsByRef).toEqual(["a1", "c3"]);
-    expect(catalog.idsByRef[2 - 1]).toBe("c3");
+    expect(catalog.idsByRef).toEqual([]);
+    expect(catalog.text).toBe("");
   });
 
   it("preserves ref resolution when catalog size exclusions renumber SARA2 foods", () => {

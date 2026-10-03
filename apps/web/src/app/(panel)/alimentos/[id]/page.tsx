@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
-import { Copy } from "lucide-react";
 import { formatKcalOneDecimal, atwaterKcal, kcalDiffersFromAtwater, readFoodNutrients } from "@nutri-bot/core";
 import { getFood, getFoodUsage } from "@nutri-bot/db/domain";
-import { Alert, Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
+import { Alert, Badge, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { foodGroupLabel } from "@/lib/food-groups";
 import { FoodEnergyCard } from "../food-energy-card";
@@ -62,12 +61,6 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
                 {food.active ? "Desactivar" : "Activar"}
               </SubmitButton>
             </form>
-            {isSara ? (
-              <ButtonLink href={`/alimentos/nuevo?desde=${food.id}`} variant="secondary" size="sm">
-                <Copy aria-hidden />
-                Duplicar como propio
-              </ButtonLink>
-            ) : null}
           </div>
         }
       />
@@ -75,8 +68,7 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
       <div className="mb-6 max-w-3xl space-y-3">
         {isSara ? (
           <Alert tone="info">
-            Dato oficial de SARA 2 (Ministerio de Salud, 2022). No se puede editar: si necesitás otros valores,
-            duplicalo como propio.
+            Dato oficial de SARA 2 (Ministerio de Salud, 2022). No se puede editar.
           </Alert>
         ) : null}
         {kcalDiffers ? (

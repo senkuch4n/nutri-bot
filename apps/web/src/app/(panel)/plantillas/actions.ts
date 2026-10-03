@@ -12,6 +12,7 @@ import {
   addTemplateMealItem,
   deleteTemplateMealItem,
   getTemplate,
+  getFood,
 } from "@nutri-bot/db/domain";
 
 export type TemplateState = { ok: boolean; error?: string };
@@ -78,6 +79,12 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<voi
   const quantityRaw = String(formData.get("quantityGrams") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   if (!foodId && !customLabel) return;
+  if (foodId) {
+    const food = await getFood(foodId);
+    if (!food || !food.active || food.source !== "SARA2") {
+      throw new Error("Solo se pueden agregar alimentos activos de SARA 2.");
+    }
+  }
 
   const template = await getTemplate(templateId);
   const meal = template?.meals.find((m) => m.id === mealId);

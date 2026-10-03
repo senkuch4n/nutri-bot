@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { createPlan, applyTemplateToPatient } from "@nutri-bot/db/domain";
+import { createPlan, applyTemplateToPatient, getTemplate } from "@nutri-bot/db/domain";
 
 export type PlanListState = { ok: boolean; error?: string };
 
@@ -34,6 +34,11 @@ export async function applyTemplateAction(
 ): Promise<PlanListState> {
   const parsed = applyTemplateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Elegí una plantilla" };
+  const template = await getTemplate(parsed.data.templateId);
+  if (!template) return { ok: false, error: "Plantilla no encontrada" };
+  if (template.meals.some((meal) => meal.items.some((item) => item.food && item.food.source !== "SARA2"))) {
+    return { ok: false, error: "Esta plantilla contiene alimentos PROPIO históricos. Para crear un plan nuevo, usá una plantilla con alimentos SARA 2." };
+  }
   const plan = await applyTemplateToPatient(parsed.data.templateId, parsed.data.patientId);
   if (!plan) return { ok: false, error: "No se pudo aplicar la plantilla" };
   revalidatePath(`/pacientes/${parsed.data.patientId}`);

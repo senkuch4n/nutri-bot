@@ -23,7 +23,7 @@ export default async function TemplateDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [template, foods] = await Promise.all([getTemplate(id), listFoods({ activeOnly: true })]);
+  const [template, foods] = await Promise.all([getTemplate(id), listFoods({ activeOnly: true, source: "SARA2" })]);
   if (!template) notFound();
 
   const meals = toMealView(template.meals);

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
 import {
   getPlan,
+  getFood,
   updatePlan,
   deletePlan,
   addMeal,
@@ -86,6 +87,12 @@ export async function addPlanMealItemAction(formData: FormData): Promise<void> {
   const quantityRaw = String(formData.get("quantityGrams") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   if (!foodId && !customLabel) return;
+  if (foodId) {
+    const food = await getFood(foodId);
+    if (!food || !food.active || food.source !== "SARA2") {
+      throw new Error("Solo se pueden agregar alimentos activos de SARA 2.");
+    }
+  }
 
   const plan = await getPlan(planId);
   const meal = plan?.meals.find((m) => m.id === mealId);

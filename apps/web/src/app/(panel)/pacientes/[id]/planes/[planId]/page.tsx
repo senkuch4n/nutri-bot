@@ -32,7 +32,7 @@ export default async function PlanDetailPage({
   const { id, planId } = await params;
   const [plan, foods, pro] = await Promise.all([
     getPlan(planId),
-    listFoods({ activeOnly: true }),
+    listFoods({ activeOnly: true, source: "SARA2" }),
     getProfessional(),
   ]);
   if (!plan || plan.patientId !== id) notFound();
