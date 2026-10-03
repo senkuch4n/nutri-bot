@@ -214,3 +214,6 @@ orquestador, para que las revise a la mañana:
 - HU-018b-2 → `implementando` (Opus; apple-design, ui-ux-pro-max, web-design-guidelines).
 - HU-018b-2 done; recorrido OK con observaciones menores (progress/recorrido_HU-018b.md). next dev reiniciado (cliente Prisma viejo). → `en_revision`.
 - HU-018b-2 **aprobada**. HU-018b → `aprobada`. PR a develop. Sigue HU-018a (recetario).
+- PR #22 mergeado. HU-018a → `en_arquitectura` (rama feat/hu-018a-recetario; architect Opus con migracion-prisma + ui).
+- HU-018a SDD lista (Refactorizaciones/recetario.md; corte 018a-1 manual+migración / 018a-2 carga asistida). Hallazgo: auth.ts guarda el refresh_token de quien se loguea → no revisar recetas en el panel de producción. → `arquitectura_lista`.
+- HU-018a: usuario aprueba SDD (018a-1 → 018a-2). Bug auth.ts → tarea directa después. → `implementando` 018a-1 (Opus; migracion-prisma, apple-design, ui-ux-pro-max).

@@ -3,11 +3,25 @@
   "responsable": "senkuch4n",
   "intentos_revision": 0,
   "hu": "docs/hu-plan-recetas-buscador.md",
-  "sdd": null,
-  "rama": "feat/hu-018-plan-recetas-buscador",
+  "sdd": "Refactorizaciones/recetario.md",
+  "rama": "feat/hu-018a-recetario",
   "origen": "Partición de HU-018",
   "slug": "recetario",
   "titulo": "Recetario: modelo de recetas, pantalla /recetas, macros por porción con SARA 2, carga asistida a borradores",
-  "estado": "validada",
-  "notas": "Va después de 018b."
+  "estado": "implementando",
+  "notas": "Va después de 018b.",
+  "skills_architect": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "entregas": {
+    "018a-1": "implementando",
+    "018a-2": "pendiente"
+  },
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "apple-design",
+    "ui-ux-pro-max"
+  ]
 }
