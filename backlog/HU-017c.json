@@ -9,5 +9,5 @@
   "hu": "docs/hu-rediseno-apple.md",
   "sdd": null,
   "rama": null,
-  "notas": "Depende de HU-017a."
+  "notas": "Depende de HU-017a. Foco de usabilidad (decisión del usuario 2026-10-03): simplificar la página de pacientes para una usuaria que no maneja computadoras, con ui-ux-pro-max. Diagnóstico y propuestas 1–6 en progress/current-senkuch4n.md (2026-10-03); antes de afinar, observar a la nutricionista 5 minutos usando la ficha."
 }
