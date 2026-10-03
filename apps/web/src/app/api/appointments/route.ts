@@ -57,6 +57,7 @@ export async function GET(req: Request) {
       price: a.priceSnapshot.toString(),
       googleSynced: Boolean(a.googleEventId),
       patientId: a.patientId,
+      reason: a.reason,
       consultation: a.consultation
         ? {
             id: a.consultation.id,

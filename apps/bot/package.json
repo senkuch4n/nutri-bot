@@ -10,6 +10,7 @@
     "test:confirm-flow": "dotenv -e ../../.env -- tsx scripts/test-confirm-attendance.ts",
     "test:after-hours": "dotenv -e ../../.env -- tsx scripts/test-after-hours-inquiry.ts",
     "test:bot-ai": "dotenv -e ../../.env -- tsx scripts/test-bot-ai-questions.ts",
+    "test:booking-reason": "dotenv -e ../../.env -- tsx scripts/test-booking-reason.ts",
     "test:mercadopago-sandbox": "dotenv -e ../../.env -- tsx scripts/test-mercadopago-sandbox.ts",
     "test:report-outbox": "dotenv -e ../../.env -- tsx scripts/test-report-outbox.ts"
   },

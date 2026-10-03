@@ -141,3 +141,12 @@ orquestador, para que las revise a la mañana:
 - HU-012: implementer (Opus) `done`: 863 tests, test:bot-ai 18/18, sin llamadas reales. Recorrido OK (progress/recorrido_HU-012.md). develop avanzó con un fix de HU-010 (sin solaparse). → `en_revision`.
 - **HU-012 aprobada** (1ª ronda, reviewer Opus). Ver history.
 - Directo (fix/hu-012-detalles): error de base en el modo pregunta → AI_ERROR sin loguear el texto; cron cada 5 min que limpia el historial de IA de sesiones vencidas (clearExpiredAiSessions). 873 tests, test:bot-ai 18/18.
+- **HU-013** `motivo-consulta-reserva` (EP-052) → reservada en Notion, rama `feat/hu-013-motivo-consulta-reserva` → `afinando`. PR #8 (fixes HU-012) abierto aparte; toca conversation.ts, rebasar si hace falta.
+- HU-013 afinada (D1–D12) → `afinada_pendiente_validacion`.
+- HU-013 **validada**: D1–D12 según recomendaciones (D4 encendido por defecto, D7 en la alerta recortado a 200).
+- HU-013 → `en_arquitectura` (migracion-prisma + ui).
+- HU-013: SDD lista (Refactorizaciones/motivo-consulta-reserva.md; Appointment.reason, Service.asksReason default true; P1–P10) → `arquitectura_lista`.
+- HU-013: usuario acepta P1/P4–P10; P2 lista de salteo ampliada; P3 aparte tras PR #8. → `implementando` (Opus; migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max).
+- HU-013: implementer (Opus) `done`: 962 tests, test:booking-reason 17/17, regresiones OK, datos reales intactos. Recorrido OK (progress/recorrido_HU-013.md). → `en_revision`.
+- **HU-013 aprobada** (1ª ronda, reviewer Opus). Ver history.
+- Pendientes del review HU-013 (en la rama de la HU, PR #10): limpieza de texto de sesiones vencidas generalizada a BOOK_REASON/BOOK_CONFIRM (clearExpiredSessionText); SLOT_TAKEN con motivo ofrece otros días y lo conserva; jids propios en test-booking-reason. Rebase sobre develop (#8, #11). 984 tests, 4 simulaciones OK.

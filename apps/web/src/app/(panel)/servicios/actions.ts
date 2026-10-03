@@ -21,6 +21,8 @@ const schema = z
     depositValue: z.coerce.number().positive().optional(),
     prepInstructions: z.string().trim().max(1000).optional().or(z.literal("")),
     prepLeadHours: z.coerce.number().int().min(1).max(168).optional(),
+    // HU-013: "0"/"1" del input oculto del switch. No z.coerce.boolean(): con "0" da true.
+    asksReason: z.enum(["0", "1"]).optional(),
   })
   .refine((v) => !v.requiresDeposit || (v.depositKind && v.depositValue), {
     message: "Si el servicio requiere seña, indicá el tipo y el monto",
@@ -45,6 +47,7 @@ export async function saveServiceAction(
     depositValue,
     prepInstructions,
     prepLeadHours,
+    asksReason,
     ...rest
   } = parsed.data;
   const payload = {
@@ -55,6 +58,8 @@ export async function saveServiceAction(
     depositValue: requiresDeposit ? (depositValue ?? null) : null,
     prepInstructions: prepInstructions || null,
     prepLeadHours: prepInstructions ? (prepLeadHours ?? null) : null,
+    // HU-013 (D4): ausente → true (default).
+    asksReason: asksReason !== "0",
   };
 
   try {

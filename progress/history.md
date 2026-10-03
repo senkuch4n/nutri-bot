@@ -289,3 +289,24 @@
   queda fuera de la retención de 90 días; probar con la clave real (recorrido del usuario).
 - **Modelos:** afinador y architect Opus; implementer Opus; reviewer Opus. Skills: migracion-prisma,
   ui (SDD); migracion-prisma, claude-api, ui-styling, web-design-guidelines (impl).
+
+---
+
+## 2026-10-02 — HU-013 `motivo-consulta-reserva` — APROBADA (1ª ronda) · Épica 52 · senkuch4n
+
+- **Qué:** el bot pide el motivo de consulta después de elegir horario y antes del resumen (opcional,
+  con salteo ampliado: saltear, no, -, saltar, no gracias, prefiero no decirlo, después…; 500
+  caracteres, mínimo 3; audios/fotos → pedir texto, epígrafe de foto se toma). Configurable por
+  servicio (`Service.asksReason`, encendido por defecto). Se guarda en `Appointment.reason`, se ve en
+  el resumen, en la alerta de turno nuevo (recortado a 200, sin y con seña), en el detalle del turno
+  (editable), en la consulta clínica (solo lectura) y en la ficha. No llega a Google Calendar, al
+  portal ni a la IA. Opcional en "Nuevo turno" del panel.
+- **Migración** `booking_reason`: 2 columnas, aditiva. Respaldo `~/nutribot-backups/pre-hu013-20261002-2217.dump`.
+- **Verificación:** 962 tests (94 nuevos), `test:booking-reason` 17/17, regresiones de confirmación,
+  HU-011 y HU-012 OK; servicios, turnos, pacientes y `Professional` reales intactos (salvo
+  `asksReason` = true por la migración). Recorrido en `progress/recorrido_HU-013.md`.
+- **Pendiente:** P3 (motivo en `ConversationState.context` si abandona) tras el PR #8; si el horario
+  se ocupa mientras escribe el motivo, lo tiene que reescribir; la limpieza previa del script borra
+  `OutboundMessage` a jids de prueba compartidos con otros scripts.
+- **Modelos:** afinador, architect, implementer y reviewer Opus. Skills: migracion-prisma, ui (SDD);
+  migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max (impl).

@@ -116,23 +116,30 @@ export async function purgeExpiredBotAiQuestions(opts: {
 }
 
 /**
- * BOT (cron). Privacidad (D7): el historial con la IA vive en `ConversationState.context` mientras
- * dura el modo pregunta. Una sesión vencida (sin actividad en `sessionTimeoutMs`) pasa a DORMANT
- * con contexto vacío, que es como el bot ya la trata al volver a escribir. Si el paciente escribe
- * justo antes, su `updatedAt` cambia y la fila no entra. `scope` es SOLO para el script de prueba.
+ * Pasos de la conversación cuyo contexto guarda texto escrito por el paciente: el historial con la
+ * IA (HU-012, `AWAIT_QUESTION`) y el motivo de consulta mientras reserva (HU-013, `BOOK_REASON` y
+ * `BOOK_CONFIRM`). Los demás pasos solo guardan ids.
  */
-export async function clearExpiredAiSessions(opts: {
+export const SESSION_STEPS_WITH_PATIENT_TEXT = ["AWAIT_QUESTION", "BOOK_REASON", "BOOK_CONFIRM"] as const;
+
+/**
+ * BOT (cron). Privacidad: una sesión vencida (sin actividad en `sessionTimeoutMs`) en un paso que
+ * guarda texto del paciente pasa a DORMANT con contexto vacío, que es como el bot ya la trata al
+ * volver a escribir. Si el paciente escribe justo antes, su `updatedAt` cambia y la fila no entra.
+ * `scope` es SOLO para el script de prueba.
+ */
+export async function clearExpiredSessionText(opts: {
   sessionTimeoutMs: number;
   now?: Date;
   scope?: { jids: string[] };
 }): Promise<number> {
   if (!Number.isFinite(opts.sessionTimeoutMs) || opts.sessionTimeoutMs <= 0) {
-    throw new Error("clearExpiredAiSessions: sessionTimeoutMs tiene que ser > 0");
+    throw new Error("clearExpiredSessionText: sessionTimeoutMs tiene que ser > 0");
   }
   const now = opts.now ?? new Date();
   const res = await prisma.conversationState.updateMany({
     where: {
-      step: "AWAIT_QUESTION",
+      step: { in: [...SESSION_STEPS_WITH_PATIENT_TEXT] },
       updatedAt: { lt: new Date(now.getTime() - opts.sessionTimeoutMs) },
       ...(opts.scope ? { patientJid: { in: opts.scope.jids } } : {}),
     },

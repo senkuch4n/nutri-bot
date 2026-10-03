@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import { formatInTimeZone } from "@nutri-bot/core";
+import { BOOKING_REASON_MAX, formatInTimeZone } from "@nutri-bot/core";
 import { Modal } from "@/components/modal";
 import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
-import { Button, Field, FormError, Input, Select } from "@/components/ui";
+import { Button, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { createAppointmentAction } from "./actions";
 
@@ -41,6 +41,8 @@ export function NewAppointmentModal({
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  /** HU-013 (D5): motivo de consulta opcional. */
+  const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -75,6 +77,7 @@ export function NewAppointmentModal({
     fd.set("patientPhone", phone);
     fd.set("serviceId", serviceId);
     fd.set("startsAt", slot);
+    fd.set("reason", reason);
     const res = await createAppointmentAction({ ok: false }, fd);
     setSubmitting(false);
     if (res.ok) {
@@ -82,6 +85,7 @@ export function NewAppointmentModal({
       setPhone("");
       setServiceId("");
       setSlot("");
+      setReason("");
       notify.saved("Turno creado");
       onCreated();
       onClose();
@@ -161,6 +165,27 @@ export function NewAppointmentModal({
               ))}
             </ToggleGroup>
           )}
+        </div>
+
+        <Field label="Motivo de consulta (opcional)">
+          <Textarea
+            name="reason"
+            rows={3}
+            maxLength={BOOKING_REASON_MAX}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Ej: control mensual, quiere bajar de peso, plan deportivo…"
+            aria-describedby="nuevo-turno-motivo-ayuda"
+          />
+        </Field>
+        <div
+          id="nuevo-turno-motivo-ayuda"
+          className="-mt-2 flex justify-between gap-2 text-xs text-muted-foreground"
+        >
+          <span>No se le manda al paciente.</span>
+          <span className="tabular-nums" aria-live="polite">
+            {reason.length}/{BOOKING_REASON_MAX}
+          </span>
         </div>
 
         <FormError message={error} />

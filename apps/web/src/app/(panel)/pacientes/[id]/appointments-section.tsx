@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/primitives/table";
 import { Badge, Card, EmptyState } from "@/components/ui";
+import { AppointmentReasonCell } from "./appointment-reason-cell";
 
 export interface AppointmentRow {
   id: string;
@@ -19,6 +20,8 @@ export interface AppointmentRow {
   status: { tone: "info" | "warning" | "success" | "neutral" | "danger"; label: string };
   /** Detalle de la consulta del turno (HU-003); null si no tiene. */
   consultationHref: string | null;
+  /** HU-013: motivo de consulta; null → "—". */
+  reason: string | null;
 }
 
 /** Pestaña Turnos. Server component: usa los primitivos de tabla, no DataTable. */
@@ -34,6 +37,7 @@ export function AppointmentsSection({ appointments }: { appointments: Appointmen
             <TableRow className="hover:bg-transparent">
               <TableHead>Fecha y hora</TableHead>
               <TableHead>Servicio</TableHead>
+              <TableHead>Motivo</TableHead>
               <TableHead numeric>Precio</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Consulta</TableHead>
@@ -44,6 +48,9 @@ export function AppointmentsSection({ appointments }: { appointments: Appointmen
               <TableRow key={a.id}>
                 <TableCell className="tabular-nums">{a.startsAtLabel}</TableCell>
                 <TableCell>{a.serviceName}</TableCell>
+                <TableCell>
+                  <AppointmentReasonCell reason={a.reason} />
+                </TableCell>
                 <TableCell numeric>{a.priceLabel}</TableCell>
                 <TableCell>
                   <Badge tone={a.status.tone}>{a.status.label}</Badge>

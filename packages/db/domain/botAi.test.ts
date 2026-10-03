@@ -19,7 +19,7 @@ vi.mock("./availability", () => ({
 
 import {
   BOT_AI_COUNTED_OUTCOMES,
-  clearExpiredAiSessions,
+  clearExpiredSessionText,
   countBotAiQuestionsToday,
   markBotAiQuestionHandedOff,
   purgeExpiredBotAiQuestions,
@@ -251,26 +251,26 @@ describe("runBotAiTool", () => {
   });
 });
 
-describe("clearExpiredAiSessions", () => {
-  it("pasa a DORMANT con contexto vacío solo las sesiones del modo pregunta vencidas", async () => {
+describe("clearExpiredSessionText", () => {
+  it("pasa a DORMANT con contexto vacío solo las sesiones vencidas con texto del paciente (IA y motivo)", async () => {
     mocks.prisma.conversationState.updateMany.mockResolvedValue({ count: 2 });
-    const n = await clearExpiredAiSessions({ sessionTimeoutMs: 20 * 60_000, now: new Date("2026-10-02T12:00:00Z") });
+    const n = await clearExpiredSessionText({ sessionTimeoutMs: 20 * 60_000, now: new Date("2026-10-02T12:00:00Z") });
     expect(n).toBe(2);
     expect(mocks.prisma.conversationState.updateMany).toHaveBeenCalledWith({
-      where: { step: "AWAIT_QUESTION", updatedAt: { lt: new Date("2026-10-02T11:40:00Z") } },
+      where: { step: { in: ["AWAIT_QUESTION", "BOOK_REASON", "BOOK_CONFIRM"] }, updatedAt: { lt: new Date("2026-10-02T11:40:00Z") } },
       data: { step: "DORMANT", context: {} },
     });
   });
 
   it("con scope acota a esos jids", async () => {
     mocks.prisma.conversationState.updateMany.mockResolvedValue({ count: 0 });
-    await clearExpiredAiSessions({ sessionTimeoutMs: 60_000, now: NOW, scope: { jids: ["x@s.whatsapp.net"] } });
+    await clearExpiredSessionText({ sessionTimeoutMs: 60_000, now: NOW, scope: { jids: ["x@s.whatsapp.net"] } });
     expect(mocks.prisma.conversationState.updateMany.mock.calls[0]![0].where.patientJid).toEqual({ in: ["x@s.whatsapp.net"] });
   });
 
   it("un timeout inválido rechaza sin tocar nada", async () => {
-    await expect(clearExpiredAiSessions({ sessionTimeoutMs: 0 })).rejects.toThrow();
-    await expect(clearExpiredAiSessions({ sessionTimeoutMs: Number.NaN })).rejects.toThrow();
+    await expect(clearExpiredSessionText({ sessionTimeoutMs: 0 })).rejects.toThrow();
+    await expect(clearExpiredSessionText({ sessionTimeoutMs: Number.NaN })).rejects.toThrow();
     expect(mocks.prisma.conversationState.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, clearExpiredAiSessions, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
@@ -121,8 +121,8 @@ export function startCron(): void {
     }
   });
 
-  // HU-012 (privacidad): el historial con la IA no queda guardado en sesiones vencidas.
-  cron.schedule("*/5 * * * *", () => runAiSessionCleanup());
+  // Privacidad (HU-012/HU-013): el texto del paciente no queda guardado en sesiones vencidas.
+  cron.schedule("*/5 * * * *", () => runSessionTextCleanup());
   // HU-012 (D7): retención de las preguntas a la IA (antes del resumen, que tiene que ser el último).
   cron.schedule("30 4 * * *", () => runBotAiPurge());
   // HU-011: resumen de consultas fuera de horario (último cron: los tests miran calls[0]).
@@ -189,18 +189,18 @@ export async function runBotAiPurge(): Promise<void> {
 /** Mismo vencimiento de sesión que usa la conversación (BOT_SESSION_TIMEOUT_MIN, 20 por defecto). */
 const SESSION_TIMEOUT_MS = Number(process.env.BOT_SESSION_TIMEOUT_MIN ?? 20) * 60_000;
 
-let aiSessionCleanupRunning = false;
+let sessionTextCleanupRunning = false;
 
-/** HU-012: borra el historial con la IA de las sesiones del modo pregunta vencidas. No se solapa. */
-export async function runAiSessionCleanup(): Promise<void> {
-  if (aiSessionCleanupRunning) return;
-  aiSessionCleanupRunning = true;
+/** HU-012/HU-013: borra el texto del paciente (historial con la IA, motivo) de sesiones vencidas. No se solapa. */
+export async function runSessionTextCleanup(): Promise<void> {
+  if (sessionTextCleanupRunning) return;
+  sessionTextCleanupRunning = true;
   try {
-    const n = await clearExpiredAiSessions({ sessionTimeoutMs: SESSION_TIMEOUT_MS });
-    if (n > 0) logger.info({ n }, "Historial de IA de sesiones vencidas borrado");
+    const n = await clearExpiredSessionText({ sessionTimeoutMs: SESSION_TIMEOUT_MS });
+    if (n > 0) logger.info({ n }, "Texto de sesiones vencidas borrado");
   } catch (err) {
-    logger.error({ err }, "Error borrando el historial de IA de sesiones vencidas");
+    logger.error({ err }, "Error borrando el texto de sesiones vencidas");
   } finally {
-    aiSessionCleanupRunning = false;
+    sessionTextCleanupRunning = false;
   }
 }

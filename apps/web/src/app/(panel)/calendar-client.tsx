@@ -90,6 +90,7 @@ export function CalendarClient({
       googleSynced: p.googleSynced,
       patientId: p.patientId,
       consultation: p.consultation ?? null,
+      reason: p.reason ?? null,
     });
   }, []);
 

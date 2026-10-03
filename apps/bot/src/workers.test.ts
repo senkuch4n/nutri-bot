@@ -9,7 +9,7 @@ vi.mock("@nutri-bot/db/domain", () => ({
   enqueuePrepInstructions: vi.fn(), syncGoogleCalendar: vi.fn(),
   enqueueAfterHoursDigest: mocks.digest,
   purgeExpiredBotAiQuestions: mocks.purge,
-  clearExpiredAiSessions: mocks.clearSessions,
+  clearExpiredSessionText: mocks.clearSessions,
 }));
 vi.mock("./ai/runtime", () => ({ getBotAiConfig: () => ({ limits: { retentionDays: 90 } }) }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
@@ -125,7 +125,7 @@ describe("bot AI retention cron (HU-012)", () => {
   });
 });
 
-describe("bot AI session cleanup cron (HU-012)", () => {
+describe("expired session text cleanup cron (HU-012/HU-013)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
