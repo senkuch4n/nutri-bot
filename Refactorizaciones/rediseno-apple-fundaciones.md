@@ -1341,3 +1341,16 @@ Ver `progress/review_HU-017a.md` ("Cambios requeridos"). Hay que corregir:
 
 **Sumado por el usuario:** medir el peso. Correr `next build` sobre `3457e3f` en un worktree aparte (con
 `next dev` apagado) y comparar el First Load de `/` y `/portal` contra el actual (presupuesto +≤ 45 KB).
+
+## 24. Ajustes tras la 2ª revisión (2026-10-03) — último reintento
+
+Ver la sección "Ronda 2" de `progress/review_HU-017a.md`:
+
+1. **Dialog/AlertDialog reabierto durante la salida queda `inert`** (`modal-scrim.tsx` `ExitFocusGuard`): deshacer
+   `inert` cuando `isPresent` vuelve a `true` (o `inert` controlado por prop como el sheet), con test o caso
+   de la demo (cerrar y reabrir a mitad).
+2. **El foco vuelve al disparador** en overlays controlados sin `Trigger` de Radix (`Modal`, `useConfirm`, sheet
+   de servicios): guardar el elemento enfocado al abrir y, en `onCloseAutoFocus`, si el foco quedó en `body` y
+   el usuario no eligió otro, devolverlo ahí (si sigue conectado y fuera del overlay). Solo en los primitivos.
+3. **Sumado por el usuario:** declarar `framer-motion` en `apps/web/package.json` con la misma versión exacta
+   que trae `motion`, para que el alias de D-4 no dependa de cómo npm arma `node_modules`.
