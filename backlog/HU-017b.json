@@ -1,0 +1,13 @@
+{
+  "id": "HU-017b",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-apple-agenda-gestion",
+  "titulo": "Rediseño Apple (3/5): agenda y gestión (calendario, disponibilidad, servicios, mensajes, pagos, avisos, asistente, ajustes)",
+  "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
+  "estado": "no_afinada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-rediseno-apple.md",
+  "sdd": null,
+  "rama": null,
+  "notas": "Depende de HU-017a."
+}

@@ -173,3 +173,9 @@ orquestador, para que las revise a la mañana:
 - HU-016 ronda 2 → `implementando` (Opus): log solo con código + select mínimo en updates de Professional; logo queda en 2 MB.
 - HU-016 ronda 2: implementer `done`. → `en_revision` (ronda 2).
 - **HU-016 aprobada** (2ª ronda, reviewer Opus). Ver history.
+- **HU-017** `rediseno-apple` (pedido del usuario: skill apple-design, rediseño visual completo, auditoría primero, sin la zona de Leo) → rama `feat/hu-017-rediseno-apple` (sale de chore/skill-apple-design, PR #19) → `afinando`. HU-016 en PR #18.
+- HU-017 afinada (auditoría + propuesta + partición) → `afinada_pendiente_validacion`.
+- HU-017 **validada** como paraguas: acento azul de sistema, Inter, Motion + página demo; resto según recomendaciones. Partida en HU-017a (validada) y 017b–f (no_afinada; 017e de imleticio).
+- HU-017a → `en_arquitectura` (apple-design + refactor + ui).
+- HU-017a: SDD lista (Refactorizaciones/rediseno-apple-fundaciones.md, 1305 líneas: tokens en design-tokens.ts, Motion 14 con LazyMotion, Inter opsz, 3 componentes nuevos, shell, demo /dev-diseno, 7 fases con commit propio; Q1–Q13 con default) → `arquitectura_lista`.
+- HU-017a: usuario acepta Q1–Q13; corte después de la fase 6 para aprobar la demo. → `implementando` (Opus; apple-design, web-design-guidelines) fases 0–6.
