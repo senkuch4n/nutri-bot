@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn() }));
+const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -9,6 +9,7 @@ vi.mock("@nutri-bot/db/domain", () => ({
   enqueuePrepInstructions: vi.fn(), syncGoogleCalendar: vi.fn(),
   enqueueAfterHoursDigest: mocks.digest,
   purgeExpiredBotAiQuestions: mocks.purge,
+  clearExpiredAiSessions: mocks.clearSessions,
 }));
 vi.mock("./ai/runtime", () => ({ getBotAiConfig: () => ({ limits: { retentionDays: 90 } }) }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
@@ -121,5 +122,28 @@ describe("bot AI retention cron (HU-012)", () => {
     expect(mocks.error).toHaveBeenCalled();
     await tick();
     expect(mocks.purge).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("bot AI session cleanup cron (HU-012)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+  it("runs every 5 minutes with the session timeout", async () => {
+    mocks.clearSessions.mockResolvedValue(1);
+    startCron();
+    const call = mocks.schedule.mock.calls.find((c) => c[0] === "*/5 * * * *");
+    expect(call).toBeDefined();
+    await call![1]();
+    expect(mocks.clearSessions).toHaveBeenCalledWith({ sessionTimeoutMs: 20 * 60_000 });
+  });
+  it("contains errors and runs again on the next tick", async () => {
+    mocks.clearSessions.mockRejectedValueOnce(new Error("db down")).mockResolvedValueOnce(0);
+    startCron();
+    const tick = mocks.schedule.mock.calls.find((c) => c[0] === "*/5 * * * *")![1];
+    await expect(tick()).resolves.toBeUndefined();
+    expect(mocks.error).toHaveBeenCalled();
+    await tick();
+    expect(mocks.clearSessions).toHaveBeenCalledTimes(2);
   });
 });

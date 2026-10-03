@@ -140,3 +140,4 @@ orquestador, para que las revise a la mañana:
 - HU-012: usuario acepta P1–P5/P7–P14; P6 con prefijo "Pregunta al asistente: ". → `implementando` (Opus; migracion-prisma, claude-api, ui-styling, web-design-guidelines).
 - HU-012: implementer (Opus) `done`: 863 tests, test:bot-ai 18/18, sin llamadas reales. Recorrido OK (progress/recorrido_HU-012.md). develop avanzó con un fix de HU-010 (sin solaparse). → `en_revision`.
 - **HU-012 aprobada** (1ª ronda, reviewer Opus). Ver history.
+- Directo (fix/hu-012-detalles): error de base en el modo pregunta → AI_ERROR sin loguear el texto; cron cada 5 min que limpia el historial de IA de sesiones vencidas (clearExpiredAiSessions). 873 tests, test:bot-ai 18/18.

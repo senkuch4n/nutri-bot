@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     botAiQuestion: { count: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
     service: { findMany: vi.fn() },
     appointment: { findMany: vi.fn() },
+    conversationState: { updateMany: vi.fn() },
   },
 }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
@@ -17,6 +18,7 @@ vi.mock("./availability", () => ({
 
 import {
   BOT_AI_COUNTED_OUTCOMES,
+  clearExpiredAiSessions,
   countBotAiQuestionsToday,
   markBotAiQuestionHandedOff,
   purgeExpiredBotAiQuestions,
@@ -234,5 +236,29 @@ describe("runBotAiTool", () => {
       content: "No se pudo consultar ese dato.",
       isError: true,
     });
+  });
+});
+
+describe("clearExpiredAiSessions", () => {
+  it("pasa a DORMANT con contexto vacío solo las sesiones del modo pregunta vencidas", async () => {
+    mocks.prisma.conversationState.updateMany.mockResolvedValue({ count: 2 });
+    const n = await clearExpiredAiSessions({ sessionTimeoutMs: 20 * 60_000, now: new Date("2026-10-02T12:00:00Z") });
+    expect(n).toBe(2);
+    expect(mocks.prisma.conversationState.updateMany).toHaveBeenCalledWith({
+      where: { step: "AWAIT_QUESTION", updatedAt: { lt: new Date("2026-10-02T11:40:00Z") } },
+      data: { step: "DORMANT", context: {} },
+    });
+  });
+
+  it("con scope acota a esos jids", async () => {
+    mocks.prisma.conversationState.updateMany.mockResolvedValue({ count: 0 });
+    await clearExpiredAiSessions({ sessionTimeoutMs: 60_000, now: NOW, scope: { jids: ["x@s.whatsapp.net"] } });
+    expect(mocks.prisma.conversationState.updateMany.mock.calls[0]![0].where.patientJid).toEqual({ in: ["x@s.whatsapp.net"] });
+  });
+
+  it("un timeout inválido rechaza sin tocar nada", async () => {
+    await expect(clearExpiredAiSessions({ sessionTimeoutMs: 0 })).rejects.toThrow();
+    await expect(clearExpiredAiSessions({ sessionTimeoutMs: Number.NaN })).rejects.toThrow();
+    expect(mocks.prisma.conversationState.updateMany).not.toHaveBeenCalled();
   });
 });
