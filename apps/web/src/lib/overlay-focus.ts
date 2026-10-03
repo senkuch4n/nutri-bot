@@ -27,3 +27,21 @@ export function preserveUserFocusOnClose<E extends Event>(
     if (shouldKeepUserFocus(document.activeElement, document, getOverlay?.())) event.preventDefault();
   };
 }
+
+/**
+ * Estado de accesibilidad del contenido de un overlay según su presencia (lo usa `ExitFocusGuard`):
+ * saliendo → `inert` y, si el foco estaba adentro, `blur()`; presente otra vez (se reabrió a mitad de
+ * la salida: `AnimatePresence` re-presenta la misma instancia) → se quita `inert`.
+ */
+export function applyExitGuard(
+  container: { inert: boolean; contains(node: Element): boolean },
+  isPresent: boolean,
+  active: (Element & { blur?: () => void }) | null,
+): void {
+  if (isPresent) {
+    container.inert = false;
+    return;
+  }
+  if (active && container.contains(active)) active.blur?.();
+  container.inert = true;
+}

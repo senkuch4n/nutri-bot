@@ -4,6 +4,7 @@ import * as React from "react"
 import { m, useIsPresent, type MotionValue } from "motion/react"
 
 import { fades } from "@/lib/motion"
+import { applyExitGuard } from "@/lib/overlay-focus"
 import { cn } from "@/lib/utils"
 
 /**
@@ -61,12 +62,10 @@ export function ExitFocusGuard() {
   const isPresent = useIsPresent()
   const ref = React.useRef<HTMLSpanElement>(null)
   React.useLayoutEffect(() => {
-    if (isPresent) return
     const container = ref.current?.parentElement
     if (!container) return
-    const active = document.activeElement
-    if (active instanceof HTMLElement && container.contains(active)) active.blur()
-    container.inert = true
+    // Si se reabre durante la salida, la misma instancia vuelve a estar presente: se quita `inert`.
+    applyExitGuard(container, isPresent, document.activeElement)
   }, [isPresent])
   return <span ref={ref} hidden />
 }

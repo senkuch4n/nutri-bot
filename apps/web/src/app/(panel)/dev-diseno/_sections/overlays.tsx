@@ -83,6 +83,14 @@ export function OverlaysSection() {
   const confirm = useConfirm();
   const [modalOpen, setModalOpen] = useState(false);
   const [lastAnswer, setLastAnswer] = useState<string | null>(null);
+  const [reopenOpen, setReopenOpen] = useState(false);
+
+  // Caso de prueba: cerrar y reabrir a mitad de la salida (la misma instancia vuelve a estar presente).
+  function closeAndReopen() {
+    setReopenOpen(true);
+    window.setTimeout(() => setReopenOpen(false), 700);
+    window.setTimeout(() => setReopenOpen(true), 820);
+  }
 
   // Patrón correcto (confirm.tsx): nunca `await confirm()` dentro de <form action> ni startTransition.
   async function askDestructive() {
@@ -139,6 +147,23 @@ export function OverlaysSection() {
             <Button variant="secondary" onClick={() => setModalOpen(true)}>
               Modal (compat)
             </Button>
+            <Button variant="secondary" onClick={closeAndReopen}>
+              Cerrar y reabrir a mitad
+            </Button>
+            <Dialog open={reopenOpen} onOpenChange={setReopenOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Reabierto durante la salida</DialogTitle>
+                  <DialogDescription>
+                    Se abrió, se cerró y se volvió a abrir antes de terminar de salir. Tiene que poder usarse: escribí
+                    en el campo y cerrá con la X.
+                  </DialogDescription>
+                </DialogHeader>
+                <Field label="Prueba">
+                  <Input placeholder="Escribí algo…" />
+                </Field>
+              </DialogContent>
+            </Dialog>
             <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Agregar bloque" description="Modal de compatibilidad sobre Dialog.">
               <p className="text-body text-muted-foreground">Mismo comportamiento y animación que Dialog.</p>
             </Modal>

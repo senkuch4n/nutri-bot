@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { preserveUserFocusOnClose, shouldKeepUserFocus } from "./overlay-focus";
+import { applyExitGuard, preserveUserFocusOnClose, shouldKeepUserFocus } from "./overlay-focus";
 
 const body = { tag: "body" } as unknown as Element;
 const html = { tag: "html" } as unknown as Element;
@@ -49,5 +49,37 @@ describe("preserveUserFocusOnClose", () => {
     preserveUserFocusOnClose(handler)(e);
     expect(handler).toHaveBeenCalledOnce();
     expect(e.defaultPrevented).toBe(true);
+  });
+});
+
+describe("applyExitGuard (cerrar y reabrir a mitad de la salida)", () => {
+  function fakeContainer(children: Element[]) {
+    return { inert: false, contains: (n: Element) => children.includes(n) };
+  }
+
+  it("al salir: inert y saca el foco si estaba adentro", () => {
+    const blur = vi.fn();
+    const inside = { blur } as unknown as Element & { blur: () => void };
+    const c = fakeContainer([inside]);
+    applyExitGuard(c, false, inside);
+    expect(c.inert).toBe(true);
+    expect(blur).toHaveBeenCalledOnce();
+  });
+
+  it("al salir con el foco afuera: inert, pero no toca el foco del usuario", () => {
+    const blur = vi.fn();
+    const outside = { blur } as unknown as Element & { blur: () => void };
+    const c = fakeContainer([]);
+    applyExitGuard(c, false, outside);
+    expect(c.inert).toBe(true);
+    expect(blur).not.toHaveBeenCalled();
+  });
+
+  it("reabierto durante la salida (misma instancia vuelve a estar presente): deja de ser inert", () => {
+    const c = fakeContainer([]);
+    applyExitGuard(c, false, null); // Esc
+    expect(c.inert).toBe(true);
+    applyExitGuard(c, true, null); // clic en el disparador antes de que termine la salida
+    expect(c.inert).toBe(false);
   });
 });
