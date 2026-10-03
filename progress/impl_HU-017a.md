@@ -563,11 +563,76 @@ la ruta (layout raíz + layout del grupo + página, desde `app-build-manifest.js
 - El `next dev` del usuario reinició solo con el cambio de `next.config.mjs`: `/inicio` y `/portal`
   siguen respondiendo 200.
 
+## 5. Defecto del recorrido: rueda durante la entrada + Esc → el sheet no se desmonta — commit `3ed662d`
+
+Ver `progress/recorrido_HU-017a-ronda2.md`.
+
+- **No lo pude reproducir.** Armé una réplica pública temporal con el shell real: `AppSidebar` +
+  `MobileTopbar` + `TooltipProvider`, con `PathnameContext` en `/alimentos` para que el ítem activo
+  tenga su `m.span layoutId` adentro del sheet. La probé con Playwright en Chrome real a 390×844, con
+  y sin emulación táctil, con 0 y 200 ms antes de la rueda y con la página en segundo plano. Los
+  pasos fueron: abrir el menú, 2 ticks de rueda en (120, 500), esperar 1 s, Esc y esperar 3 s. Las 6
+  corridas terminaron con 0 `[role=dialog]`, 0 `[data-scrim]` y el foco en "Abrir menú". Borré la
+  réplica.
+- **La rueda no pasa por `dismiss-drag`:** no genera `pointerdown` y los `pointermove` sin
+  `pointerdown` se ignoran (test).
+- **Lo que muestra el estado reportado:** `left = -4` con `data-state="closed"` (o `-305` con el scrim
+  al 4,5 %) indica que la animación de salida **quedó detenida a mitad** y que su promesa no resolvió.
+  En Motion 14, `then` no resuelve si la animación se frena, y tampoco avanza si el navegador no da
+  cuadros (pestaña en segundo plano o tapada, como puede pasar con la pestaña que maneja la extensión).
+  Sin resolver, `safeToRemove` no se llama nunca.
+- **Arreglo (no depende de la causa exacta):**
+  1. **La salida del sheet siempre termina.** Nuevo `lib/sheet-exit.ts` (`runExit`):
+     - Arranca la animación de salida y llama a `safeToRemove` una sola vez, cuando la animación termina.
+     - Si no termina, lo hace a los 1000 ms (`SHEET_EXIT_TIMEOUT_MS`, springs de ~0,3 s + margen):
+       primero frena la animación y deja el valor en su destino (`jump`), después desmonta.
+     - Si el sheet se reabre a mitad de la salida, se cancela.
+     - Si no se puede medir el panel, el destino es el ancho o alto del viewport (antes era 0, o sea la
+       posición de abierto).
+  2. **El foco nunca queda en un panel cerrado.**
+     - Al empezar la salida, si el foco está adentro del panel se le hace `blur()`, y el panel queda
+       `inert` (fuera del orden de foco y del árbol de accesibilidad) mientras sale.
+     - Al desmontar, Radix devuelve el foco al disparador, o lo deja donde el usuario lo puso.
+     - Lo mismo para Dialog y AlertDialog con `ExitFocusGuard` (en `modal-scrim.tsx`): al empezar la
+       salida saca el foco del contenido y lo marca `inert`.
+     - Verificado en la réplica: después de Esc el foco pasa a `body` y, al desmontar, a "Abrir menú".
+  3. **El menú del celular ya no usa `layoutId`** para el ítem activo (`SidebarContent` con
+     `density="touch"` dibuja un fondo fijo). Ahí no hay nada que deslizar: el menú se cierra al
+     navegar. Así no quedan nodos de proyección (`MeasureLayout`, que también se registra en
+     `AnimatePresence`) adentro de un sheet que sale. La sidebar de escritorio conserva el indicador
+     que se desliza.
+- **Tests:** `lib/sheet-exit.test.ts`, 4 casos:
+  - desmonta cuando termina la animación, una sola vez;
+  - **si la animación no termina nunca, desmonta igual a los 1000 ms** (la frena, deja el valor en el
+    destino y no llama dos veces si resuelve tarde);
+  - reabrir a mitad de la salida cancela;
+  - **"evento sin captura durante la entrada y después cerrar → se desmonta"**: toque y scroll vertical
+    sin captura en la entrada, movimientos sin botón y un gesto durante la salida no frenan nada, y la
+    salida, aunque no avance, termina con `onDone` y el valor en el destino.
+- **Para el orquestador:** repetir exactamente los pasos del recorrido. Después de Esc, en ≤ 1 s tiene
+  que haber 0 `[role=dialog]` y 0 `[data-scrim]`, con el foco en "Abrir menú". Repetir con la variante
+  (rueda sobre la página después de Esc). Si **antes** de 1 s se consulta
+  `document.activeElement`, tiene que ser `body`, no "Cerrar sesión".
+
+## 6. Sidebar a 1366×768 (mismo commit)
+
+- Los títulos de grupo pasan de `pt-3`/`pb-1` a `pt-2`/`pb-0.5` (el primero `pt-1.5`) y el `nav` de
+  `pb-2` a `pb-1`. Los ítems no cambian: 32 px en escritorio y 44 px en el menú táctil.
+- Medido en la réplica con Chrome real a 1366 de ancho:
+
+| Alto del viewport | header + contenido del nav + pie | Alto del `nav` | ¿Entra sin scroll? |
+|---|---|---|---|
+| 768 | 56 + 567 + 129 = 752 | 567 | sí |
+| 650 (la barra del navegador a 1366×768) | 56 + 449 + 129 = 634 | 449 | sí: `scrollHeight` 449 = `clientHeight` 449 |
+
+- Antes, a 650 px, el contenido del nav era 467 y sobraban 18 px de scroll. El contenido total es
+  634 px: entra hasta en un viewport de ~650 px (la `aside` tiene 16 px menos por el padding del layout).
+
 ## Verificación ronda 2
 
 ```
 npm run typecheck              → core, db, bot, web: sin errores
-npm run test                   → Test Files 72 passed (72) · Tests 1364 passed (1364)  (+23 tests nuevos)
+npm run test                   → Test Files 73 passed (73) · Tests 1368 passed (1368)  (+27 tests nuevos en la ronda)
 npm run lint -w apps/web       → 1 warning preexistente (ajustes/logo-form.tsx:36), ninguno nuevo
 ./ops/harness/verify.sh        → Arnés OK (WARN "se tocó el bot" = apps/bot/.whatsapp-auth.vieja* sin trackear)
 next build (worktree de HEAD 3cb5faf; el `next dev` del usuario seguía levantado sobre el árbol)
