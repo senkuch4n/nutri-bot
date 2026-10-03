@@ -25,9 +25,8 @@ import {
 
 // HU-018a: guardar, archivar y volver a publicar recetas. Los errores se loguean SOLO con
 // errorCode(err): el payload puede llevar los bytes de la foto. El esquema del payload y la foto
-// viven en recipe-save.ts (los comparte la revisión de borradores, 018a-2).
-
-export type { RecipeActionState, RecipeFormPayload } from "./recipe-save";
+// viven en recipe-save.ts (los comparte la revisión de borradores, 018a-2). Los tipos se importan de
+// ahí: Turbopack no acepta un `export type { … } from` en un archivo "use server".
 
 function revalidateRecipe(id: string) {
   revalidatePath("/recetas");

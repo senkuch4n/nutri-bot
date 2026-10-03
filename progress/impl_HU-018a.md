@@ -585,3 +585,41 @@ No hace falta reiniciar `next dev`: no cambió el schema. Las rutas nuevas las t
     foco siempre visible.
 14. `/api/recetas/importacion/<id>?size=full` en incógnito: el middleware redirige al login, igual que las fotos.
 15. Limpieza: el undo de las dos corridas y, por id, lo que se haya publicado (ver arriba).
+
+### Corrección: build error con Turbopack (lo encontró el recorrido del orquestador)
+
+**Error:** con `npm run dev` (Turbopack), `/recetas` mostraba "Only async functions are allowed to be exported in a
+"use server" file". Venía de `recetas/actions.ts:30`, el `export type { RecipeActionState, RecipeFormPayload } from
+"./recipe-save"` que agregué en `bc034b7`. Webpack (`next build`) lo acepta y Turbopack no, por eso el build de la fase K
+no lo detectó.
+
+**Arreglo:** saqué el re-export. Ningún archivo importaba esos tipos desde `actions.ts`: `recipe-form.tsx` y
+`revisar/actions.ts` ya los traían de `recipe-save.ts`. En `actions.ts` quedó un comentario que explica por qué los tipos
+viven en `recipe-save.ts`.
+
+**Revisé los otros archivos `"use server"` nuevos:** `recetas/actions.ts` y `revisar/actions.ts` solo exportan funciones
+async. Los demás `"use server"` del repo exportan `export type X = …` declarados en el archivo, que Turbopack sí acepta;
+el problema era solo el re-export `export type { … } from`.
+
+**Cómo lo verifiqué contra Turbopack:**
+- **Con `curl` contra el `next dev` del usuario en :3000** (no lo toqué): las 4 rutas (`/recetas`, `/recetas/nueva`,
+  `/recetas/revisar` y `/recetas/revisar/cmusbq1hh000h10rv55o1uo61`) responden 307 al login. El middleware de Auth.js
+  corta antes de compilar la página, así que eso no prueba nada sobre el error.
+- **Con `next build --turbopack`** (Next 15.5.24), en una copia del repo en el scratchpad. Compila todas las rutas con
+  Turbopack, igual que `next dev --turbopack`.
+  - El `node_modules` de la copia es un clon APFS (`cp -c`), porque Turbopack rechaza un symlink que sale de la raíz.
+  - **Antes del arreglo**, con el `actions.ts` de HEAD: falla con el mismo error que vio el orquestador (8 errores, todos
+    por esa línea).
+  - **Después del arreglo**: "Compiled successfully" y exit 0, con `/recetas`, `/recetas/[id]`, `/recetas/nueva`,
+    `/recetas/revisar`, `/recetas/revisar/[id]` y `/api/recetas/importacion/[imageId]`.
+  - La copia ya se borró.
+- No levanté un `next dev` aparte: sin sesión, el middleware también cortaría antes de compilar las páginas.
+
+**Verificación después del arreglo:**
+- `npm run typecheck`: OK en los 4 workspaces.
+- `npm run test`: 95 archivos, 1619 tests OK.
+- `npm run lint --workspace apps/web`: solo el warning anterior a la HU, en `logo-form.tsx`.
+- `./ops/harness/verify.sh`: "Arnés OK".
+
+**Para el recorrido:** el `next dev` del usuario debería recompilar solo al guardar el archivo. Si el overlay sigue, hay
+que recargar la página.
