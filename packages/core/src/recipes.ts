@@ -316,6 +316,24 @@ export function recipeItemMacros(perPortion: Macros | null, portions: number): M
   return scaleMacros(perPortion, portions);
 }
 
+/**
+ * Micronutrientes (HU-010) de un ítem de receta (018c): los ingredientes escalados a las porciones
+ * del ítem. grams = ingrediente.grams × portions / yieldPortions. Se omiten los noQuantity (c.n., no
+ * suman, igual que en los macros). Los de texto libre (food null) o sin gramos quedan con food o grams
+ * en null, así cuentan como "sin dato" en la cobertura. yieldPortions ≤ 0 o null → [].
+ */
+export function expandRecipeIngredients<F>(
+  ingredients: readonly { grams: number | null; noQuantity: boolean; food: F | null }[],
+  yieldPortions: number | null,
+  portions: number,
+): { food: F | null; grams: number | null }[] {
+  if (!isPositive(yieldPortions) || !Number.isFinite(portions)) return [];
+  const factor = portions / yieldPortions;
+  return ingredients
+    .filter((i) => !i.noQuantity)
+    .map((i) => ({ food: i.food, grams: isPositive(i.grams) ? i.grams * factor : null }));
+}
+
 // ── Comparación con la tabla del recetario (D4) ──────────────────────────────────────────────
 
 export const PUBLISHED_MACROS_TOLERANCE = 0.1;
