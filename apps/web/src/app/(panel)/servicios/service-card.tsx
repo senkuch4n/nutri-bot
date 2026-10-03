@@ -48,10 +48,11 @@ export function ServiceCard({
         {service.durationMin} min
       </p>
 
-      {service.requiresDeposit || service.prepInstructions ? (
+      {service.requiresDeposit || service.prepInstructions || service.asksReason ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {service.requiresDeposit ? <Badge tone="neutral">Requiere seña</Badge> : null}
           {service.prepInstructions ? <Badge tone="info">Manda recomendaciones previas</Badge> : null}
+          {service.asksReason ? <Badge tone="neutral">Pide motivo</Badge> : null}
         </div>
       ) : null}
 

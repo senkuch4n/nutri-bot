@@ -19,6 +19,11 @@ interface PrepFields {
   prepLeadHours?: number | null;
 }
 
+/** HU-013 (D4): el bot pide el motivo de consulta al reservar. */
+interface ReasonFields {
+  asksReason: boolean;
+}
+
 export function createService(
   data: {
     name: string;
@@ -27,7 +32,8 @@ export function createService(
     durationMin: number;
     color: string;
   } & DepositFields &
-    PrepFields,
+    PrepFields &
+    ReasonFields,
 ) {
   const { depositValue, ...rest } = data;
   return prisma.service.create({
@@ -49,7 +55,8 @@ export function updateService(
     color: string;
     active: boolean;
   } & DepositFields &
-    PrepFields,
+    PrepFields &
+    ReasonFields,
 ) {
   const { depositValue, ...rest } = data;
   return prisma.service.update({

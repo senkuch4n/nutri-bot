@@ -1,4 +1,5 @@
 import { formatDate, formatDateTime, formatPrice, formatTime } from "./format";
+import { reasonForAlert } from "./booking-reason";
 import { PAYMENT_METHODS } from "./payment-methods";
 
 export const MENU = `¡Hola! 👋 Soy el asistente de turnos. ¿Qué necesitás?
@@ -47,18 +48,26 @@ export function askSlot(slots: Date[], tz: string): string {
 
 export const NO_SLOTS = `No hay horarios disponibles para ese día. Escribí *menú* y probá con otro.`;
 
+/** HU-013: línea del motivo (resumen al paciente y alerta). */
+export function bookingReasonLine(reason: string): string {
+  return `📝 Motivo: ${reason}`;
+}
+
 export function confirmBooking(params: {
   serviceName: string;
   startsAt: Date;
   price: number | string;
   tz: string;
   currency: string;
+  /** HU-013: motivo ya normalizado. null/undefined/"" → sin línea (texto idéntico al de antes). */
+  reason?: string | null;
 }): string {
+  const reasonLine = params.reason ? `\n${bookingReasonLine(params.reason)}` : "";
   return `Confirmás este turno?
 
 📋 *${params.serviceName}*
 🗓️ ${formatDateTime(params.startsAt, params.tz)} hs
-💲 ${formatPrice(params.price, params.currency)}
+💲 ${formatPrice(params.price, params.currency)}${reasonLine}
 
 Respondé *sí* para confirmar o *no* para cancelar.`;
 }
@@ -200,12 +209,15 @@ export function professionalNewBookingAlert(params: {
   serviceName: string;
   startsAt: Date;
   tz: string;
+  /** HU-013 (D7): null/undefined/"" → texto idéntico al de antes. */
+  reason?: string | null;
 }): string {
   const who = params.patientName ?? params.patientPhone;
-  return `🔔 ${who} sacó un turno de ${params.serviceName} para el ${formatDateTime(
+  const text = `🔔 ${who} sacó un turno de ${params.serviceName} para el ${formatDateTime(
     params.startsAt,
     params.tz,
   )} hs.`;
+  return params.reason ? `${text}\n${bookingReasonLine(reasonForAlert(params.reason))}` : text;
 }
 
 export function professionalHandoffAlert(params: {
@@ -276,3 +288,16 @@ export const AI_OFF_TOPIC = `Solo puedo ayudarte con temas del consultorio: serv
 
 /** Sufijo de una respuesta cortada por max_tokens (SDD P3). */
 export const AI_TRUNCATED_SUFFIX = `\n\nSi necesitás más detalle, preguntame algo más puntual o respondé *0* para dejarle tu consulta a la nutricionista.`;
+
+// --- HU-013: motivo de consulta al reservar ---
+
+export const ASK_BOOKING_REASON = `Contame en pocas palabras el *motivo de la consulta* 📝
+(por ejemplo: bajar de peso, control, alimentación deportiva, un estudio que te pidieron).
+
+Así la nutricionista puede preparar tu turno. Si preferís no decirlo ahora, escribí *saltear*.`;
+
+export const BOOKING_REASON_TOO_SHORT = `No llegué a entenderlo 🙈. Contame el motivo en unas palabras, o escribí *saltear* si preferís no decirlo.`;
+
+export const BOOKING_REASON_TOO_LONG = `¡Gracias por el detalle! Es un poco largo para guardarlo 😅. ¿Me lo resumís en un mensaje más corto? Lo demás se lo podés contar a la nutricionista en la consulta.`;
+
+export const BOOKING_REASON_TEXT_ONLY = `Por ahora solo puedo guardar texto. ¿Me lo escribís? 🙏 Si preferís no decirlo, escribí *saltear*.`;

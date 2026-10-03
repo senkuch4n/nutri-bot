@@ -2,6 +2,8 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { NumberInput } from "@/components/number-input";
+import { Label } from "@/components/primitives/label";
+import { Switch } from "@/components/primitives/switch";
 import { Button, Field, FormError, Input, Select, Textarea, cn } from "@/components/ui";
 import { useActionToast } from "@/lib/notify";
 import { saveServiceAction, type ServiceFormState } from "./actions";
@@ -19,6 +21,8 @@ export interface EditableService {
   depositValue: string | null;
   prepInstructions: string | null;
   prepLeadHours: number | null;
+  /** HU-013 (D4): el bot pide el motivo al reservar. */
+  asksReason: boolean;
 }
 
 const initial: ServiceFormState = { ok: false };
@@ -32,11 +36,17 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
   const [color, setColor] = useState(editing?.color ?? PRESET_COLORS[0]!);
   const [requiresDeposit, setRequiresDeposit] = useState(editing?.requiresDeposit ?? false);
   const [hasPrep, setHasPrep] = useState(Boolean(editing?.prepInstructions));
+  const [asksReason, setAsksReason] = useState(editing?.asksReason ?? true);
+  const reasonId = `pide-motivo-${editing?.id ?? "nuevo"}`;
 
   useActionToast(state, { success: editing ? "Servicio guardado" : "Servicio creado" });
   useEffect(() => {
     if (state.ok) {
-      if (!editing) formRef.current?.reset();
+      if (!editing) {
+        formRef.current?.reset();
+        // reset() no toca el estado controlado del switch.
+        setAsksReason(true);
+      }
       onDone?.();
     }
   }, [state.ok, editing, onDone]);
@@ -173,6 +183,24 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
             </Field>
           </div>
         ) : null}
+      </div>
+
+      <div className="flex items-start justify-between gap-6 border-t pt-4 sm:col-span-2">
+        <div>
+          <Label htmlFor={reasonId} className="text-sm font-medium">
+            Pedir motivo al reservar
+          </Label>
+          <p id={`${reasonId}-desc`} className="mt-1 text-sm text-muted-foreground">
+            El bot le pide al paciente que cuente el motivo antes de confirmar el turno.
+          </p>
+        </div>
+        <Switch
+          id={reasonId}
+          checked={asksReason}
+          onCheckedChange={setAsksReason}
+          aria-describedby={`${reasonId}-desc`}
+        />
+        <input type="hidden" name="asksReason" value={asksReason ? "1" : "0"} />
       </div>
 
       {editing ? (

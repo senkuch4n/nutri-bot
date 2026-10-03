@@ -4,4 +4,6 @@ export {
   cancelAppointment,
   setAppointmentStatus,
   SlotUnavailableError,
+  updateAppointmentReason,
+  InvalidBookingReasonError,
 } from "@nutri-bot/db/domain";

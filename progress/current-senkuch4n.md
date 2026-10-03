@@ -147,3 +147,5 @@ orquestador, para que las revise a la mañana:
 - HU-013 → `en_arquitectura` (migracion-prisma + ui).
 - HU-013: SDD lista (Refactorizaciones/motivo-consulta-reserva.md; Appointment.reason, Service.asksReason default true; P1–P10) → `arquitectura_lista`.
 - HU-013: usuario acepta P1/P4–P10; P2 lista de salteo ampliada; P3 aparte tras PR #8. → `implementando` (Opus; migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max).
+- HU-013: implementer (Opus) `done`: 962 tests, test:booking-reason 17/17, regresiones OK, datos reales intactos. Recorrido OK (progress/recorrido_HU-013.md). → `en_revision`.
+- **HU-013 aprobada** (1ª ronda, reviewer Opus). Ver history.

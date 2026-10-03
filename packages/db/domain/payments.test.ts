@@ -157,4 +157,35 @@ describe("payment reconciliation without database or network", () => {
     expect(mocks.prisma.payment.updateMany).not.toHaveBeenCalled();
     expect(mocks.prisma.outboundMessage.createMany).not.toHaveBeenCalled();
   });
+  // HU-013 (D7): la alerta del pago aprobado lleva el motivo; la confirmación al paciente no.
+  const enqueuedBodies = () => {
+    const rows = mocks.prisma.outboundMessage.createMany.mock.calls.flatMap((c: any[]) => c[0].data);
+    return {
+      alert: rows.find((r: any) => r.kind === "PROFESSIONAL_ALERT")?.body as string,
+      confirmation: rows.find((r: any) => r.kind === "CONFIRMATION")?.body as string,
+    };
+  };
+  it("includes the booking reason in the professional alert when the deposit is approved", async () => {
+    payment.appointment.reason = "Quiero bajar de peso";
+    await syncMercadoPagoPayment("123");
+    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
+    const { alert, confirmation } = enqueuedBodies();
+    expect(alert).toContain("📝 Motivo: Quiero bajar de peso");
+    expect(confirmation).toBeDefined();
+    expect(confirmation).not.toContain("Motivo");
+  });
+  it("keeps the professional alert without a reason line when there is no reason", async () => {
+    payment.appointment.reason = null;
+    await syncMercadoPagoPayment("123");
+    const { alert } = enqueuedBodies();
+    expect(alert).toBeDefined();
+    expect(alert).not.toContain("Motivo");
+  });
+  it("truncates a long booking reason in the professional alert", async () => {
+    payment.appointment.reason = "Necesito un plan. ".repeat(17).slice(0, 300);
+    await syncMercadoPagoPayment("123");
+    const { alert } = enqueuedBodies();
+    expect(alert).toContain("(completo en el panel)");
+    expect(alert).not.toContain(payment.appointment.reason);
+  });
 });

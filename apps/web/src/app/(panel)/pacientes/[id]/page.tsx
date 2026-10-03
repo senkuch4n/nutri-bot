@@ -276,6 +276,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 priceLabel: formatPrice(a.priceSnapshot.toString(), pro.currency),
                 status: statusMeta[a.status],
                 consultationHref: a.consultation ? `/pacientes/${patient.id}/consultas/${a.consultation.id}` : null,
+                reason: a.reason,
               }))}
             />
           ),

@@ -1,4 +1,4 @@
-import { isConsultationEmpty, messages } from "@nutri-bot/core";
+import { isConsultationEmpty, messages, validateBookingReasonInput } from "@nutri-bot/core";
 import { Prisma, prisma, type Actor, type Appointment, type AppointmentStatus } from "../index";
 import { getProfessional, checkSlotAvailable } from "./availability";
 import { enqueueMessage } from "./outbox";
@@ -10,6 +10,14 @@ export class SlotUnavailableError extends Error {
   }
 }
 
+/** HU-013: motivo inválido (más de 500 caracteres). `message` es el texto para el panel. */
+export class InvalidBookingReasonError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidBookingReasonError";
+  }
+}
+
 /** Crea un turno confirmado, revalidando el horario, y encola la confirmación. */
 export async function createAppointment(params: {
   patientId: string;
@@ -18,7 +26,16 @@ export async function createAppointment(params: {
   createdBy: Actor;
   /** false cuando el bot ya respondió la confirmación en vivo. */
   notifyPatient?: boolean;
+  /** HU-013: motivo de consulta. Se normaliza con validateBookingReasonInput; "" → null.
+   *  Si supera 500 → InvalidBookingReasonError ANTES de leer o escribir nada. */
+  reason?: string | null;
+  /** HU-013, SOLO pruebas: destino de la alerta de turno nuevo. undefined = Professional.phoneJid
+   *  (como hoy); null = sin alerta. El bot pasa `opts.alertJid` (undefined en producción). */
+  professionalAlertJid?: string | null;
 }) {
+  const r = validateBookingReasonInput(params.reason);
+  if (!r.ok) throw new InvalidBookingReasonError(r.error);
+
   const [pro, service, patient] = await Promise.all([
     getProfessional(),
     prisma.service.findUniqueOrThrow({ where: { id: params.serviceId } }),
@@ -42,6 +59,7 @@ export async function createAppointment(params: {
         createdBy: params.createdBy,
         priceSnapshot: service.price,
         needsGoogleSync: true,
+        reason: r.reason,
       },
     });
   });
@@ -60,9 +78,11 @@ export async function createAppointment(params: {
   }
 
   // Aviso a la profesional cuando el turno lo saca el paciente.
-  if (!awaitingPayment && params.createdBy === "PATIENT" && pro.phoneJid) {
+  const alertJid =
+    params.professionalAlertJid !== undefined ? params.professionalAlertJid : pro.phoneJid;
+  if (!awaitingPayment && params.createdBy === "PATIENT" && alertJid) {
     await enqueueMessage({
-      toJid: pro.phoneJid,
+      toJid: alertJid,
       kind: "PROFESSIONAL_ALERT",
       // Sin appointmentId: puede haber varias alertas para un mismo turno.
       body: messages.professionalNewBookingAlert({
@@ -71,11 +91,31 @@ export async function createAppointment(params: {
         serviceName: service.name,
         startsAt: appointment.startsAt,
         tz: pro.timezone,
+        reason: appointment.reason,
       }),
     });
   }
 
   return appointment;
+}
+
+/**
+ * HU-013 (D5): la profesional edita el motivo desde el detalle del turno. Cualquier estado.
+ * Valida y normaliza con validateBookingReasonInput (inválido → InvalidBookingReasonError sin
+ * escribir). Actualiza SOLO `reason`: no toca `needsGoogleSync` (el motivo no va a Google), no
+ * encola mensajes, no toca la consulta.
+ */
+export async function updateAppointmentReason(params: {
+  id: string;
+  reason: string | null;
+}): Promise<{ id: string; patientId: string; reason: string | null }> {
+  const r = validateBookingReasonInput(params.reason);
+  if (!r.ok) throw new InvalidBookingReasonError(r.error);
+  return prisma.appointment.update({
+    where: { id: params.id },
+    data: { reason: r.reason },
+    select: { id: true, patientId: true, reason: true },
+  });
 }
 
 export async function cancelAppointment(params: {

@@ -261,6 +261,8 @@ model Service {
   durationMin  Int
   prepInstructions String?
   prepLeadHours Int?
+  /// HU-013 (D4): el bot pide el motivo de consulta al reservar este servicio. Prendido por defecto.
+  asksReason   Boolean       @default(true)
   color        String        @default("#2563eb")
   active       Boolean       @default(true)
   createdAt    DateTime      @default(now())
@@ -402,6 +404,10 @@ model Appointment {
   createdBy       Actor
   cancelledBy     Actor?
   cancelReason    String?
+  /// HU-013: motivo de consulta que escribió el paciente al reservar por el bot, o la profesional
+  /// en el panel. trim, máx. 500 caracteres (validado en packages/core). null = sin motivo (no se
+  /// pidió, lo salteó o turno anterior a la HU-013; D11). No va a Google Calendar, a la IA ni al portal (D9).
+  reason          String?
   priceSnapshot   Decimal           @db.Decimal(12, 2)
   googleEventId   String?
   needsGoogleSync Boolean           @default(true)

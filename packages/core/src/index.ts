@@ -29,3 +29,4 @@ export * from "./isak-report-charts";
 export * from "./after-hours";
 export * from "./bot-ai";
 export * from "./bot-ai-tools";
+export * from "./booking-reason";

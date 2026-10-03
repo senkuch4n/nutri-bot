@@ -28,7 +28,7 @@ import {
   toPrescriptionSnapshot,
 } from "@nutri-bot/db/domain";
 import { Separator } from "@/components/primitives/separator";
-import { Alert, Badge, Button, PageHeader } from "@/components/ui";
+import { Alert, Badge, Button, Card, PageHeader } from "@/components/ui";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { getProfessional } from "@/lib/professional";
 import { ConsultationDateSheet } from "../../consultation-date-sheet";
@@ -292,6 +292,12 @@ export default async function ConsultationPage({
             plan={consultation.plan}
             options={planOptions}
           />
+          {/* HU-013 (D8): motivo del turno, de solo lectura (no se copia a las notas). */}
+          {appointment?.reason ? (
+            <Card title="Motivo indicado al reservar" description="Se edita desde el turno en el calendario.">
+              <p className="whitespace-pre-wrap break-words text-sm">{appointment.reason}</p>
+            </Card>
+          ) : null}
           <ConsultationNotes patientId={id} consultationId={consultation.id} notes={consultation.notes} />
         </div>
       </div>

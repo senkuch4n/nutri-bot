@@ -28,6 +28,7 @@ export default async function ServiciosPage() {
       depositValue: s.depositValue?.toString() ?? null,
       prepInstructions: s.prepInstructions,
       prepLeadHours: s.prepLeadHours,
+      asksReason: s.asksReason,
     },
   });
 

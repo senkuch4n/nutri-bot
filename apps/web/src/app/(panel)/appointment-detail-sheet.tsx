@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type RefObject } from "react";
+import { useState, useTransition, type RefObject } from "react";
 import { es } from "date-fns/locale";
-import { Bell, Check, ClipboardList, Undo2, UserX } from "lucide-react";
-import { formatInTimeZone, formatPrice } from "@nutri-bot/core";
+import { Bell, Check, ClipboardList, Pencil, Undo2, UserX } from "lucide-react";
+import { BOOKING_REASON_MAX, formatInTimeZone, formatPrice } from "@nutri-bot/core";
 import { Separator } from "@/components/primitives/separator";
 import {
   Sheet,
@@ -13,9 +13,14 @@ import {
   SheetTitle,
 } from "@/components/primitives/sheet";
 import { useConfirm } from "@/components/confirm";
-import { Badge, Button, ButtonLink, FormError } from "@/components/ui";
+import { Badge, Button, ButtonLink, FormError, Textarea, cn } from "@/components/ui";
 import { notify } from "@/lib/notify";
-import { cancelAppointmentAction, sendReminderNowAction, setStatusAction } from "./actions";
+import {
+  cancelAppointmentAction,
+  saveAppointmentReasonAction,
+  sendReminderNowAction,
+  setStatusAction,
+} from "./actions";
 
 export interface SelectedAppointment {
   id: string;
@@ -30,6 +35,8 @@ export interface SelectedAppointment {
   patientId: string;
   /** Consulta del turno (HU-003). `hasContent`: tiene mediciones, plan o notas. */
   consultation: { id: string; hasContent: boolean } | null;
+  /** HU-013: motivo de consulta. */
+  reason: string | null;
 }
 
 const statusBadge: Record<
@@ -129,6 +136,34 @@ function AppointmentBody({
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const confirm = useConfirm();
+  // HU-013 (D5): edición del motivo en línea.
+  const [editingReason, setEditingReason] = useState(false);
+  const [reasonDraft, setReasonDraft] = useState(appt.reason ?? "");
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [savingReason, startSavingReason] = useTransition();
+
+  // Patrón de ajustes/after-hours-form.tsx: onSubmit + preventDefault + startTransition.
+  function submitReason(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setReasonError(null);
+    startSavingReason(async () => {
+      const res = await saveAppointmentReasonAction(appt.id, reasonDraft);
+      if (res.ok) {
+        notify.saved("Motivo guardado");
+        setEditingReason(false);
+        onUpdated({ ...appt, reason: res.reason ?? null });
+        onChanged();
+      } else {
+        setReasonError(res.error ?? "No se pudo guardar el motivo.");
+      }
+    });
+  }
+
+  function cancelReasonEdit() {
+    setReasonDraft(appt.reason ?? "");
+    setReasonError(null);
+    setEditingReason(false);
+  }
 
   async function run<R extends { ok: boolean; error?: string }>(
     kind: Exclude<Busy, null | "reminder">,
@@ -199,7 +234,7 @@ function AppointmentBody({
   }
 
   const badge = statusBadge[appt.status];
-  const disabled = busy !== null;
+  const disabled = busy !== null || savingReason;
   const dateLabel = `${formatInTimeZone(new Date(appt.start), tz, "EEEE dd/MM/yyyy HH:mm", { locale: es })} hs`;
 
   return (
@@ -225,6 +260,73 @@ function AppointmentBody({
         <dd className="font-medium capitalize">{dateLabel}</dd>
         <dt className="text-muted-foreground">Precio</dt>
         <dd className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</dd>
+        <dt className="text-muted-foreground">Motivo</dt>
+        <dd className="min-w-0">
+          {editingReason ? (
+            <form onSubmit={submitReason} className="space-y-2">
+              <label htmlFor={`motivo-${appt.id}`} className="sr-only">
+                Motivo de consulta
+              </label>
+              <Textarea
+                id={`motivo-${appt.id}`}
+                rows={4}
+                maxLength={BOOKING_REASON_MAX}
+                autoFocus
+                value={reasonDraft}
+                onChange={(e) => setReasonDraft(e.target.value)}
+                aria-describedby={`motivo-${appt.id}-contador`}
+              />
+              <p
+                id={`motivo-${appt.id}-contador`}
+                className="text-right text-xs tabular-nums text-muted-foreground"
+                aria-live="polite"
+              >
+                {reasonDraft.length}/{BOOKING_REASON_MAX}
+              </p>
+              <FormError message={reasonError} />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={savingReason}
+                  onClick={cancelReasonEdit}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" size="sm" loading={savingReason}>
+                  {savingReason ? "Guardando…" : "Guardar"}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="flex items-start gap-1">
+              <p
+                className={cn(
+                  "min-w-0 flex-1 whitespace-pre-wrap break-words",
+                  appt.reason ? "font-medium" : "text-muted-foreground",
+                )}
+              >
+                {appt.reason ?? "—"}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="-my-2 h-8 w-8 shrink-0"
+                aria-label="Editar motivo"
+                disabled={disabled}
+                onClick={() => {
+                  setReasonDraft(appt.reason ?? "");
+                  setReasonError(null);
+                  setEditingReason(true);
+                }}
+              >
+                <Pencil aria-hidden />
+              </Button>
+            </div>
+          )}
+        </dd>
       </dl>
 
       <Separator className="mt-6" />

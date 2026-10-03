@@ -128,6 +128,7 @@ export async function syncMercadoPagoPayment(paymentId: string, expectedInternal
           serviceName: appointment.service.name,
           startsAt: appointment.startsAt,
           tz: pro.timezone,
+          reason: appointment.reason,
         }),
       }] });
     }

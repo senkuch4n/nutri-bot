@@ -28,6 +28,7 @@ import {
   mergeBotAiLimits,
   messages,
   normalize,
+  parseBookingReason,
   trimHistory,
   type AfterHoursConfig,
   type AiTurn,
@@ -56,7 +57,8 @@ export type ConversationOptions = {
   now?: Date;
   /** SOLO pruebas: reemplaza la franja de Professional. */
   afterHours?: AfterHoursConfig;
-  /** SOLO pruebas: reemplaza Professional.phoneJid como destino de las alertas (null = sin alertas). */
+  /** SOLO pruebas: reemplaza Professional.phoneJid como destino de las alertas (opción 0 y, desde la
+   *  HU-013, turno nuevo) (null = sin alertas). */
   alertJid?: string | null;
   /** HU-012: proveedor de IA. undefined = el del .env (getBotAiRuntime; null si falta la clave);
    *  null = sin IA. Las pruebas pasan uno falso. */
@@ -88,6 +90,8 @@ const STEP = {
   AWAIT_INQUIRY: "AWAIT_INQUIRY",
   /** HU-012: modo pregunta; el texto libre va a la IA. */
   AWAIT_QUESTION: "AWAIT_QUESTION",
+  /** HU-013: esperando el motivo de consulta (texto libre). */
+  BOOK_REASON: "BOOK_REASON",
 } as const;
 
 /** Tras este tiempo de inactividad, una conversación abierta vuelve a DORMANT. */
@@ -112,6 +116,8 @@ type Ctx = {
   /** HU-012 (D4 c): última pregunta "derivable" con 0 y su fila de BotAiQuestion. */
   lastQuestion?: string;
   lastQuestionLogId?: string;
+  /** HU-013: motivo aceptado (parseBookingReason "ok"), entre BOOK_REASON y el "sí". */
+  reason?: string;
 };
 
 async function loadState(jid: string): Promise<{ step: string; ctx: Ctx; updatedAt: Date }> {
@@ -229,6 +235,21 @@ export async function handleIncoming(
     return handleQuestionText(jid, text, ctx, patient, pro, send, opts, now, ai);
   }
 
+  // HU-013: paso del motivo. Texto libre: solo comandos estrictos (mensaje entero).
+  if (step === STEP.BOOK_REASON) {
+    if (isExitCommand(text)) {
+      await save(jid, STEP.DORMANT);
+      await send(messages.DORMANT_BYE);
+      return;
+    }
+    if (isMenuCommand(text)) {
+      await save(jid, STEP.MENU);
+      await send(menuText);
+      return;
+    }
+    return handleBookReason(jid, text, ctx, send, menuText);
+  }
+
   if (isExitWord(text)) {
     await save(jid, STEP.DORMANT);
     await send(messages.DORMANT_BYE);
@@ -263,7 +284,7 @@ export async function handleIncoming(
     case STEP.BOOK_SLOT:
       return handleBookSlot(jid, text, ctx, send);
     case STEP.BOOK_CONFIRM:
-      return handleBookConfirm(jid, text, ctx, patient.id, send, menuText);
+      return handleBookConfirm(jid, text, ctx, patient.id, send, menuText, opts);
     case STEP.CANCEL_PICK:
       return handleCancelPick(jid, text, ctx, send);
     case STEP.CANCEL_CONFIRM:
@@ -427,20 +448,72 @@ async function handleBookSlot(jid: string, text: string, ctx: Ctx, send: Send): 
     return;
   }
   const startsAt = slots[idx]!;
+  const service = await prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } });
+  // HU-013: si el servicio pide motivo, se pide antes del resumen.
+  if (service.asksReason) {
+    await save(jid, STEP.BOOK_REASON, { serviceId: ctx.serviceId, startsAt });
+    await send(messages.ASK_BOOKING_REASON);
+    return;
+  }
+  return sendBookingSummary(jid, { serviceId: ctx.serviceId, startsAt }, send);
+}
+
+/** HU-013: resumen de confirmación (lo usan handleBookSlot y handleBookReason). */
+async function sendBookingSummary(
+  jid: string,
+  b: { serviceId: string; startsAt: string; reason?: string },
+  send: Send,
+): Promise<void> {
   const [service, pro] = await Promise.all([
-    prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } }),
+    prisma.service.findUniqueOrThrow({ where: { id: b.serviceId } }),
     getProfessional(),
   ]);
-  await save(jid, STEP.BOOK_CONFIRM, { serviceId: ctx.serviceId, startsAt });
+  await save(jid, STEP.BOOK_CONFIRM, {
+    serviceId: b.serviceId,
+    startsAt: b.startsAt,
+    ...(b.reason ? { reason: b.reason } : {}),
+  });
   await send(
     messages.confirmBooking({
       serviceName: service.name,
-      startsAt: new Date(startsAt),
+      startsAt: new Date(b.startsAt),
       price: service.price.toString(),
       tz: pro.timezone,
       currency: pro.currency,
+      reason: b.reason ?? null,
     }),
   );
+}
+
+/** HU-013: paso del motivo (D1–D3). El texto inválido no se guarda. */
+async function handleBookReason(
+  jid: string,
+  text: string,
+  ctx: Ctx,
+  send: Send,
+  menuText: string,
+): Promise<void> {
+  if (!ctx.serviceId || !ctx.startsAt) {
+    await save(jid, STEP.MENU);
+    await send(menuText);
+    return;
+  }
+  const b = { serviceId: ctx.serviceId, startsAt: ctx.startsAt };
+  const r = parseBookingReason(text);
+  switch (r.kind) {
+    case "skip":
+      return sendBookingSummary(jid, b, send);
+    case "ok":
+      return sendBookingSummary(jid, { ...b, reason: r.reason }, send);
+    case "tooShort":
+      await save(jid, STEP.BOOK_REASON, b);
+      await send(messages.BOOKING_REASON_TOO_SHORT);
+      return;
+    case "tooLong":
+      await save(jid, STEP.BOOK_REASON, b);
+      await send(messages.BOOKING_REASON_TOO_LONG);
+      return;
+  }
 }
 
 async function handleBookConfirm(
@@ -450,6 +523,7 @@ async function handleBookConfirm(
   patientId: string,
   send: Send,
   menuText: string,
+  opts: ConversationOptions,
 ): Promise<void> {
   if (isNo(text)) {
     await send("Sin problema, no reservé nada. Escribí *menú* si querés hacer otra cosa.");
@@ -477,6 +551,8 @@ async function handleBookConfirm(
       startsAt: new Date(ctx.startsAt),
       createdBy: "PATIENT",
       notifyPatient: false,
+      reason: ctx.reason ?? null,
+      professionalAlertJid: opts.alertJid,
     });
     if (appointment.status === "AWAITING_PAYMENT") {
       const checkout = await createDepositCheckout(appointment.id);
@@ -686,10 +762,24 @@ export async function handleIncomingMedia(
   if (pro.botPaused) return;
   // findUnique (no loadState): no crea pacientes ni estado para contactos desconocidos.
   const row = await prisma.conversationState.findUnique({ where: { patientJid: jid } });
-  if (!row || (row.step !== STEP.AWAIT_INQUIRY && row.step !== STEP.AWAIT_QUESTION)) return;
+  if (
+    !row ||
+    (row.step !== STEP.AWAIT_INQUIRY &&
+      row.step !== STEP.AWAIT_QUESTION &&
+      row.step !== STEP.BOOK_REASON)
+  ) {
+    return;
+  }
   if (now.getTime() - row.updatedAt.getTime() > SESSION_TIMEOUT_MS) return; // silencio, como hoy
   // HU-012: en el modo pregunta la IA solo entiende texto.
-  await send(row.step === STEP.AWAIT_QUESTION ? messages.AI_TEXT_ONLY : messages.INQUIRY_TEXT_ONLY);
+  // HU-013: en el paso del motivo solo se guarda texto.
+  await send(
+    row.step === STEP.AWAIT_QUESTION
+      ? messages.AI_TEXT_ONLY
+      : row.step === STEP.BOOK_REASON
+        ? messages.BOOKING_REASON_TEXT_ONLY
+        : messages.INQUIRY_TEXT_ONLY,
+  );
   await save(jid, row.step, (row.context ?? {}) as Ctx);
 }
 
