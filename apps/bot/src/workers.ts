@@ -11,7 +11,7 @@ const MAX_ATTEMPTS = 5;
 let outboxRunning = false;
 let paymentsRunning = false;
 
-async function reconcilePayments(expire = false): Promise<void> {
+async function reconcilePayments(): Promise<void> {
   if (paymentsRunning) return;
   paymentsRunning = true;
   try {
@@ -20,7 +20,7 @@ async function reconcilePayments(expire = false): Promise<void> {
     });
     if (result.processed || result.failed) logger.info(result, "Conciliación Mercado Pago");
     // Do not expire reservations when the provider could not be consulted.
-    if (expire && result.failed === 0) await expireStalePendingPayments();
+    if (result.failed === 0) await expireStalePendingPayments();
   } catch {
     logger.error("Error en conciliación Mercado Pago");
   } finally {
@@ -84,7 +84,7 @@ async function tick(): Promise<void> {
 }
 
 export function startCron(): void {
-  cron.schedule("* * * * *", () => reconcilePayments(new Date().getMinutes() % 5 === 0));
+  cron.schedule("* * * * *", () => reconcilePayments());
   // HU-014: recordatorios por servicio (incluye el pedido de confirmación de asistencia).
   cron.schedule("*/5 * * * *", () => runServiceReminders());
 
@@ -116,7 +116,7 @@ export function startCron(): void {
 
 /** Barre pendientes al arrancar, sin esperar al primer tick del cron. */
 export async function runStartupJobs(): Promise<void> {
-  await reconcilePayments(true);
+  await reconcilePayments();
   try {
     await runServiceReminders();
     await enqueuePrepInstructions();

@@ -584,7 +584,8 @@ async function handleBookConfirm(
       }
       await send(messages.SLOT_TAKEN);
     } else {
-      logger.error({ err }, "Error creando turno desde el bot");
+      // Provider errors may contain request headers with the access token.
+      logger.error({ errorType: err instanceof Error ? err.name : "UnknownError" }, "Error creando turno desde el bot");
       await send("Hubo un problema al reservar. Escribí *menú* e intentá de nuevo.");
     }
   }

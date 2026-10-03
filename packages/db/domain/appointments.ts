@@ -1,4 +1,4 @@
-import { isConsultationEmpty, messages, validateBookingReasonInput } from "@nutri-bot/core";
+import { computeDepositAmount, isConsultationEmpty, messages, validateBookingReasonInput } from "@nutri-bot/core";
 import { Prisma, prisma, type Actor, type Appointment, type AppointmentStatus } from "../index";
 import { getProfessional, checkSlotAvailable } from "./availability";
 import { enqueueMessage } from "./outbox";
@@ -44,9 +44,15 @@ export async function createAppointment(params: {
 
   const endsAt = new Date(params.startsAt.getTime() + service.durationMin * 60_000);
   const awaitingPayment = params.createdBy === "PATIENT" && service.requiresDeposit;
+  if (awaitingPayment && (!service.depositKind || service.depositValue == null ||
+    computeDepositAmount(Number(service.price), service.depositKind, Number(service.depositValue)) <= 0)) {
+    throw new Error("El servicio no tiene una seña válida configurada.");
+  }
 
   const appointment = await prisma.$transaction(async (tx) => {
-    const ok = await checkSlotAvailable({ serviceId: params.serviceId, startsAt: params.startsAt });
+    // All booking writers share this lock: overlapping services use the same calendar.
+    await tx.$queryRaw`SELECT id FROM "Professional" WHERE id = 1 FOR UPDATE`;
+    const ok = await checkSlotAvailable({ serviceId: params.serviceId, startsAt: params.startsAt }, tx);
     if (!ok) throw new SlotUnavailableError();
 
     return tx.appointment.create({
@@ -60,7 +66,7 @@ export async function createAppointment(params: {
         bookedAt: awaitingPayment ? null : new Date(),
         createdBy: params.createdBy,
         priceSnapshot: service.price,
-        needsGoogleSync: true,
+        needsGoogleSync: !awaitingPayment,
         reason: r.reason,
       },
     });
