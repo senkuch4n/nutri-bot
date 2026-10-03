@@ -226,3 +226,7 @@ orquestador, para que las revise a la mañana:
 - HU-018a-2 done (extractor en seco: 320 borradores, 0 gramos inventados; 1619 tests). Recorrido: **Build Error en Turbopack** (export type re-export en actions.ts 'use server', bc034b7) → devuelto al implementer antes del reviewer.
 - HU-018a-2: arreglo Turbopack (cccfd78); recorrido OK. → `en_revision`.
 - HU-018a-2 **aprobada**. HU-018a → `aprobada`. PR a develop. Siguen: 018c (buscador) y la tarea directa del bug de auth.ts.
+- PR #24 mergeado. Tarea directa: fix login Google (solo GOOGLE_CALENDAR_OWNER_EMAIL guarda el token) → PR #25. HU-018c → `en_arquitectura` (rama feat/hu-018c-buscador-recetas; architect Opus + ui).
+- PR #25 (fix login Google) mergeado. Falta definir GOOGLE_CALENDAR_OWNER_EMAIL en producción. Traer develop a la rama de 018c antes de implementar.
+- HU-018c SDD lista (Refactorizaciones/buscador-recetas.md; sin migración; corte 018c-1 buscador / 018c-2 detalle de receta; hallazgo: copiar/repetir/deshacer y aplicar plantilla perderían recipeId). → `arquitectura_lista`.
+- HU-018c: usuario aprueba SDD (018c-1 → 018c-2; D1–D9 aceptadas). → `implementando` 018c-1 (Opus; apple-design, ui-ux-pro-max).
