@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isExitCommand, isExitWord, isMenuCommand, isWakeWord, menuDigit, normalize } from "./wake";
+import { isExitCommand, isExitWord, isMenuCommand, isWakeWord, lateAttendanceAnswer, menuDigit, normalize } from "./wake";
 
 describe("normalize", () => {
   it("saca acentos y pasa a minúsculas", () => {
@@ -90,4 +90,19 @@ describe("menuDigit (HU-012)", () => {
       expect(menuDigit(t, 5), t).toBeNull();
     }
   });
+});
+
+describe("lateAttendanceAnswer", () => {
+  it.each(["sí", "Sí!", "si", "SI 👍", "dale", "Ok.", "confirmo", "sí voy", "Claro!"])("%s → yes", (t) => {
+    expect(lateAttendanceAnswer(t)).toBe("yes");
+  });
+  it.each(["no", "No.", "no puedo", "No voy", "mejor no", "no voy a poder", "no podré"])("%s → no", (t) => {
+    expect(lateAttendanceAnswer(t)).toBe("no");
+  });
+  it.each(["no sé si llego", "no, gracias por la info", "si querés te paso el estudio", "hola", "sino", "nop", ""])(
+    "%s → null (no es una respuesta clara)",
+    (t) => {
+      expect(lateAttendanceAnswer(t)).toBeNull();
+    },
+  );
 });

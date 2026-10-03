@@ -130,6 +130,49 @@ async function main() {
     assert.equal(updated.cancelledBy, "PATIENT");
   });
 
+  // --- Escenario D: el paciente responde horas después (la sesión de 20 min ya venció) ---
+  const startsAtD = new Date(Date.now() + 72 * HOUR + 25 * 60_000);
+  const apptD = await prisma.appointment.create({
+    data: {
+      patientId: patient.id,
+      serviceId: service.id,
+      startsAt: startsAtD,
+      endsAt: new Date(startsAtD.getTime() + 30 * 60_000),
+      status: "CONFIRMED",
+      createdBy: "PATIENT",
+      priceSnapshot: service.price,
+    },
+  });
+  await enqueueAttendanceConfirmations(30, { patientIds: [patient.id] });
+  const later = new Date(Date.now() + 2 * HOUR);
+
+  await step("horas después, un mensaje común no dispara nada (silencio) y el turno sigue igual", async () => {
+    const replies: string[] = [];
+    await handleIncoming(TEST_JID, "hola, te quería comentar algo", async (t) => void replies.push(t), { now: later });
+    assert.deepEqual(replies, []);
+    const a = await prisma.appointment.findUniqueOrThrow({ where: { id: apptD.id } });
+    assert.equal(a.confirmationResponse, null);
+    assert.equal(a.status, "CONFIRMED");
+  });
+
+  await step('horas después, "no sé si llego" NO cancela el turno', async () => {
+    const replies: string[] = [];
+    await handleIncoming(TEST_JID, "no sé si llego", async (t) => void replies.push(t), { now: later });
+    assert.deepEqual(replies, []);
+    const a = await prisma.appointment.findUniqueOrThrow({ where: { id: apptD.id } });
+    assert.equal(a.status, "CONFIRMED");
+    assert.equal(a.confirmationResponse, null);
+  });
+
+  await step('horas después, "sí" confirma la asistencia', async () => {
+    const replies: string[] = [];
+    await handleIncoming(TEST_JID, "Sí!", async (t) => void replies.push(t), { now: later });
+    assert.ok(replies.length >= 1, "el bot debería agradecer la confirmación");
+    console.log(`   respuesta del bot: "${replies[0]!.replace(/\n/g, " ")}"`);
+    const a = await prisma.appointment.findUniqueOrThrow({ where: { id: apptD.id } });
+    assert.equal(a.confirmationResponse, true);
+  });
+
   // --- Escenario C: recomendaciones automáticas antes del estudio ---
   const startsAtC = new Date(Date.now() + service.prepLeadHours! * HOUR + 5 * 60_000);
   const apptC = await prisma.appointment.create({

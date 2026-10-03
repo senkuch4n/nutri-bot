@@ -20,6 +20,7 @@ import {
   inquiryBodyFromAiQuestion,
   isBotAiAvailable,
   isExitCommand,
+  lateAttendanceAnswer,
   isExitWord,
   isMenuCommand,
   isWakeWord,
@@ -180,8 +181,11 @@ export async function handleIncoming(
   };
   const menuText = messages.menu({ withQuestions: ai.available });
 
-  // Una conversación abierta pero inactiva vuelve a estar "dormida".
-  if (step !== STEP.DORMANT && now.getTime() - state.updatedAt.getTime() > SESSION_TIMEOUT_MS) {
+  // Una conversación abierta pero inactiva vuelve a estar "dormida". Excepción: la confirmación de
+  // asistencia se pide días antes del turno, así que un "sí"/"no" tardío sigue valiendo, pero solo
+  // si el mensaje ENTERO es una respuesta clara (lateAttendanceAnswer); lo demás, silencio.
+  const late = step !== STEP.DORMANT && now.getTime() - state.updatedAt.getTime() > SESSION_TIMEOUT_MS;
+  if (late && !(step === STEP.CONFIRM_ATTENDANCE && lateAttendanceAnswer(text) !== null)) {
     step = STEP.DORMANT;
   }
 
@@ -290,7 +294,7 @@ export async function handleIncoming(
     case STEP.CANCEL_CONFIRM:
       return handleCancelConfirm(jid, text, ctx, send, menuText);
     case STEP.CONFIRM_ATTENDANCE:
-      return handleConfirmAttendance(jid, text, ctx, send, menuText);
+      return handleConfirmAttendance(jid, text, ctx, send, menuText, now);
     default:
       await save(jid, STEP.MENU);
       await send(menuText);
@@ -663,6 +667,7 @@ async function handleConfirmAttendance(
   ctx: Ctx,
   send: Send,
   menuText: string,
+  now: Date,
 ): Promise<void> {
   if (!ctx.apptId) {
     await save(jid, STEP.MENU);
@@ -670,8 +675,9 @@ async function handleConfirmAttendance(
     return;
   }
   const appt = await prisma.appointment.findUnique({ where: { id: ctx.apptId }, include: { service: true } });
-  if (!appt || appt.status !== "CONFIRMED") {
-    await save(jid, STEP.MENU);
+  // Turno cancelado, ya empezado o inexistente: la confirmación ya no aplica (silencio).
+  if (!appt || appt.status !== "CONFIRMED" || appt.startsAt.getTime() <= now.getTime()) {
+    await save(jid, STEP.DORMANT);
     return;
   }
   const pro = await getProfessional();

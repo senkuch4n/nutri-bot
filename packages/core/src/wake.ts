@@ -54,3 +54,18 @@ export function menuDigit(text: string, max: number): string | null {
   if (!/^\d$/.test(t)) return null;
   return Number(t) <= max ? t : null;
 }
+
+const LATE_YES = new Set(["si", "dale", "ok", "okay", "confirmo", "listo", "obvio", "claro", "si voy", "si confirmo", "si claro", "voy"]);
+const LATE_NO = new Set(["no", "no puedo", "no voy", "mejor no", "no voy a poder", "no podre"]);
+
+/**
+ * Respuesta TARDÍA al pedido de confirmación de asistencia (pasada la sesión de 20 min): cuenta
+ * solo si el mensaje ENTERO (normalizado, sin signos ni emojis) es un sí o un no claro. Así un
+ * mensaje común a la profesional como "no sé si llego" o "no, gracias" no cancela el turno.
+ */
+export function lateAttendanceAnswer(text: string): "yes" | "no" | null {
+  const t = normalizeCommand(text);
+  if (LATE_YES.has(t)) return "yes";
+  if (LATE_NO.has(t)) return "no";
+  return null;
+}
