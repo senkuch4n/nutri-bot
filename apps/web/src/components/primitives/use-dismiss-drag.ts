@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
-import { animate, useMotionValue, type MotionValue } from "motion/react";
+// `animateSingleValue` (y no `animate`): anima un MotionValue sin arrastrar el animador de elementos
+// del DOM al bundle inicial (review HU-017a, peso).
+import { animateSingleValue, useMotionValue, type MotionValue } from "motion/react";
 import { createDismissDrag, type DismissSide } from "@/lib/dismiss-drag";
 import { fades, springs } from "@/lib/motion";
 
@@ -50,7 +52,7 @@ export function useDismissDrag(opts: {
       isEnabled: () => latest.current.enabled,
       onDismiss: (velocity) => latest.current.onDismiss(velocity),
       onRestore: (velocity) => {
-        animate(value, 0, latest.current.reducedMotion ? fades.fast : { ...springs.fling, velocity });
+        animateSingleValue(value, 0, latest.current.reducedMotion ? fades.fast : { ...springs.fling, velocity });
       },
     });
     const release = (e: ReactPointerEvent<HTMLElement>) => {

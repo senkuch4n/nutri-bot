@@ -6,7 +6,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
 import {
   AnimatePresence,
-  animate,
+  animateSingleValue,
   m,
   useMotionValue,
   usePresence,
@@ -169,25 +169,25 @@ const SheetPanel = React.forwardRef<
     if (isPresent) {
       if (reduced) {
         offset.set(0)
-        animate(opacity, 1, fades.scrim)
+        animateSingleValue(opacity, 1, fades.scrim)
         return
       }
       // Primera vez: arranca justo afuera. Si se reabre a mitad de la salida, sigue desde donde está.
       const full = measure()
       if (offset.get() > full) offset.set(full)
       opacity.set(1)
-      animate(offset, 0, springs.standard)
+      animateSingleValue(offset, 0, springs.standard)
       return
     }
     const velocity = exitVelocity.current
     exitVelocity.current = null
     const done = () => safeToRemove?.()
     if (reduced) {
-      animate(opacity, 0, fades.scrim).then(done)
+      animateSingleValue(opacity, 0, fades.scrim).then(done)
       return
     }
     const target = measure()
-    animate(offset, target, velocity !== null ? { ...springs.fling, velocity } : springs.standard).then(done)
+    animateSingleValue(offset, target, velocity !== null ? { ...springs.fling, velocity } : springs.standard).then(done)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPresent])
 

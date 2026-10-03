@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { animate, m, useMotionValue, useReducedMotionConfig, type MotionValue } from "motion/react";
+import { animateSingleValue, m, useMotionValue, useReducedMotionConfig, type MotionValue } from "motion/react";
 import { fades, projectMomentum, rubberband, springs } from "@/lib/motion";
 import { DemoLabel, DemoSection } from "./section";
 
@@ -84,7 +84,7 @@ function MomentumPlayground() {
     const projected = x.get() + projectMomentum(velocity);
     const target = snaps.reduce((best, s) => (Math.abs(s - projected) < Math.abs(best - projected) ? s : best), 0);
     setGhost(Math.max(-BALL / 2, Math.min(max + BALL / 2, projected)));
-    animate(x, target, { ...springs.fling, velocity });
+    animateSingleValue(x, target, { ...springs.fling, velocity });
   }
 
   return (
