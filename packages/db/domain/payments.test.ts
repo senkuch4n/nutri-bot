@@ -188,4 +188,16 @@ describe("payment reconciliation without database or network", () => {
     expect(alert).toContain("(completo en el panel)");
     expect(alert).not.toContain(payment.appointment.reason);
   });
+  // HU-014 (D5): la aprobación de la seña es la reserva en firme.
+  it("seals bookedAt when the deposit approval confirms the appointment", async () => {
+    const before = Date.now();
+    await syncMercadoPagoPayment("123");
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
+    const { where, data } = mocks.prisma.appointment.updateMany.mock.calls[0]![0];
+    expect(where).toEqual({ id: "appointment", status: "AWAITING_PAYMENT" });
+    expect(data.status).toBe("CONFIRMED");
+    expect(data.needsGoogleSync).toBe(true);
+    expect(data.bookedAt).toBeInstanceOf(Date);
+    expect(data.bookedAt.getTime()).toBeGreaterThanOrEqual(before);
+  });
 });

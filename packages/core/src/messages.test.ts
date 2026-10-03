@@ -101,3 +101,26 @@ describe("slotTakenKeepReason (HU-013)", () => {
     expect(out).toContain(messages.askDay([{ label: "Lunes 12/10" }, { label: "Martes 13/10" }]));
   });
 });
+
+describe("reminderMessage (HU-014)", () => {
+  const startsAt = new Date("2026-10-15T13:00:00Z");
+  const tz = "America/Argentina/Buenos_Aires";
+
+  it("con nombre y frase relativa", () => {
+    const out = messages.reminderMessage({ patientName: "Ana", serviceName: "Control", startsAt, tz, when: "mañana" });
+    expect(out).toBe(
+      `⏰ Hola Ana! Te recuerdo que tenés turno mañana:\n\n📋 Control\n🗓️ ${formatDateTime(startsAt, tz)} hs\n\nSi no podés asistir, escribí *menú* y elegí la opción 2 para cancelar.`,
+    );
+  });
+
+  it("sin nombre", () => {
+    const out = messages.reminderMessage({ patientName: null, serviceName: "Control", startsAt, tz, when: "en una semana" });
+    expect(out.startsWith("⏰ Te recuerdo que tenés turno en una semana:")).toBe(true);
+  });
+
+  it("regresión: el pedido de confirmación no cambia", () => {
+    expect(messages.confirmAttendanceRequest({ serviceName: "Control", startsAt, tz })).toBe(
+      `¿Vas a poder venir a tu turno?\n\n📋 Control\n🗓️ ${formatDateTime(startsAt, tz)} hs\n\nRespondé *sí* si vas a venir o *no* si no vas a poder.`,
+    );
+  });
+});

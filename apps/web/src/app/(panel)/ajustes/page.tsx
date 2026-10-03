@@ -35,7 +35,6 @@ export default async function AjustesPage() {
   const defaults: SettingsDefaults = {
     timezone: pro.timezone,
     currency: pro.currency,
-    reminderLeadHours: pro.reminderLeadHours,
     phone: pro.phoneJid?.split("@")[0] ?? "",
     acceptedInsurances: pro.acceptedInsurances ?? "",
     pdfAccentColor: pro.pdfAccentColor ?? "",
@@ -45,7 +44,7 @@ export default async function AjustesPage() {
   };
 
   const general = (
-    <Card title="General" description="Zona horaria, moneda, recordatorios y datos que usa el bot.">
+    <Card title="General" description="Zona horaria, moneda y datos que usa el bot.">
       <SettingsGeneralFields defaults={defaults} />
     </Card>
   );

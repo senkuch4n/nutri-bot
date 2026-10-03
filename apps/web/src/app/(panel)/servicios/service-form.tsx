@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
+import { DEFAULT_SERVICE_REMINDERS, validateServiceReminders, type ServiceReminder } from "@nutri-bot/core";
 import { NumberInput } from "@/components/number-input";
 import { Label } from "@/components/primitives/label";
 import { Switch } from "@/components/primitives/switch";
 import { Button, Field, FormError, Input, Select, Textarea, cn } from "@/components/ui";
 import { useActionToast } from "@/lib/notify";
 import { saveServiceAction, type ServiceFormState } from "./actions";
+import { RemindersEditor, reminderAmountSelector } from "./reminders-editor";
 
 export interface EditableService {
   id: string;
@@ -23,6 +25,8 @@ export interface EditableService {
   prepLeadHours: number | null;
   /** HU-013 (D4): el bot pide el motivo al reservar. */
   asksReason: boolean;
+  /** HU-014: recordatorios del servicio (ya parseados con parseServiceReminders). */
+  reminders: ServiceReminder[];
 }
 
 const initial: ServiceFormState = { ok: false };
@@ -38,21 +42,49 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
   const [hasPrep, setHasPrep] = useState(Boolean(editing?.prepInstructions));
   const [asksReason, setAsksReason] = useState(editing?.asksReason ?? true);
   const reasonId = `pide-motivo-${editing?.id ?? "nuevo"}`;
+  const [showReminderErrors, setShowReminderErrors] = useState(false);
+  const [remindersResetKey, setRemindersResetKey] = useState(0);
 
   useActionToast(state, { success: editing ? "Servicio guardado" : "Servicio creado" });
   useEffect(() => {
     if (state.ok) {
       if (!editing) {
         formRef.current?.reset();
-        // reset() no toca el estado controlado del switch.
+        // reset() no toca el estado controlado del switch ni el del editor de recordatorios.
         setAsksReason(true);
+        setShowReminderErrors(false);
+        setRemindersResetKey((k) => k + 1);
       }
       onDone?.();
     }
   }, [state.ok, editing, onDone]);
 
+  // Se despacha a mano (no `<form action>`) para que React 19 no resetee el form cuando vuelve un
+  // error: lo tipeado tiene que quedar. Si la lista de recordatorios es inválida, no se envía y se
+  // enfoca el primer número con error.
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    let check: ReturnType<typeof validateServiceReminders>;
+    try {
+      check = validateServiceReminders(JSON.parse(String(formData.get("reminders") ?? "[]")));
+    } catch {
+      check = { ok: false, errors: [{ index: null, message: "" }] };
+    }
+    if (!check.ok) {
+      setShowReminderErrors(true);
+      const first = check.errors.find((err) => err.index !== null);
+      if (first && first.index !== null) {
+        form.querySelector<HTMLInputElement>(reminderAmountSelector(first.index))?.focus();
+      }
+      return;
+    }
+    startTransition(() => action(formData));
+  }
+
   return (
-    <form ref={formRef} action={action} className="grid gap-5 sm:grid-cols-2">
+    <form ref={formRef} onSubmit={handleSubmit} className="grid gap-5 sm:grid-cols-2">
       {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
       <input type="hidden" name="color" value={color} />
 
@@ -183,6 +215,16 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
             </Field>
           </div>
         ) : null}
+      </div>
+
+      <div className="border-t pt-4 sm:col-span-2">
+        <RemindersEditor
+          initial={editing?.reminders ?? DEFAULT_SERVICE_REMINDERS}
+          serverErrors={state.reminderErrors}
+          showErrors={showReminderErrors || Boolean(state.reminderErrors)}
+          resetKey={remindersResetKey}
+          idPrefix={editing?.id ?? "nuevo"}
+        />
       </div>
 
       <div className="flex items-start justify-between gap-6 border-t pt-4 sm:col-span-2">

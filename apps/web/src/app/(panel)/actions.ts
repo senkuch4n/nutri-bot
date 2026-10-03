@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { validateBookingReasonInput } from "@nutri-bot/core";
+import { reminderStatusText, validateBookingReasonInput } from "@nutri-bot/core";
 import {
   cancelAppointment,
   createAppointment,
@@ -12,7 +12,7 @@ import {
   updateAppointmentReason,
 } from "@/lib/appointments";
 import { findOrCreatePatient } from "@/lib/patients";
-import { enqueueReminderNow } from "@nutri-bot/db/domain";
+import { enqueueReminderNow, getAppointmentReminderStatus } from "@nutri-bot/db/domain";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -72,14 +72,35 @@ export async function cancelAppointmentAction(id: string, reason?: string): Prom
   return { ok: true };
 }
 
-export async function sendReminderNowAction(id: string): Promise<ActionResult> {
+/**
+ * HU-014 (D8): recordatorio manual, independiente de los automáticos. `already_pending` = freno a
+ * doble clic (ya hay uno manual sin enviar).
+ */
+export async function sendReminderNowAction(
+  id: string,
+): Promise<ActionResult & { result?: "queued" | "already_pending" }> {
+  let result: Awaited<ReturnType<typeof enqueueReminderNow>>;
   try {
-    await enqueueReminderNow(id);
+    result = await enqueueReminderNow(id);
   } catch {
     return { ok: false, error: "No se pudo encolar el recordatorio." };
   }
+  if (result === "not_applicable") {
+    return { ok: false, error: "Solo se puede mandar a un turno confirmado que todavía no pasó." };
+  }
   revalidatePath("/avisos");
-  return { ok: true };
+  return { ok: true, result };
+}
+
+/** HU-014 (D8): línea de estado de los recordatorios del turno (solo lectura). */
+export async function getAppointmentRemindersAction(
+  id: string,
+): Promise<{ ok: true; text: string } | { ok: false }> {
+  try {
+    return { ok: true, text: reminderStatusText(await getAppointmentReminderStatus(id)) };
+  } catch {
+    return { ok: false };
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useActionState, useContext, type ReactNode } from "react";
-import { NumberInput } from "@/components/number-input";
+import Link from "next/link";
 import { Button, Field, FormError, Input, Textarea } from "@/components/ui";
 import { useActionToast } from "@/lib/notify";
 import { DEFAULT_PDF_ACCENT } from "@/lib/pdf-theme";
@@ -14,7 +14,6 @@ export const SETTINGS_FORM_ID = "ajustes-generales";
 export type SettingsDefaults = {
   timezone: string;
   currency: string;
-  reminderLeadHours: number;
   phone: string;
   acceptedInsurances: string;
   pdfAccentColor: string;
@@ -76,21 +75,6 @@ export function SettingsGeneralFields({ defaults }: { defaults: SettingsDefaults
         <Input name="currency" form={SETTINGS_FORM_ID} defaultValue={defaults.currency} maxLength={3} required />
       </Field>
       <Field
-        label="Aviso previo del recordatorio (horas)"
-        hint="Cuántas horas antes del turno se envía el recordatorio"
-      >
-        <NumberInput
-          name="reminderLeadHours"
-          form={SETTINGS_FORM_ID}
-          unit="h"
-          step={1}
-          min={1}
-          max={168}
-          defaultValue={defaults.reminderLeadHours}
-          required
-        />
-      </Field>
-      <Field
         label="Tu WhatsApp (para las alertas)"
         hint="Con código de país, solo números. El bot te avisa acá cuando un paciente saca o cancela un turno."
       >
@@ -103,6 +87,14 @@ export function SettingsGeneralFields({ defaults }: { defaults: SettingsDefaults
           placeholder="549XXXXXXXXXX"
         />
       </Field>
+      {/* HU-014 (D4): el aviso previo pasó a configurarse por servicio. */}
+      <p className="text-sm text-muted-foreground sm:self-center">
+        Los recordatorios se configuran en{" "}
+        <Link href="/servicios" className="underline underline-offset-2">
+          cada servicio
+        </Link>
+        .
+      </p>
 
       <div className="sm:col-span-2">
         <Field

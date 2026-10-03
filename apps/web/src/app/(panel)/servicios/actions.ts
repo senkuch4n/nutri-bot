@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { SERVICE_REMINDERS_TEXT, validateServiceReminders, type ServiceReminder, type ServiceReminderError } from "@nutri-bot/core";
 import { createService, setServiceActive, updateService } from "@/lib/services";
 
 const schema = z
@@ -23,13 +24,15 @@ const schema = z
     prepLeadHours: z.coerce.number().int().min(1).max(168).optional(),
     // HU-013: "0"/"1" del input oculto del switch. No z.coerce.boolean(): con "0" da true.
     asksReason: z.enum(["0", "1"]).optional(),
+    // HU-014: JSON del editor de recordatorios. Ausente (cliente viejo) → no se toca.
+    reminders: z.string().optional(),
   })
   .refine((v) => !v.requiresDeposit || (v.depositKind && v.depositValue), {
     message: "Si el servicio requiere seña, indicá el tipo y el monto",
     path: ["depositValue"],
   });
 
-export type ServiceFormState = { ok: boolean; error?: string };
+export type ServiceFormState = { ok: boolean; error?: string; reminderErrors?: ServiceReminderError[] };
 
 export async function saveServiceAction(
   _prev: ServiceFormState,
@@ -48,8 +51,25 @@ export async function saveServiceAction(
     prepInstructions,
     prepLeadHours,
     asksReason,
+    reminders: remindersRaw,
     ...rest
   } = parsed.data;
+
+  // HU-014: validación de la lista de recordatorios (la misma regla que el editor).
+  let reminders: ServiceReminder[] | undefined;
+  if (remindersRaw !== undefined) {
+    let json: unknown;
+    try {
+      json = JSON.parse(remindersRaw);
+    } catch {
+      return { ok: false, error: SERVICE_REMINDERS_TEXT.invalid };
+    }
+    const r = validateServiceReminders(json);
+    if (!r.ok) {
+      return { ok: false, error: r.errors[0]?.message ?? SERVICE_REMINDERS_TEXT.invalid, reminderErrors: r.errors };
+    }
+    reminders = r.reminders;
+  }
   const payload = {
     ...rest,
     description: description || null,
@@ -60,6 +80,7 @@ export async function saveServiceAction(
     prepLeadHours: prepInstructions ? (prepLeadHours ?? null) : null,
     // HU-013 (D4): ausente → true (default).
     asksReason: asksReason !== "0",
+    reminders,
   };
 
   try {

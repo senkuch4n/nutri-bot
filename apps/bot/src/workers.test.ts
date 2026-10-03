@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn() }));
+const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
 vi.mock("@nutri-bot/db/domain", () => ({
   reconcilePendingPayments: mocks.reconcile, expireStalePendingPayments: mocks.expire,
-  enqueueDueReminders: vi.fn(), enqueueAttendanceConfirmations: vi.fn(),
-  enqueuePrepInstructions: vi.fn(), syncGoogleCalendar: vi.fn(),
+  enqueueServiceReminders: mocks.serviceReminders,
+  enqueuePrepInstructions: mocks.prep, syncGoogleCalendar: mocks.gcal,
   enqueueAfterHoursDigest: mocks.digest,
   purgeExpiredBotAiQuestions: mocks.purge,
   clearExpiredSessionText: mocks.clearSessions,
@@ -16,7 +16,7 @@ vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
 vi.mock("./outbound-payload", () => ({ OUTBOX_INCLUDE: {}, resolveOutboundPayload: vi.fn() }));
 vi.mock("./env", () => ({ env: { pollIntervalMs: 4000 } }));
 vi.mock("./logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: mocks.error } }));
-import { startCron } from "./workers";
+import { runServiceReminders, runStartupJobs, startCron } from "./workers";
 
 describe("payment cron without Baileys or database", () => {
   beforeEach(() => {
@@ -132,7 +132,7 @@ describe("expired session text cleanup cron (HU-012/HU-013)", () => {
   it("runs every 5 minutes with the session timeout", async () => {
     mocks.clearSessions.mockResolvedValue(1);
     startCron();
-    const call = mocks.schedule.mock.calls.find((c) => c[0] === "*/5 * * * *");
+    const call = mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *").at(-1);
     expect(call).toBeDefined();
     await call![1]();
     expect(mocks.clearSessions).toHaveBeenCalledWith({ sessionTimeoutMs: 20 * 60_000 });
@@ -140,10 +140,66 @@ describe("expired session text cleanup cron (HU-012/HU-013)", () => {
   it("contains errors and runs again on the next tick", async () => {
     mocks.clearSessions.mockRejectedValueOnce(new Error("db down")).mockResolvedValueOnce(0);
     startCron();
-    const tick = mocks.schedule.mock.calls.find((c) => c[0] === "*/5 * * * *")![1];
+    const tick = mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *").at(-1)![1];
     await expect(tick()).resolves.toBeUndefined();
     expect(mocks.error).toHaveBeenCalled();
     await tick();
     expect(mocks.clearSessions).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("service reminders cron (HU-014)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+  const remindersTick = () => mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *")[0]![1];
+
+  it("runs every 5 minutes and calls enqueueServiceReminders once per tick", async () => {
+    mocks.serviceReminders.mockResolvedValue({ reminders: 1, confirmations: 1 });
+    startCron();
+    // Dos crons */5: recordatorios (HU-014) y limpieza de sesiones (HU-012/013), en ese orden.
+    expect(mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *")).toHaveLength(2);
+    await remindersTick()();
+    expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSessions).not.toHaveBeenCalled();
+  });
+
+  it("the old 30-minute confirmation cron is gone and payments/digest keep their places", () => {
+    startCron();
+    expect(mocks.schedule.mock.calls.some((c) => c[0] === "*/30 * * * *")).toBe(false);
+    expect(mocks.schedule.mock.calls[0]?.[0]).toBe("* * * * *");
+    expect(mocks.schedule.mock.calls.at(-1)?.[0]).toBe("* * * * *");
+  });
+
+  it("skips overlapping ticks", async () => {
+    let finish!: (r: { reminders: number; confirmations: number }) => void;
+    mocks.serviceReminders.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const first = runServiceReminders();
+    await runServiceReminders();
+    expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
+    finish({ reminders: 0, confirmations: 0 });
+    await first;
+  });
+
+  it("logs a rejection without throwing and runs again on the next tick", async () => {
+    mocks.serviceReminders.mockRejectedValueOnce(new Error("db down")).mockResolvedValueOnce({ reminders: 0, confirmations: 0 });
+    startCron();
+    const tick = remindersTick();
+    await expect(tick()).resolves.toBeUndefined();
+    expect(mocks.error).toHaveBeenCalled();
+    await tick();
+    expect(mocks.serviceReminders).toHaveBeenCalledTimes(2);
+  });
+
+  it("runStartupJobs calls enqueueServiceReminders", async () => {
+    mocks.reconcile.mockResolvedValue({ processed: 0, failed: 0 });
+    mocks.serviceReminders.mockResolvedValue({ reminders: 0, confirmations: 0 });
+    mocks.prep.mockResolvedValue(0);
+    mocks.gcal.mockResolvedValue({ processed: 0 });
+    mocks.digest.mockResolvedValue({ digested: 0, outboundId: null });
+    mocks.purge.mockResolvedValue(0);
+    await runStartupJobs();
+    expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
+    expect(mocks.prep).toHaveBeenCalledTimes(1);
   });
 });

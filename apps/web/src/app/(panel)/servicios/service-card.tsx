@@ -11,6 +11,7 @@ import {
   SheetTitle,
 } from "@/components/primitives/sheet";
 import { Switch } from "@/components/primitives/switch";
+import { serviceRemindersSummary } from "@nutri-bot/core";
 import { Badge, Button, Card, cn } from "@/components/ui";
 import { ServiceForm, type EditableService } from "./service-form";
 import { toggleServiceAction } from "./actions";
@@ -48,13 +49,13 @@ export function ServiceCard({
         {service.durationMin} min
       </p>
 
-      {service.requiresDeposit || service.prepInstructions || service.asksReason ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {service.requiresDeposit ? <Badge tone="neutral">Requiere seña</Badge> : null}
-          {service.prepInstructions ? <Badge tone="info">Manda recomendaciones previas</Badge> : null}
-          {service.asksReason ? <Badge tone="neutral">Pide motivo</Badge> : null}
-        </div>
-      ) : null}
+      {/* Siempre hay al menos un badge: el resumen de recordatorios (HU-014). */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {service.requiresDeposit ? <Badge tone="neutral">Requiere seña</Badge> : null}
+        {service.prepInstructions ? <Badge tone="info">Manda recomendaciones previas</Badge> : null}
+        {service.asksReason ? <Badge tone="neutral">Pide motivo</Badge> : null}
+        <Badge tone="neutral">{serviceRemindersSummary(service.reminders)}</Badge>
+      </div>
 
       {service.description ? (
         <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{service.description}</p>

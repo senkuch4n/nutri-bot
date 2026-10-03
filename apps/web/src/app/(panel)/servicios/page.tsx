@@ -1,5 +1,5 @@
 import { Tag } from "lucide-react";
-import { formatPrice } from "@nutri-bot/core";
+import { formatPrice, parseServiceReminders } from "@nutri-bot/core";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
@@ -29,6 +29,7 @@ export default async function ServiciosPage() {
       prepInstructions: s.prepInstructions,
       prepLeadHours: s.prepLeadHours,
       asksReason: s.asksReason,
+      reminders: parseServiceReminders(s.reminders),
     },
   });
 

@@ -24,6 +24,8 @@ model Professional {
   title              String?
   /// HU-007 (D1): matrícula, p. ej. "M.P. 852". null = no cargada (aviso en la página del informe).
   licenseNumber      String?
+  /// HU-014 (D4): SIN USO. Los recordatorios se configuran por servicio (`Service.reminders`).
+  /// Solo lo leyó el backfill de la migración `service_reminders`. Se borra en otra migración.
   reminderLeadHours  Int      @default(24)
   /// Si está en true, el bot no responde ningún mensaje entrante.
   botPaused          Boolean  @default(false)
@@ -263,6 +265,13 @@ model Service {
   prepLeadHours Int?
   /// HU-013 (D4): el bot pide el motivo de consulta al reservar este servicio. Prendido por defecto.
   asksReason   Boolean       @default(true)
+  /// HU-014: recordatorios por WhatsApp antes del turno. Lista JSON de 0 a 3
+  /// `{ amount: number, unit: "HOURS" | "DAYS", asksConfirmation: boolean }`, ordenada de mayor a
+  /// menor anticipación. Validada con `validateServiceReminders` (packages/core) al guardar y leída
+  /// con `parseServiceReminders`. Máximo uno con `asksConfirmation` (ese manda el pedido de
+  /// confirmación de asistencia en vez del recordatorio). `[]` = el servicio no manda recordatorios.
+  /// El default tiene que coincidir con DEFAULT_SERVICE_REMINDERS de packages/core.
+  reminders    Json          @default("[{\"amount\":3,\"unit\":\"DAYS\",\"asksConfirmation\":true},{\"amount\":24,\"unit\":\"HOURS\",\"asksConfirmation\":false}]")
   color        String        @default("#2563eb")
   active       Boolean       @default(true)
   createdAt    DateTime      @default(now())
@@ -414,6 +423,11 @@ model Appointment {
   confirmationRequestedAt DateTime?
   confirmationRespondedAt DateTime?
   confirmationResponse Boolean?
+  /// HU-014 (D5): momento en que el turno quedó reservado en firme: al crearse si nace CONFIRMED,
+  /// al aprobarse la seña si nació AWAITING_PAYMENT. null = turno con seña sin pagar, o fila creada
+  /// por fuera de `createAppointment` (seeds/scripts): se usa `createdAt`. Los recordatorios cuyo
+  /// momento es anterior a este instante no se mandan.
+  bookedAt        DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -482,11 +496,16 @@ model OutboundMessage {
   /// HU-007: informe que manda un mensaje ANTHROPOMETRIC_REPORT_PDF.
   anthropometricReport   AnthropometricReport? @relation(fields: [anthropometricReportId], references: [id], onDelete: SetNull)
   anthropometricReportId String?
+  /// HU-014: distingue varios mensajes del mismo `kind` para el mismo turno. "" para todo lo que no
+  /// es un recordatorio (y para los mensajes anteriores a la HU-014), así la unicidad de los otros
+  /// kinds queda igual que antes. REMINDER automático: "auto:<horas>h" (p. ej. "auto:48h").
+  /// REMINDER manual ("Enviar recordatorio ahora"): "manual:<ISO del encolado>".
+  dedupeKey     String        @default("")
   sentAt        DateTime?
   createdAt     DateTime      @default(now())
 
-  // Evita duplicar confirmaciones / recordatorios para un mismo turno.
-  @@unique([appointmentId, kind])
+  // Evita duplicar confirmaciones / recordatorios para un mismo turno (HU-014: + dedupeKey).
+  @@unique([appointmentId, kind, dedupeKey])
   @@index([status, createdAt])
 }
 

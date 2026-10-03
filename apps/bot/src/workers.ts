@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
@@ -85,23 +85,8 @@ async function tick(): Promise<void> {
 
 export function startCron(): void {
   cron.schedule("* * * * *", () => reconcilePayments(new Date().getMinutes() % 5 === 0));
-  cron.schedule("*/15 * * * *", async () => {
-    try {
-      const n = await enqueueDueReminders();
-      if (n > 0) logger.info({ n }, "Recordatorios encolados");
-    } catch (err) {
-      logger.error({ err }, "Error encolando recordatorios");
-    }
-  });
-
-  cron.schedule("*/30 * * * *", async () => {
-    try {
-      const n = await enqueueAttendanceConfirmations();
-      if (n > 0) logger.info({ n }, "Confirmaciones de asistencia encoladas");
-    } catch (err) {
-      logger.error({ err }, "Error encolando confirmaciones de asistencia");
-    }
-  });
+  // HU-014: recordatorios por servicio (incluye el pedido de confirmación de asistencia).
+  cron.schedule("*/5 * * * *", () => runServiceReminders());
 
   cron.schedule("*/15 * * * *", async () => {
     try {
@@ -133,8 +118,7 @@ export function startCron(): void {
 export async function runStartupJobs(): Promise<void> {
   await reconcilePayments(true);
   try {
-    await enqueueDueReminders();
-    await enqueueAttendanceConfirmations();
+    await runServiceReminders();
     await enqueuePrepInstructions();
     await syncGoogleCalendar();
   } catch (err) {
@@ -151,6 +135,23 @@ export async function runStartupJobs(): Promise<void> {
     await runBotAiPurge();
   } catch (err) {
     logger.error({ err }, "Error borrando preguntas a la IA vencidas (arranque)");
+  }
+}
+
+let remindersRunning = false;
+
+/** HU-014: encola los recordatorios por servicio que correspondan ahora. Idempotente; no se solapa. */
+export async function runServiceReminders(): Promise<void> {
+  if (remindersRunning) return;
+  remindersRunning = true;
+  try {
+    const { reminders, confirmations } = await enqueueServiceReminders();
+    if (reminders > 0) logger.info({ n: reminders }, "Recordatorios encolados");
+    if (confirmations > 0) logger.info({ n: confirmations }, "Confirmaciones de asistencia encoladas");
+  } catch (err) {
+    logger.error({ err }, "Error encolando recordatorios");
+  } finally {
+    remindersRunning = false;
   }
 }
 
