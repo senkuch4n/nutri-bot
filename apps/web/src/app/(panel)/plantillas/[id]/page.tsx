@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import { getTemplate, listFoods } from "@nutri-bot/db/domain";
 import { Card, PageHeader } from "@/components/ui";
-import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
-import { toMealView, toPlanTotals } from "@/lib/meal-view";
+import { initialDayFor } from "@/components/weekly-menu/day-param";
+import { toMealView } from "@/lib/meal-view";
 import { TemplateMetaForm } from "./template-meta-form";
 import { DeleteTemplateButton } from "./delete-template-button";
 import {
@@ -18,16 +18,17 @@ export const dynamic = "force-dynamic";
 
 export default async function TemplateDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = await params;
+  const query = (await searchParams) ?? {};
   const [template, foods] = await Promise.all([getTemplate(id), listFoods({ activeOnly: true, source: "SARA2" })]);
   if (!template) notFound();
 
   const meals = toMealView(template.meals);
-  // HU-018b: plantilla no semanal → el mismo total de siempre; semanal → promedio diario.
-  const { totals, label: totalsLabel } = toPlanTotals(meals);
   const boundUpdate = updateTemplateAction.bind(null, template.id);
 
   return (
@@ -38,11 +39,6 @@ export default async function TemplateDetailPage({
         back={{ href: "/plantillas", label: "Volver a plantillas" }}
         action={<DeleteTemplateButton id={template.id} />}
       />
-
-      {/* Totales de la plantilla: quedan a la vista mientras se editan las comidas. */}
-      <div className="sticky top-14 z-10 -mx-6 mb-6 bg-background px-6 py-3 lg:top-0 lg:-mx-10 lg:px-10">
-        <MacroTotals totals={totals} label={totalsLabel} />
-      </div>
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
         <MealsEditor
@@ -55,6 +51,10 @@ export default async function TemplateDetailPage({
           addItemAction={addTemplateMealItemAction}
           deleteItemAction={deleteTemplateMealItemAction}
           showMacros
+          kind="template"
+          target={null}
+          targetMissingHref={null}
+          initialDay={initialDayFor(query.dia, template.meals)}
         />
 
         <Card
