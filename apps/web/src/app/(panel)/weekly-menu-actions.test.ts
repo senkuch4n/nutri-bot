@@ -106,7 +106,9 @@ describe("weekly-menu-actions", () => {
     }
     expect(mocks.restoreMealSnapshots).not.toHaveBeenCalled();
 
-    const { recipeId: _r, portions: _p, ...legacyItem } = snapshot.items[0]!;
+    const legacyItem: Record<string, unknown> = { ...snapshot.items[0]! };
+    delete legacyItem.recipeId;
+    delete legacyItem.portions;
     const legacy = { ...snapshot, items: [legacyItem] };
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [legacy] as never })).toEqual({ ok: true });
     expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot]);
