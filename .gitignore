@@ -17,3 +17,8 @@ packages/db/generated/
 
 # Exportaciones de ISAKMetry con datos de salud de pacientes: no se versionan
 docs/ISAKMetry_*
+
+# Material de la nutricionista para la HU-018 (recetarios de terceros, ~200 MB, y un plan con datos
+# de una paciente): no se versiona. Queda solo en la máquina local.
+docs/recetarios/
+docs/planes-alimentacion/

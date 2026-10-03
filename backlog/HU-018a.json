@@ -1,0 +1,13 @@
+{
+  "id": "HU-018a",
+  "responsable": "senkuch4n",
+  "intentos_revision": 0,
+  "hu": "docs/hu-plan-recetas-buscador.md",
+  "sdd": null,
+  "rama": "feat/hu-018-plan-recetas-buscador",
+  "origen": "Partición de HU-018",
+  "slug": "recetario",
+  "titulo": "Recetario: modelo de recetas, pantalla /recetas, macros por porción con SARA 2, carga asistida a borradores",
+  "estado": "validada",
+  "notas": "Va después de 018b."
+}

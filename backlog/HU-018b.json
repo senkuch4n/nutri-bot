@@ -1,0 +1,13 @@
+{
+  "id": "HU-018b",
+  "responsable": "senkuch4n",
+  "intentos_revision": 0,
+  "hu": "docs/hu-plan-recetas-buscador.md",
+  "sdd": null,
+  "rama": "feat/hu-018-plan-recetas-buscador",
+  "origen": "Partición de HU-018",
+  "slug": "menu-semanal",
+  "titulo": "Menú semanal: comidas por día (Lun–Dom), opciones, copiar/repetir días, franja del día + promedio semanal, migración sin pérdida, plantillas, portal y PDF mínimo por día",
+  "estado": "en_arquitectura",
+  "notas": "Primera de la HU-018. Zona de imleticio (editor de planes/plantillas, portal, PDF): la hace senkuch4n avisándole; Leo revisa el PR y su HU-015 se construye encima."
+}

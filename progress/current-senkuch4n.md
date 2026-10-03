@@ -173,3 +173,11 @@ orquestador, para que las revise a la mañana:
 - HU-016 ronda 2 → `implementando` (Opus): log solo con código + select mínimo en updates de Professional; logo queda en 2 MB.
 - HU-016 ronda 2: implementer `done`. → `en_revision` (ronda 2).
 - **HU-016 aprobada** (2ª ronda, reviewer Opus). Ver history.
+
+## 2026-10-03 · HU-018 (rama feat/hu-018-plan-recetas-buscador, desde develop)
+- HU-017a aprobada (PR #20, se mergea después del #7 de imleticio); su bitácora sigue en esa rama.
+- HU-018 `plan-recetas-buscador`: Notion En curso, backlog `afinando`. Material local (gitignored en la rama de 017a; acá todavía no): docs/recetarios/, docs/planes-alimentacion/. Afinador con ui-ux-pro-max.
+- PR #20 (HU-017a) mergeado a develop por el usuario (#7 de imleticio y #19 también mergeados). Traer develop a la rama de HU-018 cuando termine el afinador.
+- HU-018 afinada → `afinada_pendiente_validacion` (docs/hu-plan-recetas-buscador.md, 22 dudas; corte 018a recetario / 018b buscador / 018c medidas caseras). D15/D16 ya resueltas: #7 y #20 mergeados.
+- HU-018 resoluciones del usuario: D1 = menú semanal (no la recomendación); D3 = todo con atribución (licencia la confirma Daiana, fuera del sistema); resto aceptado. Afinador integrando (re-corte con menú semanal; coordinación con HU-015 de imleticio).
+- HU-018 **validada** (N1 promedio + rango; N2 018b la hacemos nosotros). Partida en 018a–d; orden 018b → 018a → 018c. HU-018b → `en_arquitectura`.
