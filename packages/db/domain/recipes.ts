@@ -347,6 +347,44 @@ export async function getRecipeUsage(recipeId: string): Promise<{ plans: number;
   return { plans, templates };
 }
 
+/**
+ * HU-018c: lo que necesita un ítem de receta en el plan (getPlan, getTemplate y el portal): macros
+ * (con los ingredientes), micronutrientes (nutrients y sodio), nombre, porción, fuente y foto. NO filtra
+ * por estado: una receta archivada sigue en el plan con sus macros (D10).
+ */
+export const RECIPE_ITEM_SELECT = {
+  id: true,
+  name: true,
+  status: true,
+  type: true,
+  portionHousehold: true,
+  yieldPortions: true,
+  sourceName: true,
+  photo: { select: { id: true } },
+  ingredients: {
+    orderBy: { order: "asc" },
+    select: {
+      label: true,
+      grams: true,
+      noQuantity: true,
+      food: {
+        select: {
+          id: true,
+          name: true,
+          group: true,
+          kcalPer100: true,
+          proteinPer100: true,
+          carbsPer100: true,
+          fatPer100: true,
+          fiberPer100: true,
+          nutrients: true,
+          sodiumMgPer100: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.RecipeSelect;
+
 // ── Escritura ─────────────────────────────────────────────────────────────────────────────────
 
 export interface RecipeInput {

@@ -1,10 +1,12 @@
 import { Skeleton } from "@/components/primitives/skeleton";
+import { cn } from "@/lib/utils";
+import { RECIPE_GRID_COLUMNS, type RecipeGridLayout } from "./recipe-grid";
 
 // HU-018a: 8 tarjetas con la foto 4:3 reservada (sin saltos de layout al cargar).
 
-export function RecipeGridSkeleton({ count = 8 }: { count?: number }) {
+export function RecipeGridSkeleton({ count = 8, layout = "page" }: { count?: number; layout?: RecipeGridLayout }) {
   return (
-    <div role="status" aria-busy="true" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+    <div role="status" aria-busy="true" className={cn("grid gap-4", RECIPE_GRID_COLUMNS[layout])}>
       <span className="sr-only">Cargando recetas…</span>
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="overflow-hidden rounded-xl bg-card shadow-card">

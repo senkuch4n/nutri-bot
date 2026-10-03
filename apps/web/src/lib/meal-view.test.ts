@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computePlanMicronutrients } from "@nutri-bot/core";
+import { computePlanMicronutrients, computeRecipeMacros, recipeItemMacros } from "@nutri-bot/core";
 import { toMealView, toMicronutrientItems } from "./meal-view";
 
 describe("plan micronutrient web adapter", () => {
@@ -59,5 +59,60 @@ describe("plan micronutrient web adapter", () => {
     expect(weekly.map((i) => i.weight)).toEqual([0.5, 0.5, 0.5, 0.5, 0, 1]);
     const legacy = toMicronutrientItems([{ items: [{ quantityGrams: "100", food }] }]);
     expect(legacy[0]).not.toHaveProperty("weight");
+  });
+
+  describe("HU-018c: ítems de receta", () => {
+    const avena = { name: "Avena, arrollada", group: "LEGUMBRES_CEREALES", kcalPer100: "380", proteinPer100: "13", carbsPer100: "60", fatPer100: "7", fiberPer100: "10", nutrients: { calcio: 50 }, sodiumMgPer100: "2" };
+    const banana = { name: "Banana", group: "FRUTAS", kcalPer100: "90", proteinPer100: "1", carbsPer100: "22", fatPer100: "0.3", fiberPer100: "2", nutrients: { calcio: 5 }, sodiumMgPer100: null };
+    const recipe = {
+      id: "rec1", name: "Panqueques de avena", status: "PUBLISHED" as const, type: "BREAKFAST" as const,
+      portionHousehold: "2 panqueques", yieldPortions: { toString: () => "4" }, sourceName: "Nutriarte", photo: { id: "ph1" },
+      ingredients: [
+        { label: null, grams: "200", noQuantity: false, food: avena },
+        { label: null, grams: "240", noQuantity: false, food: banana },
+        { label: "Canela", grams: null, noQuantity: true, food: null },
+        { label: "Miel casera", grams: "20", noQuantity: false, food: null },
+      ],
+    };
+    const recipeItem = { id: "ri", foodId: null, food: null, customLabel: null, quantityGrams: null, notes: null, weekday: "TUE" as const, recipeId: "rec1", portions: { toString: () => "1.5" }, recipe };
+
+    it("toMealView calcula los macros por porción × porciones y arma la receta", () => {
+      const [meal] = toMealView([{ id: "d", name: "Desayuno", mode: "PER_DAY", items: [recipeItem] }]);
+      const perPortion = computeRecipeMacros([
+        { label: null, grams: 200, noQuantity: false, food: { ...avena, group: "LEGUMBRES_CEREALES", kcalPer100: 380, proteinPer100: 13, carbsPer100: 60, fatPer100: 7, fiberPer100: 10 } },
+        { label: null, grams: 240, noQuantity: false, food: { ...banana, group: "FRUTAS", kcalPer100: 90, proteinPer100: 1, carbsPer100: 22, fatPer100: 0.3, fiberPer100: 2 } },
+      ], 4).perPortion;
+      const view = meal!.items[0]!;
+      expect(view.macros).toEqual(recipeItemMacros(perPortion, 1.5));
+      expect(view.macros?.kcal).toBe(366); // (760 + 216) / 4 × 1,5
+      expect(view).toMatchObject({ foodName: null, customLabel: null, quantityGrams: null, kcalBreakdown: null, weekday: "TUE" });
+      expect(view.recipe).toEqual({
+        id: "rec1", name: "Panqueques de avena", status: "PUBLISHED", type: "BREAKFAST", portions: 1.5,
+        portionHousehold: "2 panqueques", photoId: "ph1", sourceName: "Nutriarte", macrosIncomplete: true,
+      });
+    });
+
+    it("toMicronutrientItems expande la receta a sus ingredientes escalados, con el peso semanal", () => {
+      const items = toMicronutrientItems([
+        { id: "d", mode: "PER_DAY", isOptions: false, items: [
+          recipeItem,
+          { id: "x", weekday: "WED", quantityGrams: "100", food: { nutrients: { calcio: 10 }, sodiumMgPer100: null } },
+        ] },
+      ]);
+      // 2 días cargados → cada ítem pesa ½. El c.n. no aparece; el de texto libre aparece sin alimento.
+      expect(items).toEqual([
+        { quantityGrams: 75, food: { nutrients: { calcio: 50 }, sodiumMgPer100: 2 }, weight: 0.5 },
+        { quantityGrams: 90, food: { nutrients: { calcio: 5 }, sodiumMgPer100: null }, weight: 0.5 },
+        { quantityGrams: 7.5, food: null, weight: 0.5 },
+        { quantityGrams: 100, food: { nutrients: { calcio: 10 }, sodiumMgPer100: null }, weight: 0.5 },
+      ]);
+    });
+
+    it("sin rendimiento la receta no aporta ni cuenta como ítem con macros", () => {
+      const noYield = { ...recipeItem, recipe: { ...recipe, yieldPortions: null } };
+      const [meal] = toMealView([{ id: "d", name: "Desayuno", items: [noYield] }]);
+      expect(meal!.items[0]!.macros).toBeNull();
+      expect(toMicronutrientItems([{ items: [noYield] }])).toEqual([]);
+    });
   });
 });

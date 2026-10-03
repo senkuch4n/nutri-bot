@@ -27,6 +27,7 @@
     "test:report": "dotenv -e ../../.env -- tsx scripts/test-anthropometric-report.ts",
     "walkthrough:hu008": "dotenv -e ../../.env -- tsx scripts/hu008-walkthrough.ts",
     "test:recipes": "dotenv -e ../../.env -- tsx scripts/test-recipes.ts",
+    "test:recipe-picker": "dotenv -e ../../.env -- tsx scripts/test-recipe-picker.ts",
     "recipes:extract": "dotenv -e ../../.env -- tsx scripts/recipes/extract.ts",
     "recipes:undo": "dotenv -e ../../.env -- tsx scripts/recipes/undo.ts",
     "recipes:export": "dotenv -e ../../.env -- tsx scripts/recipes/export.ts",
