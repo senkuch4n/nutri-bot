@@ -1,6 +1,7 @@
 import {
   Apple,
   CalendarDays,
+  ChefHat,
   Clock,
   Files,
   Inbox,
@@ -42,6 +43,7 @@ export const navGroups: NavGroup[] = [
     label: "Nutrición",
     items: [
       { href: "/alimentos", label: "Alimentos", icon: Apple },
+      { href: "/recetas", label: "Recetas", icon: ChefHat },
       { href: "/plantillas", label: "Plantillas", icon: Files },
     ],
   },
