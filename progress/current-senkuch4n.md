@@ -168,3 +168,8 @@ orquestador, para que las revise a la mañana:
 - HU-016 → `en_arquitectura` (migracion-prisma + ui).
 - HU-016: SDD lista (Refactorizaciones/matricula-firma.md; signatureData/MimeType, GET /api/professional/signature con sesión, getProfessional sin bytes, PdfSignatureBlock compartido; P1–P5) → `arquitectura_lista`.
 - HU-016: usuario acepta P1–P3/P5; P4 se suma (logo solo PNG/JPG + aviso si el actual es WEBP). → `implementando` (Opus; migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max).
+- HU-016: implementer `done` (1249 tests; base idéntica). Recorrido OK (progress/recorrido_HU-016.md). Hallazgo ajeno: test:booking-reason escenario 14 falla según la hora (HU-013, arreglar aparte). → `en_revision`.
+- HU-016: reviewer (Opus) CHANGES_REQUESTED: report-actions.ts:112 y :134 hacen console.error(err) con el error entero (puede incluir el PDF con la firma); loguear solo el código + test. → `rechazada_reintentando` (intento 1 de 2). **Corrección:** el escenario 14 de test:booking-reason no falla según la hora: falla SIEMPRE desde el PR #17 (checkSlotAvailable rechaza servicios inactivos y el script crea sSena con active:false). Arreglar aparte.
+- HU-016 ronda 2 → `implementando` (Opus): log solo con código + select mínimo en updates de Professional; logo queda en 2 MB.
+- HU-016 ronda 2: implementer `done`. → `en_revision` (ronda 2).
+- **HU-016 aprobada** (2ª ronda, reviewer Opus). Ver history.

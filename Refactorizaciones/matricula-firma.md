@@ -826,3 +826,15 @@ pie por defecto "Lic. Daiana Ponce · M.P. 852". Con lo de esta HU, en la zona d
   ("Tu logo está en un formato que no sale en los PDF. Volvé a subirlo en PNG o JPG.") y los PDF
   siguen saliendo sin logo como hoy. Tests de la validación y del aviso. El logo sigue fuera de
   `getProfessional()` (P5).
+
+## 17. Ajustes tras la 1ª revisión (2026-10-03)
+
+- **Cambio requerido (review_HU-016):** `apps/web/src/app/(panel)/pacientes/[id]/report-actions.ts`
+  (líneas ~112 y ~134) no puede loguear el error entero: solo el código (mismo `errorCode(err)` que
+  `ajustes/signature-actions.ts`), con test (spy sobre `console.error`) que verifique que no se
+  imprimen argumentos ni bytes.
+- **Sumado por el usuario:** los `update` de `Professional` que hoy devuelven la fila entera (p. ej.
+  `packages/db/domain/gcal.ts`, que corre en el bot, y los que marca el review) pasan a usar un
+  `select` mínimo (p. ej. `{ id: true }` o lo que realmente lean), para que no devuelvan los bytes de
+  la firma ni del logo.
+- **Tope del logo:** queda en 2 MB (decisión del usuario); la firma en 1 MB.

@@ -1,4 +1,5 @@
 import "server-only";
+import { professionalDisplayName } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { countPendingInquiries } from "@nutri-bot/db/domain";
 
@@ -11,6 +12,17 @@ export async function getProfessionalDisplayName(): Promise<string | null> {
   try {
     const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: { name: true } });
     return pro?.name?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** HU-016 (D6): "Lic. Daiana Ponce" para el portal. Igual que getProfessionalDisplayName: nunca tira. */
+export async function getProfessionalPortalName(): Promise<string | null> {
+  try {
+    const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: { name: true, title: true } });
+    if (!pro?.name?.trim()) return null;
+    return professionalDisplayName(pro);
   } catch {
     return null;
   }

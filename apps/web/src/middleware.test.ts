@@ -13,7 +13,7 @@ describe("public Mercado Pago webhook matcher", () => {
     expect(matcher.test("/numa-logo.png")).toBe(false);
     expect(matcher.test("/numa-logo.png/private")).toBe(true);
   });
-  it.each(["/api/webhooks/other", "/api/webhooks/mercadopago-private", "/api/webhooks/mercadopago/other", "/agenda"])("keeps %s protected", (pathname) => {
+  it.each(["/api/webhooks/other", "/api/webhooks/mercadopago-private", "/api/webhooks/mercadopago/other", "/agenda", "/api/professional/signature", "/api/professional/logo"])("keeps %s protected", (pathname) => {
     expect(matcher.test(pathname)).toBe(true);
   });
 });

@@ -13,6 +13,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         await prisma.professional.update({
           where: { id: 1 },
           data: { googleRefreshToken: account.refresh_token, googleSyncError: null },
+          select: { id: true },
         });
       }
       return token;

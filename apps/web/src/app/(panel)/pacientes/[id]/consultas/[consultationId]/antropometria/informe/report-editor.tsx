@@ -164,7 +164,7 @@ export function ReportEditor({
   hasPdf,
   lastPdfLabel,
   stale,
-  licenseMissing,
+  professionalNotice,
   reportHref,
   studyHref,
   editStudyHref,
@@ -178,7 +178,8 @@ export function ReportEditor({
   hasPdf: boolean;
   lastPdfLabel: string | null;
   stale: boolean;
-  licenseMissing: boolean;
+  /** HU-016 (D8): aviso único por matrícula y/o firma faltante; null si no falta nada. */
+  professionalNotice: string | null;
   reportHref: string;
   studyHref: string;
   editStudyHref: string;
@@ -300,10 +301,10 @@ export function ReportEditor({
               </div>
             </Alert>
           ) : null}
-          {licenseMissing ? (
+          {professionalNotice ? (
             <Alert tone="warning">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span>{T.licenseMissing}</span>
+                <span>{professionalNotice}</span>
                 <ButtonLink href="/ajustes?tab=pdf" variant="secondary" size="sm">
                   {T.goToSettings}
                 </ButtonLink>

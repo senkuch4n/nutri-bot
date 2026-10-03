@@ -337,3 +337,26 @@
 - **Modelos:** afinador y architect Opus; implementer Opus (2 rondas); reviewer Opus (2 rondas). Skills:
   migracion-prisma, refactor, ui (SDD); migracion-prisma, ui-styling, web-design-guidelines,
   ui-ux-pro-max (impl), ui-styling + web-design-guidelines (ronda 2).
+
+---
+
+## 2026-10-03 — HU-016 `matricula-firma` — APROBADA (2ª ronda) · Épica 47 · senkuch4n
+
+- **Qué:** tarjeta "Firma y matrícula" en `/ajustes` → PDF: título, matrícula e imagen de la firma
+  (PNG/JPG ≤ 1 MB, validada en el servidor por magic bytes), vista previa del bloque, reemplazar y
+  quitar. El informe antropométrico muestra título + nombre en el encabezado y el bloque de firma
+  compartido (`PdfSignatureBlock`) después de "Conclusiones", con aviso en el panel si falta
+  matrícula o firma. El portal muestra título + nombre + matrícula (sin la imagen). La vista previa
+  de la firma solo con sesión del panel y `no-store`; `getProfessional()` y todas las escrituras de
+  `Professional` ya no devuelven los bytes (firma y logo); los logs del informe solo registran el
+  código del error. El logo pasa a solo PNG/JPG (tope 2 MB) con aviso si el actual no es dibujable.
+- **No se tocó el PDF del plan** (zona de la HU-015 de imleticio). Quedó decidido para cuando se
+  rehaga: firma también en el plan, encabezado con título + nombre y pie por defecto "Lic. … · M.P. …".
+- **Migración** `professional_signature`: 2 columnas nullable. Respaldo previo en `~/nutribot-backups/`.
+- **Ronda 1 rechazada:** dos `console.error` del informe imprimían el error entero (podía incluir el
+  PDF con la firma). Ronda 2: log solo con el código + test; `select` mínimo en 16 escrituras.
+- **Verificación:** 1252 tests; regresiones del bot OK; base sin cambios (fila de `Professional`
+  intacta). Recorrido en `progress/recorrido_HU-016.md`.
+- **Pendiente aparte:** `test:booking-reason` escenario 14 falla siempre desde el PR #17 (el servicio
+  de prueba con seña es inactivo y ahora se rechazan servicios inactivos).
+- **Modelos:** afinador y architect Opus; implementer Opus (2 rondas); reviewer Opus (2 rondas).

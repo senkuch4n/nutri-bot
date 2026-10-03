@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { formatDateTime } from "@nutri-bot/core";
+import { formatDateTime, professionalDataMissingNotice } from "@nutri-bot/core";
 import { loadIsakReportContext } from "@/lib/anthropometric-report";
 import { ReportEditor } from "./report-editor";
 
@@ -26,7 +26,10 @@ export default async function IsakReportPage({ params }: { params: Promise<{ id:
       hasPdf={generatedAt !== null}
       lastPdfLabel={generatedAt ? formatDateTime(generatedAt, ctx.pro.timezone) : null}
       stale={ctx.stale}
-      licenseMissing={!ctx.pro.licenseNumber}
+      professionalNotice={professionalDataMissingNotice({
+        licenseMissing: !ctx.pro.licenseNumber?.trim(),
+        signatureMissing: !ctx.pro.signatureMimeType,
+      })}
       reportHref={ctx.reportHref}
       studyHref={ctx.studyHref}
       editStudyHref={`${ctx.consultationHref}?isak=editar#antropometria-isak`}

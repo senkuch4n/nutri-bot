@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
-import { validateAfterHoursConfig, validateBotAiInfo } from "@nutri-bot/core";
+import { logoImageSizeError, validateAfterHoursConfig, validateBotAiInfo, validateLogoImage } from "@nutri-bot/core";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 
 export type SettingsState = { ok: boolean; error?: string };
@@ -53,6 +53,7 @@ export async function saveSettingsAction(
       title: parsed.data.title || null,
       licenseNumber: parsed.data.licenseNumber || null,
     },
+    select: { id: true },
   });
 
   revalidatePath("/ajustes");
@@ -70,6 +71,7 @@ export async function saveGoogleCalendarIdAction(
   await prisma.professional.update({
     where: { id: 1 },
     data: { googleCalendarId: parsed.data.calendarId || null },
+    select: { id: true },
   });
   revalidatePath("/ajustes");
   return { ok: true };
@@ -79,36 +81,35 @@ export async function disconnectGoogleAction() {
   await prisma.professional.update({
     where: { id: 1 },
     data: { googleRefreshToken: null, googleSyncError: null },
+    select: { id: true },
   });
   revalidatePath("/ajustes");
 }
 
 export async function setBotPausedAction(paused: boolean) {
-  await prisma.professional.update({ where: { id: 1 }, data: { botPaused: paused } });
+  await prisma.professional.update({ where: { id: 1 }, data: { botPaused: paused }, select: { id: true } });
   revalidatePath("/ajustes");
 }
 
-const ALLOWED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const MAX_LOGO_BYTES = 2 * 1024 * 1024;
-
+// HU-016 (sección 16, P4): el logo acepta solo PNG o JPG (lo que react-pdf dibuja), validado en el
+// servidor por magic bytes con el mismo helper que la firma. Se ignoran file.type y file.name.
 export async function uploadLogoAction(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
   const file = formData.get("logo");
-  if (!(file instanceof File) || file.size === 0) {
+  if (!(file instanceof File)) {
     return { ok: false, error: "Elegí una imagen" };
   }
-  if (!ALLOWED_LOGO_TYPES.has(file.type)) {
-    return { ok: false, error: "Formato inválido (usá PNG, JPG o WEBP)" };
-  }
-  if (file.size > MAX_LOGO_BYTES) {
-    return { ok: false, error: "La imagen pesa más de 2 MB" };
-  }
+  const sizeError = logoImageSizeError(file.size);
+  if (sizeError) return { ok: false, error: sizeError };
   const buffer = Buffer.from(await file.arrayBuffer());
+  const check = validateLogoImage(buffer);
+  if (!check.ok) return { ok: false, error: check.error };
   await prisma.professional.update({
     where: { id: 1 },
-    data: { logoData: buffer, logoMimeType: file.type },
+    data: { logoData: buffer, logoMimeType: check.mimeType },
+    select: { id: true },
   });
   revalidatePath("/ajustes");
   return { ok: true };
@@ -118,6 +119,7 @@ export async function removeLogoAction(): Promise<void> {
   await prisma.professional.update({
     where: { id: 1 },
     data: { logoData: null, logoMimeType: null },
+    select: { id: true },
   });
   revalidatePath("/ajustes");
 }
@@ -147,6 +149,7 @@ export async function saveAfterHoursAction(
       afterHoursStart: attendTo,
       afterHoursEnd: attendFrom,
     },
+    select: { id: true },
   });
   revalidatePath("/ajustes");
   return { ok: true };
@@ -174,6 +177,7 @@ export async function saveBotAiAction(_prev: SettingsState, formData: FormData):
   await prisma.professional.update({
     where: { id: 1 },
     data: { botAiEnabled: enabled, botAiInfo: info || null },
+    select: { id: true },
   });
   revalidatePath("/ajustes");
   return { ok: true };
