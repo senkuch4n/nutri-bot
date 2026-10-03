@@ -13,6 +13,17 @@ export const notify = {
   info: (message: string) => {
     toast(message);
   },
+  /**
+   * HU-018b (SDD 7.9): toast con "Deshacer" (8 s). El botón de acción lleva 44 px de alto
+   * (objetivo de toque); su color sale de `toastClassNames.actionButton`.
+   */
+  undo: (message: string, onUndo: () => void | Promise<void>) => {
+    toast(message, {
+      duration: 8000,
+      action: { label: "Deshacer", onClick: () => void onUndo() },
+      classNames: { actionButton: "!h-11 !px-4 !text-callout !font-semibold" },
+    });
+  },
 };
 
 /**

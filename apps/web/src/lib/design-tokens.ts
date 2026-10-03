@@ -168,11 +168,14 @@ export const chartPalette = {
     basalMetabolicRateKcal: "#3A3A3C",
   },
   tissue: { adipose: "#C93400", muscle: "#248A3D", bone: "#636366", residual: "#8944AB" },
+  /** HU-018b: un color fijo por macro (franja del día; 018c lo reusa en las tarjetas de recetas). */
+  macro: { kcal: "#0066CC", protein: "#248A3D", carbs: "#C93400", fat: "#8944AB" },
 } as const satisfies {
   series: readonly [string, string, string, string, string];
   study: readonly [string, string, string];
   metric: Record<string, string>;
   tissue: Record<string, string>;
+  macro: Record<"kcal" | "protein" | "carbs" | "fat", string>;
 };
 
 // ─── Requisitos de contraste (los recorre design-tokens.test.ts y la demo) ────

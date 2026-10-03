@@ -1,6 +1,6 @@
 import { prisma, type MealMode, type Weekday } from "../index";
 import { getPlan } from "./nutritionPlans";
-import { assertWeekdayMatchesMeal, resolveNewMealMode } from "./weeklyMenu";
+import { assertWeekdayMatchesMeal, createDefaultWeeklyMeals, resolveNewMealMode } from "./weeklyMenu";
 
 const templateMealInclude = {
   orderBy: { order: "asc" as const },
@@ -20,8 +20,13 @@ export function getTemplate(id: string) {
   return prisma.planTemplate.findUnique({ where: { id }, include: { meals: templateMealInclude } });
 }
 
+/** HU-018b (12-D4): la plantilla nueva trae las mismas comidas por defecto que un plan nuevo. */
 export function createTemplate(data: { title: string; notes?: string | null }) {
-  return prisma.planTemplate.create({ data });
+  return prisma.$transaction(async (tx) => {
+    const template = await tx.planTemplate.create({ data });
+    await createDefaultWeeklyMeals(tx, "template", template.id);
+    return template;
+  });
 }
 
 export function updateTemplate(id: string, data: Partial<{ title: string; notes: string | null }>) {
