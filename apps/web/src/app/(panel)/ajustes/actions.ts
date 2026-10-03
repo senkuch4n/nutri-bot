@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
-import { validateAfterHoursConfig } from "@nutri-bot/core";
+import { validateAfterHoursConfig, validateBotAiInfo } from "@nutri-bot/core";
+import { getBotAiKeyStatus } from "@/lib/bot-ai";
 
 export type SettingsState = { ok: boolean; error?: string };
 
@@ -148,6 +149,33 @@ export async function saveAfterHoursAction(
       afterHoursStart: attendTo,
       afterHoursEnd: attendFrom,
     },
+  });
+  revalidatePath("/ajustes");
+  return { ok: true };
+}
+
+// HU-012 (D10, D11): preguntas con IA del bot (interruptor + "Información para el asistente").
+const botAiSchema = z.object({
+  botAiEnabled: z.enum(["0", "1"]),
+  botAiInfo: z.string(),
+});
+
+export async function saveBotAiAction(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const parsed = botAiSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: "Datos inválidos." };
+  const enabled = parsed.data.botAiEnabled === "1";
+  const info = parsed.data.botAiInfo.trim();
+  const infoError = validateBotAiInfo(info);
+  if (infoError) return { ok: false, error: infoError };
+  // Sin clave se puede apagar o guardar el texto, pero no prender.
+  const { hasKey, apiKeyEnvName } = getBotAiKeyStatus();
+  const current = await prisma.professional.findUnique({ where: { id: 1 }, select: { botAiEnabled: true } });
+  if (enabled && !current?.botAiEnabled && !hasKey) {
+    return { ok: false, error: `Para activarlo falta cargar ${apiKeyEnvName} en el servidor.` };
+  }
+  await prisma.professional.update({
+    where: { id: 1 },
+    data: { botAiEnabled: enabled, botAiInfo: info || null },
   });
   revalidatePath("/ajustes");
   return { ok: true };

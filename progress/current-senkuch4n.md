@@ -138,3 +138,5 @@ orquestador, para que las revise a la mañana:
 - HU-012 → `en_arquitectura` (migracion-prisma + ui; datos del skill claude-api pasados al architect).
 - HU-012: SDD lista (Refactorizaciones/preguntas-bot-ia.md, tabla BotAiQuestion, 4 tools de solo lectura, P1–P14 con default) → `arquitectura_lista`.
 - HU-012: usuario acepta P1–P5/P7–P14; P6 con prefijo "Pregunta al asistente: ". → `implementando` (Opus; migracion-prisma, claude-api, ui-styling, web-design-guidelines).
+- HU-012: implementer (Opus) `done`: 863 tests, test:bot-ai 18/18, sin llamadas reales. Recorrido OK (progress/recorrido_HU-012.md). develop avanzó con un fix de HU-010 (sin solaparse). → `en_revision`.
+- **HU-012 aprobada** (1ª ronda, reviewer Opus). Ver history.

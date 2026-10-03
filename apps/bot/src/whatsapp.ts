@@ -168,3 +168,10 @@ export async function sendDocument(jid: string, buffer: Buffer, fileName: string
 export function isConnected(): boolean {
   return sock !== null;
 }
+
+/** HU-012: "escribiendo…" sin mandar nada. No lanza (si no hay socket, no hace nada). */
+export async function sendTyping(jid: string): Promise<void> {
+  if (!sock) return;
+  await sock.presenceSubscribe(jid).catch(() => {});
+  await sock.sendPresenceUpdate("composing", jid).catch(() => {});
+}

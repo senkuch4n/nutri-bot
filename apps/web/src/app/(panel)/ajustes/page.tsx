@@ -16,6 +16,8 @@ import {
 import { GoogleCalendarForm } from "./google-calendar-form";
 import { BotToggle } from "./bot-toggle";
 import { AfterHoursForm } from "./after-hours-form";
+import { BotAiForm } from "./bot-ai-form";
+import { getBotAiKeyStatus } from "@/lib/bot-ai";
 import { LogoForm } from "./logo-form";
 import { disconnectGoogleAction } from "./actions";
 
@@ -72,6 +74,11 @@ export default async function AjustesPage() {
           attendFrom: pro.afterHoursEnd,
           attendTo: pro.afterHoursStart,
         }}
+      />
+      <Separator className="my-4" />
+      <BotAiForm
+        defaults={{ enabled: pro.botAiEnabled, info: pro.botAiInfo ?? "" }}
+        keyStatus={getBotAiKeyStatus()}
       />
     </Card>
   );

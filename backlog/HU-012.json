@@ -4,7 +4,7 @@
   "slug": "preguntas-bot-ia",
   "titulo": "Preguntas al bot con IA (servicios, turnos, precios)",
   "origen": "hus-last-meet.md (reunión con la nutricionista)",
-  "estado": "implementando",
+  "estado": "aprobada",
   "intentos_revision": 0,
   "hu": "docs/hu-preguntas-bot-ia.md",
   "sdd": "Refactorizaciones/preguntas-bot-ia.md",
@@ -21,5 +21,7 @@
     "claude-api",
     "ui-styling",
     "web-design-guidelines"
-  ]
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-012.md"
 }

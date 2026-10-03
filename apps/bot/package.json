@@ -9,14 +9,17 @@
     "typecheck": "tsc --noEmit",
     "test:confirm-flow": "dotenv -e ../../.env -- tsx scripts/test-confirm-attendance.ts",
     "test:after-hours": "dotenv -e ../../.env -- tsx scripts/test-after-hours-inquiry.ts",
+    "test:bot-ai": "dotenv -e ../../.env -- tsx scripts/test-bot-ai-questions.ts",
     "test:mercadopago-sandbox": "dotenv -e ../../.env -- tsx scripts/test-mercadopago-sandbox.ts",
     "test:report-outbox": "dotenv -e ../../.env -- tsx scripts/test-report-outbox.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@nutri-bot/core": "*",
     "@nutri-bot/db": "*",
     "@whiskeysockets/baileys": "^6.7.9",
     "node-cron": "^3.0.3",
+    "openai": "^7.15.0",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
     "qrcode": "^1.5.4",

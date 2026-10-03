@@ -43,3 +43,14 @@ export function isExitCommand(text: string): boolean {
 export function isMenuCommand(text: string): boolean {
   return normalizeCommand(text) === "menu";
 }
+
+/**
+ * HU-012. Si el mensaje ENTERO es un dígito de 0 a `max` (admite el keycap: "5️⃣"), devuelve ese
+ * dígito ("0"…"9"); si no, null. " 1 " → "1"; "1." → null; "15" → null; "5️⃣" → "5".
+ * Normalización: trim y quitar U+FE0F y U+20E3.
+ */
+export function menuDigit(text: string, max: number): string | null {
+  const t = text.replace(/[️⃣]/g, "").trim();
+  if (!/^\d$/.test(t)) return null;
+  return Number(t) <= max ? t : null;
+}

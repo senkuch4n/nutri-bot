@@ -12,12 +12,12 @@ Respondé con el número de la opción.`;
 
 export const ASK_NAME = "Antes de empezar, ¿cómo es tu nombre completo?";
 
-export function greetByName(name: string): string {
-  return `¡Gracias, ${name}! 🙌\n\n${MENU}`;
+export function greetByName(name: string, menuText: string = MENU): string {
+  return `¡Gracias, ${name}! 🙌\n\n${menuText}`;
 }
 
-export function welcomeBack(name: string): string {
-  return `¡Hola de nuevo, ${name}! 👋\n\n${MENU}`;
+export function welcomeBack(name: string, menuText: string = MENU): string {
+  return `¡Hola de nuevo, ${name}! 👋\n\n${menuText}`;
 }
 
 export const NOT_UNDERSTOOD = `No entendí esa respuesta. Escribí *menú* para ver las opciones.`;
@@ -239,3 +239,38 @@ export function afterHoursDigest(params: {
   );
   return `${head}\n${lines.join("\n")}\n\nLas ves completas en el panel → Mensajes.`;
 }
+
+// --- HU-012: preguntas al bot con IA (opción 5) ---
+
+export const MENU_WITH_QUESTIONS = `¡Hola! 👋 Soy el asistente de turnos. ¿Qué necesitás?
+
+1️⃣ Sacar un turno
+2️⃣ Cancelar un turno
+3️⃣ Ver precios
+4️⃣ Ver mi portal (plan, turnos, evolución)
+5️⃣ Hacer una pregunta
+0️⃣ Hablar con la nutricionista
+
+Respondé con el número de la opción.`;
+
+/** Menú del bot: con la opción 5 solo si la IA está disponible (interruptor + clave). */
+export function menu(p: { withQuestions: boolean }): string {
+  return p.withQuestions ? MENU_WITH_QUESTIONS : MENU;
+}
+
+export const QUESTION_MODE_INTRO = `💬 Escribime tu pregunta sobre servicios, precios, turnos o pagos y te respondo al toque.\n\nTe responde un asistente automático con inteligencia artificial: no da indicaciones de salud ni de alimentación, y no hace falta que me cuentes datos personales de salud. Para eso está la nutricionista (opción *0*).\n\nPara volver, escribí *menú*.`;
+
+export const AI_DAILY_LIMIT = `Por hoy ya respondí muchas preguntas tuyas. 🙂 Podés usar el *menú* para turnos y precios, o responder *0* para dejarle tu consulta a la nutricionista.`;
+
+export const AI_TOO_LONG = `Uy, es un mensaje muy largo para mí. ¿Me lo resumís en una pregunta más corta?`;
+
+export const AI_ERROR = `Ahora no puedo responderte. 😕 Probá de nuevo en un rato, escribí *menú* para ver las opciones o respondé *0* para dejarle tu consulta a la nutricionista.`;
+
+export const AI_UNAVAILABLE = `Por ahora no puedo responder preguntas. Escribí *menú* para ver las opciones o respondé *0* para hablar con la nutricionista.`;
+
+export const AI_TEXT_ONLY = `Por ahora solo entiendo preguntas escritas. ¿Me la escribís? 🙏`;
+
+export const AI_OFF_TOPIC = `Solo puedo ayudarte con temas del consultorio: servicios, precios, turnos y pagos. ¿Tenés alguna duda sobre eso?`;
+
+/** Sufijo de una respuesta cortada por max_tokens (SDD P3). */
+export const AI_TRUNCATED_SUFFIX = `\n\nSi necesitás más detalle, preguntame algo más puntual o respondé *0* para dejarle tu consulta a la nutricionista.`;

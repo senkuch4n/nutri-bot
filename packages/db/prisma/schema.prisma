@@ -34,6 +34,13 @@ model Professional {
   afterHoursStart    String   @default("22:00")
   /// Fin de la franja, "HH:mm" en `timezone` (p. ej. "09:00"). A esta hora sale el resumen.
   afterHoursEnd      String   @default("09:00")
+  /// HU-012 (D11): el bot responde preguntas con IA (opción 5 del menú). Además de esto, el bot
+  /// exige la clave del proveedor en el .env; sin clave la opción no aparece.
+  botAiEnabled       Boolean  @default(false)
+  /// HU-012 (D10): "Información para el asistente" (dirección, medios de pago, cuotas, política de
+  /// cancelación…). Texto libre, máx. 2.000 caracteres (validado en la action). La IA lo recibe con
+  /// la tool `datos_consultorio`. null = no cargado.
+  botAiInfo          String?
   googleRefreshToken String?
   googleCalendarId   String?
   googleSyncError    String?
@@ -61,6 +68,7 @@ model Patient {
   diaryEntries DiaryEntry[]
   consultations Consultation[]
   inquiries    PatientInquiry[]
+  botAiQuestions BotAiQuestion[]
 }
 
 model DiaryEntry {
@@ -684,4 +692,59 @@ model PatientInquiry {
 
   @@index([status, receivedAt])
   @@index([patientId, status])
+}
+
+/// HU-012: resultado de una pregunta al asistente con IA del bot.
+enum BotAiOutcome {
+  /// Respondió.
+  ANSWERED
+  /// Respondió y ofreció la opción 0 (heurística sobre el texto, `classifyAnswer`).
+  HANDOFF_OFFERED
+  /// stop_reason "refusal": se mandó el texto fijo de fuera de tema.
+  REFUSED
+  /// stop_reason "max_tokens": se mandó la respuesta cortada en la última oración + sufijo.
+  TRUNCATED
+  /// Pidió más vueltas de tools que el tope: texto fijo de error.
+  TOOL_LIMIT
+  /// Error del proveedor, timeout, respuesta vacía o stop_reason inesperado: texto fijo de error.
+  ERROR
+  /// Tope diario del paciente: no se llamó a la IA.
+  LIMIT_PATIENT
+  /// Tope diario global: no se llamó a la IA.
+  LIMIT_GLOBAL
+}
+
+/// HU-012 (D7): una fila por pregunta hecha en el modo pregunta del bot. Retención de 90 días
+/// (cron del bot) y borrado en cascada con el paciente.
+model BotAiQuestion {
+  id                  String       @id @default(cuid())
+  patient             Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId           String
+  /// Instante de la pregunta (lo pone el bot: inyectable en pruebas). Base del límite diario y de la retención.
+  askedAt             DateTime
+  /// Texto de la pregunta tal como se mandó a la IA (trim, ≤ 500 caracteres).
+  question            String
+  /// Texto que recibió el paciente. null en LIMIT_* (recibió un texto fijo que no hace falta guardar).
+  answer              String?
+  outcome             BotAiOutcome
+  /// "anthropic" | "deepseek" (o "fake" en el script de prueba).
+  provider            String
+  model               String
+  /// Suma de `usage` de TODAS las vueltas del loop de tools.
+  inputTokens         Int          @default(0)
+  outputTokens        Int          @default(0)
+  cacheCreationTokens Int          @default(0)
+  cacheReadTokens     Int          @default(0)
+  /// Vueltas de tools ejecutadas (0–4).
+  toolRounds          Int          @default(0)
+  /// Tiempo total de la pregunta en ms (null en LIMIT_*).
+  latencyMs           Int?
+  /// Tipo de error (`BotAiErrorKind`) si outcome = ERROR. Nunca el mensaje del proveedor.
+  errorKind           String?
+  /// D4 (c): cuándo el paciente respondió "0" y esta pregunta pasó a la bandeja `/mensajes`.
+  handedOffAt         DateTime?
+  createdAt           DateTime     @default(now())
+
+  @@index([patientId, askedAt])
+  @@index([askedAt])
 }

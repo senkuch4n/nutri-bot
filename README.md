@@ -103,6 +103,7 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 | `npm run sara2:load` | Carga `alimentos.json` en la base: upsert por clave de origen, idempotente, no toca los alimentos propios ni borra (desactiva los que salieron). `-- --dry-run` para ver qué haría |
 | `npm run test:foods --workspace packages/db` | Prueba contra la base de desarrollo la carga de SARA 2 (en transacción revertida) y los alimentos propios (borra por id lo que crea) |
 | `npm run test:confirm-flow --workspace apps/bot` | Simula sin WhatsApp real el flujo de confirmación de turno (sí/no) y las recomendaciones previas a un estudio; crea y borra sus propios datos de prueba |
+| `npm run test:bot-ai --workspace apps/bot` | Simula sin WhatsApp real ni API de IA (proveedor falso) la opción 5 del bot (preguntas con IA): tools, límites, errores, derivación con 0 y retención; crea y borra sus propios datos de prueba |
 
 ## Despliegue (VPS con Docker)
 
