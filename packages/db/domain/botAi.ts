@@ -115,6 +115,32 @@ export async function purgeExpiredBotAiQuestions(opts: {
   return res.count;
 }
 
+/**
+ * BOT (cron). Privacidad (D7): el historial con la IA vive en `ConversationState.context` mientras
+ * dura el modo pregunta. Una sesión vencida (sin actividad en `sessionTimeoutMs`) pasa a DORMANT
+ * con contexto vacío, que es como el bot ya la trata al volver a escribir. Si el paciente escribe
+ * justo antes, su `updatedAt` cambia y la fila no entra. `scope` es SOLO para el script de prueba.
+ */
+export async function clearExpiredAiSessions(opts: {
+  sessionTimeoutMs: number;
+  now?: Date;
+  scope?: { jids: string[] };
+}): Promise<number> {
+  if (!Number.isFinite(opts.sessionTimeoutMs) || opts.sessionTimeoutMs <= 0) {
+    throw new Error("clearExpiredAiSessions: sessionTimeoutMs tiene que ser > 0");
+  }
+  const now = opts.now ?? new Date();
+  const res = await prisma.conversationState.updateMany({
+    where: {
+      step: "AWAIT_QUESTION",
+      updatedAt: { lt: new Date(now.getTime() - opts.sessionTimeoutMs) },
+      ...(opts.scope ? { patientJid: { in: opts.scope.jids } } : {}),
+    },
+    data: { step: "DORMANT", context: {} },
+  });
+  return res.count;
+}
+
 export type BotAiToolResult = { content: string; isError: boolean };
 
 const TOOL_FAILED = "No se pudo consultar ese dato.";

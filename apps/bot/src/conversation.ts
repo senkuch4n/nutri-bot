@@ -753,24 +753,34 @@ async function handleQuestionText(
   const limits = mergeBotAiLimits(getBotAiConfig().limits, opts.aiLimits);
   void opts.typing?.().catch(() => {}); // "escribiendo…" (no se espera)
   const title = pro.title?.trim();
-  const result = await answerQuestion(
-    {
-      provider: ai.provider,
-      limits,
-      countToday: () => countBotAiQuestionsToday({ patientId: patient.id, now, tz: pro.timezone }),
-      record: (row) => recordBotAiQuestion({ ...row, patientId: patient.id, askedAt: now }),
-      runTool: (name, input) =>
-        runBotAiTool({ name, input, patientId: patient.id, now, afterHours: opts.afterHours }),
-      log: logger,
-    },
-    {
-      text,
-      history: ctx.aiHistory ?? [],
-      now,
-      tz: pro.timezone,
-      professionalName: title ? `${title} ${pro.name}` : pro.name,
-    },
-  );
+  let result: Awaited<ReturnType<typeof answerQuestion>>;
+  try {
+    result = await answerQuestion(
+      {
+        provider: ai.provider,
+        limits,
+        countToday: () => countBotAiQuestionsToday({ patientId: patient.id, now, tz: pro.timezone }),
+        record: (row) => recordBotAiQuestion({ ...row, patientId: patient.id, askedAt: now }),
+        runTool: (name, input) =>
+          runBotAiTool({ name, input, patientId: patient.id, now, afterHours: opts.afterHours }),
+        log: logger,
+      },
+      {
+        text,
+        history: ctx.aiHistory ?? [],
+        now,
+        tz: pro.timezone,
+        professionalName: title ? `${title} ${pro.name}` : pro.name,
+      },
+    );
+  } catch (err) {
+    // Falla de base (conteo o registro). Solo el nombre del error: uno de Prisma puede traer los
+    // argumentos, o sea el texto de la pregunta. El paciente sigue en el modo pregunta.
+    logger.error({ errName: err instanceof Error ? err.name : typeof err }, "Error de base en el modo pregunta");
+    await save(jid, STEP.AWAIT_QUESTION, ctx);
+    await send(messages.AI_ERROR);
+    return;
+  }
   const history = result.turn
     ? trimHistory([...(ctx.aiHistory ?? []), result.turn], limits.historyTurns)
     : (ctx.aiHistory ?? []);
