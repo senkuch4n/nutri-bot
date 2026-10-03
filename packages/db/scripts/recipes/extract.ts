@@ -108,6 +108,7 @@ async function pageImages(
   pdf: string,
   page: number,
   rows: readonly ImageRow[],
+  totalPages: number,
 ): Promise<import("../../domain/recipeImport").ImportImageInput[]> {
   const { processImportPage, processRecipePhoto } = await import("../../media/recipe-photo");
   const tmp = mkdtempSync(join(tmpdir(), "recetas-"));
@@ -118,7 +119,10 @@ async function pageImages(
     const pageImg = await processImportPage(readFileSync(join(tmp, "page.png")));
     out.push({ kind: "PAGE", order: 0, data: pageImg.data, thumbData: null, width: pageImg.width, height: pageImg.height });
 
-    // Candidatas: fotos grandes que no se repiten en 3 páginas o más (eso es decoración).
+    // Candidatas: fotos grandes que no son decoración. La SDD dice "no se repite en 3 páginas o más",
+    // pero estos PDF reusan el mismo objeto de foto en 3–4 páginas (recetas vecinas e intro): se
+    // toma como decoración solo si aparece en al menos 3 páginas Y en el 30 % del archivo (un logo).
+    const decorationPages = Math.max(3, Math.ceil(totalPages * 0.3));
     const pagesByObject = new Map<string, Set<number>>();
     for (const r of rows) pagesByObject.set(r.objectId, (pagesByObject.get(r.objectId) ?? new Set()).add(r.page));
     const onPage = rows.filter((r) => r.page === page);
@@ -128,7 +132,7 @@ async function pageImages(
         const ratio = r.width / r.height;
         return (
           r.type === "image" && r.width >= 300 && r.height >= 200 && ratio >= 0.6 && ratio <= 2.2 &&
-          (pagesByObject.get(r.objectId)?.size ?? 0) < 3
+          (pagesByObject.get(r.objectId)?.size ?? 0) < decorationPages
         );
       })
       .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height)
@@ -359,7 +363,8 @@ async function main() {
         const pdf = resolve(recipesDir, d.file);
         if (!imageRowsByFile.has(d.file)) imageRowsByFile.set(d.file, listImages(pdf));
         const key = `${d.file}#${d.page}`;
-        if (!imagesByPage.has(key)) imagesByPage.set(key, await pageImages(pdf, d.page, imageRowsByFile.get(d.file)!));
+        const totalPages = results.find((r) => r.file === d.file)?.pages ?? 0;
+        if (!imagesByPage.has(key)) imagesByPage.set(key, await pageImages(pdf, d.page, imageRowsByFile.get(d.file)!, totalPages));
         images = imagesByPage.get(key)!;
       }
       const res = await upsertImportedDraft(d, images);

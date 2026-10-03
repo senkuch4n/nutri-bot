@@ -15,6 +15,7 @@ import {
 } from "@/components/primitives/dropdown-menu";
 import { SegmentedControl } from "@/components/segmented-control";
 import { Button } from "@/components/ui";
+import { reviewHref } from "../review-href";
 
 // HU-018a-2 (SDD 7.5): piezas de la pantalla de revisión de borradores. Pensada para revisar ~40
 // recetas seguidas: una acción principal ("Publicar y seguir"), atajos de teclado que funcionan
@@ -41,10 +42,6 @@ export interface RecipeReview {
   candidates: { id: string; thumbUrl: string; fullUrl: string }[];
 }
 
-export function reviewHref(id: string | null, file: string | null): string {
-  const q = file ? `?archivo=${encodeURIComponent(file)}` : "";
-  return id ? `/recetas/revisar/${id}${q}` : `/recetas/revisar${q}`;
-}
 
 /** Mac → ⌘; el resto → Ctrl. Se resuelve en el cliente (en el servidor arranca como Ctrl). */
 export function useModKey(): "⌘" | "Ctrl" {

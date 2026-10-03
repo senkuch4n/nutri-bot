@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -52,15 +53,14 @@ import { archiveRecipeAction, saveRecipeAction, unarchiveRecipeAction } from "./
 import { recipeFormSnapshot, rowHasContent, snapshotAfterSave } from "./recipe-form-state";
 import { RecipePortionSummary } from "./recipe-portion-summary";
 import type { RecipeActionState } from "./recipe-save";
-import {
-  OriginalPanel,
-  PhotoCandidates,
-  ReviewBar,
-  SuggestionLine,
-  reviewHref,
-  type PhotoChoice,
-  type RecipeReview,
-} from "./revisar/[id]/review-parts";
+import { reviewHref } from "./revisar/review-href";
+import type { PhotoChoice, RecipeReview } from "./revisar/[id]/review-parts";
+
+// Las piezas de la revisión (018a-2) se cargan solo en esa pantalla: el editor no las paga.
+const ReviewBar = dynamic(() => import("./revisar/[id]/review-parts").then((m) => m.ReviewBar));
+const OriginalPanel = dynamic(() => import("./revisar/[id]/review-parts").then((m) => m.OriginalPanel));
+const PhotoCandidates = dynamic(() => import("./revisar/[id]/review-parts").then((m) => m.PhotoCandidates));
+const SuggestionLine = dynamic(() => import("./revisar/[id]/review-parts").then((m) => m.SuggestionLine));
 
 // HU-018a: ficha / editor de una receta (SDD 7.3). Los macros se calculan en vivo con
 // computeRecipeMacros; no hay ningún campo para cargarlos a mano (D4). Una acción principal
