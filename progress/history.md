@@ -415,3 +415,14 @@
 - **Pendiente:** 018a-2 (extractor + revisión de borradores, export/import a producción). Bug de `auth.ts`
   (`refresh_token` de cualquiera que inicia sesión) como tarea directa aparte.
 - **Modelos:** architect Opus; implementer Opus (2 rondas); reviewer Opus (2 rondas).
+
+## HU-018a-2 · Carga asistida de recetas (aprobada 2026-10-03, senkuch4n)
+- **Qué:** parser de recetarios en `@nutri-bot/core/recipe-import` (5 formatos, sin gramos inventados), extractor
+  `recipes:extract` (en seco por defecto; `--write`/`--images` cargan borradores), `recipes:undo` por corrida, pantalla
+  `/recetas/revisar` (original al lado, sugerencias de alimento, fotos candidatas, comparación con la tabla del
+  recetario, `⌘↵`/`⌘S`), y `recipes:export` / `recipes:import:prod` (en seco por defecto, idempotente por `importKey`).
+- **Extractor en seco sobre los PDF reales:** 320 borradores de 24 archivos, 2450 ingredientes (1098 sin gramos en el
+  texto), 0 gramos inventados. Nada de terceros en el repo.
+- **Recorrido:** 1ª pasada con Build Error de Turbopack (`export type … from` en un `"use server"`), arreglado antes
+  de la revisión. Aprobada en la primera revisión.
+- **Modelos:** implementer Opus; reviewer Opus.

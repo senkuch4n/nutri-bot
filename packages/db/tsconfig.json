@@ -6,5 +6,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["index.ts", "domain/**/*.ts", "media/**/*.ts", "prisma/**/*.ts", "scripts/sara2/**/*.ts", "scripts/test-foods-sara2.ts"]
+  "include": ["index.ts", "domain/**/*.ts", "media/**/*.ts", "prisma/**/*.ts", "scripts/sara2/**/*.ts", "scripts/test-foods-sara2.ts", "scripts/recipes/**/*.ts"]
 }

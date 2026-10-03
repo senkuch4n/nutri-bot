@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, SearchX } from "lucide-react";
+import { BookOpen, ListChecks, SearchX } from "lucide-react";
 import {
   EMPTY_RECIPE_FILTERS,
   filterRecipes,
@@ -97,7 +97,12 @@ export function RecipesBrowser({
       />
     );
   } else {
-    content = <RecipeGrid cards={shown} />;
+    content = (
+      <RecipeGrid
+        cards={shown}
+        hrefFor={tab === "revisar" ? (c) => `/recetas/revisar/${c.id}` : undefined}
+      />
+    );
   }
 
   return (
@@ -113,6 +118,18 @@ export function RecipesBrowser({
         </TabsList>
       ) : null}
       <TabsContent value={tab} className={cn("mt-0 space-y-6", pending && "opacity-60")} aria-busy={pending || undefined}>
+        {tab === "revisar" && cards.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl bg-card p-4 shadow-card more-contrast:border more-contrast:border-input">
+            <p className="text-callout text-muted-foreground">
+              {cards.length === 1 ? "1 borrador" : `${cards.length} borradores`} de la carga asistida. Se revisan de a uno, con
+              la página original al lado.
+            </p>
+            <ButtonLink href="/recetas/revisar" size="lg" className="ml-auto">
+              <ListChecks aria-hidden />
+              Empezar a revisar
+            </ButtonLink>
+          </div>
+        ) : null}
         {cards.length > 0 ? (
           <RecipeFilters
             value={filters}

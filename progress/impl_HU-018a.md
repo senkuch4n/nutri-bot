@@ -282,3 +282,344 @@ Nada fuera de 018a-1. No se tocaron la base, el schema ni `next dev`.
 Parser `recipe-import`, `domain/recipeImport.ts` y `recipeTransfer.ts`, scripts `recipes:*`, ruta
 `/api/recetas/importacion/[imageId]`, pantalla de revisión y pestaña "Para revisar" con su botón "Empezar a revisar".
 La pestaña ya se dibuja si hay borradores. 018c y 018d no se tocaron.
+
+## 018a-2: carga asistida (fases G, H, I y K)
+
+**Estado: done.** Rama `feat/hu-018a2-carga-asistida`. Commits locales, sin push:
+
+| Fase | Commit | Mensaje |
+|---|---|---|
+| G | `379204d` | HU-018a: parser de recetarios (líneas de ingrediente, páginas, sugerencias, bundle) |
+| H | `1cce855` | HU-018a: extracción de borradores, deshacer corrida y pase a producción |
+| I | `bc034b7` | HU-018a: pantalla de revisión de borradores |
+| K | último commit de la rama (incluye este reporte) | HU-018a: verificación de la carga asistida |
+
+Skills: `apple-design` y `ui-ux-pro-max` antes del JSX, y `web-design-guidelines` como autochequeo. **Sin migración**:
+`schema.prisma` no se tocó. Implementer: Opus.
+
+### Archivos
+
+Creados:
+- `packages/core/src/recipe-import/`:
+  - `{index,text,ingredient-line,files,extract,food-suggest,bundle}.ts`;
+  - `__fixtures__/synthetic.ts`: páginas `BboxPage` armadas en código con recetas **inventadas** (F1, F2, F3, F4, F5 y una página vacía);
+  - tests: `ingredient-line.test.ts` (17), `extract.test.ts` (9) y `files-suggest-bundle.test.ts` (16).
+- `packages/db/domain/recipeImport.ts` + `recipeImport.test.ts` (13).
+- `packages/db/domain/recipeTransfer.ts` + `recipeTransfer.test.ts` (8). No se exporta desde `domain/index.ts`.
+- `packages/db/scripts/recipes/{extract,undo,export,import}.ts`.
+- `apps/web/src/app/api/recetas/importacion/[imageId]/route.ts` + `route.test.ts` (4).
+- `apps/web/src/app/(panel)/recetas/recipe-save.ts`: esquema del payload y manejo de la foto, compartidos por las dos
+  pantallas (ver "Decisiones").
+- `apps/web/src/app/(panel)/recetas/revisar/`:
+  - `page.tsx`, `actions.ts`, `actions.test.ts` (9) y `review-href.ts`;
+  - `[id]/{page,loading,review-screen,review-parts}.tsx`.
+
+Modificados:
+- `packages/core/package.json`: export `./recipe-import`.
+- `packages/db/domain/index.ts`: `export * from "./recipeImport"`.
+- `packages/db/package.json`: scripts `recipes:extract`, `recipes:undo`, `recipes:export` y `recipes:import:prod`.
+- `packages/db/tsconfig.json`: suma `scripts/recipes/**/*.ts`.
+- `packages/db/scripts/test-recipes.ts`: suma los pasos 9 a 12 (018a-2).
+- `apps/web/src/app/(panel)/recetas/`:
+  - `actions.ts`: usa `recipe-save.ts`, con el mismo comportamiento (sus 12 tests pasan sin cambios);
+  - `recipe-form.tsx`: modo revisión (prop `review`);
+  - `page.tsx` y `recipes-browser.tsx`: pestaña "Para revisar".
+- `apps/web/src/components/recipes/recipe-card.tsx`: línea "Almuerzos y cenas 2 · pág. 7" en los borradores.
+- `apps/web/src/lib/recipe-view.ts`: `importLabel` opcional.
+
+**Zona de Leo:** no se tocaron `food-picker.tsx`, `food-catalog.tsx`, `meals-editor.tsx` ni `alimentos/**`, `planes/**` o
+`plantillas/**`.
+
+### Contrato compartido (SDD 4.3, 5.2, 5.3, 6.2 y 6.3): coincide
+
+Las firmas y los nombres son los de la SDD. Agregados que no rompen el contrato:
+- `BULLETS` es un superconjunto de la lista de la SDD. Suma `° » ◦ ▪ ‣`, que se usan como viñeta en varios
+  recetarios ("almuerzos y cenas 3" usa `°` y "panes y pizzas" usa `»`).
+- Exports extra de `recipe-import`:
+  - `plainText`;
+  - `gramValuesIn` y `GRAM_TOKEN_SOURCE`;
+  - `recipeFileBase` y `recipeFileTitle` (título legible con tildes: "Almuerzos y cenas 2");
+  - `suggestionWords`;
+  - los tipos `SkippedPageReason`.
+- `DraftQueueItem`: el tipo con nombre del resultado de `listDraftQueue`.
+- `DRY_RUN_ID = "(en seco)"`. En seco, `importRecipeBundle` devuelve `result: "created"` con ese id, porque la unión de la SDD
+  pide un `id` en "created".
+- `discardDraftAction(id, file?)`: el segundo parámetro es opcional y sirve para que `nextId` respete el filtro por
+  recetario.
+- El script de extracción suma `--limit N` (escribe solo los primeros N borradores) para cargar una muestra chica.
+
+### Decisiones no obvias
+
+**Parser (no se inventan gramos):**
+- `grams` sale solo de un token `<número> g|gr|gramos|kg` de la línea. Los kg se multiplican por 1000.
+- Si la línea tiene dos o más valores distintos ("50g (150g cocidos)") o un rango ("100 a 150g"), `grams` queda en `null`
+  con el aviso `AMBIGUOUS_GRAMS`.
+- Nunca se convierten cc ni medidas caseras.
+- Hay tres aserciones:
+  - el test de propiedad, sobre 30 líneas;
+  - un test sobre todos los borradores de los fixtures;
+  - el script de extracción, con su propia regex. Si encuentra un gramo sin token, corta la corrida.
+- `VOLUME_ONLY` solo cuenta el volumen que está fuera de paréntesis. "Huevo una unidad (o 100cc de bebida…)" da
+  `HOUSEHOLD_ONLY`.
+
+**Lectura de la página:**
+- Las palabras rotadas (títulos de F2) se separan antes de armar los renglones.
+- Cada renglón se corta en tramos donde hay un hueco mayor a 1,5 veces la altura de la letra. Así se separan las
+  columnas (ingredientes y pasos lado a lado) y los tips a la derecha.
+- **F1** ubica cada tramo bajo el título más cercano por arriba que se solapa en x. Lo que queda sin título va así:
+  - un tramo con viñeta va a la sección de arriba;
+  - un tramo sin viñeta va a tips.
+- Caso que agregué: **página sin título "Ingredientes" pero con "Procedimiento"**. Pasa en todo "Almuerzos y cenas 1".
+  Los renglones con cantidades de arriba del procedimiento son los ingredientes, como si tuvieran un título implícito,
+  y la página queda con un aviso.
+- **F2 con títulos rotados**: cada tramo va al título cuya franja vertical le queda más cerca. "Crumble cookies" usa la
+  misma viñeta para ingredientes y pasos, así que no alcanzaba con el cambio de viñeta. **F2 sin títulos**: se separa
+  por el cambio de viñeta, como pide la SDD.
+- **Nombre**: son los renglones de la cabecera cuya altura es al menos el 75 % de la más alta (y 1,4 veces la
+  mediana). Con el 2,5 × la mediana de la SDD, muchos títulos salían cortados: pdftotext mide la caja con el
+  interlineado.
+- **Rinde**: un rango ("4-5 porciones") deja `yieldPortions` en null y suma un aviso.
+- **Fuente sugerida**: "Nutriarte — {título sin la palabra Nutriarte}", o "{autor} — {título}".
+- **F4**: cada párrafo termina en "Porción". El párrafo empieza después del último hueco grande, salvo que el renglón
+  anterior termine en ":".
+
+**Imágenes (`--images`):**
+- `pdfimages -png`: el JPEG CMYK crudo (`-j`) sale con los colores invertidos. Lo comprobé a ojo con una página.
+- **Desvío de 8.1:** el filtro de decoración de la SDD ("el objeto aparece en 3 páginas o más") descartaba fotos
+  reales. Estos PDF reusan el mismo objeto de foto en 3 o 4 páginas no contiguas (recetas vecinas e intro), y con esa
+  regla la página 8 de "Almuerzos y cenas 2" quedaba sin candidatas. Ahora es decoración si aparece en al menos 3
+  páginas **y** en al menos el 30 % de las páginas del archivo (por ejemplo, un logo). El revisor igual elige la foto.
+
+**Sugerencia de alimento:**
+- A igual ranking, SARA2 va antes que PROPIO, y recién después cuenta el nombre más corto. Así se favorece el pase a
+  producción por `sourceKey` (8.4).
+- Se suma un paso de singular ("zanahorias" → "zanahoria").
+- Los sinónimos de varias palabras ("huevo" → "huevo gallina entero") solo se usan si son la consulta completa.
+- La sugerencia no se guarda nunca: se calcula en el cliente y la acepta la persona (12-D12).
+
+**Pantalla de revisión (7.5), pensada para revisar unas 40 recetas seguidas:**
+- Es `RecipeForm` con la prop `review`. La sugerencia, los avisos del parser y las actions llegan como funciones desde
+  `review-screen.tsx`, así el parser no entra al bundle del editor.
+- Las piezas de la revisión se cargan con `next/dynamic`. `/recetas/[id]` pesa 233 kB (230 en 018a-1) y
+  `/recetas/revisar/[id]` 250 kB.
+- **Barra superior fija** (material bar):
+  - "‹ Recetas";
+  - "Borrador i de n", con una barra de avance;
+  - el selector de recetario, con la cantidad de cada uno;
+  - "Saltar" (ghost), "Guardar borrador" (secundario) y "Publicar y seguir" (primario lg);
+  - el menú "⋯", con "Descartar borrador": `useConfirm` destructivo con el texto de la SDD.
+- **Atajos**: `⌘/Ctrl + ↵` publica y sigue, y `⌘/Ctrl + S` guarda el borrador. Funcionan aunque el foco esté en un campo.
+  Se muestran en la barra y van en `aria-keyshortcuts`.
+  - "Saltar" no tiene atajo a propósito. Las combinaciones libres chocan con la edición de texto (Alt+→, ⌘→) o con el
+    navegador (⌘]).
+  - **Enter en un campo no publica**: en modo revisión no hay botón submit.
+- **Columna izquierda fija** (lg: 26 rem; su alto se ajusta al de la barra con `--review-bar-h`):
+  - primero "1 porción aporta", con la comparación contra la tabla del recetario (D4, no bloquea);
+  - debajo, "Original" con el control segmentado Página / Texto. La página se abre a pantalla completa en un Dialog, y
+    debajo van los avisos de la lectura.
+  - En el celular, el original queda plegado en "Ver original".
+- **Fotos encontradas**: un RadioGroup de miniaturas 4:3 de 120 px.
+  - La opción elegida lleva el anillo `ring-primary` y un check, así no depende solo del color.
+  - Hay opciones "Ninguna" y "Foto actual" (si la tiene), más "Subir otra".
+  - No se preselecciona ninguna foto.
+  - La candidata elegida viaja como `candidateId`, y la action llama a `chooseImportCandidateAsPhoto` antes de
+    `publishRecipe`.
+- **Ingredientes**: cada fila muestra "Del recetario: «…»" y "Sugerido: X · N g", con los botones Aceptar, Cambiar y
+  Dejar como texto, de 44 px.
+  - Los avisos del parser van en `text-warning`, con los textos exactos de 7.5. Se recalculan en el cliente con
+    `parseIngredientLine(rawText)`, así siguen bien aunque se reordenen las filas.
+  - **Agregado:** un botón "Aceptar las N sugerencias" arriba de la lista, para no tocar ingrediente por ingrediente.
+    Igual hay que revisar los gramos.
+- **Guardar borrador** solo exige números bien escritos. **Publicar** valida igual que el editor, y los gramos que
+  faltan bloquean. El resumen de errores dice "Faltan N datos para publicar".
+- Al publicar: toast "Receta publicada" y se pasa al siguiente borrador de la cola, respetando `?archivo=`.
+- **`/recetas/revisar` sin borradores** muestra el `EmptyState` "No quedan borradores para revisar." con "Ver recetas".
+  Si se filtró por un recetario y quedan otros, muestra además "Revisar los demás (N)". La SDD 6.1 decía volver a
+  `/recetas?estado=revisar`. Lo cambié para cumplir el final de cola de 7.5.
+- **Pestaña "Para revisar"**: cada tarjeta lleva el `Badge` "Borrador" (ya estaba) y la línea "Almuerzos y cenas 2 ·
+  pág. 7", y su enlace va a `/recetas/revisar/<id>`. Arriba, una tarjeta con "Empezar a revisar" (lg).
+
+**Actions:**
+- El esquema zod y la foto pasaron a `recipe-save.ts`, porque un archivo `"use server"` solo puede exportar funciones
+  async.
+- `saveDraftAction` y `publishDraftAction` aceptan la misma foto que el editor (archivo, quitar o candidata).
+- Los errores se loguean solo con `errorCode`. Lo prueba un test que espía `console.error`.
+
+**Import a producción:**
+- `recipes:import:prod` no acepta `--yes`: con `--write` siempre hay que escribir `SI`.
+- Un `P2002` (otra corrida creó la receta en el medio) cuenta como `skipped-exists`.
+
+### Verificación (12.1, parte a-2)
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | OK en core, db, bot y web |
+| `npm run test` | 95 archivos, 1619 tests OK (76 nuevos de 018a-2) |
+| `npm run lint --workspace apps/web` | OK. Solo queda el warning anterior a la HU (`ajustes/logo-form.tsx:36`) |
+| `next build` (copia en el scratchpad, como en 018a-1; la copia ya se borró) | OK. `/recetas/revisar/[id]` 250 kB, `/recetas/revisar` 107 kB, `/api/recetas/importacion/[imageId]`. `sharp` está en `.next/standalone/node_modules` |
+| `./ops/harness/verify.sh` | "Arnés OK". El WARN "se tocó el bot" sale por `packages/db`: no hay cambios en `apps/bot` |
+| `npm run test:recipes --workspace packages/db` | OK, pasos 1 a 12 más la limpieza por id. Del 9 al 12 son de 018a-2: created → updated → skipped-reviewed, el undo no borra uno revisado, la candidata pasa a foto, `deleteUnreviewedDrafts` por id, y export → import en seco sin escribir |
+| `git check-ignore` | `docs/recetarios/_extraccion/reporte.md` y `docs/recetarios/_exportacion/*.json` están ignorados (regla `docs/recetarios/` del `.gitignore`). `git status` no muestra nada de `docs/recetarios` |
+| Texto de terceros en el repo | Ninguno. Los fixtures y los tests usan recetas inventadas. Las únicas líneas "reales" en los tests son los ejemplos que la SDD 11.1 pide textualmente |
+| IA paga | No se usa ni en el extractor ni en los tests |
+
+**Conteos de control** (Recipe | RecipeIngredient | RecipeImportImage | RecipePhoto | PlanMealItem | Food), antes y después
+de `test:recipes` y de K1–K3: `1|1|0|1|131|980` en los dos casos. La receta publicada que ya había no se tocó. Después
+quedan solo los 8 borradores de muestra que dejé para el recorrido.
+
+### Extractor en seco sobre los PDF reales (8.5)
+
+`npm run recipes:extract --workspace packages/db`: no se conecta a la base. El reporte completo, con el detalle por
+archivo y por borrador, quedó en `docs/recetarios/_extraccion/reporte.md` (ignorado).
+
+- 24 archivos leídos, **0 con error**. Se excluyeron 10:
+  - 5 PPTX;
+  - "Reemplazos";
+  - "Conservación";
+  - 3 copias en blanco y negro con versión a color.
+- **320 borradores** (objetivo: 180 o más).
+- F1/F2 con nombre y al menos un ingrediente: **296 de 296 (100 %)**. Los otros 24 borradores son colaciones F4, que
+  vienen sin ingredientes por diseño.
+- **2450 ingredientes**:
+  - 1172 con gramos del texto;
+  - **1098 sin gramos** (hay que completarlos o marcarlos como c.n.);
+  - 180 sin cantidad (c.n.);
+  - **273 sin alimento sugerido**. Este número se calculó contra el catálogo SARA 2 de `alimentos.json`, sin la base.
+- **50 borradores con tabla nutricional**: todas las páginas de receta que tienen tabla.
+  - Control manual sobre "Almuerzos y cenas 2": 20 de 20 recetas con tabla.
+  - Los otros archivos con tabla son "almuerzos y cenas 4" (10), "Mate 3" (10) y "Galletitas" (10). El resto no tiene
+    tablas.
+- **0 gramos sin token en el texto** (aserción del script).
+
+Huecos conocidos (los cubre la revisión manual):
+- Algunas colaciones F4 salen con el nombre cortado ("Hilitos de pasta de maní o…"), cuando el párrafo no trae
+  "Nombre:".
+- Una página con varios rellenos ("Rellenos dulces saludables") sale como un solo borrador.
+
+### K1–K3: contra la base de desarrollo
+
+Todo lo de esta sección fue con datos de prueba propios. **No se corrió nada contra producción.**
+
+1. **K1.** `--write --images --file "Almuerzos y cenas 2.pdf" --limit 4`:
+   - 4 borradores, con la página renderizada (662×936) y las candidatas (1200×900 WebP). Revisé a ojo una página y su
+     foto: colores bien.
+   - Con el filtro original la página 8 quedaba sin fotos. Por eso cambié la regla (ver "Decisiones") y repetí la corrida
+     con `recipes:undo`, que borró 4 de 4.
+2. **Revisión simulada.** Hice un script descartable en el scratchpad, ya borrado, que publicó 2 borradores:
+   - acepta `suggestFood`;
+   - deja en c.n. lo que no tenía gramos del texto, solo como dato de prueba;
+   - elige la primera candidata como foto.
+3. **K2.** `recipes:export --ids <las 2>`: 2 recetas con foto en `docs/recetarios/_exportacion/` (ignorado).
+   - `recipes:import:prod` en seco contra la base de desarrollo, **dos veces**: las dos dieron `skipped-exists`. No
+     escribió nada.
+   - **Modo real con datos propios**: una copia del bundle con las `importKey` prefijadas `prueba-hu018a2-import:`
+     (`echo SI | … --write`).
+     - Primera corrida: 2 creadas, PUBLISHED, con 10 y 6 ingredientes y foto.
+     - Segunda corrida: 2 ya existían, así que es idempotente.
+4. **K3.** Borré **por id** las 2 publicadas de prueba y las 2 importadas de prueba:
+   `cmusbo1tl0001uc7djbyer07v`, `cmusbo3nm000huc7daf2bnzit`, `cmusbpimc0001zgnq6ro02ecd` y `cmusbpimz000fzgnqmaftw2xf`.
+   - `recipes:undo` de la corrida borró los 2 borradores sin revisar que quedaban.
+   - Borré la copia de prueba del bundle.
+   - Los conteos volvieron a la línea base.
+
+### Borradores de muestra que quedan en la base de desarrollo (para el recorrido)
+
+Quedan 8 borradores DRAFT de origen IMPORT, sin revisar y con imágenes:
+
+| Archivo | Pág. | Id |
+|---|---|---|
+| Almuerzos y cenas 2.pdf | 7 | `cmusbpzlw000110rvr6hmug0n` |
+| Almuerzos y cenas 2.pdf | 8 | `cmusbq1hh000h10rv55o1uo61` |
+| Almuerzos y cenas 2.pdf | 9 | `cmusbq3jp000t10rvzpzvk2nk` |
+| Almuerzos y cenas 2.pdf | 10 | `cmusbq4v2001710rvup8aewl9` |
+| Almuerzos y cenas 2.pdf | 11 | `cmusbq5uo001s10rvmgvjd2n7` |
+| Galletitas nutriarte_compressed (1).pdf | 6 | `cmusbq8g500019bp0ynqezoj3` |
+| Galletitas nutriarte_compressed (1).pdf | 7 | `cmusbq92d000e9bp0tdq29bhm` |
+| Galletitas nutriarte_compressed (1).pdf | 8 | `cmusbq9jm000r9bp097dryfaj` |
+
+Para limpiar al terminar:
+- **Lo que siga sin revisar** se borra con `recipes:undo`, una vez por corrida:
+  - `npm run recipes:undo --workspace packages/db -- docs/recetarios/_extraccion/corrida-2026-10-03T11-43-39-782Z.json`
+  - `npm run recipes:undo --workspace packages/db -- docs/recetarios/_extraccion/corrida-2026-10-03T11-43-52-081Z.json`
+- **Lo que se revise o publique en el recorrido** no lo borra el undo. Va por id:
+  `delete from "Recipe" where id in ('<id>', …);`. Los ingredientes, la foto y las imágenes caen en cascada.
+
+### Recorrido en Chrome para el orquestador (12.2, pasos 12 a 15)
+
+No hace falta reiniciar `next dev`: no cambió el schema. Las rutas nuevas las toma solo.
+
+1. `/recetas` → aparece la pestaña "Para revisar 8".
+   - Las tarjetas muestran "Borrador", la línea "Almuerzos y cenas 2 · pág. 7" y la miniatura de la primera candidata.
+   - Arriba de la grilla está "Empezar a revisar".
+2. "Empezar a revisar" → `/recetas/revisar` redirige al primer borrador (Albóndigas, pág. 7).
+   - La barra dice "Borrador 1 de 8", con la barra de avance y el selector "Todos los recetarios (8)".
+3. Columna Original:
+   - alternar Página / Texto;
+   - tocar la página: se abre a pantalla completa;
+   - abajo están los avisos de la lectura ("Título partido en 2 renglones.").
+4. Fotos encontradas: hay 3 miniaturas más "Ninguna", sin ninguna elegida. Elegir una (anillo y check) y probar
+   "Subir otra".
+5. Ingredientes:
+   - "Lentejas" muestra "Del recetario: «Lentejas 500g»" y "Sugerido: Lentejas, crudas · 500 g". "Aceptar" asigna el
+     alimento y el aside se recalcula;
+   - "Puré de calabaza" muestra "Dice «aprox.»: revisá.";
+   - "Huevo" muestra "El texto no dice los gramos.". Completar los gramos;
+   - "Una cebolla y morrón picados" muestra el aviso de dos ingredientes;
+   - "Dejar como texto" oculta la sugerencia;
+   - probar "Aceptar las N sugerencias".
+6. Aside: "Según el recetario: 262 kcal (¾ albóndigas)". Si la diferencia pasa el 10 % aparece el aviso "El recetario
+   dice 262 kcal; con los ingredientes da X kcal", que no bloquea.
+7. "Publicar y seguir" (o `⌘↵`) con gramos faltantes: aparece "Faltan N datos para publicar", con enlaces a cada
+   campo. Completar o marcar c.n. y publicar: toast "Receta publicada" y pasa a "Borrador 1 de 7" (pág. 8).
+8. "Guardar borrador" (`⌘S`): toast "Borrador guardado" y se queda en la misma pantalla. Enter dentro de un campo no
+   publica.
+9. "Saltar" lleva al siguiente. Con cambios sin guardar pregunta "¿Salir sin guardar?".
+10. "⋯" → "Descartar borrador" → confirmación "Se borra este borrador. Lo podés volver a extraer." → pasa al siguiente.
+11. Selector de recetario: elegir "Galletitas nutriarte…" → muestra "Borrador 1 de 3", un F2 con tabla.
+12. Celular (390 px):
+    - la barra se envuelve debajo de la barra móvil;
+    - "Ver original" queda plegado arriba;
+    - las kcal se ven en la barra;
+    - los objetivos miden 44 px.
+13. Teclado: Tab recorre la barra, las miniaturas (con flechas dentro del grupo) y los botones de sugerencia, con el
+    foco siempre visible.
+14. `/api/recetas/importacion/<id>?size=full` en incógnito: el middleware redirige al login, igual que las fotos.
+15. Limpieza: el undo de las dos corridas y, por id, lo que se haya publicado (ver arriba).
+
+### Corrección: build error con Turbopack (lo encontró el recorrido del orquestador)
+
+**Error:** con `npm run dev` (Turbopack), `/recetas` mostraba "Only async functions are allowed to be exported in a
+"use server" file". Venía de `recetas/actions.ts:30`, el `export type { RecipeActionState, RecipeFormPayload } from
+"./recipe-save"` que agregué en `bc034b7`. Webpack (`next build`) lo acepta y Turbopack no, por eso el build de la fase K
+no lo detectó.
+
+**Arreglo:** saqué el re-export. Ningún archivo importaba esos tipos desde `actions.ts`: `recipe-form.tsx` y
+`revisar/actions.ts` ya los traían de `recipe-save.ts`. En `actions.ts` quedó un comentario que explica por qué los tipos
+viven en `recipe-save.ts`.
+
+**Revisé los otros archivos `"use server"` nuevos:** `recetas/actions.ts` y `revisar/actions.ts` solo exportan funciones
+async. Los demás `"use server"` del repo exportan `export type X = …` declarados en el archivo, que Turbopack sí acepta;
+el problema era solo el re-export `export type { … } from`.
+
+**Cómo lo verifiqué contra Turbopack:**
+- **Con `curl` contra el `next dev` del usuario en :3000** (no lo toqué): las 4 rutas (`/recetas`, `/recetas/nueva`,
+  `/recetas/revisar` y `/recetas/revisar/cmusbq1hh000h10rv55o1uo61`) responden 307 al login. El middleware de Auth.js
+  corta antes de compilar la página, así que eso no prueba nada sobre el error.
+- **Con `next build --turbopack`** (Next 15.5.24), en una copia del repo en el scratchpad. Compila todas las rutas con
+  Turbopack, igual que `next dev --turbopack`.
+  - El `node_modules` de la copia es un clon APFS (`cp -c`), porque Turbopack rechaza un symlink que sale de la raíz.
+  - **Antes del arreglo**, con el `actions.ts` de HEAD: falla con el mismo error que vio el orquestador (8 errores, todos
+    por esa línea).
+  - **Después del arreglo**: "Compiled successfully" y exit 0, con `/recetas`, `/recetas/[id]`, `/recetas/nueva`,
+    `/recetas/revisar`, `/recetas/revisar/[id]` y `/api/recetas/importacion/[imageId]`.
+  - La copia ya se borró.
+- No levanté un `next dev` aparte: sin sesión, el middleware también cortaría antes de compilar las páginas.
+
+**Verificación después del arreglo:**
+- `npm run typecheck`: OK en los 4 workspaces.
+- `npm run test`: 95 archivos, 1619 tests OK.
+- `npm run lint --workspace apps/web`: solo el warning anterior a la HU, en `logo-form.tsx`.
+- `./ops/harness/verify.sh`: "Arnés OK".
+
+**Para el recorrido:** el `next dev` del usuario debería recompilar solo al guardar el archivo. Si el overlay sigue, hay
+que recargar la página.

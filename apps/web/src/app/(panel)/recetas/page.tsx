@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import type { RecipeStatusKey } from "@nutri-bot/core";
+import { recipeFileTitle } from "@nutri-bot/core/recipe-import";
 import { countRecipesByStatus, listRecipeCards } from "@nutri-bot/db/domain";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { toRecipeCardView } from "@/lib/recipe-view";
@@ -40,7 +41,13 @@ export default async function RecetasPage({
       <RecipesBrowser
         tab={tab}
         counts={{ publicadas: counts.PUBLISHED, revisar: counts.DRAFT, archivadas: counts.ARCHIVED }}
-        cards={cards.map((c) => toRecipeCardView(c, "panel"))}
+        cards={cards.map((c) => ({
+          ...toRecipeCardView(c, "panel"),
+          importLabel:
+            c.status === "DRAFT" && c.importFile
+              ? `${recipeFileTitle(c.importFile)}${c.importPage ? ` · pág. ${c.importPage}` : ""}`
+              : null,
+        }))}
       />
     </div>
   );

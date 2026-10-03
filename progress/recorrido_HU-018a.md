@@ -28,3 +28,20 @@ tests y `test:recipes`).
 - Nota de entorno: en `/recetas/nueva` el DOM tiene dos `h1` "Nueva receta" y dos `form` (uno oculto, probablemente
   la foto de salida de la transición de la HU-017a). El primer llenado se perdió porque la pestaña quedó oculta y el
   form se volvió a montar; a la segunda anduvo. Para mirar en el reviewer si el form duplicado es esperable.
+
+## 018a-2 (orquestador, 2026-10-03)
+- 1ª pasada: `/recetas` con **Build Error de Turbopack** (`export type { … } from` en `actions.ts` `"use server"`,
+  `bc034b7`). Devuelto al implementer; arreglado en `cccfd78` (verificado con `next build --turbopack`).
+- 2ª pasada (después de `cccfd78`):
+  - `/recetas?estado=revisar`: pestaña "Para revisar 8", texto de la carga asistida, "Empezar a revisar", tarjetas
+    con la foto candidata.
+  - "Empezar a revisar" → `/recetas/revisar/<id>`: "Borrador 1 de 8", selector "Todos los recetarios (8)", aside
+    "1 porción aporta", "Según el recetario: 262 kcal (¾ albóndigas)", fotos encontradas (3 + "Ninguna").
+  - "Aceptar las 10 sugerencias": toast "10 alimentos aceptados"; el aside pasa a 213 kcal y aparece "El recetario
+    dice 262 kcal; con los ingredientes da 213 kcal".
+  - "Publicar y seguir" con gramos faltantes: "Faltan 4 datos para publicar" con "Cargá los gramos o marcá «Sin
+    cantidad (c.n.)»". No se publicó nada.
+  - Consola sin errores.
+- Observación menor: "Ninguna" aparece ya elegida en "Fotos encontradas"; el reporte decía "sin ninguna elegida".
+- Los 8 borradores de muestra siguen en la base de desarrollo (para que el usuario los vea); se limpian con
+  `recipes:undo` de las dos corridas.

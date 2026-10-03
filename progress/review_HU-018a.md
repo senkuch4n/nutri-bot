@@ -165,3 +165,169 @@ Todos los de la ronda 1 siguen en [x]. Además:
   - el teclado.
 
   Conviene hacerlo antes del PR.
+
+---
+
+# 018a-2 (carga asistida, fases G, H, I y K), ronda 1
+
+**Veredicto:** APPROVED
+
+- Rama `feat/hu-018a2-carga-asistida`. Diff `git diff 878b88a..HEAD`: `379204d`, `1cce855`, `bc034b7`, `872f637` y `cccfd78`.
+- Contra la SDD `Refactorizaciones/recetario.md`: 4.3, 5.2, 5.3, 6.1–6.3, 7.5, 8.x, 9, 10 G–K y 11. Con la §12 aceptada, incluida la 12-D8, y la §15.
+
+## Comandos que corrí yo (2026-10-03)
+
+- `npm run typecheck`: OK en core, db, bot y web.
+- `npm run test`: 95 archivos, 1619 tests OK.
+- `npm run lint --workspace apps/web`: OK. Solo el warning anterior (`ajustes/logo-form.tsx:36`).
+- `./ops/harness/verify.sh`: "Arnés OK", exit 0. El WARN del bot sale por `packages/db`: no hay cambios en `apps/bot`.
+- **No corrí** `next build`, el extractor con `--write` ni el import.
+- Base de desarrollo, solo lectura:
+  - 8 DRAFT IMPORT (los de muestra) y 1 PUBLISHED MANUAL (la que ya había);
+  - **1 de los 8 borradores tiene `reviewedAt`** (ver Dudas).
+
+## Puntos pedidos
+
+1. **No se inventan gramos: [x].**
+   - **Parser:** `ingredient-line.ts:91-94` saca `grams` solo de `gramValuesIn`, que exige un token `<número> g|gr|gramos|kg`.
+     - Con dos valores distintos o un rango, `grams` queda en `null` con `AMBIGUOUS_GRAMS`.
+     - Nunca se convierten cc ni medidas caseras.
+     - `extract.ts` no asigna gramos por otro camino: solo usa `parseIngredientLine`.
+     - En la base, `recipeImport.ts:63` guarda `grams` solo si no es c.n., y `foodId` siempre en `null`.
+   - **Casos cubiertos en `ingredient-line.test.ts`:**
+     - "aprox." da `APPROX` con los gramos del token (300);
+     - "c.n", "c/n" y "a gusto" dan `noQuantity`, sin gramos;
+     - "Huevo una unidad" y "Leche una taza" dan `HOUSEHOLD_ONLY` con `grams: null`;
+     - "Una cebolla y morrón picados" da `MULTI_FOOD`, sin gramos;
+     - "30 g o 40 g", "120 a 180g" y "60g (170g cocida)" dan `null` con `AMBIGUOUS_GRAMS`.
+   - **Hay tres controles:**
+     - el test de propiedad sobre 30 líneas, con una regex independiente;
+     - `extract.test.ts:122`, sobre todos los borradores sintéticos;
+     - `assertNoInventedGrams` en `scripts/recipes/extract.ts:68-82`, con su propia regex, que corta la corrida antes de escribir.
+2. **Nada de terceros en el repo: [x].**
+   - El diff tiene solo `.ts`/`.tsx`/`.json`: ni imágenes ni binarios.
+   - `git ls-files | grep recetarios` da vacío.
+   - `git check-ignore` confirma que `docs/recetarios/_extraccion/*` y `_exportacion/*` están ignorados (regla `docs/recetarios/`, `.gitignore:23`).
+   - **Comparación contra los PDF:** pasé el texto de los 29 PDF locales por `pdftotext` a un directorio temporal fuera del repo, que ya borré, y lo comparé contra todos los literales del diff.
+     - Las coincidencias son de dos tipos.
+     - **Ejemplos que la propia SDD 11.1 pide textualmente:** "Harina integral 100 g (3/4 de taza)", "Puré de calabaza una taza (son 300g en crudo aprox.)", "Aceite de oliva 50cc (¾ de pocillo de café)", "Una cebolla y morrón picados" y "Huevo una unidad".
+     - **Frases genéricas de pocas palabras:** "Leche de almendras", "Se pueden congelar", "Ingredientes", "12 unidades".
+   - Las 20 líneas "inventadas" del test de propiedad y los fixtures de `__fixtures__/synthetic.ts` no aparecen textualmente en ningún PDF. Ninguna receta, procedimiento ni tabla se copió.
+   - Por consola, el extractor imprime solo contadores. El reporte, las corridas y los bundles van a `docs/recetarios/` (ignorado).
+3. **Export/import a producción: [x].**
+   - **Es en seco por defecto:** `import.ts:31` solo escribe con `--write`.
+   - **No hay atajo para escribir:**
+     - con `--write` pide escribir `SI` (líneas 53-60) y **no acepta `--yes`**;
+     - no lee el `.env`: exige `DATABASE_URL` en el entorno (línea 37);
+     - el cliente Prisma se carga recién después de validar y confirmar (líneas 63-64);
+     - no hay `.env` en `packages/db` ni en `packages/db/prisma` que Prisma pueda tomar solo.
+   - **Es idempotente por `importKey`:**
+     - `recipeTransfer.ts:186-190` hace `findUnique` por `importKey`. Si la receta ya existe, da `skipped-exists`;
+     - un `P2002` en una carrera también da `skipped-exists` (líneas 320-323).
+   - **Nunca pisa nada:**
+     - solo hace `create` (de receta, ingredientes y foto, en una transacción);
+     - no hay ningún `update` ni `delete`, así que no puede tocar una receta revisada ni datos ajenos.
+   - **Alimentos:**
+     - SARA2 se mapea por `sourceKey`;
+     - PROPIO por nombre, con una sola coincidencia y los macros a ±0,01;
+     - si no, la receta sale como `skipped-food`.
+   - **Valida antes de crear:** corre `validateRecipeForPublish`.
+   - **El export:**
+     - exporta solo las PUBLISHED, por defecto con `origin = IMPORT`;
+     - valida el bundle antes de escribirlo;
+     - lo escribe en `_exportacion/` (ignorado).
+4. **`recipes:undo`: [x].**
+   - `extract.ts:373` guarda en la corrida **solo** los ids con `outcome === "created"`. Los "updated" de una corrida anterior no entran.
+   - `deleteUnreviewedDrafts` (`recipeImport.ts:191-198`) borra con `id in ids AND status = DRAFT AND reviewedAt IS NULL`. No toca lo revisado, publicado ni archivado.
+   - `upsertImportedDraft` tampoco pisa nada revisado:
+     - repite `status: DRAFT, reviewedAt: null` en el `where` del `updateMany` (línea 126);
+     - los `deleteMany` de ingredientes e imágenes son por `recipeId` de esa receta.
+5. **Seguridad: [x].**
+   - **Sesión:**
+     - las tres actions de `revisar/actions.ts` pasan por `hasPanelSession()` (`auth()`): `saveDraft` en la línea 61 y `discardDraftAction` en la 140;
+     - el payload pasa por el `payloadSchema` de zod compartido (`recipe-save.ts:29-64`);
+     - la foto, por tamaño y magic bytes antes de guardar.
+   - **Dueño:** el panel tiene una sola profesional, así que el dueño es la sesión.
+     - `chooseImportCandidateAsPhoto` exige que la imagen sea de **esa** receta y de tipo CANDIDATE (`recipeImport.ts:178-181`), así que no se puede copiar una imagen de otra receta.
+     - `publishRecipe` y `deleteDraftRecipe` exigen que la receta esté en DRAFT.
+   - **Ruta de imágenes:** `api/recetas/importacion/[imageId]/route.ts:12-13` exige `auth()`, y además el middleware redirige sin sesión, igual que las fotos.
+     - Responde 404 si la imagen no existe.
+     - Usa `Cache-Control: private, max-age=3600`.
+     - Tiene sus tests (4).
+6. **Turbopack: [x].**
+   - `recetas/actions.ts` y `revisar/actions.ts` (los únicos `"use server"` nuevos o tocados) exportan solo `export async function`.
+   - Los tipos y las constantes pasaron a `recipe-save.ts`, que no es `"use server"`.
+   - El cliente importa de ahí solo tipos: `recipe-form.tsx:55` es `import type`. Así `sharp` y `auth` no entran al bundle.
+   - Revisé los otros `"use server"` del repo: solo declaran `export type X = …` locales, no re-exports.
+7. **UX de la revisión: [x].**
+   - **Atajos** (`recipe-form.tsx`, el `useEffect` de `onKey`): `⌘/Ctrl+↵` publica y sigue, y `⌘/Ctrl+S` guarda el borrador.
+     - Hacen `preventDefault`.
+     - El guard de `pending` evita los dobles envíos.
+     - Llevan `aria-keyshortcuts` y se muestran en la barra.
+   - **Enter no publica:** en modo revisión, `onSubmit` hace `preventDefault` y sale (`if (review) return`), y no hay botón submit.
+   - **"¿Salir sin guardar?":**
+     - "Saltar", el selector de recetario y "‹ Recetas" pasan por `guardNavigation` o por el interceptor de enlaces;
+     - la candidata elegida entra en la huella de "sin guardar";
+     - al publicar o descartar se fija el baseline antes del `router.push`.
+   - **"Ninguna" ya aparece elegida:** lo acepto, no es un defecto.
+     - La SDD dice "No se preselecciona ninguna [foto]".
+     - "Ninguna" marcada es justamente el reflejo fiel de "no hay foto elegida". Un `RadioGroup` sin valor dejaría el grupo sin un estado legible para el lector de pantalla.
+     - Lo que estaba mal era el texto del reporte ("sin ninguna elegida").
+8. **Zona de imleticio: [x].** El diff no toca `food-picker.tsx`, `food-catalog.tsx`, `meals-editor.tsx`, `meal-view.ts`, `alimentos/**`, `planes/**`, `plantillas/**`, `schema.prisma`, migraciones, `middleware.ts` ni `apps/bot`.
+
+## Checkpoints
+- C1 backlog válido, 1 HU activa por responsable: [x].
+- C1 bitácora: [x].
+- C1 no toca HU ajenas: [x].
+- C1 verify.sh exit 0: [x].
+- C2 HU y SDD: [x].
+- C2 firmas = contrato (4.3, 5.2, 5.3 y 6.2): [x]. Los agregados del reporte no rompen nada:
+  - `DRY_RUN_ID`;
+  - `discardDraftAction(id, file?)`;
+  - `BULLETS` ampliado;
+  - `--limit`.
+
+  `recipeTransfer` no se exporta desde `domain/index.ts`, como pide la SDD.
+- C3 lógica pura en core y dominio en db: [x]. El parser, `suggestFood` y el bundle están en `@nutri-bot/core/recipe-import` (subpath, fuera del índice).
+- C3 web y bot compilan: [x].
+- C3 migración: [x]. No aplica: no hay migración en 018a-2.
+- C3 rutas protegidas: [x].
+- C3 bot en silencio: [x]. No aplica.
+- C3 sin console.log de debug: [x]. Los scripts imprimen solo contadores; las actions loguean solo `errorCode`.
+- C4 typecheck: [x].
+- C4 tests: [x]. Hay 76 nuevos: parser, extract, files, suggest, bundle, `recipeImport`, `recipeTransfer`, la ruta y las actions.
+- C4 flujo del bot: [x]. No aplica.
+- C4 PDF: [x]. No aplica.
+- C5 impl: [x].
+- C5 review: [x].
+- C5 sin datos de prueba: [x]. Los 8 borradores son de muestra para el recorrido, a pedido del orquestador, con el procedimiento de limpieza documentado.
+
+## Cambios requeridos
+
+Ninguno.
+
+## Dudas (no bloqueantes)
+
+- **Limpieza de los borradores de muestra.** 1 de los 8 DRAFT tiene `reviewedAt` (lo marcó algún "Guardar borrador" o `⌘S` del recorrido).
+  - `recipes:undo` **no** lo va a borrar, a propósito.
+  - Hay que borrarlo por id, igual que lo que se publique en el recorrido.
+- **Atajos con un diálogo abierto.** El `keydown` de los atajos está en `window` y no mira si hay un `useConfirm` abierto.
+  - Con el confirm de "Descartar" o el de "¿Salir sin guardar?" en pantalla, un `⌘↵` dispararía "Publicar y seguir" detrás del diálogo.
+  - Es un caso raro. Se puede ignorar el atajo si el evento viene de dentro de un `[role=alertdialog]` o `[role=dialog]`.
+- **`saveDraftAction` y `publishDraftAction` no verifican que el id esté en DRAFT antes de `updateRecipe`.**
+  - Si el borrador se publicó en otra pestaña, guardarlo desde la revisión edita la receta publicada (con validación, pero sin el aviso de uso de D10). Después `publishRecipe` responde "ya no está para revisar".
+  - Es una carrera de una sola usuaria.
+  - Conviene acotarlo cuando 018c use las recetas en planes.
+- **Un "Publicar y seguir" que falla del lado del servidor igual deja el borrador guardado y con `reviewedAt`**, porque se guarda antes de publicar.
+  - Es consistente con la SDD 6.2 ("Guarda + publishRecipe") y la validación local lo previene casi siempre.
+  - Que lo sepa quien use `recipes:undo`.
+- **Desvíos aceptables, documentados en el impl:**
+  - filtro de decoración (≥ 3 páginas **y** ≥ 30 % del archivo);
+  - umbral del nombre (75 % de la más alta);
+  - `/recetas/revisar` vacío muestra el `EmptyState` en lugar de redirigir.
+- **Pendiente del recorrido de Chrome:**
+  - "Guardar borrador" y `⌘S`;
+  - "Saltar" con cambios;
+  - "Descartar";
+  - el selector de recetario;
+  - el celular y el teclado (pasos 8 a 13 del impl).
