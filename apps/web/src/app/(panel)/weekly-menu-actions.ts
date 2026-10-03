@@ -103,7 +103,16 @@ const snapshotItemSchema = z.object({
   notes: z.string().max(4000).nullable(),
   order: z.number().int().min(0).max(10000),
   weekday: weekdaySchema.nullable(),
-}).strict();
+  // HU-018c (SDD 6.2): ítems de receta. El default deja pasar una foto sin estos campos (una pestaña
+  // abierta antes del deploy).
+  recipeId: idSchema.nullable().default(null),
+  portions: z.number().min(0.5).max(4).multipleOf(0.5).nullable().default(null),
+}).strict().superRefine((item, ctx) => {
+  const ok = item.recipeId !== null
+    ? item.foodId === null && item.quantityGrams === null && item.portions !== null
+    : item.portions === null;
+  if (!ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Ítem de receta inválido" });
+});
 const snapshotSchema = z.object({
   mealId: idSchema,
   mode: modeSchema,
