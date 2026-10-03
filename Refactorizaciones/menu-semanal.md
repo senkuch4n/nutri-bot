@@ -1234,7 +1234,7 @@ fechas reales; objetivo por comida; recetas en la IA; rediseño general de la pa
 (HU-017e) y del PDF (HU-015); vista previa de la receta en la franja (018c); cualquier mensaje de
 WhatsApp; cambios en `apps/bot`.
 
-## 14. Decisiones del usuario (2026-10-03)
+## 15. Decisiones del usuario (2026-10-03)
 
 - **D1: dos PR.** Primero **018b-1 (modelo)**, en la rama `feat/hu-018-plan-recetas-buscador`, con PR a `develop`. Después
   **018b-2 (editor semanal)**, en una rama nueva desde `develop` cuando 018b-1 esté mergeado. La 018a **no** va en
