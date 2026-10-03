@@ -58,6 +58,9 @@ export const navGroups: NavGroup[] = [
 /** Ítem del pie. También queda activo en /ajustes/whatsapp. */
 export const settingsItem: NavItem = { href: "/ajustes", label: "Ajustes", icon: Settings };
 
+/** Anchos de la sidebar de escritorio (los mismos que --panel-sidebar-* de sidebar-layout.css). */
+export const SIDEBAR_WIDTH = { collapsed: "3rem", expanded: "14rem" } as const;
+
 /** Cookie con el estado de la sidebar: "collapsed" | "expanded". */
 export const SIDEBAR_COOKIE = "nb-sidebar";
 
@@ -66,6 +69,10 @@ export function isActive(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-/** Clase base de un ítem de la sidebar (la comparten los enlaces y el botón "Cerrar sesión"). */
+/**
+ * Clase base de un ítem de la sidebar (la comparten los enlaces y el botón "Cerrar sesión").
+ * HU-017a §10.1: press en pointer-down, hover solo con puntero fino, 44 px en el menú táctil
+ * (`density="touch"` en `SidebarContent`). El foco va hacia adentro para no recortarse en el rail.
+ */
 export const sidebarItemClass =
-  "relative flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "relative isolate flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-callout text-foreground press-sm hover:bg-overlay-hover pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring group-data-[density=touch]/nav:h-11 [&>svg]:text-muted-foreground";

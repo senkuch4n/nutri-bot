@@ -20,7 +20,8 @@ const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-tooltip-content-transform-origin]",
+        // Tooltip en CSS (D-T7): fundido + escala 0,96 desde el disparador, 150 ms; no se agarra ni se interrumpe.
+        "z-50 overflow-hidden rounded-md bg-foreground px-2.5 py-1 text-footnote text-background shadow-float duration-fade animate-in fade-in-0 motion-safe:zoom-in-[0.96] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 motion-safe:data-[state=closed]:zoom-out-[0.96] origin-[--radix-tooltip-content-transform-origin]",
         className
       )}
       {...props}

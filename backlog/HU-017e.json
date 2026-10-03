@@ -1,0 +1,13 @@
+{
+  "id": "HU-017e",
+  "responsable": "imleticio",
+  "slug": "rediseno-apple-planes-alimentos",
+  "titulo": "Rediseño Apple (5/5): planes, alimentos y plantillas (+ PDF del plan)",
+  "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
+  "estado": "no_afinada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-rediseno-apple.md",
+  "sdd": null,
+  "rama": null,
+  "notas": "Depende de HU-017a y de la HU-015 mergeada. La hace imleticio (D11), con revisión cruzada."
+}

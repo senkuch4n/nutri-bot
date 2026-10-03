@@ -4,10 +4,56 @@ import * as React from "react"
 import * as SheetPrimitive from "@radix-ui/react-dialog"
 import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
+import {
+  AnimatePresence,
+  animateSingleValue,
+  m,
+  useMotionValue,
+  usePresence,
+  useReducedMotionConfig,
+  useTransform,
+} from "motion/react"
 
+import { closeButtonClass } from "@/components/primitives/dialog"
+import { useDismissDrag } from "@/components/primitives/use-dismiss-drag"
+import { fades, springs } from "@/lib/motion"
+import { useControllableState } from "@/lib/use-controllable-state"
+import { ModalScrim } from "@/components/primitives/modal-scrim"
+import { ignoreOutsideBeforeOpen, preserveUserFocusOnClose } from "@/lib/overlay-focus"
+import { runExit } from "@/lib/sheet-exit"
+import { useExitSnapshot } from "@/lib/use-exit-snapshot"
+import { OverlayOpenInfoContext, useOverlayOpenInfo } from "@/lib/use-return-focus"
 import { cn } from "@/lib/utils"
 
-const Sheet = SheetPrimitive.Root
+// HU-017a §9.7–§9.8. Un solo MotionValue (`offset`, px hacia el borde de cierre) maneja entrada,
+// salida y arrastre: la entrada va de `size` a 0, la salida de donde esté a `size` por el mismo borde
+// (§7), y cualquier interrupción (reabrir a mitad, agarrar en vuelo) parte del valor presente (§3).
+// El scrim acompaña el progreso. Con movimiento reducido entra y sale con un fundido.
+type SheetContextValue = { open: boolean; setOpen: (open: boolean) => void; modal: boolean }
+const SheetContext = React.createContext<SheetContextValue>({ open: false, setOpen: () => {}, modal: true })
+
+function Sheet({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
+  modal = true,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  const [open, setOpen] = useControllableState({
+    prop: openProp,
+    defaultProp: defaultOpen ?? false,
+    onChange: onOpenChange,
+  })
+  const ctx = React.useMemo(() => ({ open, setOpen, modal }), [open, setOpen, modal])
+  const openInfo = useOverlayOpenInfo(open)
+  return (
+    <SheetContext.Provider value={ctx}>
+      <OverlayOpenInfoContext.Provider value={openInfo}>
+        <SheetPrimitive.Root open={open} onOpenChange={setOpen} modal={modal} {...props} />
+      </OverlayOpenInfoContext.Provider>
+    </SheetContext.Provider>
+  )
+}
 
 const SheetTrigger = SheetPrimitive.Trigger
 
@@ -15,13 +61,14 @@ const SheetClose = SheetPrimitive.Close
 
 const SheetPortal = SheetPrimitive.Portal
 
+/** Overlay suelto (API conservada). `SheetContent` usa su propio scrim, ligado al arrastre. */
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Overlay
     className={cn(
-      "fixed inset-0 z-50 bg-foreground/40  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-scrim duration-scrim data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}
@@ -31,16 +78,14 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 overflow-y-auto overscroll-contain bg-background p-6 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out",
+  "fixed z-50 gap-4 overflow-y-auto overscroll-contain bg-background p-6 text-foreground outline-none",
   {
     variants: {
       side: {
-        top: "inset-x-0 top-0 border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
-        bottom:
-          "inset-x-0 bottom-0 border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
-        left: "inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
-        right:
-          "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
+        top: "inset-x-0 top-0 rounded-b-2xl",
+        bottom: "inset-x-0 bottom-0 max-h-[90dvh] rounded-t-2xl pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-7",
+        left: "inset-y-0 left-0 h-full w-[min(85vw,20rem)] rounded-r-2xl",
+        right: "inset-y-0 right-0 h-full w-3/4 sm:max-w-sm sm:rounded-l-2xl",
       },
     },
     defaultVariants: {
@@ -51,36 +96,189 @@ const sheetVariants = cva(
 
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+    VariantProps<typeof sheetVariants> {
+  /** Arrastrar para cerrar (táctil en laterales; desde el grabber/encabezado en el inferior). Default `true`. */
+  dismissOnDrag?: boolean
+}
 
-const SheetContent = React.forwardRef<
-  React.ElementRef<typeof SheetPrimitive.Content>,
-  SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
-    <SheetPrimitive.Content
-      ref={ref}
-      className={cn(sheetVariants({ side }), className)}
-      {...props}
-    >
-      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Cerrar</span>
-      </SheetPrimitive.Close>
-      {children}
-    </SheetPrimitive.Content>
-  </SheetPortal>
-))
+type Side = NonNullable<SheetContentProps["side"]>
+
+const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Content>, SheetContentProps>(
+  ({ side, children, ...props }, ref) => {
+    const { open } = React.useContext(SheetContext)
+    const content = useExitSnapshot(children, open)
+    return (
+      <AnimatePresence>
+        {open ? (
+          <SheetPrimitive.Portal forceMount>
+            <SheetPanel ref={ref} side={side ?? "right"} {...props}>
+              {content}
+            </SheetPanel>
+          </SheetPrimitive.Portal>
+        ) : null}
+      </AnimatePresence>
+    )
+  }
+)
 SheetContent.displayName = SheetPrimitive.Content.displayName
+
+const SheetPanel = React.forwardRef<
+  React.ElementRef<typeof SheetPrimitive.Content>,
+  Omit<SheetContentProps, "side" | "forceMount"> & { side: Side }
+>(({ side, className, children, style, dismissOnDrag = true, onCloseAutoFocus, onPointerDownOutside, ...props }, forwardedRef) => {
+  const { setOpen, modal } = React.useContext(SheetContext)
+  const openInfo = React.useContext(OverlayOpenInfoContext)
+  const reduced = Boolean(useReducedMotionConfig())
+  const [isPresent, safeToRemove] = usePresence()
+  const panelRef = React.useRef<HTMLDivElement | null>(null)
+  const size = React.useRef(0)
+  const exitVelocity = React.useRef<number | null>(null)
+  const opacity = useMotionValue(reduced ? 0 : 1)
+
+  const { value: offset, handlers, style: dragStyle } = useDismissDrag({
+    side,
+    // Mientras sale no se arrastra: un toque no puede frenar la salida (review HU-017a, punto 1).
+    enabled: dismissOnDrag && isPresent,
+    handleOnly: side === "bottom" || side === "top",
+    reducedMotion: reduced,
+    onDismiss: (velocity) => {
+      exitVelocity.current = velocity
+      setOpen(false)
+    },
+  })
+
+  // Primer render: afuera de la pantalla (todavía no se puede medir) para que no haya un cuadro
+  // con el sheet en su lugar antes de la entrada.
+  const horizontal = side === "left" || side === "right"
+  const initialized = React.useRef(false)
+  if (!initialized.current) {
+    initialized.current = true
+    if (!reduced && typeof window !== "undefined") offset.set(horizontal ? window.innerWidth : window.innerHeight)
+  }
+
+  const sign = side === "right" || side === "bottom" ? 1 : -1
+  const translate = useTransform(offset, (v) => v * sign)
+  const scrimOpacity = useTransform([offset, opacity], ([v, o]) => {
+    const progress = size.current > 0 ? 1 - Math.min(1, Math.max(0, (v as number) / size.current)) : 1
+    return progress * (o as number)
+  })
+
+  const measure = React.useCallback(() => {
+    const el = panelRef.current
+    if (!el) return 0
+    size.current = horizontal ? el.offsetWidth : el.offsetHeight
+    return size.current
+  }, [horizontal])
+
+  // Entrada (antes del primer pintado) y salida/reapertura según la presencia. La salida siempre
+  // termina (`runExit`: tope de 1 s si la animación no llega, p. ej. sin cuadros) y nunca deja el foco
+  // adentro de un panel cerrado.
+  const cancelExit = React.useRef<(() => void) | null>(null)
+  React.useLayoutEffect(() => {
+    if (isPresent) {
+      cancelExit.current?.()
+      cancelExit.current = null
+      if (reduced) {
+        offset.set(0)
+        animateSingleValue(opacity, 1, fades.scrim)
+        return
+      }
+      // Primera vez: arranca justo afuera. Si se reabre a mitad de la salida, sigue desde donde está.
+      const full = measure()
+      if (offset.get() > full) offset.set(full)
+      opacity.set(1)
+      animateSingleValue(offset, 0, springs.standard)
+      return
+    }
+    const velocity = exitVelocity.current
+    exitVelocity.current = null
+    // El foco no se queda en un panel que se va: sale del panel y, al desmontar, Radix lo devuelve al
+    // disparador (o lo deja donde el usuario lo haya puesto mientras tanto).
+    const panel = panelRef.current
+    if (panel && document.activeElement instanceof HTMLElement && panel.contains(document.activeElement)) {
+      document.activeElement.blur()
+    }
+    const target = reduced ? 0 : measure() || (horizontal ? window.innerWidth : window.innerHeight)
+    cancelExit.current = runExit({
+      start: () =>
+        reduced
+          ? animateSingleValue(opacity, 0, fades.scrim)
+          : animateSingleValue(offset, target, velocity !== null ? { ...springs.fling, velocity } : springs.standard),
+      finalize: () => (reduced ? opacity.jump(0) : offset.jump(target)),
+      onDone: () => {
+        cancelExit.current = null
+        safeToRemove?.()
+      },
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPresent])
+
+  React.useEffect(() => () => cancelExit.current?.(), [])
+
+  const setRefs = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      panelRef.current = node
+      if (typeof forwardedRef === "function") forwardedRef(node)
+      else if (forwardedRef) forwardedRef.current = node
+    },
+    [forwardedRef]
+  )
+
+  return (
+    <>
+      {modal ? (
+        <ModalScrim
+          opacity={scrimOpacity}
+          overlay={<SheetPrimitive.Overlay forceMount className="fixed inset-0 z-50" />}
+        />
+      ) : null}
+      <SheetPrimitive.Content
+        asChild
+        ref={setRefs}
+        {...props}
+        onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus, { returnTo: () => openInfo?.returnFocus.current ?? null })}
+        onPointerDownOutside={ignoreOutsideBeforeOpen(onPointerDownOutside, () => openInfo?.openedAt.current ?? 0)}
+        forceMount
+      >
+        <m.div
+          className={cn(
+            sheetVariants({ side }),
+            modal ? "shadow-modal" : "shadow-float",
+            // Durante la salida el panel ya no recibe punteros (review HU-017a, punto 2).
+            "data-[state=closed]:pointer-events-none",
+            className
+          )}
+          style={{ ...style, ...dragStyle, ...(horizontal ? { x: translate } : { y: translate }), opacity }}
+          // Saliendo: fuera del orden de foco y del árbol de accesibilidad.
+          inert={!isPresent || undefined}
+          {...handlers}
+        >
+          {side === "bottom" ? (
+            <div data-sheet-handle aria-hidden className="absolute inset-x-0 top-0 flex h-6 touch-none justify-center">
+              <span className="mt-2 h-[5px] w-9 rounded-full bg-fill-pressed" />
+            </div>
+          ) : null}
+          {children}
+          <SheetPrimitive.Close className={closeButtonClass}>
+            <X className="size-3.5" strokeWidth={2.25} aria-hidden />
+            <span className="sr-only">Cerrar</span>
+          </SheetPrimitive.Close>
+        </m.div>
+      </SheetPrimitive.Content>
+    </>
+  )
+})
+SheetPanel.displayName = "SheetPanel"
 
 const SheetHeader = ({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
+    // El encabezado también sirve de agarre en el sheet inferior (§9.8).
+    data-sheet-handle=""
     className={cn(
-      "flex flex-col space-y-2 text-center sm:text-left",
+      "flex flex-col gap-1.5 pr-8 text-center sm:text-left",
       className
     )}
     {...props}
@@ -94,7 +292,7 @@ const SheetFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
+      "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
       className
     )}
     {...props}
@@ -108,7 +306,7 @@ const SheetTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Title
     ref={ref}
-    className={cn("text-lg font-semibold text-foreground", className)}
+    className={cn("text-title-2 text-balance text-foreground", className)}
     {...props}
   />
 ))
@@ -120,7 +318,7 @@ const SheetDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Description
     ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
+    className={cn("text-callout text-muted-foreground", className)}
     {...props}
   />
 ))

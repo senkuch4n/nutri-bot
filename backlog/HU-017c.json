@@ -1,0 +1,13 @@
+{
+  "id": "HU-017c",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-apple-pacientes-consultas",
+  "titulo": "Rediseño Apple (2/5): pacientes y consultas (lista, ficha, consulta, ISAK, informe y su PDF)",
+  "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
+  "estado": "no_afinada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-rediseno-apple.md",
+  "sdd": null,
+  "rama": null,
+  "notas": "Depende de HU-017a. Foco de usabilidad (decisión del usuario 2026-10-03): simplificar la página de pacientes para una usuaria que no maneja computadoras, con ui-ux-pro-max. Diagnóstico y propuestas 1–6 en progress/current-senkuch4n.md (2026-10-03); antes de afinar, observar a la nutricionista 5 minutos usando la ficha."
+}

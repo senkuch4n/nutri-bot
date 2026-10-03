@@ -2,67 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Tokens (canales HSL, consumidos por tailwind.config.ts como hsl(var(--x) / alpha)) ─── */
+/* Los valores de los tokens viven en src/lib/design-tokens.ts; tailwind.config.ts los emite como
+   variables CSS (canales HSL). Este archivo solo los usa (HU-017a, D-T1). */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 45 8% 20%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 45 8% 20%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 45 8% 20%;
-
-    --primary: 45 4% 18%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 60 7% 94%;
-    --secondary-foreground: 45 8% 20%;
-    --muted: 60 11% 96%;
-    --muted-foreground: 50 4% 38%;
-    --accent: 60 6% 93%;
-    --accent-foreground: 45 8% 20%;
-
-    --destructive: 2 54% 46%;
-    --destructive-foreground: 0 0% 100%;
-    --destructive-muted: 357 82% 96%;
-    --success: 147 32% 33%;
-    --success-muted: 111 23% 94%;
-    --warning: 39 75% 30%;
-    --warning-muted: 45 80% 92%;
-    --info: 204 53% 37%;
-    --info-muted: 198 55% 94%;
-    --link: 211 73% 42%;
-
-    --border: 60 4% 91%;
-    --input: 48 2% 54%;
-    --ring: 210 77% 51%;
-    --sidebar: 60 11% 96%;
-    --radius: 0.5rem;
-
     color-scheme: light;
-  }
-
-  /* Tono cálido del portal (D11). El :root:has(...) alcanza también al body y a los
-     overlays de Radix, que se montan en un portal fuera del div con la clase. */
-  .theme-warm,
-  :root:has(.theme-warm) {
-    --background: 40 43% 99%;
-    --foreground: 30 14% 20%;
-    --card: 0 0% 100%;
-    --card-foreground: 30 14% 20%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 30 14% 20%;
-    --primary: 29 17% 25%;
-    --secondary: 37 31% 95%;
-    --secondary-foreground: 30 14% 20%;
-    --muted: 37 31% 95%;
-    --muted-foreground: 32 9% 38%;
-    --accent: 37 32% 92%;
-    --accent-foreground: 30 14% 20%;
-    --border: 37 25% 90%;
-    --input: 37 11% 50%;
-    --sidebar: 37 31% 95%;
-    --radius: 0.75rem;
   }
 }
 
@@ -71,10 +15,11 @@
     @apply border-border;
   }
   body {
-    @apply bg-background font-sans text-foreground antialiased;
+    @apply bg-background font-sans text-body text-foreground antialiased;
+    font-optical-sizing: auto;
   }
-  /* Foco visible también en los controles hechos a mano de las pantallas sin migrar.
-     Los primitivos usan focus-visible:outline-none + ring y pisan esta regla. */
+  /* Foco visible (§7.7): anillo tint de 2 px que sigue el radio del elemento. Lo usan también los
+     controles hechos a mano de las pantallas sin migrar. */
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
@@ -87,68 +32,255 @@
   }
 }
 
-/* ─── Movimiento reducido global ─── */
+/* ─── Movimiento reducido (§7.7, §14): política por componente, no "todo a 0 ms" ───
+   Motion ya anula transform/layout (MotionConfig reducedMotion="user") y cada overlay pasa a fundido.
+   Acá: lo que vive en CSS. Se conservan los fundidos (opacidad) y el spinner (es estado). */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  html {
+    scroll-behavior: auto;
+  }
+  /* Toasts de Sonner: aparecen y se van con fundido, sin desplazarse. */
+  [data-sonner-toast] {
+    transition-property: opacity, height !important;
   }
 }
 
-/* ─── FullCalendar sobre los tokens ─── */
+/* ─── Contenido nuevo entra con un fundido corto (skeleton → contenido, §9.3) ─── */
+#contenido > *,
+[data-portal-main] > * {
+  animation: fade-in var(--duration-fade) var(--ease-out) both;
+}
+
+/* ═══ HU-017a: lenguaje Apple ═══ */
+
+@layer base {
+  /* El flash gris de iOS no es nuestro feedback: lo dan .press / pressed: (§1). */
+  a,
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+  }
+}
+
+@layer components {
+  /* ─── Press (§1: feedback en pointer-down, instantáneo; suelta con transición) ─── */
+  .press,
+  .press-sm,
+  .press-none {
+    transition:
+      transform var(--duration-release) var(--ease-out),
+      background-color var(--duration-hover) var(--ease-out),
+      color var(--duration-hover) var(--ease-out),
+      opacity var(--duration-hover) var(--ease-out),
+      box-shadow var(--duration-hover) var(--ease-out);
+  }
+  .press {
+    --press-scale: 0.97;
+  }
+  .press-sm {
+    --press-scale: 0.985;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .press:active:hover,
+    .press-sm:active:hover {
+      transform: scale(var(--press-scale));
+      transition-duration: var(--duration-press);
+    }
+  }
+  @media not ((hover: hover) and (pointer: fine)) {
+    .press:active,
+    .press-sm:active {
+      transform: scale(var(--press-scale));
+      transition-duration: var(--duration-press);
+    }
+  }
+  :is(.press, .press-sm):is(:disabled, [aria-disabled="true"]) {
+    transform: none !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .press:active,
+    .press-sm:active {
+      transform: none !important; /* queda el cambio de tono */
+    }
+  }
+
+  /* ─── Objetivo táctil de 44 × 44 sin cambiar el tamaño visible (requiere `relative`) ─── */
+  @media (pointer: coarse) {
+    .touch-target::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      transform: translate(-50%, -50%);
+    }
+  }
+
+  /* ─── Materiales (§7.5, §12): translúcidos solo en chrome y superficies flotantes chicas ─── */
+  .material-chrome,
+  .material-bar,
+  .material-float {
+    /* Vibrancy: dentro de un material el texto secundario y el rojo usan sus variantes oscuras. */
+    --muted-foreground: var(--muted-foreground-vibrant);
+    --destructive: var(--destructive-vibrant);
+  }
+  .material-chrome {
+    background-color: hsl(var(--background) / var(--material-chrome-alpha));
+    -webkit-backdrop-filter: blur(var(--material-chrome-blur)) saturate(var(--material-chrome-saturate));
+    backdrop-filter: blur(var(--material-chrome-blur)) saturate(var(--material-chrome-saturate));
+    /* Scroll edge: sin borde fijo; aparece cuando el contenido pasa por debajo. */
+    box-shadow: 0 0.5px 0 hsl(var(--border) / 0);
+    transition: box-shadow var(--duration-hover) var(--ease-out);
+  }
+  .material-chrome[data-scrolled="true"] {
+    box-shadow: 0 0.5px 0 hsl(var(--border));
+  }
+  .material-bar {
+    background-color: hsl(var(--background) / var(--material-bar-alpha));
+    -webkit-backdrop-filter: blur(var(--material-bar-blur)) saturate(var(--material-bar-saturate));
+    backdrop-filter: blur(var(--material-bar-blur)) saturate(var(--material-bar-saturate));
+    box-shadow:
+      inset 0 0.5px 0 rgb(255 255 255 / 0.4),
+      0 -0.5px 0 hsl(var(--overlay) / 0.08);
+  }
+  .material-float {
+    background-color: hsl(var(--background) / var(--material-float-alpha));
+    -webkit-backdrop-filter: blur(var(--material-float-blur)) saturate(var(--material-float-saturate));
+    backdrop-filter: blur(var(--material-float-blur)) saturate(var(--material-float-saturate));
+    box-shadow: theme("boxShadow.float");
+  }
+
+  /* Sin soporte de blur, transparencia reducida o más contraste → materiales sólidos. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .material-chrome,
+    .material-bar,
+    .material-float {
+      background-color: hsl(var(--background));
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .material-chrome,
+    .material-bar,
+    .material-float {
+      background-color: hsl(var(--background));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  :root:has(.a11y-reduce-transparency) :is(.material-chrome, .material-bar, .material-float) {
+    background-color: hsl(var(--background));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  @media (prefers-contrast: more) {
+    .material-chrome,
+    .material-bar,
+    .material-float {
+      background-color: hsl(var(--background));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .material-chrome {
+      box-shadow: 0 1px 0 hsl(var(--input));
+    }
+    .material-bar {
+      box-shadow: 0 -1px 0 hsl(var(--input));
+    }
+    .material-float {
+      box-shadow: theme("boxShadow.float"), 0 0 0 1px hsl(var(--input));
+    }
+  }
+  :root:has(.a11y-more-contrast) :is(.material-chrome, .material-bar, .material-float) {
+    background-color: hsl(var(--background));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root:has(.a11y-more-contrast) .material-chrome {
+    box-shadow: 0 1px 0 hsl(var(--input));
+  }
+  :root:has(.a11y-more-contrast) .material-bar {
+    box-shadow: 0 -1px 0 hsl(var(--input));
+  }
+  :root:has(.a11y-more-contrast) .material-float {
+    box-shadow: theme("boxShadow.float"), 0 0 0 1px hsl(var(--input));
+  }
+}
+
+/* ─── FullCalendar sobre los tokens (§11) ─── */
 .fc {
   --fc-border-color: hsl(var(--border));
-  --fc-today-bg-color: hsl(var(--muted));
+  --fc-today-bg-color: hsl(var(--primary) / 0.05);
   --fc-now-indicator-color: hsl(var(--destructive));
   --fc-page-bg-color: hsl(var(--background));
   --fc-neutral-bg-color: hsl(var(--muted));
-  --fc-highlight-color: hsl(var(--accent) / 0.7);
+  --fc-highlight-color: hsl(var(--primary) / 0.12);
   font-size: 0.8125rem;
 }
 .fc .fc-toolbar-title {
-  @apply text-lg font-semibold tracking-tight text-foreground;
+  @apply text-title-3 text-foreground;
 }
 .fc .fc-col-header-cell-cushion {
-  @apply py-2 text-xs font-medium text-muted-foreground;
+  @apply py-2 text-footnote font-semibold text-muted-foreground;
 }
 .fc .fc-timegrid-slot-label-cushion,
 .fc .fc-list-day-text {
-  @apply text-xs text-muted-foreground;
+  @apply text-footnote text-muted-foreground;
 }
 .fc .fc-button-primary {
-  @apply h-8 rounded-md border border-input bg-background px-3 text-sm font-medium normal-case
-    text-foreground shadow-none transition-colors;
+  @apply relative h-8 rounded-md border-0 bg-secondary px-3 text-subheadline font-medium normal-case text-foreground shadow-none press;
 }
-.fc .fc-button-primary:hover {
-  @apply border-input bg-accent text-foreground;
+@media (hover: hover) and (pointer: fine) {
+  .fc .fc-button-primary:hover {
+    @apply border-0 bg-fill-hover text-foreground;
+  }
 }
-.fc .fc-button-primary:not(:disabled):active,
+.fc .fc-button-primary:not(:disabled):active {
+  @apply bg-fill-pressed;
+}
+/* Activo: segmento elevado (anticipa el control segmentado de 017b). */
 .fc .fc-button-primary:not(:disabled).fc-button-active {
-  @apply border-input bg-secondary font-semibold text-foreground; /* activo: fondo + peso */
+  @apply bg-background font-semibold text-foreground shadow-thumb;
 }
 .fc .fc-button-primary:focus {
   @apply shadow-none;
 }
+.fc .fc-button-primary.fc-button-active:focus {
+  @apply shadow-thumb;
+}
 .fc .fc-button-primary:focus-visible {
-  @apply outline-none ring-2 ring-ring ring-offset-1;
+  @apply outline outline-2 outline-offset-2 outline-ring ring-0;
 }
 .fc .fc-button-primary:disabled {
-  @apply border-border bg-background text-muted-foreground opacity-100;
+  @apply border-0 bg-secondary text-foreground opacity-40;
 }
 .fc .fc-daygrid-event,
 .fc .fc-timegrid-event {
-  @apply rounded-sm border-0 px-1.5 py-0.5 text-xs font-medium;
+  @apply rounded-sm border-0 px-1.5 py-0.5 text-footnote font-medium;
 }
+.fc .fc-event:focus-visible {
+  @apply outline outline-2 outline-offset-2 outline-ring ring-0;
+}
+
 .fc .fc-non-business {
-  background: hsl(var(--muted)); /* plano, sin rayado */
+  background: hsl(var(--muted)); /* plano, sin rayado (017b lo aliviana: C1) */
 }
 .fc .fc-timegrid-now-indicator-arrow {
   display: none;
 }
-.fc .fc-event:focus-visible {
-  @apply outline-none ring-2 ring-ring ring-offset-1;
+
+/* ─── Inputs sin zoom en Safari iOS (§9.2, T17): ≥ 16 px en táctil; 17 px en el portal ───
+   Sin @layer: gana a las utilidades text-* de cualquier pantalla (incluida la zona de imleticio). */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
+  }
+}
+.theme-portal :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  font-size: theme("fontSize.body-lg[0]");
 }
