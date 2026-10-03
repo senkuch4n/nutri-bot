@@ -377,3 +377,14 @@
   `useExitSnapshot`, `Tabs` no controlado → controlado; sidebar a 1366×768 medida en 634 px (confirmar).
 - **Merge:** después del PR #7 de imleticio.
 - **Modelos:** afinador y architect Opus; implementer Opus (3 rondas); reviewer Opus (3 rondas).
+
+## HU-018b-1 · Menú semanal: modelo (aprobada 2026-10-03, senkuch4n)
+- **Qué:** migración aditiva `weekly_menu` (enums `MealMode`/`Weekday`; `mode`/`isOptions` NOT NULL con default en
+  comidas de planes y plantillas; `weekday` nullable en ítems). Lógica pura en `packages/core/weekly-menu.ts`
+  (totales por día, promedio semanal, opciones con promedio y rango, ±5 %, pesos de micronutrientes) y operaciones
+  en `packages/db/domain/weeklyMenu.ts` (copiar día, repetir, modo, deshacer, objetivo del plan). Portal, PDF, IA y
+  micronutrientes ya leen el modelo semanal; los planes existentes no cambian.
+- **Verificación:** `pg_dump` previo; script de antes/después (solo lectura): 9 planes, 113 ítems y 3 PDF idénticos.
+  1431 tests; typecheck web y bot. Aprobada en la primera revisión.
+- **Pendiente:** 018b-2 (editor semanal), con dos ajustes de la revisión (SDD §16).
+- **Modelos:** afinador y architect Opus; implementer Opus; reviewer Opus.

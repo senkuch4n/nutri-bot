@@ -208,3 +208,5 @@ orquestador, para que las revise a la mañana:
 - HU-018b: architect (Opus, skill migracion-prisma) → Refactorizaciones/menu-semanal.md. Comentario a imleticio en la tarjeta de Notion.
 - HU-018b SDD lista (Refactorizaciones/menu-semanal.md, 12 dudas técnicas). verify.sh OK → `arquitectura_lista`.
 - HU-018b: usuario aprueba SDD (dos PR: 018b-1 modelo → 018b-2 editor; D2–D12 aceptadas). → `implementando` 018b-1 (Opus; migracion-prisma, apple-design, web-design-guidelines, ui-ux-pro-max).
+- HU-018b-1 done (migración weekly_menu aplicada, antes/después OK, 1431 tests). Recorrido del orquestador: plan existente 'plan leo' (16 ítems) se ve igual, sin selector, 0 errores de consola (solo lectura; no se creó paciente de prueba). → `en_revision`.
+- HU-018b-1 **aprobada** (1ª revisión). HU-018b → `arquitectura_lista` para 018b-2 (después del merge). Pendientes en SDD §16. PR a develop.

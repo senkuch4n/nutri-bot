@@ -1241,3 +1241,10 @@ WhatsApp; cambios en `apps/bot`.
   paralelo con 018b-2: el arnés permite una HU activa por persona.
 - **D2–D12:** aceptadas todas las recomendaciones de la sección 12.
 - **Implementer:** Opus, con los skills `migracion-prisma`, `apple-design`, `web-design-guidelines` y `ui-ux-pro-max`.
+
+## 16. Pendientes para 018b-2 (de la revisión de 018b-1)
+
+- `ai-actions.ts`: releer el plan justo antes de borrar las comidas vacías, o mover borrado + alta a una operación
+  transaccional de domain (hoy se lee antes de llamar a la IA y no hay transacción).
+- `addPlanMealItemAction`/`addTemplateMealItemAction`: el editor nuevo manda `weekday` (input oculto) en comidas
+  `PER_DAY`, para que `assertWeekdayMatchesMeal` no termine en la página de error.
