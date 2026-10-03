@@ -90,7 +90,7 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 
 | Comando | Qué hace |
 |---|---|
-| `npm run dev` | Panel Next.js |
+| `npm run dev` | Panel Next.js (con Turbopack; si algo falla, `npm run dev:webpack --workspace apps/web` usa el compilador anterior) |
 | `npm run dev:bot` | Proceso del bot |
 | `npm run db:migrate` | Crea/aplica migraciones (desarrollo) |
 | `npm run db:deploy` | Aplica migraciones (producción) |
