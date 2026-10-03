@@ -215,11 +215,67 @@ Primero hay que **reiniciar `npm run dev`**, porque el cliente Prisma cambió. D
    el aside baja al final y la barra inferior muestra "X kcal / porción".
 9. Teclado: Tab recorre el buscador, los chips (dentro de cada grupo con flechas, por roving focus) y las tarjetas, y el
    foco se ve siempre. En el picker de ingredientes funcionan las flechas, Enter y Escape.
-10. Abrir `/api/recetas/fotos/<photoId>?size=full` en una ventana de incógnito: 401. El `photoId` se ve en la URL de la
-    imagen de la tarjeta.
+10. Abrir `/api/recetas/fotos/<photoId>?size=full` en una ventana de incógnito: el middleware de Auth.js redirige al
+    login (307) antes del handler, igual que `api/professional/logo`; no se ve la foto. El 401 del handler es la segunda
+    barrera y lo cubre su test. El `photoId` se ve en la URL de la imagen de la tarjeta. (Corregido en la ronda 2.)
 11. Limpieza: la receta de prueba se borra por id con `psql`:
     `delete from "Recipe" where id = '<id>';`. No tiene uso en planes, y sus ingredientes y su foto caen en cascada.
     También se puede dejar archivada y anotarlo.
+
+### Ronda 2 (review ronda 1: CHANGES_REQUESTED, intento 1 de 2)
+
+**Defecto arreglado: falso "¿Salir sin guardar?" después de guardar con foto nueva o con "Quitar foto".**
+- **Causa:** la referencia de "sin guardar" se tomaba con la foto o el "Quitar foto" todavía pendientes, y después el
+  form los limpiaba. La huella nueva no coincidía con la referencia y `dirty` quedaba en `true`.
+- **Arreglo:**
+  - La lógica pasó a un módulo puro, `recetas/recipe-form-state.ts`:
+    - `recipeFormSnapshot(state)` arma la huella del form;
+    - `snapshotAfterSave(state)` arma la huella de referencia con la foto y el "Quitar foto" ya resueltos;
+    - `rowHasContent(row)` decide si una fila de ingrediente cuenta.
+  - Al guardar OK, `recipe-form.tsx` fija la referencia con `snapshotAfterSave` y después limpia `photoFile` y
+    `removePhoto`, así `dirty` vuelve a `false` en los tres casos: foto nueva, "Quitar foto" y sin tocar la foto.
+  - En la rama `photoError` con `res.id` (la receta se guardó y la foto no), se hace lo mismo y además se descarta la
+    vista previa local, para no mostrar una foto que no quedó guardada.
+  - Con "Quitar foto" + Guardar en una receta existente, la foto vieja se oculta (`gonePhotoId`) hasta que el
+    `router.refresh()` trae los datos nuevos. Así no reaparece un instante.
+- **Test nuevo:** `recetas/recipe-form-state.test.ts` (6 tests).
+  - Antes de guardar, una foto nueva y "Quitar foto" marcan cambios.
+  - Después de un guardado OK, `dirty` es `false` con foto nueva, con "Quitar foto" y sin tocar la foto.
+  - Un cambio posterior vuelve a marcar `dirty`.
+  - El repo no tiene DOM de test (vitest sin jsdom ni testing-library), por eso se testea la lógica extraída.
+
+**Dudas no bloqueantes resueltas en el mismo commit (triviales y seguras):**
+- **Fila con solo "Medida casera":** ya no se descarta en silencio. `rowHasContent` cuenta la medida casera, así que la
+  fila entra en la validación y muestra "Elegí un alimento o escribí el ingrediente." junto al campo.
+- **Topes de zod** en `recetas/actions.ts`, iguales a las columnas: `yieldPortions` hasta 9999 (`DECIMAL(5,1)`) y
+  `grams` hasta 99999 (`DECIMAL(7,2)`). Un valor fuera de rango da "Revisá los datos de la receta." en lugar del error
+  genérico de la base.
+- **Paso 10 del recorrido:** corregido. Sin sesión el middleware responde 307 al login, no 401, igual que
+  `api/professional/logo`. No se tocó el middleware (SDD 9.2).
+
+**Dudas que no toqué:**
+- arrays sin `NOT NULL` (aceptado por el reviewer);
+- `DecimalInput` en vez de `NumberInput` (unificar más adelante);
+- recorrido de Chrome de foto, archivar, celular y teclado: queda para el orquestador. Conviene recorrer al menos
+  foto → Guardar → "‹ Recetas" (no tiene que aparecer "¿Salir sin guardar?") y "Quitar foto" → Guardar → salir.
+
+**Archivos:**
+- `apps/web/src/app/(panel)/recetas/recipe-form.tsx` (modificado);
+- `apps/web/src/app/(panel)/recetas/actions.ts` (modificado);
+- `apps/web/src/app/(panel)/recetas/recipe-form-state.ts` (nuevo);
+- `apps/web/src/app/(panel)/recetas/recipe-form-state.test.ts` (nuevo);
+- este reporte.
+
+Nada fuera de 018a-1. No se tocaron la base, el schema ni `next dev`.
+
+**Verificación:**
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | OK en core, db, web y bot |
+| `npm run test` | 88 archivos, 1543 tests OK |
+| `npm run lint --workspace apps/web` | OK. Solo queda el warning anterior a la HU (`ajustes/logo-form.tsx:36`) |
+| `./ops/harness/verify.sh` | "Arnés OK". El WARN del bot sale por `packages/db` de la ronda 1; en esta ronda no se tocó |
 
 ### Fuera de 018a-1 (queda para 018a-2)
 

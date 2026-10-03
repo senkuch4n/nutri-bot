@@ -47,7 +47,8 @@ const payloadSchema = z.object({
   type: z.enum(RECIPE_TYPES).nullable(),
   moments: z.array(z.enum(RECIPE_MOMENTS)).max(RECIPE_MOMENTS.length),
   tags: z.array(z.enum(RECIPE_TAGS)).max(RECIPE_TAGS.length),
-  yieldPortions: z.number().finite().min(-1).max(100000).nullable(),
+  // Topes de las columnas (DECIMAL(5,1) y DECIMAL(7,2)): un valor más grande daría un error genérico de la base.
+  yieldPortions: z.number().finite().min(-1).max(9999).nullable(),
   portionHousehold: text(200),
   portionGrams: amount(99999),
   preparation: text(20000),
@@ -68,7 +69,7 @@ const payloadSchema = z.object({
       z.object({
         foodId: z.string().min(1).max(64).nullable(),
         label: text(200),
-        grams: z.number().finite().min(-1).max(1000000).nullable(),
+        grams: z.number().finite().min(-1).max(99999).nullable(),
         noQuantity: z.boolean(),
         household: text(120),
         rawText: text(2000),

@@ -49,6 +49,7 @@ import { recipePhotoUrl } from "@/lib/recipe-view";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { cn } from "@/lib/utils";
 import { archiveRecipeAction, saveRecipeAction, unarchiveRecipeAction } from "./actions";
+import { recipeFormSnapshot, rowHasContent, snapshotAfterSave } from "./recipe-form-state";
 import { RecipePortionSummary } from "./recipe-portion-summary";
 
 // HU-018a: ficha / editor de una receta (SDD 7.3). Los macros se calculan en vivo con
@@ -229,7 +230,10 @@ function RecipeFormInner({
   );
 
   // ── Foto ──
-  const existingPhotoId = recipe?.photo?.id ?? null;
+  // Después de "Quitar foto" + Guardar, la foto vieja se oculta hasta que llegan los datos nuevos.
+  const [gonePhotoId, setGonePhotoId] = useState<string | null>(null);
+  const savedPhotoId = recipe?.photo?.id ?? null;
+  const existingPhotoId = savedPhotoId !== null && savedPhotoId !== gonePhotoId ? savedPhotoId : null;
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
@@ -324,7 +328,7 @@ function RecipeFormInner({
       sourceName: textOrNull(sourceName),
       published: pub,
       ingredients: rows
-        .filter((r) => r.foodId || r.label.trim() !== "" || r.grams.trim() !== "" || r.noQuantity)
+        .filter(rowHasContent)
         .map((r) => ({
           foodId: r.foodId,
           label: textOrNull(r.label),
@@ -338,7 +342,7 @@ function RecipeFormInner({
 
   // Filas con contenido, con su índice en `rows` (los errores de ingrediente se ubican por fila).
   const filledRowKeys = useMemo(
-    () => rows.filter((r) => r.foodId || r.label.trim() !== "" || r.grams.trim() !== "" || r.noQuantity).map((r) => r.key),
+    () => rows.filter(rowHasContent).map((r) => r.key),
     [rows],
   );
 
@@ -374,7 +378,13 @@ function RecipeFormInner({
   const errorFor = (field: string) => issues.find((i) => i.field === field)?.message;
 
   // ── Cambios sin guardar ──
-  const snapshot = JSON.stringify({ payload, credit, photo: photoFile ? photoFile.name + photoFile.size : null, removePhoto });
+  const dirtyState = {
+    payload,
+    credit,
+    photo: photoFile ? { name: photoFile.name, size: photoFile.size } : null,
+    removePhoto,
+  };
+  const snapshot = recipeFormSnapshot(dirtyState);
   const [baseline, setBaseline] = useState(snapshot);
   const dirty = snapshot !== baseline;
   useUnsavedChangesGuard(dirty && !pending, {
@@ -474,7 +484,9 @@ function RecipeFormInner({
     if (photoFile) fd.set("photo", photoFile);
     if (removePhoto) fd.set("removePhoto", "1");
     if (displayUrl) fd.set("photoCredit", credit);
-    const savedSnapshot = snapshot;
+    // Referencia para "sin guardar" una vez guardado: sin foto pendiente ni "Quitar foto" pendiente.
+    const savedSnapshot = snapshotAfterSave(dirtyState);
+    const removedPhotoId = removePhoto ? existingPhotoId : null;
     startTransition(async () => {
       const res = await saveRecipeAction(fd);
       if (res.ok) {
@@ -482,6 +494,7 @@ function RecipeFormInner({
         setBaseline(savedSnapshot);
         setPhotoFile(null);
         setRemovePhoto(false);
+        if (removedPhotoId) setGonePhotoId(removedPhotoId);
         setTried(false);
         if (!recipe) router.replace(`/recetas/${res.id}`);
         else router.refresh();
@@ -494,8 +507,11 @@ function RecipeFormInner({
       if (res.photoError) {
         setPhotoError(res.photoError);
         if (res.id) {
+          // La receta se guardó pero la foto no: se descarta la vista previa para no mostrar una foto que no está.
           setBaseline(savedSnapshot);
           setPhotoFile(null);
+          setPreviewUrl(null);
+          setRemovePhoto(false);
           if (!recipe) router.replace(`/recetas/${res.id}?foto=error`);
           else router.refresh();
         }
