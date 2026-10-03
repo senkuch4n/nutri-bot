@@ -93,3 +93,60 @@ como hoy). En la fase 7 el "flip" se reduce a mover ese bloque a `:root`.
 - Movimiento reducido: los componentes usan `useReducedMotionConfig()` (respeta el SO con
   `reducedMotion="user"` **y** la simulación `"always"` de la demo); `useReducedMotion()` de la SDD
   solo lee el SO y no reaccionaría al interruptor.
+
+## Fase 4 — Primitivos
+
+Archivos: `primitives/{button,skeleton,label,checkbox,radio-group,switch,toggle,table,tabs,tooltip,popover,dropdown-menu,dialog,alert-dialog,sheet,sonner,chart}.tsx`,
+nuevo `primitives/use-dismiss-drag.ts`, nuevo `lib/use-exit-snapshot.ts`, `components/confirm.tsx`
+(solo clases: sin `max-w-md`, botón destructivo `size: "lg"`). `separator.tsx` y `toggle-group.tsx`
+sin cambios (ya cumplen). Demo: secciones 7 (formularios) y 11 (overlays).
+
+- 4.1 `button`: variantes `default|destructive|destructive-tinted|tinted|secondary(gray)|outline|ghost|plain|link`,
+  tamaños `sm|default|lg|icon|icon-sm|icon-lg`, `press` + `touch-target`, foco con `outline` ring,
+  disabled 40 %. `link` sin escala (`--press-scale: 1`) y sin padding.
+- 4.2 `skeleton` → `bg-secondary motion-safe:animate-pulse` (G12). `label` → `text-subheadline`.
+- 4.3 `checkbox`/`radio` 18 px con `touch-target`; `switch` 44×26 con thumb `m.span` (spring
+  `toggle`), estiramiento de 4 px en press hacia donde va (ancho de un hijo interno), track apagado
+  `bg-input` (Q7). Refleja `checked` con `useControllableState` (misma API de Radix).
+- 4.4 `toggle`: encendido `primary-soft` + tint; hover/press con overlay.
+- 4.5 `table`: header `bg-background/95`, `TableHead` footnote semibold, `TableRow` con `onClick` →
+  `pressed:bg-overlay-pressed cursor-pointer` sin escala; seleccionada `primary-soft`.
+- 4.6 `tabs`: `Tabs` refleja el valor en un contexto dentro de un `LayoutGroup` propio; el activo
+  dibuja `m.span layoutId="tab-indicator"` (spring `indicator`). En orientación vertical de escritorio
+  (Ajustes ≥ lg) el indicador se oculta: esa pantalla dibuja su propio activo (se rediseña en 017c).
+  `TabsContent` con `animate-fade-in`.
+- 4.7 `tooltip`: `bg-foreground text-background text-footnote shadow-float`, CSS 150 ms con
+  `motion-safe:zoom-in-[0.96]` (sin zoom con movimiento reducido).
+- 4.8–4.11 Patrón Radix + Motion (§9.0) en `popover`, `dropdown-menu` (Root y Sub), `dialog`,
+  `alert-dialog`: wrapper del Root con `useControllableState` + contexto; Content con
+  `asChild` sobre `m.div` dentro de `AnimatePresence`, `forceMount` **después** del spread de props
+  (si no, un `forceMount` undefined del consumidor lo pisaría). Dialog/Alert centrados con un wrapper
+  `grid place-items-center pointer-events-none` (sin translate). Popover/menú con
+  `transformOrigin: var(--radix-*-content-transform-origin)`. `DropdownMenuItem variant="destructive"`.
+  `DialogOverlay`/`AlertDialogOverlay`/`SheetOverlay` exportados quedan como overlays CSS (API
+  conservada); el contenido usa su propio scrim animado.
+- 4.12 `sheet` + `use-dismiss-drag`: un solo `MotionValue` (px hacia el borde de cierre) maneja
+  entrada, salida y arrastre, con `usePresence` → la salida va por el mismo borde, reabrir a mitad
+  parte del valor presente y el cierre por arrastre hereda la velocidad del dedo (spring `fling`). El
+  scrim sigue el progreso. Laterales: táctil/lápiz desde cualquier punto, `touch-action: pan-y`;
+  inferior: desde el grabber (`data-sheet-handle`, `touch-none`) o el `SheetHeader`, también con
+  mouse. Ignora inputs y `[data-sheet-drag-ignore]`. Modal → `shadow-modal` + scrim; `modal={false}`
+  → `shadow-float` sin scrim. Prop nueva `dismissOnDrag` (default `true`).
+- 4.13 `sonner`: variables de Sonner apuntadas a los tokens + `material-float`, íconos por tipo.
+- 4.14 `chart`: tooltip `rounded-lg bg-background text-footnote shadow-float` sin borde.
+
+### Decisiones no obvias
+
+- **`useExitSnapshot`** (nuevo, `lib/use-exit-snapshot.ts`): como el contenido de los overlays queda
+  montado durante la salida, si quien los usa limpia su estado al cerrar (p. ej. `ConfirmProvider`
+  pone `pending = null`, el sheet del turno deja de tener turno seleccionado) el contenido se vaciaría
+  a mitad del fundido. Los Content guardan sus `children` del último render abierto y los muestran
+  durante la salida. Sin cambios en los consumidores.
+- Durante las fases 4–6 las pantallas reales **sí cambian parcialmente** (lo prevé §7.8): tarjetas,
+  botones, tabs, overlays y switch usan clases nuevas, pero los nombres shadcn (`primary`,
+  `muted-foreground`…) siguen con valores Notion fuera de la demo; p. ej. un botón principal se ve
+  negro en reposo y azul en hover/press hasta la fase 7. La demo (`data-apple-preview`) es la que
+  muestra el lenguaje final.
+- Verificación: tsc web verde, `next lint` sin warnings, smoke SSR de la demo con providers OK.
+  **Sin verificación interactiva en navegador** (ver 0.3): el patrón Radix + Motion, el arrastre y el
+  foco quedan para el recorrido del orquestador (lista al final).
