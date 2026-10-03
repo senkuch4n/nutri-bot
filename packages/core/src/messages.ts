@@ -277,7 +277,7 @@ export function menu(p: { withQuestions: boolean }): string {
   return p.withQuestions ? MENU_WITH_QUESTIONS : MENU;
 }
 
-export const QUESTION_MODE_INTRO = `💬 Escribime tu pregunta sobre servicios, precios, turnos o pagos y te respondo al toque.\n\nTe responde un asistente automático con inteligencia artificial: no da indicaciones de salud ni de alimentación, y no hace falta que me cuentes datos personales de salud. Para eso está la nutricionista (opción *0*).\n\nPara volver, escribí *menú*.`;
+export const QUESTION_MODE_INTRO = `💬 Escribime tu pregunta sobre servicios, precios, turnos o pagos y te respondo al toque.\n\nTe responde un asistente automático con inteligencia artificial de un proveedor externo: lo que escribas acá se procesa en sus servidores, fuera del país. No da indicaciones de salud ni de alimentación, así que no me cuentes datos personales de salud. Para eso está la nutricionista (opción *0*).\n\nPara volver, escribí *menú*.`;
 
 export const AI_DAILY_LIMIT = `Por hoy ya respondí muchas preguntas tuyas. 🙂 Podés usar el *menú* para turnos y precios, o responder *0* para dejarle tu consulta a la nutricionista.`;
 

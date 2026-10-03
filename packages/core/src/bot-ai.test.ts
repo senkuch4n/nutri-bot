@@ -250,8 +250,10 @@ describe("messages (HU-012)", () => {
     expect(messages.welcomeBack("Ana", messages.MENU_WITH_QUESTIONS)).toContain("5️⃣");
   });
 
-  it("QUESTION_MODE_INTRO avisa de la IA, la opción 0 y cómo volver", () => {
+  it("QUESTION_MODE_INTRO avisa de la IA, del proveedor externo, la opción 0 y cómo volver", () => {
     expect(messages.QUESTION_MODE_INTRO).toContain("inteligencia artificial");
+    expect(messages.QUESTION_MODE_INTRO).toContain("proveedor externo");
+    expect(messages.QUESTION_MODE_INTRO).toContain("fuera del país");
     expect(messages.QUESTION_MODE_INTRO).toContain("opción *0*");
     expect(messages.QUESTION_MODE_INTRO).toContain("escribí *menú*");
   });
