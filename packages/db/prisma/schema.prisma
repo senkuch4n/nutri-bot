@@ -585,8 +585,9 @@ model Food {
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
-  planItems     PlanMealItem[]
-  templateItems TemplateMealItem[]
+  planItems         PlanMealItem[]
+  templateItems     TemplateMealItem[]
+  recipeIngredients RecipeIngredient[] // HU-018a
 
   @@index([group])
   @@index([source, active])
@@ -665,8 +666,15 @@ model PlanMealItem {
   /// HU-018b: null = todos los días (comida EVERY_DAY). En comidas PER_DAY, siempre con valor.
   /// `order` es el orden dentro de (mealId, weekday).
   weekday       Weekday?
+  /// HU-018a (para 018c): ítem de receta. Con recipeId, foodId y quantityGrams quedan null.
+  /// Restrict: una receta usada en un plan no se puede borrar (se archiva).
+  recipe        Recipe?   @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  recipeId      String?
+  /// HU-018a (D9): porciones de la receta, pasos de ½ entre 0,5 y 4. null si no es receta.
+  portions      Decimal?  @db.Decimal(3, 1)
 
   @@index([mealId, order])
+  @@index([recipeId])
 }
 
 model PlanTemplate {
@@ -706,8 +714,174 @@ model TemplateMealItem {
   /// HU-018b: null = todos los días (comida EVERY_DAY). En comidas PER_DAY, siempre con valor.
   /// `order` es el orden dentro de (mealId, weekday).
   weekday       Weekday?
+  /// HU-018a (para 018c): ítem de receta. Con recipeId, foodId y quantityGrams quedan null.
+  /// Restrict: una receta usada en un plan no se puede borrar (se archiva).
+  recipe        Recipe?      @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  recipeId      String?
+  /// HU-018a (D9): porciones de la receta, pasos de ½ entre 0,5 y 4. null si no es receta.
+  portions      Decimal?     @db.Decimal(3, 1)
 
   @@index([mealId, order])
+  @@index([recipeId])
+}
+
+/// HU-018a: estado de una receta. Solo PUBLISHED aparece en el buscador del plan (018c).
+enum RecipeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// HU-018a: MANUAL = cargada en el formulario. IMPORT = vino de la carga asistida (fuente obligatoria).
+enum RecipeOrigin {
+  MANUAL
+  IMPORT
+}
+
+/// HU-018a (D12): tipo de receta (uno por receta). Valores fijos.
+enum RecipeType {
+  MAIN_DISH // Plato principal
+  SIDE_DISH // Guarnición
+  SALAD // Ensalada
+  SNACK // Colación
+  BREAKFAST // Desayuno y merienda
+  BREAD_DOUGH // Panes y masas
+  DESSERT // Dulces y postres
+}
+
+/// HU-018a: momentos del día de una receta (varios). 018c los infiere del nombre de la comida (D11).
+enum RecipeMoment {
+  BREAKFAST // Desayuno
+  LUNCH // Almuerzo
+  AFTERNOON_SNACK // Merienda
+  DINNER // Cena
+  SNACK // Colación
+}
+
+/// HU-018a (D12, D20): etiquetas fijas.
+enum RecipeTag {
+  GLUTEN_FREE // Sin TACC
+  VEGETARIAN // Vegetariana
+  MEAL_PREP // Apta vianda / freezer
+}
+
+/// HU-018a: imágenes de la carga asistida. PAGE = la página renderizada (columna "Original" de la
+/// revisión). CANDIDATE = foto incrustada en esa página, para elegir como foto de la receta.
+enum RecipeImportImageKind {
+  PAGE
+  CANDIDATE
+}
+
+/// HU-018a: receta. Los macros NO se guardan: se calculan desde los ingredientes (D4, D10).
+model Recipe {
+  id                   String         @id @default(cuid())
+  name                 String
+  status               RecipeStatus   @default(DRAFT)
+  origin               RecipeOrigin   @default(MANUAL)
+  /// null solo en borradores (validateRecipeForPublish lo exige para publicar).
+  type                 RecipeType?
+  moments              RecipeMoment[] @default([])
+  tags                 RecipeTag[]    @default([])
+  /// Cuántas porciones rinde la receta (> 0, 1 decimal). null solo en borradores.
+  yieldPortions        Decimal?       @db.Decimal(5, 1)
+  /// "¾ albóndigas", "1/4 de tarta". Lo que ve el paciente. null solo en borradores.
+  portionHousehold     String?
+  /// Referencia opcional; el paciente no lo ve (D9).
+  portionGrams         Decimal?       @db.Decimal(7, 2)
+  preparation          String?
+  /// "Tips y conservación" (D20: la nota de conservación de las viandas va acá).
+  tips                 String?
+  /// "Nutriarte — Almuerzos y cenas 2". Se muestra como "Fuente: …" (D3). Obligatoria si origin = IMPORT.
+  sourceName           String?
+  /// D4: tabla nutricional publicada por la fuente, por porción. Solo para comparar.
+  publishedPortionText String?
+  publishedKcal        Decimal?       @db.Decimal(7, 2)
+  publishedProteinG    Decimal?       @db.Decimal(6, 2)
+  publishedCarbsG      Decimal?       @db.Decimal(6, 2)
+  publishedFatG        Decimal?       @db.Decimal(6, 2)
+  publishedFiberG      Decimal?       @db.Decimal(6, 2)
+  /// Carga asistida: "almuerzos-y-cenas-2:p7:albondigas de lentejas" (recipeImportKey de core).
+  /// Hace idempotente la extracción y el pase a producción.
+  importKey            String?        @unique
+  importFile           String?
+  importPage           Int?
+  /// Texto de la página tal como salió de pdftotext. Dato de terceros: solo en la base (D3).
+  importRawText        String?
+  /// RecipeImportHints de core (texto de rinde y porción, línea de autor, avisos del parser).
+  importHints          Json?
+  /// Primera vez que se guardó desde la revisión. Desde ahí la extracción no pisa el borrador.
+  reviewedAt           DateTime?
+  publishedAt          DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  ingredients   RecipeIngredient[]
+  photo         RecipePhoto?
+  importImages  RecipeImportImage[]
+  planItems     PlanMealItem[]
+  templateItems TemplateMealItem[]
+
+  @@index([status, name])
+}
+
+/// HU-018a: ingrediente. Con alimento suma macros si tiene gramos; sin alimento es texto libre.
+model RecipeIngredient {
+  id         String   @id @default(cuid())
+  recipe     Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipeId   String
+  order      Int
+  /// Sin cascada, como PlanMealItem: los alimentos no se borran, se dan de baja.
+  food       Food?    @relation(fields: [foodId], references: [id])
+  foodId     String?
+  /// Cómo se lee en la receta ("Puré de calabaza"). Obligatorio si no hay alimento; si hay, opcional
+  /// (vacío = nombre del alimento).
+  label      String?
+  /// null = sin gramos (o c.n. si noQuantity). Nunca se completa solo (D5).
+  grams      Decimal? @db.Decimal(7, 2)
+  /// "Sin cantidad (c.n.)": no suma macros y no se le piden gramos.
+  noQuantity Boolean  @default(false)
+  /// Medida casera en texto: "1 taza", "2 cdas".
+  household  String?
+  /// Carga asistida: la línea original ("Lentejas 500g"). Dato de terceros: solo en la base.
+  rawText    String?
+
+  @@index([recipeId, order])
+  @@index([foodId])
+}
+
+/// HU-018a (D18): foto de la receta, 1:1. WebP ya reducida. Se reemplaza borrando y creando, así
+/// el id cambia y la URL /api/recetas/fotos/<id> se puede cachear como inmutable.
+model RecipePhoto {
+  id        String   @id @default(cuid())
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipeId  String   @unique
+  /// WebP, máx. 1200×900 (4:3).
+  data      Bytes
+  /// WebP 480×360 (4:3): tarjetas y miniaturas.
+  thumbData Bytes
+  mimeType  String   @default("image/webp")
+  byteSize  Int
+  /// "Foto: Nutrispace". Opcional; se muestra junto a la fuente (D3).
+  credit    String?
+  createdAt DateTime @default(now())
+}
+
+/// HU-018a: imágenes de la carga asistida (página renderizada y fotos candidatas). Se borran al
+/// publicar. Dato de terceros: solo en la base (D3).
+model RecipeImportImage {
+  id        String                @id @default(cuid())
+  recipe    Recipe                @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipeId  String
+  kind      RecipeImportImageKind
+  order     Int
+  /// PAGE: WebP de hasta 1000 px de ancho. CANDIDATE: WebP 1200×900, ya procesada como RecipePhoto.
+  data      Bytes
+  /// Solo CANDIDATE: WebP 480×360.
+  thumbData Bytes?
+  width     Int
+  height    Int
+
+  @@index([recipeId, kind, order])
 }
 
 /// Máquina de estados de la conversación del bot, por paciente.
