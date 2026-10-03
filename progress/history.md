@@ -402,3 +402,16 @@
 - **Ojo al actualizar:** después de `db:migrate`/`db:generate`, reiniciar `npm run dev` (el cliente Prisma viejo
   queda en memoria).
 - **Modelos:** implementer Opus; reviewer Opus.
+
+## HU-018a-1 · Recetario manual (aprobada 2026-10-03, senkuch4n)
+- **Qué:** migración `recipes` (recetas, ingredientes, foto, imágenes candidatas; `recipeId`/`portions` en los ítems de
+  comida para la 018c). Lógica pura en core (macros por porción, porciones de ½, comparación >10 %, búsqueda por
+  ingrediente, sin gramos inventados). Pantalla `/recetas`: grilla con buscador y filtros, ficha y editor con foto
+  (WebP + miniatura con `sharp` en `@nutri-bot/db/media`, hasta 5 MB). Foto del portal solo con la receta en un plan
+  ACTIVE.
+- **Rondas:** 1ª rechazada (falso "¿Salir sin guardar?" después de guardar con foto); 2ª aprobada.
+- **Verificación:** `pg_dump` previo; 1543 tests; `test:recipes` con datos propios borrados por id; recorrido en Chrome
+  (`progress/recorrido_HU-018a.md`). Nada de los recetarios de terceros en el repo.
+- **Pendiente:** 018a-2 (extractor + revisión de borradores, export/import a producción). Bug de `auth.ts`
+  (`refresh_token` de cualquiera que inicia sesión) como tarea directa aparte.
+- **Modelos:** architect Opus; implementer Opus (2 rondas); reviewer Opus (2 rondas).

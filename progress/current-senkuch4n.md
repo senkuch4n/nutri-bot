@@ -217,3 +217,7 @@ orquestador, para que las revise a la mañana:
 - PR #22 mergeado. HU-018a → `en_arquitectura` (rama feat/hu-018a-recetario; architect Opus con migracion-prisma + ui).
 - HU-018a SDD lista (Refactorizaciones/recetario.md; corte 018a-1 manual+migración / 018a-2 carga asistida). Hallazgo: auth.ts guarda el refresh_token de quien se loguea → no revisar recetas en el panel de producción. → `arquitectura_lista`.
 - HU-018a: usuario aprueba SDD (018a-1 → 018a-2). Bug auth.ts → tarea directa después. → `implementando` 018a-1 (Opus; migracion-prisma, apple-design, ui-ux-pro-max).
+- HU-018a-1 done (migración recipes, 1537 tests). Recorrido OK (progress/recorrido_HU-018a.md; obs.: foto sin sesión 307 vs 401). → `en_revision`.
+- HU-018a-1 reviewer: CHANGES_REQUESTED (falso '¿Salir sin guardar?' tras guardar con foto). → `rechazada_reintentando` (intento 1/2). Relanzo implementer (Opus).
+- HU-018a-1 ronda 2: recorrido OK (sin falso '¿Salir sin guardar?' tras subir foto). → `en_revision` (ronda 2).
+- HU-018a-1 **aprobada** (ronda 2). HU-018a → `arquitectura_lista` para 018a-2. PR a develop.
