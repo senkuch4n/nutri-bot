@@ -7,6 +7,7 @@ import {
   listFoods,
   addMeal,
   addMealItem,
+  deleteMeal,
   getPlan,
   getLatestFormulaMeasurements,
 } from "@nutri-bot/db/domain";
@@ -60,7 +61,8 @@ export async function generateAiPlanAction(
 
   const plan = await getPlan(planId);
   if (!plan) return { ok: false, error: "Plan no encontrado" };
-  if (plan.meals.length > 0) {
+  // HU-018b: el plan nuevo trae comidas por defecto vacías; la IA corre si no hay ningún ítem.
+  if (plan.meals.some((meal) => meal.items.length > 0)) {
     return {
       ok: false,
       error: "Este plan ya tiene comidas cargadas. Generá la propuesta en un plan vacío.",
@@ -148,28 +150,37 @@ export async function generateAiPlanAction(
     return { ok: false, error: "La respuesta de la IA no tuvo el formato esperado" };
   }
 
-  let mealOrder = 0;
-  for (const meal of result.data.meals) {
-    // ref inexistente → el ítem se descarta (igual que antes con ids inválidos).
+  // ref inexistente → el ítem se descarta (igual que antes con ids inválidos).
+  const proposal = result.data.meals.flatMap((meal) => {
     const validItems = meal.items.flatMap((item) => {
       const foodId = catalog.idsByRef[item.ref - 1];
       return foodId ? [{ ...item, foodId }] : [];
     });
-    if (validItems.length === 0) continue;
-    const createdMeal = await addMeal(planId, { name: meal.name, order: mealOrder++ });
+    return validItems.length > 0 ? [{ name: meal.name, items: validItems }] : [];
+  });
+
+  if (proposal.length === 0) {
+    return { ok: false, error: "La IA no propuso alimentos válidos. Probá de nuevo." };
+  }
+
+  // HU-018b (D2): recién con la propuesta validada se reemplazan las comidas vacías del plan
+  // (las por defecto), así un error de la IA no deja el plan sin comidas.
+  for (const meal of plan.meals) await deleteMeal(meal.id);
+
+  let mealOrder = 0;
+  for (const meal of proposal) {
+    // La propuesta se carga como comidas "Igual todos los días", como antes de la HU-018b.
+    const createdMeal = await addMeal(planId, { name: meal.name, order: mealOrder++, mode: "EVERY_DAY" });
     let itemOrder = 0;
-    for (const item of validItems) {
+    for (const item of meal.items) {
       await addMealItem(createdMeal.id, {
         foodId: item.foodId,
         quantityGrams: item.quantityGrams,
         notes: item.note || null,
         order: itemOrder++,
+        weekday: null,
       });
     }
-  }
-
-  if (mealOrder === 0) {
-    return { ok: false, error: "La IA no propuso alimentos válidos. Probá de nuevo." };
   }
 
   revalidatePath(`/pacientes/${patientId}/planes/${planId}`);

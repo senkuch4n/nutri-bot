@@ -1,5 +1,6 @@
-import { prisma } from "../index";
+import { prisma, type MealMode, type Weekday } from "../index";
 import { getPlan } from "./nutritionPlans";
+import { assertWeekdayMatchesMeal, resolveNewMealMode } from "./weeklyMenu";
 
 const templateMealInclude = {
   orderBy: { order: "asc" as const },
@@ -31,8 +32,13 @@ export function deleteTemplate(id: string) {
   return prisma.planTemplate.delete({ where: { id } });
 }
 
-export function addTemplateMeal(templateId: string, data: { name: string; order: number }) {
-  return prisma.templateMeal.create({ data: { templateId, ...data } });
+/** HU-018b: mismo default de `mode` que addMeal (PER_DAY si la plantilla ya es semanal). */
+export async function addTemplateMeal(
+  templateId: string,
+  data: { name: string; order: number; mode?: MealMode; isOptions?: boolean },
+) {
+  const { mode, isOptions } = await resolveNewMealMode("template", templateId, data);
+  return prisma.templateMeal.create({ data: { templateId, name: data.name, order: data.order, mode, isOptions } });
 }
 
 export function updateTemplateMeal(mealId: string, data: Partial<{ name: string; order: number }>) {
@@ -49,13 +55,17 @@ type TemplateItemData = {
   quantityGrams?: number | null;
   notes?: string | null;
   order: number;
+  /** HU-018b. Default null (todos los días). Se valida con assertWeekdayMatchesMeal. */
+  weekday?: Weekday | null;
 };
 
-export function addTemplateMealItem(mealId: string, data: TemplateItemData) {
-  return prisma.templateMealItem.create({ data: { mealId, ...data } });
+export async function addTemplateMealItem(mealId: string, data: TemplateItemData) {
+  const weekday = data.weekday ?? null;
+  await assertWeekdayMatchesMeal("template", mealId, weekday);
+  return prisma.templateMealItem.create({ data: { mealId, ...data, weekday } });
 }
 
-export function updateTemplateMealItem(mealId: string, data: Partial<TemplateItemData>) {
+export function updateTemplateMealItem(mealId: string, data: Partial<Omit<TemplateItemData, "weekday">>) {
   return prisma.templateMealItem.update({ where: { id: mealId }, data });
 }
 
@@ -78,6 +88,8 @@ export async function applyTemplateToPatient(templateId: string, patientId: stri
           create: template.meals.map((meal) => ({
             name: meal.name,
             order: meal.order,
+            mode: meal.mode,
+            isOptions: meal.isOptions,
             items: {
               create: meal.items.map((item) => ({
                 foodId: item.foodId,
@@ -85,6 +97,7 @@ export async function applyTemplateToPatient(templateId: string, patientId: stri
                 quantityGrams: item.quantityGrams,
                 notes: item.notes,
                 order: item.order,
+                weekday: item.weekday,
               })),
             },
           })),

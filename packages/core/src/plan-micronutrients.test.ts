@@ -138,3 +138,18 @@ describe("official adult DRI selection", () => {
     expect(getAdultMicronutrientReference("calcio", "MALE", age)).toBeNull();
   });
 });
+
+describe("plan micronutrients: peso semanal (HU-018b)", () => {
+  it("sin weight el resultado es idéntico a weight 1", () => {
+    const items = [item(800, 150), item(123.456, 37), { quantityGrams: 50, food: { nutrients: null, sodiumMgPer100: 300 } }];
+    expect(calculate(items.map((i) => ({ ...i, weight: 1 })))).toEqual(calculate(items));
+  });
+  it("weight 0,5 reduce el aporte a la mitad", () => {
+    expect(calcium([{ ...item(800, 150), weight: 0.5 }]).knownAmount).toBe(600);
+  });
+  it("weight 0 con datos cuenta como conocido y aporta 0", () => {
+    const result = calcium([{ ...item(800), weight: 0 }, item(200)]);
+    expect(result.knownAmount).toBe(200);
+    expect(result.coverage).toEqual({ knownItems: 2, totalItems: 2, complete: true });
+  });
+});

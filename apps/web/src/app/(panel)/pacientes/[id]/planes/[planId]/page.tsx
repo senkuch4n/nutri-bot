@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@nutri-bot/db";
 import { getPlan, listFoods } from "@nutri-bot/db/domain";
-import { computeAgeYears, computePlanMicronutrients, sumMacros } from "@nutri-bot/core";
+import { computeAgeYears, computePlanMicronutrients } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { formatDateTime } from "@nutri-bot/core";
 import { Card, PageHeader } from "@/components/ui";
 import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
-import { toMealView, toMicronutrientItems } from "@/lib/meal-view";
+import { toMealView, toMicronutrientItems, toPlanTotals } from "@/lib/meal-view";
 import { PlanMicronutrientsSection } from "@/components/plan-micronutrients";
 import { PlanMetaForm } from "./plan-meta-form";
 import { PlanPdfActions } from "./plan-pdf-actions";
@@ -45,7 +45,8 @@ export default async function PlanDetailPage({
     }),
   ]);
   const meals = toMealView(plan.meals);
-  const totals = sumMacros(meals.flatMap((m) => m.items.map((i) => i.macros).filter((m) => m !== null)));
+  // HU-018b: plan no semanal → el mismo total de siempre; semanal → promedio diario de la semana.
+  const { totals, label: totalsLabel } = toPlanTotals(meals);
   const at = new Date();
   const micronutrients = computePlanMicronutrients(
     toMicronutrientItems(plan.meals), patient, at, pro.timezone,
@@ -72,12 +73,13 @@ export default async function PlanDetailPage({
 
       {/* Totales del plan: quedan a la vista mientras se editan las comidas. */}
       <div className="sticky top-14 z-10 -mx-6 mb-6 bg-background px-6 py-3 lg:top-0 lg:-mx-10 lg:px-10">
-        <MacroTotals totals={totals} />
+        <MacroTotals totals={totals} label={totalsLabel} />
       </div>
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
         <div className="space-y-6">
-          {plan.meals.length === 0 ? (
+          {/* HU-018b: la IA corre si el plan no tiene ítems (las comidas por defecto están vacías). */}
+          {!plan.meals.some((meal) => meal.items.length > 0) ? (
             <Card title="Armar con IA">
               <AiPlanForm planId={plan.id} patientId={id} />
             </Card>

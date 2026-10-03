@@ -18,6 +18,7 @@ export * from "./food-groups";
 export * from "./food-nutrients";
 export * from "./micronutrient-recommendations";
 export * from "./plan-micronutrients";
+export * from "./weekly-menu";
 export * from "./food-search";
 export * from "./es-ar-number";
 export * from "./ai-food-catalog";

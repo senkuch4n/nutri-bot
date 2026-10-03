@@ -13,7 +13,9 @@ import {
   deleteTemplateMealItem,
   getTemplate,
   getFood,
+  nextItemOrder,
 } from "@nutri-bot/db/domain";
+import { isWeekday } from "@nutri-bot/core";
 
 export type TemplateState = { ok: boolean; error?: string };
 
@@ -78,6 +80,10 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<voi
   const customLabel = String(formData.get("customLabel") ?? "").trim();
   const quantityRaw = String(formData.get("quantityGrams") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  // HU-018b: "" o ausente = todos los días; un valor fuera de WEEKDAYS se ignora como otros datos inválidos.
+  const weekdayRaw = String(formData.get("weekday") ?? "").trim();
+  if (weekdayRaw && !isWeekday(weekdayRaw)) return;
+  const weekday = isWeekday(weekdayRaw) ? weekdayRaw : null;
   if (!foodId && !customLabel) return;
   if (foodId) {
     const food = await getFood(foodId);
@@ -86,9 +92,7 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<voi
     }
   }
 
-  const template = await getTemplate(templateId);
-  const meal = template?.meals.find((m) => m.id === mealId);
-  const order = meal?.items.length ?? 0;
+  const order = await nextItemOrder("template", mealId, weekday);
 
   await addTemplateMealItem(mealId, {
     foodId: foodId || null,
@@ -96,6 +100,7 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<voi
     quantityGrams: quantityRaw ? Number(quantityRaw) : null,
     notes: notes || null,
     order,
+    weekday,
   });
   revalidatePath(`/plantillas/${templateId}`);
 }

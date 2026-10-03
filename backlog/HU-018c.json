@@ -1,0 +1,13 @@
+{
+  "id": "HU-018c",
+  "responsable": "senkuch4n",
+  "intentos_revision": 0,
+  "hu": "docs/hu-plan-recetas-buscador.md",
+  "sdd": null,
+  "rama": "feat/hu-018-plan-recetas-buscador",
+  "origen": "Partición de HU-018",
+  "slug": "buscador-recetas",
+  "titulo": "Buscador de recetas tipo Google Shopping dentro de cada comida, con impacto en los macros del día (uno o varios días)",
+  "estado": "validada",
+  "notas": "Depende de 018a y 018b."
+}

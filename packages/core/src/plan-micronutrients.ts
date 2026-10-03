@@ -11,6 +11,8 @@ const KEYS: readonly PlanMicronutrientKey[] = [
 export interface MicronutrientPlanItem {
   quantityGrams: number | null;
   food: { nutrients: unknown; sodiumMgPer100: number | null } | null;
+  /** HU-018b: peso del ítem en el promedio diario de la semana. Default 1. 0 = no aporta. */
+  weight?: number;
 }
 
 export interface PlanMicronutrientResult {
@@ -52,7 +54,7 @@ export function computePlanMicronutrients(
       const value = key === "sodio" ? item.food?.sodiumMgPer100 : item.nutrients?.[key];
       if (!item.food || grams === null || !Number.isFinite(grams) || grams < 0 ||
         value == null || !Number.isFinite(value) || value < 0) continue;
-      amount += value * grams / 100;
+      amount += value * grams / 100 * (item.weight ?? 1);
       knownItems += 1;
     }
     // SARA niacin is mg of preformed niacin, not mg NE. No tryptophan

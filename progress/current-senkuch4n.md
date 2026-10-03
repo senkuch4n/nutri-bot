@@ -173,6 +173,14 @@ orquestador, para que las revise a la mañana:
 - HU-016 ronda 2 → `implementando` (Opus): log solo con código + select mínimo en updates de Professional; logo queda en 2 MB.
 - HU-016 ronda 2: implementer `done`. → `en_revision` (ronda 2).
 - **HU-016 aprobada** (2ª ronda, reviewer Opus). Ver history.
+
+## 2026-10-03 · HU-018 (rama feat/hu-018-plan-recetas-buscador, desde develop)
+- HU-017a aprobada (PR #20, se mergea después del #7 de imleticio); su bitácora sigue en esa rama.
+- HU-018 `plan-recetas-buscador`: Notion En curso, backlog `afinando`. Material local (gitignored en la rama de 017a; acá todavía no): docs/recetarios/, docs/planes-alimentacion/. Afinador con ui-ux-pro-max.
+- PR #20 (HU-017a) mergeado a develop por el usuario (#7 de imleticio y #19 también mergeados). Traer develop a la rama de HU-018 cuando termine el afinador.
+- HU-018 afinada → `afinada_pendiente_validacion` (docs/hu-plan-recetas-buscador.md, 22 dudas; corte 018a recetario / 018b buscador / 018c medidas caseras). D15/D16 ya resueltas: #7 y #20 mergeados.
+- HU-018 resoluciones del usuario: D1 = menú semanal (no la recomendación); D3 = todo con atribución (licencia la confirma Daiana, fuera del sistema); resto aceptado. Afinador integrando (re-corte con menú semanal; coordinación con HU-015 de imleticio).
+- HU-018 **validada** (N1 promedio + rango; N2 018b la hacemos nosotros). Partida en 018a–d; orden 018b → 018a → 018c. HU-018b → `en_arquitectura`.
 - **HU-017** `rediseno-apple` (pedido del usuario: skill apple-design, rediseño visual completo, auditoría primero, sin la zona de Leo) → rama `feat/hu-017-rediseno-apple` (sale de chore/skill-apple-design, PR #19) → `afinando`. HU-016 en PR #18.
 - HU-017 afinada (auditoría + propuesta + partición) → `afinada_pendiente_validacion`.
 - HU-017 **validada** como paraguas: acento azul de sistema, Inter, Motion + página demo; resto según recomendaciones. Partida en HU-017a (validada) y 017b–f (no_afinada; 017e de imleticio).
@@ -197,3 +205,8 @@ orquestador, para que las revise a la mañana:
 - HU-017a ronda 3 (último reintento) → `implementando` (Opus): inert al reabrir, foco al disparador, framer-motion declarado (SDD §24).
 - HU-017a ronda 3: recorrido OK (reabrir durante la salida; foco vuelve a 'Nuevo turno' y 'Editar'). → `en_revision` (ronda 3, última).
 - HU-017a **aprobada** (reviewer ronda 3). Historia actualizada; PR a develop (mergear después del #7 de imleticio).
+- HU-018b: architect (Opus, skill migracion-prisma) → Refactorizaciones/menu-semanal.md. Comentario a imleticio en la tarjeta de Notion.
+- HU-018b SDD lista (Refactorizaciones/menu-semanal.md, 12 dudas técnicas). verify.sh OK → `arquitectura_lista`.
+- HU-018b: usuario aprueba SDD (dos PR: 018b-1 modelo → 018b-2 editor; D2–D12 aceptadas). → `implementando` 018b-1 (Opus; migracion-prisma, apple-design, web-design-guidelines, ui-ux-pro-max).
+- HU-018b-1 done (migración weekly_menu aplicada, antes/después OK, 1431 tests). Recorrido del orquestador: plan existente 'plan leo' (16 ítems) se ve igual, sin selector, 0 errores de consola (solo lectura; no se creó paciente de prueba). → `en_revision`.
+- HU-018b-1 **aprobada** (1ª revisión). HU-018b → `arquitectura_lista` para 018b-2 (después del merge). Pendientes en SDD §16. PR a develop.

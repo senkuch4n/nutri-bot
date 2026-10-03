@@ -1,0 +1,13 @@
+{
+  "id": "HU-018d",
+  "responsable": "senkuch4n",
+  "intentos_revision": 0,
+  "hu": "docs/hu-plan-recetas-buscador.md",
+  "sdd": null,
+  "rama": "feat/hu-018-plan-recetas-buscador",
+  "origen": "Partición de HU-018",
+  "slug": "medidas-caseras",
+  "titulo": "Medidas caseras de alimentos sueltos",
+  "estado": "no_afinada",
+  "notas": "Se afina después (D21)."
+}
