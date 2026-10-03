@@ -1,8 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@nutri-bot/db";
 import {
   copyDay,
   moveMeal,
@@ -15,6 +13,7 @@ import {
   type MealSnapshot,
 } from "@nutri-bot/db/domain";
 import { WEEKDAYS, type Weekday } from "@nutri-bot/core";
+import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
 
 // HU-018b (SDD 6.1): acciones del editor semanal, compartidas por planes y plantillas. Cada una
 // valida con zod, llama a domain (que verifica que la comida sea del dueño), revalida y devuelve un
@@ -31,17 +30,6 @@ const modeSchema = z.enum(["EVERY_DAY", "PER_DAY"]);
 
 const ownerSchema = z.object({ kind: kindSchema, ownerId: idSchema });
 
-async function revalidateOwner(kind: MealOwnerKind, ownerId: string): Promise<void> {
-  if (kind === "template") {
-    revalidatePath(`/plantillas/${ownerId}`);
-    return;
-  }
-  const plan = await prisma.nutritionPlan.findUnique({ where: { id: ownerId }, select: { patientId: true } });
-  if (!plan) return;
-  revalidatePath(`/pacientes/${plan.patientId}`);
-  revalidatePath(`/pacientes/${plan.patientId}/planes/${ownerId}`);
-}
-
 /** Valida, ejecuta y revalida. Cualquier error (zod o de domain) → mensaje genérico para el toast. */
 async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>>(
   schema: S,
@@ -52,7 +40,7 @@ async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>
   if (!parsed.success) return { ok: false, error: GENERIC_ERROR };
   try {
     const undo = await fn(parsed.data);
-    await revalidateOwner(parsed.data.kind, parsed.data.ownerId);
+    await revalidateMenuOwner(parsed.data.kind, parsed.data.ownerId);
     return undo ? { ok: true, undo } : { ok: true };
   } catch (err) {
     console.error("[weekly-menu]", err);

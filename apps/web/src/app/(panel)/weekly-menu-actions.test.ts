@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@nutri-bot/db/domain", () => mocks);
 vi.mock("@nutri-bot/db", () => ({ prisma: { nutritionPlan: { findUnique: mocks.findPlan } } }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("server-only", () => ({}));
 
 import {
   copyDayAction,
