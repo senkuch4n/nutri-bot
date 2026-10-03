@@ -221,3 +221,5 @@ orquestador, para que las revise a la mañana:
 - HU-018a-1 reviewer: CHANGES_REQUESTED (falso '¿Salir sin guardar?' tras guardar con foto). → `rechazada_reintentando` (intento 1/2). Relanzo implementer (Opus).
 - HU-018a-1 ronda 2: recorrido OK (sin falso '¿Salir sin guardar?' tras subir foto). → `en_revision` (ronda 2).
 - HU-018a-1 **aprobada** (ronda 2). HU-018a → `arquitectura_lista` para 018a-2. PR a develop.
+- PR #23 (018a-1) mergeado. Rama feat/hu-018a2-carga-asistida desde develop.
+- HU-018a-2 → `implementando` (Opus; apple-design, ui-ux-pro-max).
