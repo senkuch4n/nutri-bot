@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { searchFoods } from "@nutri-bot/core";
 import { useFoodCatalog, type CatalogFood } from "@/components/food-catalog";
@@ -182,16 +181,7 @@ export function FoodPicker({ name = "foodId" }: { name?: string }) {
             </p>
           ) : results.length === 0 ? (
             <p className="border-t px-3 py-2 text-xs text-muted-foreground" onMouseDown={(e) => e.preventDefault()}>
-              No hay alimentos que coincidan. Podés agregarlo como alimento libre o crearlo en{" "}
-              <Link
-                href="/alimentos/nuevo"
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-foreground underline underline-offset-2"
-              >
-                Alimentos
-              </Link>
-              .
+              No hay alimentos SARA 2 que coincidan. Podés agregar una descripción como alimento libre, sin composición nutricional.
             </p>
           ) : null}
         </div>
