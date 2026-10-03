@@ -7,6 +7,7 @@ import {
   servicesForAi,
 } from "./bot-ai-tools";
 import { formatPrice } from "./format";
+import { PAYMENT_METHODS } from "./payment-methods";
 
 const BA = "America/Argentina/Buenos_Aires";
 
@@ -131,6 +132,7 @@ describe("clinicInfoForAi", () => {
     expect(clinicInfoForAi(base)).toEqual({
       nutricionista: "Lic. Daiana Ponce",
       obrasSociales: ["OSDE", "Swiss Medical", "IOMA"],
+      mediosDePago: PAYMENT_METHODS,
       moneda: "ARS",
       horarioMensajes: "de 9:00 a 22:00",
       ahoraFueraDeHorario: true,
