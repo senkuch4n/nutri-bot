@@ -73,3 +73,23 @@ leer variables con **fallback idéntico al valor actual** (`rounded-md` =
 `var(--radius-md, calc(var(--radius) - 2px))`, `text-sm` = `var(--text-sm, .875rem)` /
 `var(--text-sm-lh, 1.25rem)` / `letter-spacing: var(--text-sm-tracking)` sin fallback → se hereda
 como hoy). En la fase 7 el "flip" se reduce a mover ese bloque a `:root`.
+
+## Fase 3 — Página demo (andamio)
+
+- 3.1 `app/(panel)/dev-diseno/page.tsx` (guard `NODE_ENV === "production"` → `notFound()`, metadata
+  noindex) + `_sections/`: `section.tsx` (marco de sección), `demo-frame.tsx` (raíz con
+  `data-apple-preview`, barra `material-chrome` sticky con los tres interruptores de simulación e
+  índice de anclas), `colors.tsx` (muestras de cada token, texto sobre W/G/PW, **tabla de contrastes
+  calculada en vivo** con `contrastRatio` sobre `contrastRequirements` y texto sobre materiales con el
+  peor fondo), `typography.tsx` (cada estilo con su tamaño/leading/peso/tracking, escala re-mapeada,
+  selector de rasgos `ss01`/`cv11` para Q2), `shape.tsx` (radios, ejemplo concéntrico, elevación sobre
+  blanco y agrupado), `materials.tsx` (caja desplazable con fondo de franjas negro/tint/rojo y los tres
+  materiales), `motion.tsx` (un carril por preset con "Mover" interrumpible y pelota arrastrable con
+  rubber-band, proyección de momentum con fantasma y spring con la velocidad del dedo).
+- 3.2 `app/dev-diseno-portal/page.tsx` con el guard (placeholder hasta la fase 6).
+- Verificación: tsc web y `next lint` de los directorios nuevos verdes. Smoke de SSR (test temporal,
+  no commiteado) renderiza la página completa: 0 contrastes en "No". La verificación visual con
+  sesión queda para el recorrido (ver Fase 0.3).
+- Movimiento reducido: los componentes usan `useReducedMotionConfig()` (respeta el SO con
+  `reducedMotion="user"` **y** la simulación `"always"` de la demo); `useReducedMotion()` de la SDD
+  solo lee el SO y no reaccionaría al interruptor.
