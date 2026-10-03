@@ -104,7 +104,8 @@ export async function syncMercadoPagoPayment(paymentId: string, expectedInternal
     const appointment = existing.appointment;
     const confirmed = await tx.appointment.updateMany({
       where: { id: appointment.id, status: "AWAITING_PAYMENT" },
-      data: { status: "CONFIRMED", needsGoogleSync: true },
+      // HU-014 (D5): la aprobación de la seña es la reserva en firme.
+      data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: new Date() },
     });
     if (confirmed.count === 0) return;
     await tx.outboundMessage.createMany({ skipDuplicates: true, data: [{

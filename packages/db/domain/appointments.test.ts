@@ -171,3 +171,44 @@ describe("updateAppointmentReason (HU-013, D5)", () => {
     expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
   });
 });
+
+describe("createAppointment sella bookedAt (HU-014, D5)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
+    mocks.checkSlotAvailable.mockResolvedValue(true);
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
+      id: "a1",
+      startsAt: data.startsAt,
+      reason: data.reason,
+      status: data.status,
+    }));
+  });
+
+  it("sin seña → bookedAt es el momento de la reserva", async () => {
+    const before = Date.now();
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    const data = createData();
+    expect(data.status).toBe("CONFIRMED");
+    expect(data.bookedAt).toBeInstanceOf(Date);
+    expect(data.bookedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(data.bookedAt.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("con seña (paciente + requiresDeposit) → bookedAt null", async () => {
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    const data = createData();
+    expect(data.status).toBe("AWAITING_PAYMENT");
+    expect(data.bookedAt).toBeNull();
+  });
+
+  it("desde el panel con un servicio con seña → confirmado y sellado", async () => {
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    await createAppointment({ ...base, createdBy: "PROFESSIONAL", notifyPatient: false });
+    expect(createData().bookedAt).toBeInstanceOf(Date);
+  });
+});

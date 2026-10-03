@@ -1141,3 +1141,19 @@ docker compose exec -T db psql -U nutri -d nutribot -c "SELECT count(*) FROM \"P
 ## 14. Resoluciones del usuario (2026-10-02)
 
 - **P1–P10:** se aceptan los defaults tal como están escritos en la sección 13.
+
+## 15. Ajuste tras la 1ª revisión (2026-10-02) — tiene prioridad sobre la sección 5.1
+
+**Hueco del algoritmo 5.1 paso 5 (review_HU-014, cambio requerido 1):** un recordatorio elegido se
+considera **cubierto** si ya existe un mensaje **automático** del turno (REMINDER con `dedupeKey`
+`auto:*`, o CONFIRMATION_REQUEST, o `confirmationRequestedAt`) encolado **en o después de su momento**.
+Los manuales (`manual:*`/`""`) no cuentan (D8). Así, cambiar la configuración de un servicio
+(reemplazar un recordatorio enviado por otro de mayor anticipación, o mover el "pide confirmar", P9)
+no repite un aviso que el paciente ya recibió. El mismo criterio se aplica en `reminderStatusItems`
+para que el detalle no muestre "pendiente" de algo que no va a salir. P6, "agregar uno" (escenario 9)
+y el bot caído siguen igual.
+
+**Mejora de UX sumada a la 2ª ronda (decisión del usuario, 2026-10-03):** en el detalle de un turno
+cuyo horario **ya pasó**, no se muestra el botón "Enviar recordatorio ahora" y la línea de
+recordatorios dice "Turno pasado" en lugar de la lista de "no se envió". El servidor sigue
+bloqueando el envío manual en turnos pasados (P8).

@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma, Prisma } from "@nutri-bot/db";
+import type { ServiceReminder } from "@nutri-bot/core";
 
 export function listServices(opts?: { activeOnly?: boolean }) {
   return prisma.service.findMany({
@@ -24,6 +25,16 @@ interface ReasonFields {
   asksReason: boolean;
 }
 
+/** HU-014: lista ya validada con validateServiceReminders. undefined = no se toca (vale el default al crear). */
+interface RemindersFields {
+  reminders?: ServiceReminder[];
+}
+
+/** Literal plano asignable a Prisma.InputJsonValue; undefined se mantiene (no se toca la columna). */
+function remindersJson(list: ServiceReminder[] | undefined) {
+  return list?.map((r) => ({ amount: r.amount, unit: r.unit, asksConfirmation: r.asksConfirmation }));
+}
+
 export function createService(
   data: {
     name: string;
@@ -33,14 +44,16 @@ export function createService(
     color: string;
   } & DepositFields &
     PrepFields &
-    ReasonFields,
+    ReasonFields &
+    RemindersFields,
 ) {
-  const { depositValue, ...rest } = data;
+  const { depositValue, reminders, ...rest } = data;
   return prisma.service.create({
     data: {
       ...rest,
       price: new Prisma.Decimal(data.price),
       depositValue: depositValue != null ? new Prisma.Decimal(depositValue) : null,
+      reminders: remindersJson(reminders),
     },
   });
 }
@@ -56,15 +69,17 @@ export function updateService(
     active: boolean;
   } & DepositFields &
     PrepFields &
-    ReasonFields,
+    ReasonFields &
+    RemindersFields,
 ) {
-  const { depositValue, ...rest } = data;
+  const { depositValue, reminders, ...rest } = data;
   return prisma.service.update({
     where: { id },
     data: {
       ...rest,
       price: new Prisma.Decimal(data.price),
       depositValue: depositValue != null ? new Prisma.Decimal(depositValue) : null,
+      reminders: remindersJson(reminders),
     },
   });
 }

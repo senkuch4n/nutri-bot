@@ -56,6 +56,8 @@ export async function createAppointment(params: {
         startsAt: params.startsAt,
         endsAt,
         status: awaitingPayment ? "AWAITING_PAYMENT" : "CONFIRMED",
+        // HU-014 (D5): reserva en firme. Con seña se sella al aprobarse el pago (payments.ts).
+        bookedAt: awaitingPayment ? null : new Date(),
         createdBy: params.createdBy,
         priceSnapshot: service.price,
         needsGoogleSync: true,

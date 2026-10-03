@@ -310,3 +310,30 @@
   `OutboundMessage` a jids de prueba compartidos con otros scripts.
 - **Modelos:** afinador, architect, implementer y reviewer Opus. Skills: migracion-prisma, ui (SDD);
   migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max (impl).
+
+---
+
+## 2026-10-03 — HU-014 `recordatorios-por-servicio` — APROBADA (2ª ronda) · Épica 50 · senkuch4n
+
+- **Qué:** cada servicio tiene su lista de recordatorios (hasta 3, en días u horas, 1 h–14 días),
+  editable en `/servicios`; uno puede "pedir confirmar (sí/no)" y reemplaza a la confirmación fija de
+  72 h. Un solo cron `*/5` (`enqueueServiceReminders`) reemplaza al recordatorio global y a la
+  confirmación. Reservas tardías se saltean; con el bot caído sale solo el más cercano si faltan > 2 h;
+  los de días que caen entre 22 y 09 se corren a las 09:00. Texto con "mañana / pasado mañana / en una
+  semana". Botón "Enviar recordatorio ahora" independiente (freno a doble clic), oculto en turnos
+  pasados; el detalle muestra qué salió y qué falta. Se retiró el campo global de `/ajustes`.
+- **Migración** `service_reminders`: `Service.reminders` (JSONB), `OutboundMessage.dedupeKey` + unicidad
+  `(appointmentId, kind, dedupeKey)`, `Appointment.bookedAt`, con backfill que deja todo como antes
+  (3 días con confirmación + 24 h). `reminderLeadHours` queda sin uso. Respaldo
+  `~/nutribot-backups/pre-hu014-20261002-2329.dump`. SQL generado con `migrate diff
+  --from-schema-datasource` (solo lectura) por el prompt no interactivo; reproducible con `migrate deploy`.
+- **Ronda 1 rechazada:** un cambio de configuración con avisos ya enviados podía repetir un recordatorio
+  (hueco de la SDD 5.1). Ronda 2: un recordatorio está cubierto si ya salió un aviso automático en o
+  después de su momento; además "Turno pasado" en el detalle.
+- **Verificación:** 1124 tests, `test:service-reminders` 17 OK, regresiones (confirmación 8/8, motivo,
+  IA, fuera de horario) OK; dry-run sobre turnos reales sin envíos; base sin restos.
+- **Pendiente:** limpiar `reminderLeadHours`, `REMINDER_LEAD_HOURS` y el seed en una migración futura;
+  dudas menores en `progress/review_HU-014.md`.
+- **Modelos:** afinador y architect Opus; implementer Opus (2 rondas); reviewer Opus (2 rondas). Skills:
+  migracion-prisma, refactor, ui (SDD); migracion-prisma, ui-styling, web-design-guidelines,
+  ui-ux-pro-max (impl), ui-styling + web-design-guidelines (ronda 2).

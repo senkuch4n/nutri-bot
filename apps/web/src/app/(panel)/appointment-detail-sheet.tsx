@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type RefObject } from "react";
+import { useEffect, useState, useTransition, type RefObject } from "react";
 import { es } from "date-fns/locale";
 import { Bell, Check, ClipboardList, Pencil, Undo2, UserX } from "lucide-react";
 import { BOOKING_REASON_MAX, formatInTimeZone, formatPrice } from "@nutri-bot/core";
@@ -17,6 +17,7 @@ import { Badge, Button, ButtonLink, FormError, Textarea, cn } from "@/components
 import { notify } from "@/lib/notify";
 import {
   cancelAppointmentAction,
+  getAppointmentRemindersAction,
   saveAppointmentReasonAction,
   sendReminderNowAction,
   setStatusAction,
@@ -141,6 +142,28 @@ function AppointmentBody({
   const [reasonDraft, setReasonDraft] = useState(appt.reason ?? "");
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [savingReason, startSavingReason] = useTransition();
+  // HU-014 (D8): línea de estado de los recordatorios (solo turnos confirmados).
+  const [remindersText, setRemindersText] = useState<string | null>(null);
+  const [remindersVersion, setRemindersVersion] = useState(0);
+  // SDD §15 (decisión del usuario): turno cuyo horario ya pasó → sin botón manual y "Turno pasado".
+  // El servidor igual bloquea el envío manual en turnos pasados (P8). El detalle solo se renderiza
+  // en el cliente (al elegir un turno), así que leer el reloj acá no genera desajustes de hidratación.
+  const isPast = new Date(appt.start).getTime() <= Date.now();
+  useEffect(() => {
+    if (appt.status !== "CONFIRMED" || isPast) return;
+    let alive = true;
+    setRemindersText(null);
+    getAppointmentRemindersAction(appt.id)
+      .then((res) => {
+        if (alive) setRemindersText(res.ok ? res.text : "—");
+      })
+      .catch(() => {
+        if (alive) setRemindersText("—");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [appt.id, appt.status, isPast, remindersVersion]);
 
   // Patrón de ajustes/after-hours-form.tsx: onSubmit + preventDefault + startTransition.
   function submitReason(e: React.FormEvent<HTMLFormElement>) {
@@ -229,8 +252,12 @@ function AppointmentBody({
     setError(null);
     const res = await sendReminderNowAction(appt.id);
     setBusy(null);
-    if (res.ok) notify.info("Recordatorio encolado.");
-    else setError(res.error ?? "No se pudo encolar el recordatorio.");
+    if (res.ok && res.result === "already_pending") {
+      notify.info("Ya hay un recordatorio pendiente de envío para este turno.");
+    } else if (res.ok) {
+      notify.info("Recordatorio encolado.");
+      setRemindersVersion((v) => v + 1);
+    } else setError(res.error ?? "No se pudo encolar el recordatorio.");
   }
 
   const badge = statusBadge[appt.status];
@@ -327,6 +354,21 @@ function AppointmentBody({
             </div>
           )}
         </dd>
+
+        {appt.status === "CONFIRMED" ? (
+          <>
+            <dt className="text-muted-foreground">Recordatorios</dt>
+            <dd className="text-sm" aria-live="polite">
+              {isPast ? (
+                <span className="text-muted-foreground">Turno pasado</span>
+              ) : remindersText === null ? (
+                <span className="text-muted-foreground">…</span>
+              ) : (
+                remindersText
+              )}
+            </dd>
+          </>
+        ) : null}
       </dl>
 
       <Separator className="mt-6" />
@@ -356,16 +398,18 @@ function AppointmentBody({
               {busy === "no_show" ? null : <UserX aria-hidden />}
               No asistió
             </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start"
-              disabled={disabled}
-              loading={busy === "reminder"}
-              onClick={sendReminder}
-            >
-              {busy === "reminder" ? null : <Bell aria-hidden />}
-              Enviar recordatorio ahora
-            </Button>
+            {isPast ? null : (
+              <Button
+                variant="ghost"
+                className="w-full justify-start"
+                disabled={disabled}
+                loading={busy === "reminder"}
+                onClick={sendReminder}
+              >
+                {busy === "reminder" ? null : <Bell aria-hidden />}
+                Enviar recordatorio ahora
+              </Button>
+            )}
             <Separator className="my-4" />
             <Button
               variant="danger"

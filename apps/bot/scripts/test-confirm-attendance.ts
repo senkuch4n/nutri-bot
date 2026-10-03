@@ -1,6 +1,8 @@
 /**
  * Simula, sin WhatsApp real, el flujo completo de:
- *  - Épica 8: aviso de confirmación de turno 3 días antes (sí / no).
+ *  - Épica 8: aviso de confirmación de turno 3 días antes (sí / no). Desde la HU-014 es "el
+ *    recordatorio que pide confirmar" del servicio: el de prueba lo configura en 72 h (horas, para
+ *    que no lo afecte el corrimiento nocturno de los recordatorios en días).
  *  - Épica 14: recomendaciones automáticas antes de un estudio.
  *
  * Crea datos de prueba propios (paciente/servicio/turnos con jid de test),
@@ -10,11 +12,13 @@
  * Los crons se corren acotados al paciente de prueba (`scope.patientIds`): nunca encolan
  * mensajes para turnos de pacientes reales que caigan en la misma ventana.
  *
+ * Aborta si el bot figura conectado (salvo ALLOW_BOT_RUNNING=1, para un BotStatus colgado).
+ *
  * Uso: npm run test:confirm-flow --workspace apps/bot
  */
 import assert from "node:assert/strict";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAttendanceConfirmations, enqueuePrepInstructions } from "@nutri-bot/db/domain";
+import { enqueuePrepInstructions, enqueueServiceReminders } from "@nutri-bot/db/domain";
 import { handleIncoming } from "../src/conversation";
 
 const TEST_JID = "5490000000001@s.whatsapp.net";
@@ -34,6 +38,10 @@ async function cleanup(): Promise<void> {
 }
 
 async function main() {
+  const bot = await prisma.botStatus.findUnique({ where: { id: 1 } });
+  if (bot?.connected && process.env.ALLOW_BOT_RUNNING !== "1") {
+    throw new Error("Pará el bot antes de correr esta prueba (o ALLOW_BOT_RUNNING=1 si BotStatus quedó colgado)");
+  }
   console.log("Limpiando datos de prueba de una corrida anterior (si quedaron)…");
   await cleanup();
 
@@ -44,6 +52,8 @@ async function main() {
       price: 10000,
       prepInstructions: "Vení en ayunas de 4hs y con ropa liviana.",
       prepLeadHours: 24,
+      // HU-014: el pedido de confirmación es el recordatorio que "pide confirmar".
+      reminders: [{ amount: 72, unit: "HOURS", asksConfirmation: true }],
     },
   });
   const patient = await prisma.patient.create({
@@ -63,7 +73,7 @@ async function main() {
   };
 
   // --- Escenario A: pide confirmación y el paciente dice que SÍ va a venir ---
-  const startsAtA = new Date(Date.now() + 72 * HOUR + 10 * 60_000);
+  const startsAtA = new Date(Date.now() + 72 * HOUR - 2 * 60_000);
   const apptA = await prisma.appointment.create({
     data: {
       patientId: patient.id,
@@ -71,14 +81,15 @@ async function main() {
       startsAt: startsAtA,
       endsAt: new Date(startsAtA.getTime() + 30 * 60_000),
       status: "CONFIRMED",
+      bookedAt: new Date(Date.now() - 24 * HOUR),
       createdBy: "PATIENT",
       priceSnapshot: service.price,
     },
   });
 
-  await step("cron enqueueAttendanceConfirmations encola el pedido de confirmación", async () => {
-    const count = await enqueueAttendanceConfirmations(30, { patientIds: [patient.id] });
-    assert.ok(count >= 1, "esperaba al menos 1 turno encolado");
+  await step("cron enqueueServiceReminders encola el pedido de confirmación", async () => {
+    const res = await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
+    assert.ok(res.confirmations >= 1, "esperaba al menos 1 turno encolado");
     const state = await prisma.conversationState.findUnique({ where: { patientJid: TEST_JID } });
     assert.equal(state?.step, "CONFIRM_ATTENDANCE");
     assert.equal((state?.context as { apptId?: string } | null)?.apptId, apptA.id);
@@ -100,7 +111,7 @@ async function main() {
   });
 
   // --- Escenario B: pide confirmación y el paciente dice que NO va a poder ---
-  const startsAtB = new Date(Date.now() + 72 * HOUR + 20 * 60_000);
+  const startsAtB = new Date(Date.now() + 72 * HOUR - 1.5 * 60_000);
   const apptB = await prisma.appointment.create({
     data: {
       patientId: patient.id,
@@ -108,14 +119,15 @@ async function main() {
       startsAt: startsAtB,
       endsAt: new Date(startsAtB.getTime() + 30 * 60_000),
       status: "CONFIRMED",
+      bookedAt: new Date(Date.now() - 24 * HOUR),
       createdBy: "PATIENT",
       priceSnapshot: service.price,
     },
   });
 
-  await step("cron enqueueAttendanceConfirmations encola el segundo turno (no duplica el primero)", async () => {
-    const count = await enqueueAttendanceConfirmations(30, { patientIds: [patient.id] });
-    assert.equal(count, 1, "no debería re-encolar el turno A, que ya tiene su mensaje");
+  await step("cron enqueueServiceReminders encola el segundo turno (no duplica el primero)", async () => {
+    const res = await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
+    assert.equal(res.confirmations, 1, "no debería re-encolar el turno A, que ya tiene su mensaje");
     const state = await prisma.conversationState.findUnique({ where: { patientJid: TEST_JID } });
     assert.equal((state?.context as { apptId?: string } | null)?.apptId, apptB.id);
   });
@@ -131,7 +143,7 @@ async function main() {
   });
 
   // --- Escenario D: el paciente responde horas después (la sesión de 20 min ya venció) ---
-  const startsAtD = new Date(Date.now() + 72 * HOUR + 25 * 60_000);
+  const startsAtD = new Date(Date.now() + 72 * HOUR - 1 * 60_000);
   const apptD = await prisma.appointment.create({
     data: {
       patientId: patient.id,
@@ -139,11 +151,12 @@ async function main() {
       startsAt: startsAtD,
       endsAt: new Date(startsAtD.getTime() + 30 * 60_000),
       status: "CONFIRMED",
+      bookedAt: new Date(Date.now() - 24 * HOUR),
       createdBy: "PATIENT",
       priceSnapshot: service.price,
     },
   });
-  await enqueueAttendanceConfirmations(30, { patientIds: [patient.id] });
+  await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
   const later = new Date(Date.now() + 2 * HOUR);
 
   await step("horas después, un mensaje común no dispara nada (silencio) y el turno sigue igual", async () => {

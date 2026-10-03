@@ -184,9 +184,11 @@ export function reminderMessage(params: {
   serviceName: string;
   startsAt: Date;
   tz: string;
+  /** HU-014 (D10): relativeDayPhrase(now, startsAt, tz) ("hoy", "mañana", "en 3 días"…). Obligatorio. */
+  when: string;
 }): string {
   const hi = params.patientName ? `Hola ${params.patientName}! ` : "";
-  return `⏰ ${hi}Te recuerdo tu turno:
+  return `⏰ ${hi}Te recuerdo que tenés turno ${params.when}:
 
 📋 ${params.serviceName}
 🗓️ ${formatDateTime(params.startsAt, params.tz)} hs

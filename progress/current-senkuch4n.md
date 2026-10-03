@@ -157,3 +157,8 @@ orquestador, para que las revise a la mañana:
 - HU-014 → `en_arquitectura` (migracion-prisma + refactor + ui).
 - HU-014: SDD lista (Refactorizaciones/recordatorios-por-servicio.md; Service.reminders JSONB, OutboundMessage.dedupeKey, Appointment.bookedAt; un cron */5 reemplaza recordatorio+confirmación; P1–P10) → `arquitectura_lista`.
 - HU-014: usuario acepta P1–P10. → `implementando` (Opus; migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max).
+- HU-014: implementer (Opus) `done`: 1113 tests, 5 simulaciones OK, dry-run sin turnos futuros. Migración generada con migrate diff --from-schema-datasource (solo lectura) por el prompt no interactivo. Recorrido OK con 1 observación (estado 'no se envió' en turnos pasados). → `en_revision`.
+- HU-014: reviewer (Opus) CHANGES_REQUESTED: recordatorio duplicado al cambiar la config de un servicio con avisos ya enviados (hueco de la SDD 5.1; ajuste anotado como sección 15). → `rechazada_reintentando` (intento 1 de 2).
+- HU-014 ronda 2 → `implementando` (Opus; ui-styling, web-design-guidelines): cambio requerido 1 + mejora UX de turno pasado.
+- HU-014 ronda 2: implementer `done` (cubierto por aviso automático posterior; 'Turno pasado' en el detalle). 1124 tests, test:service-reminders 17 OK. → `en_revision` (ronda 2).
+- **HU-014 aprobada** (2ª ronda, reviewer Opus). Ver history.

@@ -11,7 +11,6 @@ export type SettingsState = { ok: boolean; error?: string };
 const generalSchema = z.object({
   timezone: z.string().trim().min(3),
   currency: z.string().trim().length(3).toUpperCase(),
-  reminderLeadHours: z.coerce.number().int().min(1).max(168),
   phone: z.string().trim().optional().or(z.literal("")),
   acceptedInsurances: z.string().trim().max(500).optional().or(z.literal("")),
   pdfAccentColor: z
@@ -47,7 +46,6 @@ export async function saveSettingsAction(
     data: {
       timezone: parsed.data.timezone,
       currency: parsed.data.currency,
-      reminderLeadHours: parsed.data.reminderLeadHours,
       phoneJid: digits ? `${digits}@s.whatsapp.net` : null,
       acceptedInsurances: parsed.data.acceptedInsurances || null,
       pdfAccentColor: parsed.data.pdfAccentColor || null,

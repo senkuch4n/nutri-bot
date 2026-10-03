@@ -4,8 +4,8 @@
   "slug": "recordatorios-por-servicio",
   "titulo": "Recordatorios según el tipo de turno",
   "origen": "docs/historias-usuario-nutridesk.md — Épica 50 (EP-050)",
-  "estado": "implementando",
-  "intentos_revision": 0,
+  "estado": "aprobada",
+  "intentos_revision": 1,
   "hu": "docs/hu-recordatorios-por-servicio.md",
   "sdd": "Refactorizaciones/recordatorios-por-servicio.md",
   "rama": "feat/hu-014-recordatorios-por-servicio",
@@ -22,5 +22,12 @@
     "ui-styling",
     "web-design-guidelines",
     "ui-ux-pro-max"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-014.md",
+  "modelo_ronda2": "opus",
+  "skills_ronda2": [
+    "ui-styling",
+    "web-design-guidelines"
   ]
 }
