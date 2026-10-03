@@ -1,6 +1,6 @@
 # impl HU-017a — Rediseño Apple (1/5): fundaciones y shell
 
-Estado: **en curso** (alcance de esta ronda: fases 0 a 6; las 7–9 esperan la aprobación de la demo).
+Estado: **done-fase6** (fases 0 a 6 hechas; las 7–9 esperan que el usuario apruebe la demo, §21).
 
 SDD: `Refactorizaciones/rediseno-apple-fundaciones.md` (manda §21). Rama `feat/hu-017-rediseno-apple`.
 Skills: `apple-design` (base), `web-design-guidelines` (autochequeo).
@@ -178,3 +178,141 @@ sin cambios (ya cumplen). Demo: secciones 7 (formularios) y 11 (overlays).
 - Demo: secciones 6 (botones), 8 (selección), 9 (contenido), 10 (listas), 12 (estados).
 - Verificación: tsc web verde; `next lint` de `src` → solo el warning preexistente de
   `ajustes/logo-form.tsx` (no es de esta HU); smoke SSR de la demo completa OK.
+
+## Fase 6 — Shell
+
+- 6.1 `shell/use-optimistic-path.ts` (activo al instante del clic plano; vale mientras la ruta real
+  sea la del clic, tope 4 s; Cmd/Ctrl/Shift/Alt/medio/`target` no marcan) y `shell/use-scroll-edge.ts`
+  (IntersectionObserver con `rootMargin` negativo). **Nuevo, no listado en §14.2:**
+  `shell/scroll-edge-header.tsx` (cliente): `<header class="material-chrome">` + sentinela, mide la
+  altura real del header (incluye la safe area del portal) para el offset. Lo usan la topbar móvil y
+  `PortalHeader`, que así sigue siendo server-safe.
+- 6.2 `nav-config.ts`: `sidebarItemClass` (callout, `text-foreground`, ícono muted, `press-sm`,
+  overlay hover/press, foco hacia adentro para no recortarse en el rail, `h-11` con
+  `group-data-[density=touch]/nav`); nuevo `SIDEBAR_WIDTH` (3rem/14rem). `sidebar-content.tsx`:
+  activo = `m.span layoutId="sidebar-active"` `bg-primary-soft` + `text-primary font-semibold` + ícono
+  tint de trazo 2 (no solo color); optimista; títulos de grupo `text-caption font-semibold`; badge
+  tint (Q3); pie con hairline y footnote; prop `density`.
+- 6.3 `app-sidebar.tsx`: **sin FLIP/WAAPI**; el slot es `m.div` con `width` animado por
+  `springs.standard` (con movimiento reducido, instantáneo); la `aside` mantiene 14rem y el slot la
+  recorta (`overflow: hidden`); `LayoutGroup id="sidebar-desktop"`. `sidebar-layout.css` reescrito en
+  rem (salvo hairlines), sin `clip-path`, workspace sin borde (`shadow-card`, radio 22 px, borde
+  `--input` con más contraste), hover del logo dentro de `@media (hover: hover)`, sin la regla vieja de
+  reduced-motion (queda solo "sin escala en el ícono del toggle").
+- 6.4 `mobile-topbar.tsx`: `ScrollEdgeHeader` `h-14` sticky con material; botón `ghost icon-lg`
+  (44 px); Sheet izquierdo (ancho `min(85vw,20rem)`, arrastrar a la izquierda para cerrar),
+  `SidebarContent density="touch"` dentro de `LayoutGroup id="sidebar-mobile"`.
+- 6.5 `portal-header.tsx` (nuevo, server-safe), `portal-nav.tsx` (tab bar `material-bar`, ícono 24 px
+  con trazo 1,75/2,25, etiqueta `text-caption`, activo `text-primary-vibrant` semibold, sin la rayita
+  superior, press 0,94; nav superior con `layoutId="portal-top-active"`; optimista; prop
+  `activeHref`), `(portal)/layout.tsx` (`theme-portal` + `bg-grouped`, main `data-portal-main` con
+  padding inferior para la tab bar, portal sin link en tarjeta `shadow-card`, Toaster con offset bajo
+  el header).
+- 6.6 `(panel)/layout.tsx` (skip link `rounded-lg shadow-float text-callout`), `app/not-found.tsx`
+  (`theme-portal bg-grouped` en rutas del portal).
+- 6.7 `/dev-diseno-portal` (`app/dev-diseno-portal/{page,portal-demo}.tsx`): header + tab bar reales
+  con `activeHref` local (los links y "Salir" no navegan dentro de la demo: se interceptan en captura),
+  saludo `large-title`, interruptores de simulación, tarjetas tocables `press-sm`, `Metric`,
+  segmentado `fullWidth`, Sheet inferior con grabber e inputs de 17 px, texto largo para scrollear.
+  `/dev-diseno` suma secciones 13 (FullCalendar con eventos literales, fechas calculadas en el cliente
+  para no desfasar la hidratación) y 14 (gráfico con `chartPalette` + muestras).
+- Tema de FullCalendar (§11) en `globals.css`, **por ahora solo bajo
+  `:root:has([data-apple-preview])`** (mismo criterio que D-2): en la fase 7 pierde el prefijo y
+  reemplaza al tema actual. `lib/chart-theme.ts` no se tocó (es la 7.5); la demo usa `chartPalette`.
+
+### Desvío D-3: `theme-warm` convive con `theme-portal` hasta el flip
+
+La SDD (6.5, 6.6) cambia `theme-warm` por `theme-portal`. Sacar `theme-warm` antes de la fase 7 le
+quitaría al portal real su paleta cálida de los nombres shadcn sin tener todavía la Apple. Dejé
+**las dos clases** en `(portal)/layout.tsx` y `app/not-found.tsx`; la fase 7/8 borra `.theme-warm`
+(regla y usos) como ya prevé §7.8.
+
+## Verificación al cierre de la fase 6
+
+```
+npm run typecheck            → core, db, bot, web: tsc limpio
+npm run test                 → Test Files 68 passed (68) · Tests 1341 passed (1341)
+                               (incluye contrast 7, design-tokens 77, motion 20, utils 3 nuevos)
+npm run lint -w apps/web     → 1 warning preexistente (ajustes/logo-form.tsx:36 alt-text), ninguno nuevo
+./ops/harness/verify.sh      → Arnés OK (WARN "se tocó el bot": son los apps/bot/.whatsapp-auth.vieja*
+                               sin trackear, ajenos; git diff contra develop no tiene apps/bot ni packages)
+```
+
+- Alcance (§17.2 contra `origin/develop`): sin archivos de la zona de imleticio, `packages/` ni
+  `apps/bot/`; los `backlog/HU-017*.json` del diff vienen del commit del orquestador (`3457e3f`).
+- Smoke de SSR de `/dev-diseno` y `/dev-diseno-portal` (test temporal, borrado): renderizan; la tabla
+  de contrastes en vivo no tiene ningún "No".
+- Rutas públicas con Playwright (sin sesión, sin datos): `/inicio` y `/portal` sin sesión a 1366 y
+  390 → `docs/auditoria-apple/017a/despues/{50-inicio,44-portal-sin-sesion}-{1366,390}.png`. Sin
+  errores de consola; `body` con Inter y `font-optical-sizing: auto`.
+- `next build` no se corrió (hay un `next dev` del usuario levantado; §17.1).
+- **No hecho por mí (sin sesión del panel ni herramienta de navegador en este contexto):** recorrido
+  visual con sesión, capturas "antes/después" de las pantallas autenticadas, medición 0.4/6.3 de la
+  sidebar a 1366×768, prueba de teclado/Esc/foco, reduced-motion real, Performance (§17.6).
+
+## Para el usuario / orquestador: qué mirar en la demo
+
+Con sesión del panel, `npm run dev` ya levantado:
+
+1. **`/dev-diseno`** (1366×768 y 390×844 con emulación táctil):
+   - Color: la tabla de contrastes en vivo (todo "AA"); texto sobre W/G/PW.
+   - Tipografía: títulos 28–34 px (Q1: si el tracking se ve apretado, se ajusta solo en
+     `design-tokens.ts`); probar `ss01`/`cv11` en los números (Q2).
+   - Materiales: scrollear la caja; el texto sigue legible sobre franjas negras/azules/rojas.
+   - Movimiento: "Mover" y volver a tocar a mitad (invierte sin frenazo); tirar la pelota con impulso.
+   - Botones: mantener presionado (escala + tono en el pointer-down), arrastrar afuera con el mouse.
+   - Formularios: switch (estirar en press), foco azul con Tab.
+   - Selección: segmentados (thumb que se desliza, dos juntos no se cruzan), pestañas.
+   - Overlays: Dialog y Sheet → Esc o clic afuera **a mitad de la entrada** (vuelve desde donde
+     está); foco atrapado y devuelto al botón; confirmación destructiva (rojo lleno) y neutra; menú
+     "…" con submenú e ítem destructivo (crece desde el botón); Sheet izquierdo/derecho arrastrando
+     con emulación táctil; Sheet inferior arrastrando el grabber también con mouse; toasts.
+   - Estados: "Simular carga" (fundido skeleton → contenido). Calendario y gráfico.
+   - Interruptores de la barra: transparencia reducida, más contraste, movimiento reducido.
+   - Sidebar: colapsar/expandir dos veces rápido (invierte, el contenido no se estira); el activo se
+     desliza entre ítems y se marca al instante del clic; menú móvil a 390 px (ítems de 44 px).
+2. **`/dev-diseno-portal`** (390×844 táctil y 1366): header translúcido con borde que aparece al
+   scrollear, tab bar con material, tarjetas con press, Sheet inferior con grabber, inputs a 17 px.
+3. **Pantallas reales (deberían verse casi igual que antes, con los cambios parciales previstos en
+   §7.8):** `/`, `/pacientes`, `/pacientes/[id]` (pestañas), `/servicios` (switch, sheet Editar),
+   `/alimentos` y un plan (popover de kcal) **sin guardar nada**. Transitorio esperado hasta la fase 7:
+   botón principal negro en reposo y azul en hover/press, tarjetas sin borde con sombra, sidebar con
+   fondo azul claro en el activo pero texto oscuro, secundario gris lleno, "Borrar" rojo suave.
+
+## Archivos tocados (fases 1–6)
+
+Nuevos: `apps/web/src/lib/{contrast,design-tokens,motion}.ts` (+ `.test.ts`), `lib/utils.test.ts`,
+`lib/motion-features.ts`, `lib/use-controllable-state.ts`, `lib/use-exit-snapshot.ts`,
+`app/fonts.ts`, `components/motion-provider.tsx`, `components/segmented-control.tsx`,
+`components/grouped-list.tsx`, `components/primitives/use-dismiss-drag.ts`,
+`components/shell/{portal-header.tsx,scroll-edge-header.tsx,use-optimistic-path.ts,use-scroll-edge.ts}`,
+`app/(panel)/dev-diseno/page.tsx` + `_sections/{section,demo-frame,colors,typography,shape,materials,motion,buttons,forms,selection,content,lists,overlays,states,calendar,chart}.tsx`,
+`app/dev-diseno-portal/{page,portal-demo}.tsx`.
+
+Modificados: `apps/web/package.json`, `package-lock.json`, `apps/web/tailwind.config.ts`,
+`app/globals.css`, `app/layout.tsx`, `app/global-error.tsx`, `app/not-found.tsx`,
+`app/(panel)/layout.tsx`, `app/(portal)/layout.tsx`, `lib/utils.ts`, `components/ui.tsx`,
+`components/{status-screen,skeletons,login-screen,confirm}.tsx`,
+`components/primitives/{alert-dialog,button,chart,checkbox,dialog,dropdown-menu,label,popover,radio-group,sheet,skeleton,sonner,switch,table,tabs,toggle,tooltip}.tsx`,
+`components/shell/{app-sidebar.tsx,mobile-topbar.tsx,nav-config.ts,portal-nav.tsx,sidebar-content.tsx,sidebar-layout.css}`.
+Sin tocar: `lib/chart-theme.ts` (fase 7.5), `sign-out-button.tsx`, `separator.tsx`, `toggle-group.tsx`.
+
+## Contrato compartido (§6)
+
+Firmas de §6.2 intactas (solo props opcionales: `SheetContent.dismissOnDrag`,
+`DropdownMenuItem.variant`, `SidebarContent.density`, `PortalNav.activeHref`; valores nuevos en
+`ButtonVariant`/`buttonVariants`). Firmas de §6.3 como dice la SDD, con estos agregados/desvíos:
+`colors` suma `destructive-vibrant` y `MATERIAL_TEXT_TOKENS` lo usa en lugar de `destructive` (D-1);
+exports nuevos `newColorTokens`, `moreContrastOverrides`, `overlayAlpha` (design-tokens),
+`closeButtonClass` (dialog), `SIDEBAR_WIDTH` (nav-config), `ScrollEdgeHeader`, `useExitSnapshot`;
+`useDismissDrag` acepta además `reducedMotion?` opcional. Los componentes leen
+`useReducedMotionConfig()` en lugar de `useReducedMotion()` (respeta el interruptor de la demo).
+`packages/**` y `apps/bot/**` sin cambios.
+
+## Pendiente (fases 7–9, cuando el usuario apruebe la demo)
+
+Flip: mover el bloque `:root:has([data-apple-preview])` a `:root` (y el tema de FullCalendar sin
+prefijo), borrar `:root` viejo y `.theme-warm`, re-mapear `shadow-sm…xl`, regla de reduced-motion
+global → política §7.7, `body text-body`, fundido de `#contenido > *`, `chart-theme.ts` desde
+`chartPalette`; quitar `data-apple-preview` de las demos; fase 8 (greps de §17.3, `tracking-tight`);
+fase 9 (recorrido completo §17).

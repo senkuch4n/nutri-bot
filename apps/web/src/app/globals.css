@@ -312,6 +312,62 @@
   }
 }
 
+/* ─── FullCalendar con el lenguaje Apple (§11). Hasta el "flip" solo dentro del alcance de la demo;
+   en la fase 7 estas reglas reemplazan al tema anterior y pierden el prefijo. ─── */
+:root:has([data-apple-preview]) .fc {
+  --fc-border-color: hsl(var(--border));
+  --fc-today-bg-color: hsl(var(--primary) / 0.05);
+  --fc-now-indicator-color: hsl(var(--destructive));
+  --fc-page-bg-color: hsl(var(--background));
+  --fc-neutral-bg-color: hsl(var(--muted));
+  --fc-highlight-color: hsl(var(--primary) / 0.12);
+  font-size: 0.8125rem;
+}
+:root:has([data-apple-preview]) .fc .fc-toolbar-title {
+  @apply text-title-3 text-foreground;
+}
+:root:has([data-apple-preview]) .fc .fc-col-header-cell-cushion {
+  @apply py-2 text-footnote font-semibold text-muted-foreground;
+}
+:root:has([data-apple-preview]) .fc .fc-timegrid-slot-label-cushion,
+:root:has([data-apple-preview]) .fc .fc-list-day-text {
+  @apply text-footnote text-muted-foreground;
+}
+:root:has([data-apple-preview]) .fc .fc-button-primary {
+  @apply relative h-8 rounded-md border-0 bg-secondary px-3 text-subheadline font-medium normal-case text-foreground shadow-none press;
+}
+@media (hover: hover) and (pointer: fine) {
+  :root:has([data-apple-preview]) .fc .fc-button-primary:hover {
+    @apply border-0 bg-fill-hover text-foreground;
+  }
+}
+:root:has([data-apple-preview]) .fc .fc-button-primary:not(:disabled):active {
+  @apply bg-fill-pressed;
+}
+/* Activo: segmento elevado (anticipa el control segmentado de 017b). */
+:root:has([data-apple-preview]) .fc .fc-button-primary:not(:disabled).fc-button-active {
+  @apply bg-background font-semibold text-foreground shadow-thumb;
+}
+:root:has([data-apple-preview]) .fc .fc-button-primary:focus {
+  @apply shadow-none;
+}
+:root:has([data-apple-preview]) .fc .fc-button-primary.fc-button-active:focus {
+  @apply shadow-thumb;
+}
+:root:has([data-apple-preview]) .fc .fc-button-primary:focus-visible {
+  @apply outline outline-2 outline-offset-2 outline-ring ring-0;
+}
+:root:has([data-apple-preview]) .fc .fc-button-primary:disabled {
+  @apply border-0 bg-secondary text-foreground opacity-40;
+}
+:root:has([data-apple-preview]) .fc .fc-daygrid-event,
+:root:has([data-apple-preview]) .fc .fc-timegrid-event {
+  @apply rounded-sm border-0 px-1.5 py-0.5 text-footnote font-medium;
+}
+:root:has([data-apple-preview]) .fc .fc-event:focus-visible {
+  @apply outline outline-2 outline-offset-2 outline-ring ring-0;
+}
+
 /* ─── Inputs sin zoom en Safari iOS (§9.2, T17): ≥ 16 px en táctil; 17 px en el portal ───
    Sin @layer: gana a las utilidades text-* de cualquier pantalla (incluida la zona de imleticio). */
 @media (pointer: coarse) {

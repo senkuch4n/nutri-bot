@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 export type DemoAnchor = { id: string; label: string };
 
 /** Interruptor de simulación: un checkbox nativo con estilo de chip (no depende de los primitivos). */
-function SimToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+export function SimToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label
       className={cn(

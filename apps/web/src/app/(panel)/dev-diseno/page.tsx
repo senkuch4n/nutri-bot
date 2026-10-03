@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ButtonsSection } from "./_sections/buttons";
+import { CalendarSection } from "./_sections/calendar";
+import { ChartSection } from "./_sections/chart";
 import { ColorsSection } from "./_sections/colors";
 import { ContentSection } from "./_sections/content";
 import { DemoFrame, type DemoAnchor } from "./_sections/demo-frame";
@@ -29,6 +31,8 @@ const anchors: DemoAnchor[] = [
   { id: "listas", label: "Listas" },
   { id: "overlays", label: "Overlays" },
   { id: "estados", label: "Estados" },
+  { id: "calendario", label: "Calendario" },
+  { id: "graficos", label: "Gráficos" },
 ];
 
 /** Demo interna del lenguaje Apple (HU-017a, D12). Solo en desarrollo; no aparece en ninguna navegación. */
@@ -48,6 +52,8 @@ export default function DevDisenoPage() {
       <ListsSection />
       <OverlaysSection />
       <StatesSection />
+      <CalendarSection />
+      <ChartSection />
     </DemoFrame>
   );
 }

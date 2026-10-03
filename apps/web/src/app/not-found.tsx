@@ -11,7 +11,7 @@ export default function RootNotFound() {
   const portal = pathname?.startsWith("/portal") ?? false;
 
   return (
-    <main className={`flex min-h-screen items-center justify-center px-6 ${portal ? "theme-warm bg-background text-foreground" : ""}`}>
+    <main className={`flex min-h-[100dvh] items-center justify-center px-6 ${portal ? "theme-warm theme-portal bg-grouped text-foreground" : ""}`}>
       <StatusScreen
         icon={SearchX}
         title="No encontramos esta página"
