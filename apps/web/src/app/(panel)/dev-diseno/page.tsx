@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ButtonsSection } from "./_sections/buttons";
 import { CalendarSection } from "./_sections/calendar";
@@ -16,7 +15,6 @@ import { ShapeSection } from "./_sections/shape";
 import { StatesSection } from "./_sections/states";
 import { TypographySection } from "./_sections/typography";
 
-export const metadata: Metadata = { title: "Demo de diseño", robots: { index: false, follow: false } };
 
 const anchors: DemoAnchor[] = [
   { id: "colores", label: "Color" },
@@ -40,6 +38,9 @@ export default function DevDisenoPage() {
   if (process.env.NODE_ENV === "production") notFound();
   return (
     <DemoFrame anchors={anchors}>
+      {/* Sin `export const metadata`: en Next 15.5 la metadata de página se transmite en streaming dentro
+          del árbol para navegadores reales; React 19 sube el <meta> al <head> igual. */}
+      <meta name="robots" content="noindex, nofollow" />
       <ColorsSection />
       <TypographySection />
       <ShapeSection />
