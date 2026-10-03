@@ -1,0 +1,25 @@
+{
+  "id": "HU-013",
+  "responsable": "senkuch4n",
+  "slug": "motivo-consulta-reserva",
+  "titulo": "Motivo de consulta al reservar",
+  "origen": "docs/historias-usuario-nutridesk.md — Épica 52 (EP-052)",
+  "estado": "implementando",
+  "intentos_revision": 0,
+  "hu": "docs/hu-motivo-consulta-reserva.md",
+  "sdd": "Refactorizaciones/motivo-consulta-reserva.md",
+  "rama": "feat/hu-013-motivo-consulta-reserva",
+  "notion": "https://app.notion.com/p/3ee6bad61c79814fbf04c227d85a8c01",
+  "notas": "Borrador: yo como profesional necesito que el paciente escriba el motivo de consulta al reservar para poder preparar el turno.",
+  "skills_sdd": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "ui-styling",
+    "web-design-guidelines",
+    "ui-ux-pro-max"
+  ]
+}
