@@ -162,3 +162,9 @@ orquestador, para que las revise a la mañana:
 - HU-014 ronda 2 → `implementando` (Opus; ui-styling, web-design-guidelines): cambio requerido 1 + mejora UX de turno pasado.
 - HU-014 ronda 2: implementer `done` (cubierto por aviso automático posterior; 'Turno pasado' en el detalle). 1124 tests, test:service-reminders 17 OK. → `en_revision` (ronda 2).
 - **HU-014 aprobada** (2ª ronda, reviewer Opus). Ver history.
+- **HU-016** `matricula-firma` (EP-047) → reservada en Notion, rama `feat/hu-016-matricula-firma` → `afinando`. HU-009/HU-010 confirmadas cerradas (Notion + PR #16). HU-015 cancelada de mi lado: es de imleticio.
+- HU-016 afinada → `afinada_pendiente_validacion`.
+- HU-016 **validada**: resto según recomendaciones; D12 sin el PDF del plan (zona HU-015); firma en los dos PDF (D10) y pie del plan con matrícula (D5) quedan decididos para después de la HU-015.
+- HU-016 → `en_arquitectura` (migracion-prisma + ui).
+- HU-016: SDD lista (Refactorizaciones/matricula-firma.md; signatureData/MimeType, GET /api/professional/signature con sesión, getProfessional sin bytes, PdfSignatureBlock compartido; P1–P5) → `arquitectura_lista`.
+- HU-016: usuario acepta P1–P3/P5; P4 se suma (logo solo PNG/JPG + aviso si el actual es WEBP). → `implementando` (Opus; migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max).
