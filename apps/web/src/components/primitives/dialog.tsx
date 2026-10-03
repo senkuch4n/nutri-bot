@@ -7,7 +7,7 @@ import { X } from "lucide-react"
 
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
-import { ModalScrim } from "@/components/primitives/modal-scrim"
+import { ExitFocusGuard, ModalScrim } from "@/components/primitives/modal-scrim"
 import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
@@ -108,6 +108,7 @@ const DialogContent = React.forwardRef<
               >
                 {content}
                 <CloseX />
+                <ExitFocusGuard />
               </m.div>
             </DialogPrimitive.Content>
           </div>

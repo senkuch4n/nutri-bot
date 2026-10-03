@@ -7,7 +7,7 @@ import { AnimatePresence, m, useReducedMotionConfig } from "motion/react"
 import { buttonVariants } from "@/components/primitives/button"
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
-import { ModalScrim } from "@/components/primitives/modal-scrim"
+import { ExitFocusGuard, ModalScrim } from "@/components/primitives/modal-scrim"
 import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
@@ -88,6 +88,7 @@ const AlertDialogContent = React.forwardRef<
                 transition={reduced ? fades.fast : springs.modal}
               >
                 {content}
+                <ExitFocusGuard />
               </m.div>
             </AlertDialogPrimitive.Content>
           </div>

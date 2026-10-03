@@ -51,3 +51,22 @@ export function ModalScrim({
     </>
   )
 }
+
+/**
+ * Va adentro del contenido de un overlay animado (Dialog, AlertDialog). Cuando empieza la salida, saca
+ * el foco del contenido y lo marca `inert`: aunque la animación de salida tarde (o no tenga cuadros),
+ * el foco y el lector de pantalla no quedan atrapados en algo que ya está cerrado.
+ */
+export function ExitFocusGuard() {
+  const isPresent = useIsPresent()
+  const ref = React.useRef<HTMLSpanElement>(null)
+  React.useLayoutEffect(() => {
+    if (isPresent) return
+    const container = ref.current?.parentElement
+    if (!container) return
+    const active = document.activeElement
+    if (active instanceof HTMLElement && container.contains(active)) active.blur()
+    container.inert = true
+  }, [isPresent])
+  return <span ref={ref} hidden />
+}

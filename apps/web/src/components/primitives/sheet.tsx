@@ -20,6 +20,7 @@ import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
 import { ModalScrim } from "@/components/primitives/modal-scrim"
 import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
+import { runExit } from "@/lib/sheet-exit"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
 
@@ -164,9 +165,14 @@ const SheetPanel = React.forwardRef<
     return size.current
   }, [horizontal])
 
-  // Entrada (antes del primer pintado) y salida/reapertura según la presencia.
+  // Entrada (antes del primer pintado) y salida/reapertura según la presencia. La salida siempre
+  // termina (`runExit`: tope de 1 s si la animación no llega, p. ej. sin cuadros) y nunca deja el foco
+  // adentro de un panel cerrado.
+  const cancelExit = React.useRef<(() => void) | null>(null)
   React.useLayoutEffect(() => {
     if (isPresent) {
+      cancelExit.current?.()
+      cancelExit.current = null
       if (reduced) {
         offset.set(0)
         animateSingleValue(opacity, 1, fades.scrim)
@@ -181,15 +187,28 @@ const SheetPanel = React.forwardRef<
     }
     const velocity = exitVelocity.current
     exitVelocity.current = null
-    const done = () => safeToRemove?.()
-    if (reduced) {
-      animateSingleValue(opacity, 0, fades.scrim).then(done)
-      return
+    // El foco no se queda en un panel que se va: sale del panel y, al desmontar, Radix lo devuelve al
+    // disparador (o lo deja donde el usuario lo haya puesto mientras tanto).
+    const panel = panelRef.current
+    if (panel && document.activeElement instanceof HTMLElement && panel.contains(document.activeElement)) {
+      document.activeElement.blur()
     }
-    const target = measure()
-    animateSingleValue(offset, target, velocity !== null ? { ...springs.fling, velocity } : springs.standard).then(done)
+    const target = reduced ? 0 : measure() || (horizontal ? window.innerWidth : window.innerHeight)
+    cancelExit.current = runExit({
+      start: () =>
+        reduced
+          ? animateSingleValue(opacity, 0, fades.scrim)
+          : animateSingleValue(offset, target, velocity !== null ? { ...springs.fling, velocity } : springs.standard),
+      finalize: () => (reduced ? opacity.jump(0) : offset.jump(target)),
+      onDone: () => {
+        cancelExit.current = null
+        safeToRemove?.()
+      },
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPresent])
+
+  React.useEffect(() => () => cancelExit.current?.(), [])
 
   const setRefs = React.useCallback(
     (node: HTMLDivElement | null) => {
@@ -224,6 +243,8 @@ const SheetPanel = React.forwardRef<
             className
           )}
           style={{ ...style, ...dragStyle, ...(horizontal ? { x: translate } : { y: translate }), opacity }}
+          // Saliendo: fuera del orden de foco y del árbol de accesibilidad.
+          inert={!isPresent || undefined}
           {...handlers}
         >
           {side === "bottom" ? (

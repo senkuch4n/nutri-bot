@@ -41,6 +41,7 @@ function SidebarLink({
   count,
   onNavigate,
   markPending,
+  slide = true,
 }: {
   item: NavItem;
   collapsed: boolean;
@@ -49,6 +50,8 @@ function SidebarLink({
   count?: number;
   onNavigate?: () => void;
   markPending: (href: string, e: React.MouseEvent) => void;
+  /** Indicador que se desliza (`layoutId`). En el menú táctil no: se cierra al navegar. */
+  slide?: boolean;
 }) {
   const Icon = item.icon;
   const hasCount = typeof count === "number" && count > 0;
@@ -67,13 +70,17 @@ function SidebarLink({
         // Activo: fondo + color + peso + ícono (no solo color; S2).
         className={cn(sidebarItemClass, active && "font-semibold text-primary [&>svg]:text-primary")}
       >
-        {active ? (
+        {active && slide ? (
           <m.span
             layoutId="sidebar-active"
             aria-hidden
             transition={springs.indicator}
             className="absolute inset-0 -z-10 rounded-md bg-primary-soft"
           />
+        ) : active ? (
+          // Menú del celular: fondo fijo. Sin `layoutId` adentro de un sheet que entra y sale (no hay
+          // nada que deslizar: el menú se cierra al navegar) y sin nodos de proyección en su salida.
+          <span aria-hidden className="absolute inset-0 -z-10 rounded-md bg-primary-soft" />
         ) : null}
         <Icon className="size-4 shrink-0" strokeWidth={active ? 2 : 1.75} aria-hidden />
         {hasCount ? (
@@ -130,13 +137,15 @@ export function SidebarContent({
       {/* Alturas pensadas para que todo (grupos + pie) entre sin scroll en ~650 px de alto
           (notebook 1366×768 con el navegador abierto). El overflow-y-auto queda de red de
           seguridad para alturas menores. Medición en progress/impl_HU-002a.md. */}
-      <nav aria-label="Principal" data-density={density} className="group/nav flex-1 overflow-y-auto px-2 pb-2">
+      <nav aria-label="Principal" data-density={density} className="group/nav flex-1 overflow-y-auto px-2 pb-1">
         {navGroups.map((group, i) => (
           <div key={group.label}>
             <p
               className={cn(
-                "panel-sidebar-detail px-2 pb-1 text-caption font-semibold text-muted-foreground",
-                i > 0 ? "pt-3" : "pt-2",
+                // Títulos compactos: con el pie, todo entra sin scroll en ~634 px (1366×768 con la
+                // barra del navegador). Los ítems conservan su alto (32 px; 44 en el menú táctil).
+                "panel-sidebar-detail px-2 pb-0.5 text-caption font-semibold text-muted-foreground",
+                i > 0 ? "pt-2" : "pt-1.5",
               )}
               aria-hidden={collapsed}
             >
@@ -152,6 +161,7 @@ export function SidebarContent({
                     count={item.badge ? badges?.[item.badge] : undefined}
                     onNavigate={onNavigate}
                     markPending={markPending}
+                    slide={density === "default"}
                   />
                 </li>
               ))}
@@ -167,6 +177,7 @@ export function SidebarContent({
           active={isActive(pathname, settingsItem.href)}
           onNavigate={onNavigate}
           markPending={markPending}
+          slide={density === "default"}
         />
 
         <MaybeTooltip collapsed={collapsed} label={status.label}>
