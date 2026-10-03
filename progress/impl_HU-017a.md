@@ -450,3 +450,177 @@ navegación).
    (chrome sólido, borde visible); Tab por sidebar, botones, pestañas, segmentado, switch e inputs
    (anillo azul), Dialog y Sheet con foco atrapado, Esc cierra y el foco vuelve al disparador.
 7. **Producción (opcional):** con `next start` y sesión, `/dev-diseno` → 404.
+
+# Ronda 2 (review CHANGES_REQUESTED, SDD §23)
+
+## 1. Sheet congelado por un toque o un scroll — commit `a689f7f`
+
+- La lógica del gesto pasó a un controlador puro, **`lib/dismiss-drag.ts`** (`createDismissDrag`, sin
+  React ni Motion), y `primitives/use-dismiss-drag.ts` solo traduce los eventos de React.
+- **`pointerdown` ya no llama a `value.stop()`.** La animación se detiene recién en el `pointermove`
+  en que el gesto se **captura** (gana el eje del sheet después de 10 px). En ese momento el arrastre
+  parte del valor presente: el "agarrar en vuelo" (§3) se mantiene para el arrastre real. Un toque,
+  un scroll vertical que gana el eje cruzado, un `pointercancel` del navegador o un `pointerup` sin
+  movimiento no tocan la animación, así que la entrada y la salida siguen solas.
+- **Gestos con el sheet saliendo:** `sheet.tsx` pasa `enabled: dismissOnDrag && isPresent`.
+  - Un gesto que empieza durante la salida se ignora por completo, así que nadie puede cortar la
+    animación de salida (antes, en Motion 14, `stop()` no resolvía la promesa, `safeToRemove` no se
+    llamaba y el scrim quedaba montado).
+  - Si el sheet se cierra a mitad de un arrastre (Esc), el gesto se abandona sin restaurar y la salida
+    manda.
+- Tests: **`lib/dismiss-drag.test.ts`, 13 casos** con un MotionValue falso que cuenta los `stop()`:
+  - Un toque, un movimiento menor a la histéresis, un scroll vertical y un `pointercancel` sin captura
+    no detienen nada ni llaman callbacks.
+  - Al capturar se detiene una sola vez y el arrastre parte del valor presente (sin salto); después
+    sigue 1:1.
+  - Hacia adentro, rubber-band.
+  - Soltar lejos cierra y soltar cerca vuelve; un flick cierra con su velocidad.
+  - Lado izquierdo.
+  - Un gesto que empieza mientras el sheet sale no hace nada.
+  - Si se cierra a mitad del arrastre, no se pelea con la salida.
+  - Con mouse solo desde el handle; los inputs se ignoran; otro puntero no interfiere.
+
+## 2. El scrim no bloquea la página durante la salida — commit `d3e7485`
+
+- Nuevo **`primitives/modal-scrim.tsx`** (`ModalScrim`) con dos capas, que usan `dialog.tsx`,
+  `alert-dialog.tsx` y `sheet.tsx`:
+  - **Visual:** `bg-scrim` con `pointer-events-none` **siempre**. Hace su fundido de salida, o sigue
+    el progreso del arrastre en el sheet.
+  - **Overlay de Radix:** transparente; atrapa el clic afuera y lleva el `RemoveScroll`. Se desmonta
+    **apenas empieza la salida** (`useIsPresent()` de Motion). Desde ese instante la página recibe
+    clics y scroll; el `RemoveScroll` ya no dura toda la salida.
+  - Se hizo así porque Radix fuerza `pointer-events: auto` en su Overlay, así que no alcanzaba con
+    estilos sobre él.
+- El **contenido** (dialog, alerta, sheet, popover, menú) lleva `data-[state=closed]:pointer-events-none`:
+  mientras sale ya no se traga clics. Radix pone `data-state="closed"` aunque esté montado con
+  `forceMount`.
+- **Foco al desmontar:** nuevo `lib/overlay-focus.ts` con `preserveUserFocusOnClose`, que envuelve
+  `onCloseAutoFocus` en los cinco overlays.
+  - Primero corre el del consumidor.
+  - Si el foco quedó en un elemento que el usuario eligió durante la salida (no `body` ni `html`), se
+    previene la devolución automática al disparador.
+  - Si el foco estaba adentro del overlay (al desmontarse el navegador lo pasa a `body`), Radix lo
+    devuelve al disparador como siempre: el teclado (Esc, X, Enter en un ítem del menú) no cambia.
+- Tests:
+  - `lib/overlay-focus.test.ts`, 6 casos: body, html y null → devolver; un botón de la página → respetar;
+    foco adentro → devolver; el handler del consumidor corre primero y su `preventDefault` manda.
+  - `primitives/modal-scrim.test.tsx`, 2 casos (SSR con `PresenceContext`): presente → scrim visual
+    con `pointer-events-none` + Overlay montado; saliendo → Overlay **desmontado** y scrim visual con
+    `pointer-events-none`.
+- `hideOthers` (el `aria-hidden` sobre el resto de la página) se sigue levantando al desmontar el
+  contenido (~300 ms después de cerrar), como señaló la review. Queda así: no bloquea punteros.
+
+## 3. Toaster — commit `6d177bb`
+
+- El `li` del toast vuelve a llevar `group` y `toast` (los `group-[.toast]:` compilan a `.group.toast .x`)
+  además de `group/toast` (íconos por `data-type`).
+- Las clases quedan en un export `toastClassNames`.
+- Verificado compilando con Tailwind: salen `.group.toast .group-\[\.toast\]\:text-subheadline`,
+  `…!bg-primary` y `…!bg-secondary`.
+- Test `primitives/sonner.test.ts` (2 casos): el `li` tiene `group`, `toast` y `group/toast`; la
+  descripción y los botones usan `group-[.toast]:` y los íconos `group-data-[type=…]/toast:`.
+
+## 4. Peso — commit `3cb5faf`
+
+Medición con `next build` en **worktrees aparte** (`3457e3f` = antes y HEAD = después, en el
+scratchpad, con el `node_modules` del repo enlazado; no se tocó el árbol ni el `.next` del `next dev`
+del usuario, que estaba levantado; los worktrees se borraron al terminar).
+
+Hay dos columnas porque la de Next es engañosa en el App Router: el "First Load JS" de su tabla no
+cuenta los chunks de los layouts. Por eso también sumé el gzip de **todos** los chunks iniciales de
+la ruta (layout raíz + layout del grupo + página, desde `app-build-manifest.json`).
+
+| Ruta | Antes (`3457e3f`) | Después, 1ª medición | Después, final (`3cb5faf`) | Δ final |
+|---|---|---|---|---|
+| `/` (tabla de Next) | 279 kB | 339 kB | 313 kB | **+34 kB** |
+| `/` (todos los chunks iniciales, gz) | 299,2 KB | 357,4 KB | 336,8 KB | **+37,6 KB** ✓ |
+| `/portal` (tabla de Next) | 107 kB | 107 kB | 107 kB | 0 |
+| `/portal` (todos los chunks iniciales, gz) | 128,4 KB | 177,1 KB | 148,0 KB | **+19,6 KB** ✓ |
+| `/pacientes/[id]` (todos, gz) | 321,8 KB | 382,4 KB | 361,9 KB | +40,1 KB |
+| `/inicio` (todos, gz) | 110,4 KB | 135,5 KB | 135,5 KB | +25,1 KB |
+
+- **La primera medición pasaba el presupuesto** (`/` +58 KB). Diagnóstico con un volcado de stats de
+  webpack en el worktree:
+  - `motion/dist/es/react.mjs` (la entrada `motion/react` de Motion 14) hace
+    `const motion = fm.motion; const m = fm.m;` a nivel de módulo.
+  - Eso marca como usado el componente `motion` completo, que trae **todas** las features (drag,
+    gestos, layout, proyección: ~31 KB gz).
+  - Esas features quedaban en un chunk inicial aunque solo usamos `m` + `LazyMotion` con `domMax` en
+    diferido.
+  - No era `domMax` en sí: probé importarlo por ruta interna y no cambió nada.
+  - `optimizePackageImports` tampoco cambió nada.
+- **Arreglo (desvío D-4, documentado en `next.config.mjs`):**
+  - Alias `"motion/react$" → "framer-motion"` en webpack, y el mismo `turbopack.resolveAlias` para que
+    desarrollo resuelva igual.
+  - `motion/react` es exactamente `export * from "framer-motion"` más esas dos re-ligaduras: mismos
+    exports, misma versión 14.0.0, que trae `motion`. No hay dependencia nueva y el código sigue
+    importando de `"motion/react"` (el grep de §17.3 sigue en 0).
+- Además, `animate()` pasó a `animateSingleValue()` en `sheet.tsx`, `use-dismiss-drag.ts` y la demo
+  (anima un MotionValue sin el animador de elementos del DOM; −5 KB).
+- Resultado: `/` +37,6 KB y `/portal` +19,6 KB gz, **dentro del presupuesto de +≤ 45 KB**. El root
+  layout ahora suma ~10,8 KB gz de Motion (`LazyMotion`, `MotionConfig`, `m`). Las features siguen
+  cargándose en diferido (chunk async de `motion-features`).
+- El `next dev` del usuario reinició solo con el cambio de `next.config.mjs`: `/inicio` y `/portal`
+  siguen respondiendo 200.
+
+## Verificación ronda 2
+
+```
+npm run typecheck              → core, db, bot, web: sin errores
+npm run test                   → Test Files 72 passed (72) · Tests 1364 passed (1364)  (+23 tests nuevos)
+npm run lint -w apps/web       → 1 warning preexistente (ajustes/logo-form.tsx:36), ninguno nuevo
+./ops/harness/verify.sh        → Arnés OK (WARN "se tocó el bot" = apps/bot/.whatsapp-auth.vieja* sin trackear)
+next build (worktree de HEAD 3cb5faf; el `next dev` del usuario seguía levantado sobre el árbol)
+                               → OK; único warning el preexistente de `jose` en Edge (también en 3457e3f);
+                                 /dev-diseno-portal prerenderiza 404
+```
+
+- Nota: el `next build` de la ronda anterior había dejado `apps/web/.next/types/validator.ts`, que
+  chocaba con los tipos que genera el `next dev` (tsc fallaba en `.next/types`). Lo borré: es un
+  artefacto del build y se regenera.
+
+## Recorrido para el orquestador en Chrome (ronda 2)
+
+Con sesión, `npm run dev` y la consola abierta (cero errores y cero avisos de hidratación). Emulación
+táctil en DevTools para los puntos 1 a 3.
+
+1. **Sheet, toque o scroll a mitad de la entrada** (390×844, táctil):
+   - Abrir el menú (hamburguesa) y, **antes de que termine de entrar** (~350 ms), tocar el panel o
+     empezar a scrollear la lista en vertical. Tiene que terminar de entrar y quedar abierto, nunca
+     clavado a mitad.
+   - Repetir en `/servicios` → "Editar" (sheet derecho) y en `/dev-diseno-portal` → "Registrar una
+     comida" (sheet inferior: tocar el grabber o el título durante la entrada, también con mouse).
+2. **Sheet, toque a mitad de la salida:** cerrar el menú (X o tocando afuera) y tocar o arrastrar el
+   panel mientras sale.
+   - Tiene que terminar de salir.
+   - El scrim desaparece y la página **recibe clics y scroll enseguida**: tocar un link de la página
+     durante la salida tiene que funcionar.
+   - Nada queda montado: en Elements no queda ningún `[data-scrim]` después de ~0,5 s.
+3. **Arrastre real (sigue igual):** arrastrar el menú hacia la izquierda y soltar a mitad (vuelve),
+   flick (cierra con la velocidad del dedo), agarrar el sheet mientras entra con un arrastre
+   horizontal (lo toma desde donde está).
+4. **Clic en la página durante la salida de un dialog** (1366×768, mouse):
+   - En `/` abrir "Nuevo turno", cerrar con Esc e **inmediatamente** hacer clic en un botón o link de
+     la página (p. ej. "Hoy" del calendario o un ítem de la sidebar). El clic tiene que actuar.
+   - Si es un input o un botón, el foco tiene que quedar ahí: no saltar de vuelta a "Nuevo turno".
+   - Lo mismo con la confirmación de `/dev-diseno` ("Confirmar destructivo" → Cancelar → clic
+     inmediato en otro botón).
+   - Con teclado: abrir el dialog, Esc → el foco vuelve al botón que lo abrió.
+5. **Scroll durante la salida:** con un dialog abierto, cerrarlo y scrollear con la rueda enseguida:
+   la página scrollea (el `RemoveScroll` ya no dura toda la salida).
+6. **Toasts** (`/dev-diseno` → Overlays): `notify.saved`, `notify.error` y `notify.info`. Material
+   flotante, ícono verde, rojo o azul y texto callout. (La descripción, la acción y cancelar solo se
+   ven si alguien las usa; hoy `notify` no las usa.)
+7. **Sidebar a 1366×768** (§10.1, 0.4/6.3):
+   - En DevTools, sobre `nav[aria-label="Principal"]`:
+     `$0.scrollHeight <= $0.clientHeight` → `true`, con todos los grupos y el pie a la vista sin scroll.
+   - Colapsar y expandir dos veces rápido: invierte sin frenazo y el texto del workspace no se estira.
+   - Clic en otro ítem: el indicador azul se desliza al instante. Fijarse si la escala de press del
+     ítem (`press-sm`) produce un salto del indicador (duda de la review). Si se nota, se saca la
+     escala en ítems con indicador.
+8. **Movimiento reducido real** (macOS → Reducir movimiento): repetir 1, 2 y 4. Todo con fundidos, sin
+   desplazamientos, y nada queda clavado.
+9. **Regresión rápida:**
+   - Popover de kcal en un plan (zona de imleticio, solo abrir y cerrar): clic afuera durante la salida
+     → el clic actúa.
+   - Menú "…" de la demo: elegir un ítem con Enter → el foco vuelve al botón "…".
