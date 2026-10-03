@@ -15,6 +15,21 @@ const sonnerVars = {
   "--border-radius": radii.lg,
 } as CSSProperties;
 
+/**
+ * Clases de cada toast. El `li` lleva `group` **y** `toast` (para los `group-[.toast]:` de la
+ * descripción y los botones: compilan a `.group.toast .x`) y además `group/toast` (para los íconos por
+ * `data-type`). Review HU-017a, punto 3.
+ */
+export const toastClassNames = {
+  toast:
+    "group toast group/toast material-float group-[.toaster]:rounded-lg group-[.toaster]:!shadow-float group-[.toaster]:text-callout group-[.toaster]:text-foreground",
+  title: "font-semibold",
+  description: "group-[.toast]:text-subheadline group-[.toast]:text-muted-foreground",
+  icon: "group-data-[type=success]/toast:text-success group-data-[type=error]/toast:text-destructive group-data-[type=info]/toast:text-info group-data-[type=warning]/toast:text-warning",
+  actionButton: "group-[.toast]:!rounded-md group-[.toast]:!bg-primary group-[.toast]:!text-primary-foreground",
+  cancelButton: "group-[.toast]:!rounded-md group-[.toast]:!bg-secondary group-[.toast]:!text-foreground",
+}
+
 // Sin next-themes: el modo oscuro queda preparado en los tokens pero no se activa (D3 → 017f).
 const Toaster = ({ style, ...props }: ToasterProps) => {
   return (
@@ -22,17 +37,7 @@ const Toaster = ({ style, ...props }: ToasterProps) => {
       theme="light"
       className="toaster group"
       style={{ ...sonnerVars, ...style }}
-      toastOptions={{
-        classNames: {
-          toast:
-            "group/toast toast material-float group-[.toaster]:rounded-lg group-[.toaster]:!shadow-float group-[.toaster]:text-callout group-[.toaster]:text-foreground",
-          title: "font-semibold",
-          description: "group-[.toast]:text-subheadline group-[.toast]:text-muted-foreground",
-          icon: "group-data-[type=success]/toast:text-success group-data-[type=error]/toast:text-destructive group-data-[type=info]/toast:text-info group-data-[type=warning]/toast:text-warning",
-          actionButton: "group-[.toast]:!rounded-md group-[.toast]:!bg-primary group-[.toast]:!text-primary-foreground",
-          cancelButton: "group-[.toast]:!rounded-md group-[.toast]:!bg-secondary group-[.toast]:!text-foreground",
-        },
-      }}
+      toastOptions={{ classNames: toastClassNames }}
       {...props}
     />
   );
