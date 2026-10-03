@@ -4,6 +4,7 @@ import { formatClock, isWithinAfterHours, type AfterHoursConfig } from "./after-
 import { computeDepositAmount } from "./deposits";
 import { formatDate, formatDateTime, formatPrice, formatTime } from "./format";
 import { formatInsuranceList } from "./messages";
+import { PAYMENT_METHODS } from "./payment-methods";
 import { dayKeyInTz } from "./time";
 
 export type BotAiToolName = "servicios" | "disponibilidad" | "mis_turnos" | "datos_consultorio";
@@ -53,7 +54,7 @@ export const BOT_AI_TOOLS: readonly BotAiToolSpec[] = [
   {
     name: "datos_consultorio",
     description:
-      "Datos del consultorio: nutricionista, obras sociales, moneda, horario en que la nutricionista responde mensajes, si ahora es fuera de ese horario e información adicional cargada por ella.",
+      "Datos del consultorio: nutricionista, obras sociales, medios de pago (tarjetas, cuotas e interés), moneda, horario en que la nutricionista responde mensajes, si ahora es fuera de ese horario e información adicional cargada por ella.",
     inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
 ];
@@ -154,6 +155,7 @@ export function clinicInfoForAi(p: {
 }): {
   nutricionista: string;
   obrasSociales: string[];
+  mediosDePago: readonly string[];
   moneda: string;
   horarioMensajes: string | null;
   ahoraFueraDeHorario: boolean;
@@ -163,6 +165,7 @@ export function clinicInfoForAi(p: {
   return {
     nutricionista: title ? `${title} ${p.professionalName}` : p.professionalName,
     obrasSociales: formatInsuranceList(p.acceptedInsurances),
+    mediosDePago: PAYMENT_METHODS,
     moneda: p.currency,
     horarioMensajes: p.afterHours.enabled
       ? `de ${formatClock(p.afterHours.end)} a ${formatClock(p.afterHours.start)}`

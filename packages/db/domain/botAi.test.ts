@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PAYMENT_METHODS, messages } from "@nutri-bot/core";
 
 const mocks = vi.hoisted(() => ({
   getProfessional: vi.fn(),
@@ -208,7 +209,18 @@ describe("runBotAiTool", () => {
 
   it("datos_consultorio trae la información para el asistente", async () => {
     const r = await runBotAiTool({ ...base, name: "datos_consultorio", input: {} });
+    expect(r.isError).toBe(false);
     const parsed = JSON.parse(r.content);
+    expect(parsed.mediosDePago).toEqual(PAYMENT_METHODS);
+    expect(parsed.mediosDePago).toEqual([
+      "Tarjeta de débito",
+      "Tarjeta de crédito",
+      "Crédito: únicamente en 1 cuota con 10% de interés",
+    ]);
+    const prices = messages.pricesMessage("Consulta: $ 25.000", PRO.acceptedInsurances);
+    for (const method of parsed.mediosDePago) {
+      expect(prices).toContain(`• ${method}`);
+    }
     expect(parsed.informacionAdicional).toBe("Av. Siempre Viva 123");
     expect(parsed.nutricionista).toBe("Lic. Daiana Ponce");
     expect(parsed.ahoraFueraDeHorario).toBe(true);

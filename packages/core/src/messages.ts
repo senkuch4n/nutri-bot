@@ -1,4 +1,5 @@
 import { formatDate, formatDateTime, formatPrice, formatTime } from "./format";
+import { PAYMENT_METHODS } from "./payment-methods";
 
 export const MENU = `¡Hola! 👋 Soy el asistente de turnos. ¿Qué necesitás?
 
@@ -142,7 +143,8 @@ export function pricesMessage(serviceLines: string, insurances?: string | null):
   const insuranceLine = items.length
     ? `\n\n🏥 Obras sociales:\n${items.map((i) => `• ${i}`).join("\n")}`
     : "";
-  return `💲 *Precios*\n\n${serviceLines}${insuranceLine}\n\nEscribí *menú* para volver.`;
+  const paymentLine = `\n\n💳 Medios de pago:\n${PAYMENT_METHODS.map((method) => `• ${method}`).join("\n")}`;
+  return `💲 *Precios*\n\n${serviceLines}${insuranceLine}${paymentLine}\n\nEscribí *menú* para volver.`;
 }
 
 export function confirmAttendanceRequest(params: { serviceName: string; startsAt: Date; tz: string }): string {
