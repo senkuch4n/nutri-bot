@@ -7,6 +7,8 @@ import { X } from "lucide-react"
 
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
+import { ModalScrim } from "@/components/primitives/modal-scrim"
+import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
 
@@ -56,21 +58,6 @@ const DialogOverlay = React.forwardRef<
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
-/** Scrim del 30 % que hace fundido (§12 "dim to focus"). Interno: siempre dentro de AnimatePresence. */
-function AnimatedScrim({ className }: { className?: string }) {
-  return (
-    <DialogPrimitive.Overlay forceMount asChild>
-      <m.div
-        className={cn("fixed inset-0 z-50 bg-scrim", className)}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={fades.scrim}
-      />
-    </DialogPrimitive.Overlay>
-  )
-}
-
 /** X de cierre estilo "xmark.circle": 30 px visibles, 44 px de objetivo en táctil. */
 const closeButtonClass =
   "absolute right-3 top-3 grid size-[1.875rem] place-items-center rounded-full bg-secondary text-muted-foreground press touch-target hover:bg-fill-hover pressed:bg-fill-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none"
@@ -87,7 +74,7 @@ function CloseX() {
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, style, ...props }, ref) => {
+>(({ className, children, style, onCloseAutoFocus, ...props }, ref) => {
   const open = React.useContext(DialogOpenContext)
   const content = useExitSnapshot(children, open)
   const reduced = useReducedMotionConfig()
@@ -97,13 +84,20 @@ const DialogContent = React.forwardRef<
     <AnimatePresence>
       {open ? (
         <DialogPrimitive.Portal forceMount>
-          <AnimatedScrim />
-          {/* Centrado sin translate (Motion escribe `transform`): el clic afuera cae en el scrim. */}
+          <ModalScrim overlay={<DialogPrimitive.Overlay forceMount className="fixed inset-0 z-50" />} />
+          {/* Centrado sin translate (Motion escribe `transform`): el clic afuera cae en el Overlay. */}
           <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center p-4">
-            <DialogPrimitive.Content asChild ref={ref} {...props} forceMount>
+            <DialogPrimitive.Content
+              asChild
+              ref={ref}
+              {...props}
+              onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus)}
+              forceMount
+            >
               <m.div
                 className={cn(
-                  "pointer-events-auto relative grid max-h-[90dvh] w-full max-w-lg gap-4 overflow-y-auto overscroll-contain rounded-2xl bg-background p-6 text-foreground shadow-modal outline-none",
+                  // Durante la salida (data-state=closed) el contenido ya no recibe punteros.
+                  "pointer-events-auto relative grid max-h-[90dvh] w-full max-w-lg gap-4 overflow-y-auto overscroll-contain rounded-2xl bg-background p-6 text-foreground shadow-modal outline-none data-[state=closed]:pointer-events-none",
                   className
                 )}
                 style={style}

@@ -18,6 +18,8 @@ import { closeButtonClass } from "@/components/primitives/dialog"
 import { useDismissDrag } from "@/components/primitives/use-dismiss-drag"
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
+import { ModalScrim } from "@/components/primitives/modal-scrim"
+import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
 
@@ -118,7 +120,7 @@ SheetContent.displayName = SheetPrimitive.Content.displayName
 const SheetPanel = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   Omit<SheetContentProps, "side" | "forceMount"> & { side: Side }
->(({ side, className, children, style, dismissOnDrag = true, ...props }, forwardedRef) => {
+>(({ side, className, children, style, dismissOnDrag = true, onCloseAutoFocus, ...props }, forwardedRef) => {
   const { setOpen, modal } = React.useContext(SheetContext)
   const reduced = Boolean(useReducedMotionConfig())
   const [isPresent, safeToRemove] = usePresence()
@@ -201,13 +203,26 @@ const SheetPanel = React.forwardRef<
   return (
     <>
       {modal ? (
-        <SheetPrimitive.Overlay forceMount asChild>
-          <m.div className="fixed inset-0 z-50 bg-scrim" style={{ opacity: scrimOpacity }} />
-        </SheetPrimitive.Overlay>
+        <ModalScrim
+          opacity={scrimOpacity}
+          overlay={<SheetPrimitive.Overlay forceMount className="fixed inset-0 z-50" />}
+        />
       ) : null}
-      <SheetPrimitive.Content asChild ref={setRefs} {...props} forceMount>
+      <SheetPrimitive.Content
+        asChild
+        ref={setRefs}
+        {...props}
+        onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus)}
+        forceMount
+      >
         <m.div
-          className={cn(sheetVariants({ side }), modal ? "shadow-modal" : "shadow-float", className)}
+          className={cn(
+            sheetVariants({ side }),
+            modal ? "shadow-modal" : "shadow-float",
+            // Durante la salida el panel ya no recibe punteros (review HU-017a, punto 2).
+            "data-[state=closed]:pointer-events-none",
+            className
+          )}
           style={{ ...style, ...dragStyle, ...(horizontal ? { x: translate } : { y: translate }), opacity }}
           {...handlers}
         >

@@ -7,6 +7,7 @@ import { AnimatePresence, m, useReducedMotionConfig } from "motion/react"
 
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
+import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
 
@@ -52,7 +53,7 @@ function DropdownMenuSub({
 }
 
 const menuSurface =
-  "material-float z-50 min-w-[12rem] overflow-y-auto overflow-x-hidden rounded-lg p-1.5 text-popover-foreground outline-none"
+  "material-float z-50 min-w-[12rem] overflow-y-auto overflow-x-hidden rounded-lg p-1.5 text-popover-foreground outline-none data-[state=closed]:pointer-events-none"
 
 const itemBase =
   "relative flex h-8 cursor-default select-none items-center gap-2.5 rounded-md px-2.5 text-callout outline-none transition-colors duration-hover focus:bg-overlay-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-40 [@media(pointer:coarse)]:h-11 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
@@ -125,7 +126,7 @@ DropdownMenuSubContent.displayName =
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 4, children, style, ...props }, ref) => {
+>(({ className, sideOffset = 4, children, style, onCloseAutoFocus, ...props }, ref) => {
   const open = React.useContext(MenuOpenContext)
   const content = useExitSnapshot(children, open)
   const motionProps = useMenuMotion()
@@ -133,7 +134,14 @@ const DropdownMenuContent = React.forwardRef<
     <AnimatePresence>
       {open ? (
         <DropdownMenuPrimitive.Portal forceMount>
-          <DropdownMenuPrimitive.Content asChild ref={ref} sideOffset={sideOffset} {...props} forceMount>
+          <DropdownMenuPrimitive.Content
+            asChild
+            ref={ref}
+            sideOffset={sideOffset}
+            {...props}
+            onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus)}
+            forceMount
+          >
             <m.div
               className={cn(menuSurface, "max-h-[var(--radix-dropdown-menu-content-available-height)]", className)}
               style={{ transformOrigin: "var(--radix-dropdown-menu-content-transform-origin)", ...style }}

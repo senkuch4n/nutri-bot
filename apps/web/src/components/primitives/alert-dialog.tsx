@@ -7,6 +7,8 @@ import { AnimatePresence, m, useReducedMotionConfig } from "motion/react"
 import { buttonVariants } from "@/components/primitives/button"
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
+import { ModalScrim } from "@/components/primitives/modal-scrim"
+import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
 
@@ -55,7 +57,7 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, children, style, ...props }, ref) => {
+>(({ className, children, style, onCloseAutoFocus, ...props }, ref) => {
   const open = React.useContext(AlertDialogOpenContext)
   const content = useExitSnapshot(children, open)
   const reduced = useReducedMotionConfig()
@@ -65,20 +67,18 @@ const AlertDialogContent = React.forwardRef<
     <AnimatePresence>
       {open ? (
         <AlertDialogPrimitive.Portal forceMount>
-          <AlertDialogPrimitive.Overlay forceMount asChild>
-            <m.div
-              className="fixed inset-0 z-50 bg-scrim"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={fades.scrim}
-            />
-          </AlertDialogPrimitive.Overlay>
+          <ModalScrim overlay={<AlertDialogPrimitive.Overlay forceMount className="fixed inset-0 z-50" />} />
           <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center p-4">
-            <AlertDialogPrimitive.Content asChild ref={ref} {...props} forceMount>
+            <AlertDialogPrimitive.Content
+              asChild
+              ref={ref}
+              {...props}
+              onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus)}
+              forceMount
+            >
               <m.div
                 className={cn(
-                  "pointer-events-auto grid w-full max-w-[22.5rem] gap-4 rounded-2xl bg-background p-5 text-center text-foreground shadow-modal outline-none",
+                  "pointer-events-auto grid w-full max-w-[22.5rem] gap-4 rounded-2xl bg-background p-5 text-center text-foreground shadow-modal outline-none data-[state=closed]:pointer-events-none",
                   className
                 )}
                 style={style}

@@ -6,6 +6,7 @@ import { AnimatePresence, m, useReducedMotionConfig } from "motion/react"
 
 import { fades, springs } from "@/lib/motion"
 import { useControllableState } from "@/lib/use-controllable-state"
+import { preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { useExitSnapshot } from "@/lib/use-exit-snapshot"
 import { cn } from "@/lib/utils"
 
@@ -39,7 +40,7 @@ const PopoverAnchor = PopoverPrimitive.Anchor
 const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({ className, align = "center", sideOffset = 4, children, style, ...props }, ref) => {
+>(({ className, align = "center", sideOffset = 4, children, style, onCloseAutoFocus, ...props }, ref) => {
   const open = React.useContext(PopoverOpenContext)
   const content = useExitSnapshot(children, open)
   const reduced = useReducedMotionConfig()
@@ -49,10 +50,18 @@ const PopoverContent = React.forwardRef<
     <AnimatePresence>
       {open ? (
         <PopoverPrimitive.Portal forceMount>
-          <PopoverPrimitive.Content asChild ref={ref} align={align} sideOffset={sideOffset} {...props} forceMount>
+          <PopoverPrimitive.Content
+            asChild
+            ref={ref}
+            align={align}
+            sideOffset={sideOffset}
+            {...props}
+            onCloseAutoFocus={preserveUserFocusOnClose(onCloseAutoFocus)}
+            forceMount
+          >
             <m.div
               className={cn(
-                "material-float z-50 w-72 rounded-lg p-4 text-popover-foreground outline-none",
+                "material-float z-50 w-72 rounded-lg p-4 text-popover-foreground outline-none data-[state=closed]:pointer-events-none",
                 className
               )}
               style={{ transformOrigin: "var(--radix-popover-content-transform-origin)", ...style }}
