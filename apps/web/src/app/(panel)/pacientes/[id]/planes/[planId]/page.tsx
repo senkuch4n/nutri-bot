@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@nutri-bot/db";
-import { getPlan, listFoods } from "@nutri-bot/db/domain";
-import { computeAgeYears, computePlanMicronutrients } from "@nutri-bot/core";
+import { getPlan, getPlanConsultationId, getPlanTarget, listFoods } from "@nutri-bot/db/domain";
+import { computeAgeYears, computePlanMicronutrients, formatInTimeZone } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { formatDateTime } from "@nutri-bot/core";
 import { Card, PageHeader } from "@/components/ui";
-import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
-import { toMealView, toMicronutrientItems, toPlanTotals } from "@/lib/meal-view";
+import { initialDayFor } from "@/components/weekly-menu/day-param";
+import type { PlanTargetView } from "@/components/weekly-menu/day-target-strip";
+import { toMealView, toMicronutrientItems } from "@/lib/meal-view";
 import { PlanMicronutrientsSection } from "@/components/plan-micronutrients";
 import { PlanMetaForm } from "./plan-meta-form";
 import { PlanPdfActions } from "./plan-pdf-actions";
@@ -26,14 +27,18 @@ const fmtKg = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 });
 
 export default async function PlanDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; planId: string }>;
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id, planId } = await params;
-  const [plan, foods, pro] = await Promise.all([
+  const query = (await searchParams) ?? {};
+  const [plan, foods, pro, planTarget] = await Promise.all([
     getPlan(planId),
     listFoods({ activeOnly: true, source: "SARA2" }),
     getProfessional(),
+    getPlanTarget(planId),
   ]);
   if (!plan || plan.patientId !== id) notFound();
 
@@ -45,8 +50,23 @@ export default async function PlanDetailPage({
     }),
   ]);
   const meals = toMealView(plan.meals);
-  // HU-018b: plan no semanal → el mismo total de siempre; semanal → promedio diario de la semana.
-  const { totals, label: totalsLabel } = toPlanTotals(meals);
+  // HU-018b (D7): objetivo = prescripción de la consulta que indicó el plan, o la más reciente.
+  const target: PlanTargetView | null = planTarget
+    ? {
+        kcal: planTarget.kcal,
+        protein: planTarget.protein,
+        carbs: planTarget.carbs,
+        fat: planTarget.fat,
+        sourceLabel: `Objetivo: consulta del ${formatInTimeZone(planTarget.consultedAt, pro.timezone, "dd/MM/yyyy")}`,
+      }
+    : null;
+  // D11: sin objetivo, el aviso lleva a la consulta del plan o, si no tiene, a la pestaña Consultas.
+  const planConsultationId = target ? null : await getPlanConsultationId(plan.id);
+  const targetMissingHref = target
+    ? null
+    : planConsultationId
+      ? `/pacientes/${id}/consultas/${planConsultationId}`
+      : `/pacientes/${id}?tab=consultas`;
   const at = new Date();
   const micronutrients = computePlanMicronutrients(
     toMicronutrientItems(plan.meals), patient, at, pro.timezone,
@@ -71,11 +91,6 @@ export default async function PlanDetailPage({
         action={<DeletePlanButton planId={plan.id} patientId={id} />}
       />
 
-      {/* Totales del plan: quedan a la vista mientras se editan las comidas. */}
-      <div className="sticky top-14 z-10 -mx-6 mb-6 bg-background px-6 py-3 lg:top-0 lg:-mx-10 lg:px-10">
-        <MacroTotals totals={totals} label={totalsLabel} />
-      </div>
-
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
         <div className="space-y-6">
           {/* HU-018b: la IA corre si el plan no tiene ítems (las comidas por defecto están vacías). */}
@@ -95,6 +110,10 @@ export default async function PlanDetailPage({
             addItemAction={addPlanMealItemAction}
             deleteItemAction={deletePlanMealItemAction}
             showMacros
+            kind="plan"
+            target={target}
+            targetMissingHref={targetMissingHref}
+            initialDay={initialDayFor(query.dia, plan.meals)}
           />
           <PlanMicronutrientsSection result={micronutrients} />
         </div>

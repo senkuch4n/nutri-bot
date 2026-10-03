@@ -165,7 +165,18 @@ export async function generateAiPlanAction(
 
   // HU-018b (D2): recién con la propuesta validada se reemplazan las comidas vacías del plan
   // (las por defecto), así un error de la IA no deja el plan sin comidas.
-  for (const meal of plan.meals) await deleteMeal(meal.id);
+  // 018b-2 (revisión de 018b-1): la IA tarda segundos y la profesional pudo cargar algo mientras
+  // tanto. Se relee el plan justo antes de borrar y solo se borran comidas que siguen vacías; si ya
+  // hay ítems, no se toca nada.
+  const fresh = await getPlan(planId);
+  if (!fresh) return { ok: false, error: "Plan no encontrado" };
+  if (fresh.meals.some((meal) => meal.items.length > 0)) {
+    return {
+      ok: false,
+      error: "Este plan ya tiene comidas cargadas. Generá la propuesta en un plan vacío.",
+    };
+  }
+  for (const meal of fresh.meals) await deleteMeal(meal.id);
 
   let mealOrder = 0;
   for (const meal of proposal) {

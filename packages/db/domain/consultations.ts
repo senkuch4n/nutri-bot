@@ -20,6 +20,7 @@ import {
   type Service,
 } from "../index";
 import { getProfessional } from "./availability";
+import { createDefaultWeeklyMeals } from "./weeklyMenu";
 
 // La consulta como entidad central (HU-003). Web la usa hoy; el bot no, pero cualquier camino
 // futuro que cree o toque consultas tiene que pasar por acá para respetar las mismas reglas.
@@ -180,6 +181,8 @@ export async function createPlanForConsultation(params: { consultationId: string
         status: "DRAFT",
       },
     });
+    // HU-018b: el plan nuevo trae Desayuno…Cena "Cambia cada día" y Colaciones con opciones.
+    await createDefaultWeeklyMeals(tx, "plan", plan.id);
     await tx.consultation.update({ where: { id: consultation.id }, data: { planId: plan.id } });
     return plan;
   });

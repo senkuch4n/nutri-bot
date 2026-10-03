@@ -26,7 +26,9 @@ import {
   setMealOptions,
 } from "./weeklyMenu";
 import { addMeal, addMealItem, getPlanTarget } from "./nutritionPlans";
-import { addTemplateMealItem, applyTemplateToPatient } from "./planTemplates";
+import { addTemplateMealItem, applyTemplateToPatient, createTemplate } from "./planTemplates";
+import { createPlan } from "./nutritionPlans";
+import { createPlanForConsultation } from "./consultations";
 
 const p = () => mocks.prisma;
 const item = (id: string, weekday: string | null, order = 0, extra: Record<string, unknown> = {}) => ({
@@ -289,5 +291,46 @@ describe("nutritionPlans / planTemplates", () => {
     expect(created.map((m: any) => [m.name, m.mode, m.isOptions])).toEqual([["Desayuno", "PER_DAY", false], ["Colaciones", "EVERY_DAY", true]]);
     expect(created[0].items.create[0].weekday).toBe("TUE");
     expect(created[1].items.create[0].weekday).toBeNull();
+    // Copia exacta: aplicar una plantilla no agrega las comidas por defecto (12-D4).
+    expect(p().planMeal.createMany).not.toHaveBeenCalled();
+  });
+});
+
+// 018b-2 (E1): plan, plantilla y plan de consulta nuevos traen DEFAULT_WEEKLY_MEALS.
+const DEFAULTS = [
+  ["Desayuno", 0, "PER_DAY", false], ["Almuerzo", 1, "PER_DAY", false], ["Merienda", 2, "PER_DAY", false],
+  ["Cena", 3, "PER_DAY", false], ["Colaciones", 4, "EVERY_DAY", true],
+];
+const defaultsOf = (d: ReturnType<typeof delegate>, ownerKey: string, ownerId: string) =>
+  createdRows(d).map((r: any) => { expect(r[ownerKey]).toBe(ownerId); return [r.name, r.order, r.mode, r.isOptions]; });
+
+describe("comidas por defecto (018b-2)", () => {
+  it("createPlan crea el plan DRAFT y las 5 comidas en la misma transacción", async () => {
+    p().nutritionPlan.create.mockResolvedValue({ id: "plan9" });
+    const plan = await createPlan("pat1", { title: "Plan de octubre" });
+    expect(plan).toEqual({ id: "plan9" });
+    expect(p().$transaction).toHaveBeenCalledTimes(1);
+    expect(p().nutritionPlan.create).toHaveBeenCalledWith({ data: { patientId: "pat1", title: "Plan de octubre", status: "DRAFT" } });
+    expect(defaultsOf(p().planMeal, "planId", "plan9")).toEqual(DEFAULTS);
+  });
+
+  it("createTemplate crea la plantilla con las mismas 5 comidas", async () => {
+    mocks.prisma.planTemplate = { create: vi.fn().mockResolvedValue({ id: "tpl9" }) };
+    const template = await createTemplate({ title: "Semanal", notes: null });
+    expect(template).toEqual({ id: "tpl9" });
+    expect(p().$transaction).toHaveBeenCalledTimes(1);
+    expect(defaultsOf(p().templateMeal, "templateId", "tpl9")).toEqual(DEFAULTS);
+    expect(p().planMeal.createMany).not.toHaveBeenCalled();
+  });
+
+  it("createPlanForConsultation crea las 5 comidas y vincula el plan a la consulta", async () => {
+    mocks.prisma.professional = { findUnique: vi.fn().mockResolvedValue({ id: 1, timezone: "America/Argentina/Buenos_Aires" }) };
+    p().consultation.findUniqueOrThrow = vi.fn().mockResolvedValue({ id: "c1", patientId: "pat1", consultedAt: new Date("2026-09-12T15:00:00Z") });
+    p().nutritionPlan.create.mockResolvedValue({ id: "plan10" });
+    const plan = await createPlanForConsultation({ consultationId: "c1" });
+    expect(plan).toEqual({ id: "plan10" });
+    expect(p().nutritionPlan.create.mock.calls[0][0].data).toMatchObject({ patientId: "pat1", title: "Plan del 12/09/2026", status: "DRAFT" });
+    expect(defaultsOf(p().planMeal, "planId", "plan10")).toEqual(DEFAULTS);
+    expect(p().consultation.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { planId: "plan10" } });
   });
 });

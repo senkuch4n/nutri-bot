@@ -54,6 +54,7 @@ describe("design-tokens: contraste", () => {
       ...chartPalette.study,
       ...Object.values(chartPalette.metric),
       ...Object.values(chartPalette.tissue),
+      ...Object.values(chartPalette.macro),
     ];
     for (const c of all) expect(contrastRatio(c, "#FFFFFF")).toBeGreaterThanOrEqual(3);
   });

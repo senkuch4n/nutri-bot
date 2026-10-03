@@ -1,5 +1,5 @@
 import { prisma, type MealMode, type PlanStatus, type Weekday } from "../index";
-import { assertWeekdayMatchesMeal, resolveNewMealMode } from "./weeklyMenu";
+import { assertWeekdayMatchesMeal, createDefaultWeeklyMeals, resolveNewMealMode } from "./weeklyMenu";
 
 const mealInclude = {
   orderBy: { order: "asc" as const },
@@ -29,8 +29,13 @@ export function getPlan(planId: string) {
   });
 }
 
+/** HU-018b: crea el plan DRAFT con las comidas por defecto (DEFAULT_WEEKLY_MEALS), en una transacción. */
 export function createPlan(patientId: string, data: { title: string; notes?: string | null }) {
-  return prisma.nutritionPlan.create({ data: { patientId, ...data, status: "DRAFT" } });
+  return prisma.$transaction(async (tx) => {
+    const plan = await tx.nutritionPlan.create({ data: { patientId, ...data, status: "DRAFT" } });
+    await createDefaultWeeklyMeals(tx, "plan", plan.id);
+    return plan;
+  });
 }
 
 export function updatePlan(

@@ -4,26 +4,24 @@
   "intentos_revision": 0,
   "hu": "docs/hu-plan-recetas-buscador.md",
   "sdd": "Refactorizaciones/menu-semanal.md",
-  "rama": "feat/hu-018-plan-recetas-buscador",
+  "rama": "feat/hu-018b2-editor-semanal",
   "origen": "Partición de HU-018",
   "slug": "menu-semanal",
   "titulo": "Menú semanal: comidas por día (Lun–Dom), opciones, copiar/repetir días, franja del día + promedio semanal, migración sin pérdida, plantillas, portal y PDF mínimo por día",
-  "estado": "arquitectura_lista",
+  "estado": "aprobada",
   "notas": "Primera de la HU-018. Zona de imleticio (editor de planes/plantillas, portal, PDF): la hace senkuch4n avisándole; Leo revisa el PR y su HU-015 se construye encima.",
   "skills_architect": [
     "migracion-prisma"
   ],
-  "entrega_actual": "018b-2 (editor semanal)",
   "modelo": "opus",
   "skills": [
-    "migracion-prisma",
     "apple-design",
-    "web-design-guidelines",
-    "ui-ux-pro-max"
+    "ui-ux-pro-max",
+    "web-design-guidelines"
   ],
   "modelo_reviewer": "opus",
   "entregas": {
-    "018b-1": "aprobada (2026-10-03, PR a develop)",
-    "018b-2": "pendiente: rama nueva desde develop cuando 018b-1 esté mergeado"
+    "018b-1": "aprobada y mergeada (PR #21)",
+    "018b-2": "aprobada (2026-10-03, PR a develop)"
   }
 }

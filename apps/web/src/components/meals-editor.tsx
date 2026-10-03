@@ -1,12 +1,34 @@
-import { Plus, UtensilsCrossed } from "lucide-react";
-import { formatMacroAmount, formatMacrosLine, type AtwaterBreakdown, type MealMode, type Weekday } from "@nutri-bot/core";
-import { Card, EmptyState, Field, Input, Quantity, Textarea } from "@/components/ui";
-import { DeleteMealButton } from "@/components/delete-meal-button";
+"use client";
+
+import { useEffect, useState } from "react";
+import { Copy, Plus, UtensilsCrossed } from "lucide-react";
+import {
+  WEEKDAY_LABELS,
+  computeWeeklyTotals,
+  formatMacroAmount,
+  formatMacrosLine,
+  itemsForDay,
+  mealTotalForDay,
+  type AtwaterBreakdown,
+  type Macros,
+  type MealMode,
+  type Weekday,
+} from "@nutri-bot/core";
+import { Alert, Badge, Button, Card, EmptyState, Field, Input, Quantity, Textarea } from "@/components/ui";
 import { NumberInput } from "@/components/number-input";
 import { SubmitButton } from "@/components/submit-button";
 import { FoodCatalogProvider, type FoodOption } from "@/components/food-catalog";
 import { FoodPicker } from "@/components/food-picker";
 import { KcalBreakdownPopover } from "@/components/kcal-breakdown-popover";
+import { copyDayAction } from "@/app/(panel)/weekly-menu-actions";
+import { CopyDayDialog } from "@/components/weekly-menu/copy-day-dialog";
+import { DaySelector, type DaySelection } from "@/components/weekly-menu/day-selector";
+import { DayTargetStrip, type PlanTargetView } from "@/components/weekly-menu/day-target-strip";
+import { toDayParam } from "@/components/weekly-menu/day-param";
+import { copiedDayMessage, itemLabel } from "@/components/weekly-menu/labels";
+import { MealCardMenu } from "@/components/weekly-menu/meal-card-menu";
+import { useMenuUndo } from "@/components/weekly-menu/use-menu-undo";
+import { WeeklyOverview } from "@/components/weekly-menu/weekly-overview";
 
 export type { FoodOption } from "@/components/food-catalog";
 
@@ -44,8 +66,28 @@ export interface MealsEditorProps {
   addItemAction: (formData: FormData) => Promise<void>;
   deleteItemAction: (formData: FormData) => Promise<void>;
   showMacros?: boolean;
+  /** HU-018b: dueño de las comidas, para las actions del menú semanal. */
+  kind: "plan" | "template";
+  /** HU-018b: objetivo del paciente (D7). null en plantillas o sin prescripción. */
+  target: PlanTargetView | null;
+  /** HU-018b: solo planes sin objetivo, link de "Calculá el requerimiento…". */
+  targetMissingHref: string | null;
+  /** HU-018b: día con el que abre (lo calcula la página con `?dia=`). */
+  initialDay: DaySelection;
 }
 
+const ZERO: Macros = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+const integer = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/**
+ * Editor de comidas de un plan o una plantilla. HU-018b: menú semanal con pestañas por día, vista
+ * "Semana", franja del día contra el objetivo y el menú "⋯" de cada comida. Un plan sin comidas
+ * "Cambia cada día" (los previos a la HU) se ve como antes: una sola lista, sin pestañas.
+ */
 export function MealsEditor({
   ownerId,
   ownerField,
@@ -56,10 +98,72 @@ export function MealsEditor({
   addItemAction,
   deleteItemAction,
   showMacros = false,
+  kind,
+  target,
+  targetMissingHref,
+  initialDay,
 }: MealsEditorProps) {
+  const weekly = computeWeeklyTotals(meals);
+  const [selected, setSelected] = useState<DaySelection>(initialDay);
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  const [copyVariant, setCopyVariant] = useState<"to-others" | "into-day" | null>(null);
+  const { pending: copying, run } = useMenuUndo(kind, ownerId);
+
+  // Un plan semanal siempre tiene un día elegido; en uno no semanal el día no aplica.
+  const day: Weekday | null = weekly.isWeekly && selected !== "WEEK" ? selected : null;
+  const showWeek = weekly.isWeekly && selected === "WEEK";
+
+  // El día vive en la URL (?dia=) para que una recarga o una revalidación lo conserven.
+  useEffect(() => {
+    if (!weekly.isWeekly) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("dia") === toDayParam(selected)) return;
+    url.searchParams.set("dia", toDayParam(selected));
+    window.history.replaceState(null, "", url.toString());
+  }, [selected, weekly.isWeekly]);
+
+  // Desde la vista Semana: después de cambiar de día, llevar la comida a la vista.
+  useEffect(() => {
+    if (!scrollTo) return;
+    document.getElementById(`meal-${scrollTo}`)?.scrollIntoView({
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+      block: "start",
+    });
+    setScrollTo(null);
+  }, [scrollTo, selected]);
+
+  const strip = !weekly.isWeekly
+    ? { title: "Total del día", totals: weekly.days.MON.macros, average: null }
+    : showWeek
+      ? { title: "Promedio diario de la semana", totals: weekly.weeklyAverage ?? ZERO, average: null }
+      : {
+          title: WEEKDAY_LABELS[day!].long,
+          totals: weekly.days[day!].macros,
+          average: weekly.weeklyAverage?.kcal ?? null,
+        };
+
+  const dayLoaded = day ? weekly.loadedDays.includes(day) : false;
+  const otherLoadedDays = day ? weekly.loadedDays.filter((d) => d !== day) : [];
+
   return (
     <FoodCatalogProvider foods={foods}>
       <div className="space-y-6">
+        {weekly.isWeekly ? (
+          <DaySelector value={selected} onValueChange={setSelected} loadedDays={weekly.loadedDays} />
+        ) : null}
+
+        {meals.length > 0 ? (
+          <div className="material-bar z-10 -mx-2 rounded-xl px-2 py-3 md:sticky md:top-14 lg:top-0">
+            <DayTargetStrip
+              title={strip.title}
+              totals={strip.totals}
+              target={target}
+              targetMissingHref={targetMissingHref}
+              weeklyAverageKcal={strip.average}
+            />
+          </div>
+        ) : null}
+
         {meals.length === 0 ? (
           <Card>
             <EmptyState
@@ -70,124 +174,270 @@ export function MealsEditor({
           </Card>
         ) : null}
 
-        {meals.map((meal) => (
-          <Card
-            key={meal.id}
-            title={meal.name}
-            description={
-              meal.items.length === 0
-                ? "Sin alimentos todavía"
-                : `${meal.items.length} alimento${meal.items.length === 1 ? "" : "s"}`
-            }
-            actions={
-              <DeleteMealButton
-                mealId={meal.id}
-                mealName={meal.name}
-                itemCount={meal.items.length}
-                ownerField={ownerField}
-                ownerId={ownerId}
-                deleteMealAction={deleteMealAction}
-              />
-            }
-          >
-            {meal.items.length > 0 ? (
-              <ul className="divide-y rounded-md border">
-                {meal.items.map((item) => {
-                  const itemName = item.foodName ?? item.customLabel ?? "(sin descripción)";
-                  return (
-                    <li key={item.id} className="flex items-start justify-between gap-4 px-4 py-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="break-words text-sm font-medium">{itemName}</p>
-                        {item.notes ? <p className="mt-0.5 text-xs text-muted-foreground">{item.notes}</p> : null}
-                        {showMacros && item.macros ? (
-                          <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-                            {item.kcalBreakdown ? (
-                              <>
-                                <KcalBreakdownPopover
-                                  kcal={item.macros.kcal}
-                                  breakdown={item.kcalBreakdown}
-                                  itemName={itemName}
-                                />
-                                {` · P ${formatMacroAmount(item.macros.protein, "g")} · C ${formatMacroAmount(
-                                  item.macros.carbs,
-                                  "g",
-                                )} · G ${formatMacroAmount(item.macros.fat, "g")} · Fibra ${formatMacroAmount(
-                                  item.macros.fiber,
-                                  "g",
-                                )}`}
-                              </>
-                            ) : (
-                              formatMacrosLine(item.macros, { includeFiber: true })
-                            )}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {item.quantityGrams ? (
-                          <Quantity value={Number(item.quantityGrams)} unit="g" decimals={1} className="text-sm" />
-                        ) : null}
-                        <form action={deleteItemAction}>
-                          <input type="hidden" name="itemId" value={item.id} />
-                          <input type="hidden" name={ownerField} value={ownerId} />
-                          <SubmitButton
-                            variant="ghost"
-                            size="sm"
-                            pendingLabel="Quitando…"
-                            aria-label={`Quitar ${itemName} de ${meal.name}`}
-                          >
-                            Quitar
-                          </SubmitButton>
-                        </form>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
+        {showWeek ? (
+          <WeeklyOverview
+            meals={meals}
+            target={target}
+            onSelect={(nextDay, mealId) => {
+              setSelected(nextDay);
+              setScrollTo(mealId);
+            }}
+          />
+        ) : null}
 
-            <form action={addItemAction} className="mt-6 space-y-4 border-t pt-6">
-              <h3 className="text-sm font-semibold">Agregar alimento</h3>
-              <input type="hidden" name="mealId" value={meal.id} />
+        {day && dayLoaded ? (
+          <Button variant="secondary" size="lg" loading={copying} onClick={() => setCopyVariant("to-others")}>
+            {copying ? null : <Copy aria-hidden />}
+            Copiar este día a…
+          </Button>
+        ) : null}
+
+        {day && !dayLoaded ? (
+          <Alert tone="info">
+            <p>El {WEEKDAY_LABELS[day].lower} todavía no tiene comidas.</p>
+            {otherLoadedDays.length > 0 ? (
+              <Button
+                variant="secondary"
+                size="lg"
+                className="mt-3"
+                loading={copying}
+                onClick={() => setCopyVariant("into-day")}
+              >
+                {copying ? null : <Copy aria-hidden />}
+                Copiar otro día acá
+              </Button>
+            ) : null}
+          </Alert>
+        ) : null}
+
+        {!showWeek
+          ? meals.map((meal, index) => (
+              <MealCard
+                key={meal.id}
+                meal={meal}
+                day={day}
+                weeklyPlan={weekly.isWeekly}
+                isFirst={index === 0}
+                isLast={index === meals.length - 1}
+                kind={kind}
+                ownerId={ownerId}
+                ownerField={ownerField}
+                addItemAction={addItemAction}
+                deleteItemAction={deleteItemAction}
+                deleteMealAction={deleteMealAction}
+                showMacros={showMacros}
+                onModeChanged={(mode) => {
+                  // Un plan que se vuelve semanal desde la lista abre en el lunes, no en "Semana".
+                  if (!weekly.isWeekly && mode === "PER_DAY") setSelected("MON");
+                }}
+              />
+            ))
+          : null}
+
+        {!showWeek ? (
+          <Card>
+            <form action={addMealAction} className="flex flex-wrap items-end gap-3">
               <input type="hidden" name={ownerField} value={ownerId} />
-              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
-                <Field label="Alimento">
-                  <FoodPicker name="foodId" />
-                </Field>
-                <Field label="Cantidad">
-                  <NumberInput unit="g" name="quantityGrams" min="0" step="1" />
+              <div className="w-full sm:w-72">
+                <Field label="Nueva comida">
+                  <Input name="name" required placeholder="Ej: Desayuno" />
                 </Field>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Descripción libre" hint="Solo si no elegiste un alimento.">
-                  <Input name="customLabel" />
-                </Field>
-                <Field label="Nota" hint="Opcional">
-                  <Textarea name="notes" rows={1} className="min-h-9" />
-                </Field>
-              </div>
-              <SubmitButton variant="secondary" size="sm" pendingLabel="Agregando…">
+              <SubmitButton variant="secondary" pendingLabel="Agregando…">
                 <Plus aria-hidden />
-                Agregar
+                Agregar comida
               </SubmitButton>
             </form>
           </Card>
-        ))}
+        ) : null}
 
-        <Card>
-          <form action={addMealAction} className="flex flex-wrap items-end gap-3">
-            <input type="hidden" name={ownerField} value={ownerId} />
-            <div className="w-full sm:w-72">
-              <Field label="Nueva comida">
-                <Input name="name" required placeholder="Ej: Desayuno" />
-              </Field>
-            </div>
-            <SubmitButton variant="secondary" pendingLabel="Agregando…">
-              <Plus aria-hidden />
-              Agregar comida
-            </SubmitButton>
-          </form>
-        </Card>
+        {day ? (
+          <CopyDayDialog
+            open={copyVariant !== null}
+            onOpenChange={(open) => {
+              if (!open) setCopyVariant(null);
+            }}
+            variant={copyVariant ?? "to-others"}
+            day={day}
+            loadedDays={weekly.loadedDays}
+            onConfirm={(from, to) =>
+              run(() => copyDayAction({ kind, ownerId, from, to }), copiedDayMessage(from, to))
+            }
+          />
+        ) : null}
       </div>
     </FoodCatalogProvider>
+  );
+}
+
+function MealTotal({ meal, day }: { meal: MealView; day: Weekday }) {
+  const total = mealTotalForDay(meal, day);
+  if (total.itemCount === 0) return null;
+  if (meal.isOptions) {
+    if (!total.optionsRange) return null;
+    return (
+      <p className="text-right text-callout font-semibold tabular-nums">
+        Opciones: {integer.format(total.optionsRange.minKcal)} a {integer.format(total.optionsRange.maxKcal)} kcal
+        <span className="block text-footnote font-normal text-muted-foreground">
+          Suma al día el promedio: {integer.format(total.macros.kcal)} kcal
+        </span>
+      </p>
+    );
+  }
+  return <p className="text-right text-callout font-semibold tabular-nums">{integer.format(total.macros.kcal)} kcal</p>;
+}
+
+function MealCard({
+  meal,
+  day,
+  weeklyPlan,
+  isFirst,
+  isLast,
+  kind,
+  ownerId,
+  ownerField,
+  addItemAction,
+  deleteItemAction,
+  deleteMealAction,
+  showMacros,
+  onModeChanged,
+}: {
+  meal: MealView;
+  /** Día de la pestaña (plan semanal) o null (lista de un plan no semanal). */
+  day: Weekday | null;
+  weeklyPlan: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+  kind: "plan" | "template";
+  ownerId: string;
+  ownerField: "planId" | "templateId";
+  addItemAction: (formData: FormData) => Promise<void>;
+  deleteItemAction: (formData: FormData) => Promise<void>;
+  deleteMealAction: (formData: FormData) => Promise<void>;
+  showMacros: boolean;
+  onModeChanged: (mode: MealMode) => void;
+}) {
+  const perDay = meal.mode === "PER_DAY" && day !== null;
+  const items = day ? itemsForDay(meal, day) : meal.items;
+  const title = perDay ? `${meal.name} · ${WEEKDAY_LABELS[day!].long}` : meal.name;
+  // "" = todos los días. Una comida "Cambia cada día" manda el día de la pestaña (pendiente de 018b-1).
+  const weekday = perDay ? day! : "";
+  const where = perDay ? `${meal.name} del ${WEEKDAY_LABELS[day!].lower}` : meal.name;
+
+  return (
+    <section id={`meal-${meal.id}`} aria-label={title} className="scroll-mt-6 md:scroll-mt-72 lg:scroll-mt-60">
+      <Card>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="break-words text-headline">{title}</h2>
+            {(weeklyPlan && meal.mode === "EVERY_DAY") || meal.isOptions ? (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {weeklyPlan && meal.mode === "EVERY_DAY" ? <Badge>Todos los días</Badge> : null}
+                {meal.isOptions ? <Badge tone="info">Elegí una</Badge> : null}
+              </div>
+            ) : null}
+            {weeklyPlan && meal.mode === "EVERY_DAY" ? (
+              <p className="mt-1 text-footnote text-muted-foreground">Los cambios valen para todos los días</p>
+            ) : null}
+            {items.length === 0 ? (
+              <p className="mt-1 text-subheadline text-muted-foreground">Sin alimentos todavía</p>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-start gap-1">
+            {showMacros ? <MealTotal meal={meal} day={day ?? "MON"} /> : null}
+            <MealCardMenu
+              kind={kind}
+              ownerId={ownerId}
+              ownerField={ownerField}
+              meal={meal}
+              day={day}
+              isFirst={isFirst}
+              isLast={isLast}
+              deleteMealAction={deleteMealAction}
+              onModeChanged={onModeChanged}
+            />
+          </div>
+        </div>
+
+        {items.length > 0 ? (
+          <ul className="divide-y rounded-md border">
+            {items.map((item) => {
+              const itemName = itemLabel(item);
+              return (
+                <li key={item.id} className="flex items-start justify-between gap-4 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-medium">{itemName}</p>
+                    {item.notes ? <p className="mt-0.5 text-xs text-muted-foreground">{item.notes}</p> : null}
+                    {showMacros && item.macros ? (
+                      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+                        {item.kcalBreakdown ? (
+                          <>
+                            <KcalBreakdownPopover kcal={item.macros.kcal} breakdown={item.kcalBreakdown} itemName={itemName} />
+                            {` · P ${formatMacroAmount(item.macros.protein, "g")} · C ${formatMacroAmount(
+                              item.macros.carbs,
+                              "g",
+                            )} · G ${formatMacroAmount(item.macros.fat, "g")} · Fibra ${formatMacroAmount(
+                              item.macros.fiber,
+                              "g",
+                            )}`}
+                          </>
+                        ) : (
+                          formatMacrosLine(item.macros, { includeFiber: true })
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {item.quantityGrams ? (
+                      <Quantity value={Number(item.quantityGrams)} unit="g" decimals={1} className="text-sm" />
+                    ) : null}
+                    <form action={deleteItemAction}>
+                      <input type="hidden" name="itemId" value={item.id} />
+                      <input type="hidden" name={ownerField} value={ownerId} />
+                      <SubmitButton
+                        variant="ghost"
+                        size="sm"
+                        pendingLabel="Quitando…"
+                        aria-label={`Quitar ${itemName} de ${where}`}
+                      >
+                        Quitar
+                      </SubmitButton>
+                    </form>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+
+        {/* key por día: al cambiar de pestaña el formulario empieza vacío (no se arrastra lo tipeado). */}
+        <form key={`${meal.id}-${weekday}`} action={addItemAction} className="mt-6 space-y-4 border-t pt-6">
+          <h3 className="text-sm font-semibold">Agregar alimento</h3>
+          <input type="hidden" name="mealId" value={meal.id} />
+          <input type="hidden" name={ownerField} value={ownerId} />
+          <input type="hidden" name="weekday" value={weekday} />
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
+            <Field label="Alimento">
+              <FoodPicker name="foodId" />
+            </Field>
+            <Field label="Cantidad">
+              <NumberInput unit="g" name="quantityGrams" min="0" step="1" />
+            </Field>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Descripción libre" hint="Solo si no elegiste un alimento.">
+              <Input name="customLabel" />
+            </Field>
+            <Field label="Nota" hint="Opcional">
+              <Textarea name="notes" rows={1} className="min-h-9" />
+            </Field>
+          </div>
+          <SubmitButton variant="secondary" size="lg" pendingLabel="Agregando…">
+            <Plus aria-hidden />
+            {perDay ? `Agregar al ${WEEKDAY_LABELS[day!].lower}` : "Agregar"}
+          </SubmitButton>
+        </form>
+      </Card>
+    </section>
   );
 }

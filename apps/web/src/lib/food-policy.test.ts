@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   applyTemplateToPatient: vi.fn(), completion: vi.fn(),
   // HU-018b: el orden del ítem sale de nextItemOrder y la IA reemplaza las comidas vacías.
   nextItemOrder: vi.fn().mockResolvedValue(0), deleteMeal: vi.fn(),
+  // HU-018b-2: la página del plan carga el objetivo (D7) y la consulta del aviso (D11).
+  getPlanTarget: vi.fn().mockResolvedValue(null), getPlanConsultationId: vi.fn().mockResolvedValue(null),
   patient: vi.fn(), evolution: vi.fn(), clinical: vi.fn(),
 }));
 

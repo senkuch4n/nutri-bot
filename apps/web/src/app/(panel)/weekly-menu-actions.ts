@@ -1,0 +1,135 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { prisma } from "@nutri-bot/db";
+import {
+  copyDay,
+  moveMeal,
+  renameMeal,
+  repeatMealInAllDays,
+  restoreMealSnapshots,
+  setMealMode,
+  setMealOptions,
+  type MealOwnerKind,
+  type MealSnapshot,
+} from "@nutri-bot/db/domain";
+import { WEEKDAYS, type Weekday } from "@nutri-bot/core";
+
+// HU-018b (SDD 6.1): acciones del editor semanal, compartidas por planes y plantillas. Cada una
+// valida con zod, llama a domain (que verifica que la comida sea del dueño), revalida y devuelve un
+// resultado para `useTransition`. Las que cambian contenido devuelven la foto anterior (`undo`).
+
+export type MenuActionResult = { ok: true; undo?: MealSnapshot[] } | { ok: false; error: string };
+
+const GENERIC_ERROR = "No se pudo guardar. Probá de nuevo.";
+
+const kindSchema = z.enum(["plan", "template"]);
+const idSchema = z.string().min(1).max(64);
+const weekdaySchema = z.enum(WEEKDAYS);
+const modeSchema = z.enum(["EVERY_DAY", "PER_DAY"]);
+
+const ownerSchema = z.object({ kind: kindSchema, ownerId: idSchema });
+
+async function revalidateOwner(kind: MealOwnerKind, ownerId: string): Promise<void> {
+  if (kind === "template") {
+    revalidatePath(`/plantillas/${ownerId}`);
+    return;
+  }
+  const plan = await prisma.nutritionPlan.findUnique({ where: { id: ownerId }, select: { patientId: true } });
+  if (!plan) return;
+  revalidatePath(`/pacientes/${plan.patientId}`);
+  revalidatePath(`/pacientes/${plan.patientId}/planes/${ownerId}`);
+}
+
+/** Valida, ejecuta y revalida. Cualquier error (zod o de domain) → mensaje genérico para el toast. */
+async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>>(
+  schema: S,
+  input: unknown,
+  fn: (data: z.infer<S>) => Promise<MealSnapshot[] | void>,
+): Promise<MenuActionResult> {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: GENERIC_ERROR };
+  try {
+    const undo = await fn(parsed.data);
+    await revalidateOwner(parsed.data.kind, parsed.data.ownerId);
+    return undo ? { ok: true, undo } : { ok: true };
+  } catch (err) {
+    console.error("[weekly-menu]", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+const setModeSchema = ownerSchema.extend({
+  mealId: idSchema,
+  mode: modeSchema,
+  keepWeekday: weekdaySchema.optional(),
+});
+export async function setMealModeAction(input: {
+  kind: MealOwnerKind; ownerId: string; mealId: string; mode: "EVERY_DAY" | "PER_DAY"; keepWeekday?: Weekday;
+}): Promise<MenuActionResult> {
+  return run(setModeSchema, input, async (d) => [
+    await setMealMode(d.kind, d.ownerId, d.mealId, { mode: d.mode, keepWeekday: d.keepWeekday }),
+  ]);
+}
+
+const setOptionsSchema = ownerSchema.extend({ mealId: idSchema, isOptions: z.boolean() });
+export async function setMealOptionsAction(input: {
+  kind: MealOwnerKind; ownerId: string; mealId: string; isOptions: boolean;
+}): Promise<MenuActionResult> {
+  return run(setOptionsSchema, input, (d) => setMealOptions(d.kind, d.ownerId, d.mealId, d.isOptions));
+}
+
+const copyDaySchema = ownerSchema.extend({ from: weekdaySchema, to: z.array(weekdaySchema).min(1).max(6) });
+export async function copyDayAction(input: {
+  kind: MealOwnerKind; ownerId: string; from: Weekday; to: Weekday[];
+}): Promise<MenuActionResult> {
+  return run(copyDaySchema, input, (d) => copyDay(d.kind, d.ownerId, { from: d.from, to: d.to }));
+}
+
+const repeatSchema = ownerSchema.extend({ mealId: idSchema, from: weekdaySchema });
+export async function repeatMealAction(input: {
+  kind: MealOwnerKind; ownerId: string; mealId: string; from: Weekday;
+}): Promise<MenuActionResult> {
+  return run(repeatSchema, input, async (d) => [await repeatMealInAllDays(d.kind, d.ownerId, d.mealId, d.from)]);
+}
+
+// Foto para Deshacer: viene del cliente, así que se valida estricta (SDD 6.1). La pertenencia de cada
+// comida al dueño la verifica restoreMealSnapshots antes de escribir.
+const snapshotItemSchema = z.object({
+  foodId: idSchema.nullable(),
+  customLabel: z.string().max(4000).nullable(),
+  quantityGrams: z.number().min(0).max(99999).nullable(),
+  notes: z.string().max(4000).nullable(),
+  order: z.number().int().min(0).max(10000),
+  weekday: weekdaySchema.nullable(),
+}).strict();
+const snapshotSchema = z.object({
+  mealId: idSchema,
+  mode: modeSchema,
+  isOptions: z.boolean(),
+  items: z.array(snapshotItemSchema).max(400),
+}).strict();
+const restoreSchema = ownerSchema.extend({
+  snapshots: z.array(snapshotSchema).min(1).max(20)
+    .refine((list) => list.reduce((n, s) => n + s.items.length, 0) <= 400, "Demasiados ítems"),
+});
+export async function restoreMealsAction(input: {
+  kind: MealOwnerKind; ownerId: string; snapshots: MealSnapshot[];
+}): Promise<MenuActionResult> {
+  return run(restoreSchema, input, (d) => restoreMealSnapshots(d.kind, d.ownerId, d.snapshots));
+}
+
+const renameSchema = ownerSchema.extend({ mealId: idSchema, name: z.string().trim().min(1).max(60) });
+export async function renameMealAction(input: {
+  kind: MealOwnerKind; ownerId: string; mealId: string; name: string;
+}): Promise<MenuActionResult> {
+  return run(renameSchema, input, (d) => renameMeal(d.kind, d.ownerId, d.mealId, d.name));
+}
+
+const moveSchema = ownerSchema.extend({ mealId: idSchema, direction: z.enum(["up", "down"]) });
+export async function moveMealAction(input: {
+  kind: MealOwnerKind; ownerId: string; mealId: string; direction: "up" | "down";
+}): Promise<MenuActionResult> {
+  return run(moveSchema, input, (d) => moveMeal(d.kind, d.ownerId, d.mealId, d.direction));
+}
