@@ -112,6 +112,11 @@ Si todavía querés un turno, escribí *turno* para volver a intentar.`;
 
 export const SLOT_TAKEN = `Ese horario se acaba de ocupar. Escribí *menú* para elegir otro.`;
 
+/** HU-013: el horario se ocupó pero el paciente ya había dejado motivo: se conserva y se ofrecen otros días. */
+export function slotTakenKeepReason(dayOptions: { label: string }[]): string {
+  return `Ese horario se acaba de ocupar. 😕 Tu motivo quedó guardado, no hace falta que lo vuelvas a escribir.\n\n${askDay(dayOptions)}`;
+}
+
 export function askWhichToCancel(
   appts: { serviceName: string; startsAt: Date }[],
   tz: string,

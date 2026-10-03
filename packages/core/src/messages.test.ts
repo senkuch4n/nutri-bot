@@ -92,3 +92,12 @@ describe("textos nuevos de HU-013", () => {
     expect(messages.BOOKING_REASON_TOO_LONG).toContain("resumís");
   });
 });
+
+describe("slotTakenKeepReason (HU-013)", () => {
+  it("avisa que se ocupó, que el motivo quedó guardado y ofrece los días", () => {
+    const out = messages.slotTakenKeepReason([{ label: "Lunes 12/10" }, { label: "Martes 13/10" }]);
+    expect(out.startsWith("Ese horario se acaba de ocupar.")).toBe(true);
+    expect(out).toContain("Tu motivo quedó guardado");
+    expect(out).toContain(messages.askDay([{ label: "Lunes 12/10" }, { label: "Martes 13/10" }]));
+  });
+});

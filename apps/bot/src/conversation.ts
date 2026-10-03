@@ -435,7 +435,12 @@ async function handleBookDay(jid: string, text: string, ctx: Ctx, send: Send): P
     return;
   }
   const iso = slots.map((s) => s.toISOString());
-  await save(jid, STEP.BOOK_SLOT, { serviceId: ctx.serviceId, dayKey: day.dayKey, slots: iso });
+  await save(jid, STEP.BOOK_SLOT, {
+    serviceId: ctx.serviceId,
+    dayKey: day.dayKey,
+    slots: iso,
+    ...(ctx.reason ? { reason: ctx.reason } : {}), // HU-013: motivo conservado tras SLOT_TAKEN
+  });
   const pro = await getProfessional();
   await send(messages.askSlot(slots, pro.timezone));
 }
@@ -448,6 +453,8 @@ async function handleBookSlot(jid: string, text: string, ctx: Ctx, send: Send): 
     return;
   }
   const startsAt = slots[idx]!;
+  // HU-013: el motivo ya lo dejó antes de que se ocupara el horario anterior: no se pide de nuevo.
+  if (ctx.reason) return sendBookingSummary(jid, { serviceId: ctx.serviceId, startsAt, reason: ctx.reason }, send);
   const service = await prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } });
   // HU-013: si el servicio pide motivo, se pide antes del resumen.
   if (service.asksReason) {
@@ -562,6 +569,15 @@ async function handleBookConfirm(
     }
   } catch (err) {
     if (err instanceof SlotUnavailableError) {
+      // HU-013: si dejó motivo, se le ofrecen otros días del mismo servicio sin perderlo.
+      if (ctx.reason) {
+        const days = await nextAvailableDays(ctx.serviceId);
+        if (days.length > 0) {
+          await save(jid, STEP.BOOK_DAY, { serviceId: ctx.serviceId, days, reason: ctx.reason });
+          await send(messages.slotTakenKeepReason(days));
+          return;
+        }
+      }
       await send(messages.SLOT_TAKEN);
     } else {
       logger.error({ err }, "Error creando turno desde el bot");

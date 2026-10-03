@@ -34,9 +34,9 @@ import { messages, reasonForAlert } from "@nutri-bot/core";
 import { handleIncoming, handleIncomingMedia, type ConversationOptions } from "../src/conversation";
 import { listActiveServices } from "../src/booking";
 
-const ALERT_JID = "5490000000099@s.whatsapp.net";
-const JID_ANA = "5490000000031@s.whatsapp.net";
-const JID_BRUNO = "5490000000032@s.whatsapp.net";
+const ALERT_JID = "5490000013099@s.whatsapp.net"; // jids propios: no se comparten con otros scripts
+const JID_ANA = "5490000013031@s.whatsapp.net";
+const JID_BRUNO = "5490000013032@s.whatsapp.net";
 const TEST_JIDS = [JID_ANA, JID_BRUNO];
 const S_CON_NAME = "HU013 Con motivo (TEST)";
 const S_SIN_NAME = "HU013 Sin motivo (TEST)";
@@ -181,11 +181,11 @@ async function main(): Promise<void> {
   await preCleanup();
 
   const ana = await prisma.patient.create({
-    data: { whatsappJid: JID_ANA, phone: "5490000000031", name: "Ana (TEST)" },
+    data: { whatsappJid: JID_ANA, phone: "5490000013031", name: "Ana (TEST)" },
   });
   patientIds.push(ana.id);
   const bruno = await prisma.patient.create({
-    data: { whatsappJid: JID_BRUNO, phone: "5490000000032", name: "Bruno (TEST)" },
+    data: { whatsappJid: JID_BRUNO, phone: "5490000013032", name: "Bruno (TEST)" },
   });
   patientIds.push(bruno.id);
 
@@ -419,7 +419,7 @@ async function main(): Promise<void> {
     await takeNewAlerts();
   });
 
-  await scenario("11. Horario ocupado mientras escribe el motivo → SLOT_TAKEN", async () => {
+  await scenario("11. Horario ocupado mientras escribe el motivo → otros días, el motivo se conserva", async () => {
     await reachReasonStep(JID_ANA, sCon.id);
     const { ctx } = await stateOf(JID_ANA);
     const startsAt = new Date(ctx.startsAt as string);
@@ -436,7 +436,18 @@ async function main(): Promise<void> {
     const before = (await apptsOf(ana.id)).length;
     const r = await say(JID_ANA, "Control");
     assert.ok(r[0]!.includes("📝 Motivo: Control"));
-    assert.deepEqual(await say(JID_ANA, "sí"), [messages.SLOT_TAKEN]);
+    const taken = await say(JID_ANA, "sí");
+    assert.equal(taken.length, 1);
+    assert.ok(taken[0]!.startsWith("Ese horario se acaba de ocupar."));
+    assert.ok(taken[0]!.includes("Tu motivo quedó guardado"));
+    assert.ok(taken[0]!.includes("¿Qué día preferís?"));
+    assert.equal((await stateOf(JID_ANA)).step, "BOOK_DAY");
+    assert.equal((await stateOf(JID_ANA)).ctx.reason, "Control");
+    await say(JID_ANA, "1"); // día
+    const summary = await say(JID_ANA, "1"); // horario: va directo al resumen, sin volver a pedir motivo
+    assert.equal(summary.length, 1);
+    assert.ok(summary[0]!.includes("📝 Motivo: Control"));
+    assert.deepEqual(await say(JID_ANA, "no"), [NO_BOOKING]);
     assert.equal((await apptsOf(ana.id)).length, before);
     assert.equal((await takeNewAlerts()).length, 0);
   });
