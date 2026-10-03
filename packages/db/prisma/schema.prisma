@@ -598,6 +598,25 @@ enum PlanStatus {
   ARCHIVED
 }
 
+/// HU-018b: modo de una comida del plan o de la plantilla.
+/// EVERY_DAY = "Igual todos los días" (ítems con weekday = null).
+/// PER_DAY   = "Cambia cada día" (cada ítem tiene su weekday).
+enum MealMode {
+  EVERY_DAY
+  PER_DAY
+}
+
+/// HU-018b: día de la semana de un ítem en una comida PER_DAY. Semana fija lunes a domingo.
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
 model NutritionPlan {
   id             String            @id @default(cuid())
   patient        Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -624,6 +643,10 @@ model PlanMeal {
   planId String
   name   String
   order  Int
+  /// HU-018b. Default EVERY_DAY: los planes previos a la HU quedan "Igual todos los días".
+  mode      MealMode @default(EVERY_DAY)
+  /// HU-018b: "Opciones (elige una)". Solo con mode = EVERY_DAY (lo garantiza el dominio).
+  isOptions Boolean  @default(false)
   items  PlanMealItem[]
 
   @@index([planId, order])
@@ -639,6 +662,9 @@ model PlanMealItem {
   quantityGrams Decimal?  @db.Decimal(7, 2)
   notes         String?
   order         Int
+  /// HU-018b: null = todos los días (comida EVERY_DAY). En comidas PER_DAY, siempre con valor.
+  /// `order` es el orden dentro de (mealId, weekday).
+  weekday       Weekday?
 
   @@index([mealId, order])
 }
@@ -658,6 +684,10 @@ model TemplateMeal {
   templateId String
   name       String
   order      Int
+  /// HU-018b. Default EVERY_DAY: los planes previos a la HU quedan "Igual todos los días".
+  mode       MealMode @default(EVERY_DAY)
+  /// HU-018b: "Opciones (elige una)". Solo con mode = EVERY_DAY (lo garantiza el dominio).
+  isOptions  Boolean  @default(false)
   items      TemplateMealItem[]
 
   @@index([templateId, order])
@@ -673,6 +703,9 @@ model TemplateMealItem {
   quantityGrams Decimal?     @db.Decimal(7, 2)
   notes         String?
   order         Int
+  /// HU-018b: null = todos los días (comida EVERY_DAY). En comidas PER_DAY, siempre con valor.
+  /// `order` es el orden dentro de (mealId, weekday).
+  weekday       Weekday?
 
   @@index([mealId, order])
 }
