@@ -54,8 +54,48 @@
   }
 
   .panel-sidebar-header {
-    padding: 0 8px;
+    padding: 0 4px;
     border-bottom: 0;
+  }
+
+  .panel-sidebar-toggle {
+    right: 4px;
+  }
+
+  .panel-sidebar-toggle-logo,
+  .panel-sidebar-toggle-icon {
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .panel-sidebar-toggle-logo {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle {
+    right: auto;
+    left: 4px;
+    background: transparent;
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle-logo {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle-icon {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle:is(:hover, :focus-visible) .panel-sidebar-toggle-logo {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle:is(:hover, :focus-visible) .panel-sidebar-toggle-icon {
+    opacity: 1;
+    transform: scale(1);
   }
 
   .panel-sidebar nav a,
@@ -115,6 +155,11 @@
   .panel-sidebar,
   .panel-sidebar .panel-sidebar-label,
   .panel-sidebar .panel-sidebar-detail {
+    transition: none;
+  }
+
+  .panel-sidebar-toggle-logo,
+  .panel-sidebar-toggle-icon {
     transition: none;
   }
 }

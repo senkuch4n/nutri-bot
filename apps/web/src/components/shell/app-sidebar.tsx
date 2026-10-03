@@ -87,7 +87,7 @@ export function AppSidebar({
   }
 
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
-  const toggleLabel = collapsed ? "Expandir barra lateral" : "Contraer barra lateral";
+  const toggleLabel = collapsed ? "Abrir sidebar" : "Cerrar sidebar";
 
   return (
     <div className="panel-sidebar-layout flex min-h-screen bg-background">
@@ -99,7 +99,14 @@ export function AppSidebar({
           className="panel-sidebar group/sidebar flex flex-col border-r bg-sidebar"
           data-collapsed={collapsed}
         >
-          <div className="panel-sidebar-header flex h-14 shrink-0 items-center gap-2 border-b">
+          <div className="panel-sidebar-header relative flex h-14 shrink-0 items-center gap-2 border-b">
+            <div
+              className="panel-sidebar-detail min-w-0 flex-1 pr-10"
+              aria-hidden={collapsed}
+              inert={collapsed}
+            >
+              <Wordmark subtitle={professionalName} className="w-full [&>span]:flex-1" />
+            </div>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -111,20 +118,16 @@ export function AppSidebar({
                   aria-label={toggleLabel}
                   aria-expanded={!collapsed}
                   aria-controls={sidebarId}
-                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  className="panel-sidebar-toggle group/toggle absolute h-10 w-10 shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
                 >
-                  <ToggleIcon aria-hidden />
+                  <span className="panel-sidebar-toggle-logo pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden>
+                    <Wordmark compact />
+                  </span>
+                  <ToggleIcon className="panel-sidebar-toggle-icon relative" aria-hidden />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right">{toggleLabel}</TooltipContent>
             </Tooltip>
-            <div
-              className="panel-sidebar-detail min-w-0 flex-1"
-              aria-hidden={collapsed}
-              inert={collapsed}
-            >
-              <Wordmark subtitle={professionalName} />
-            </div>
           </div>
 
           <SidebarContent collapsed={collapsed} email={email} botStatus={botStatus} account={account} badges={badges} />
