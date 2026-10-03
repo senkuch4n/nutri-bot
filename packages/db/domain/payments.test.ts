@@ -177,7 +177,7 @@ describe("payment reconciliation without database or network", () => {
     expect(mocks.search.mock.calls[0]?.[0].options.external_reference).toBe("internal");
     expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
     expect(payment.status).toBe("APPROVED");
-    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: { status: "CONFIRMED", needsGoogleSync: true } });
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: expect.any(Date) } });
     expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
     await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" });
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
