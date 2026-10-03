@@ -24,6 +24,13 @@ model Professional {
   title              String?
   /// HU-007 (D1): matrícula, p. ej. "M.P. 852". null = no cargada (aviso en la página del informe).
   licenseNumber      String?
+  /// HU-016 (D1, D2): imagen de la firma manuscrita (PNG o JPG, máx. 1 MB, validada por magic bytes
+  /// en el servidor). null = sin firma. DATO SENSIBLE (D10): nunca se lee en getProfessional()
+  /// (ver PROFESSIONAL_SELECT); solo la vista previa del panel y la generación de PDF la seleccionan.
+  signatureData      Bytes?
+  /// HU-016: "image/png" o "image/jpeg", detectado por magic bytes (no el MIME que manda el navegador).
+  /// Se escribe y se borra junto con signatureData.
+  signatureMimeType  String?
   /// HU-014 (D4): SIN USO. Los recordatorios se configuran por servicio (`Service.reminders`).
   /// Solo lo leyó el backfill de la migración `service_reminders`. Se borra en otra migración.
   reminderLeadHours  Int      @default(24)

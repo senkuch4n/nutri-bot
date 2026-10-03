@@ -19,6 +19,7 @@ async function main() {
       currency,
       reminderLeadHours,
     },
+    select: { id: true },
   });
 
   await prisma.botStatus.upsert({

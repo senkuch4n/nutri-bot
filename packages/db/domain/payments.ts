@@ -2,6 +2,7 @@ import { computeDepositAmount, mapMercadoPagoStatus, messages } from "@nutri-bot
 import { MercadoPagoConfig, Payment as MercadoPagoPayment, Preference } from "mercadopago";
 import { prisma, type Payment as DbPayment } from "../index";
 import { getProfessional } from "./availability";
+import { PROFESSIONAL_SELECT } from "./professionalSelect";
 
 function mercadoPagoClient(): MercadoPagoConfig {
   const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
@@ -120,7 +121,7 @@ export async function syncMercadoPagoPayment(paymentId: string, expectedInternal
     if (status !== "APPROVED" || wasApproved || updated.kind !== "DEPOSIT") return;
     if (existing.appointment.status !== "AWAITING_PAYMENT") return;
 
-    const pro = await tx.professional.findUniqueOrThrow({ where: { id: 1 } });
+    const pro = await tx.professional.findUniqueOrThrow({ where: { id: 1 }, select: PROFESSIONAL_SELECT });
     const appointment = existing.appointment;
     const confirmed = await tx.appointment.updateMany({
       where: { id: appointment.id, status: "AWAITING_PAYMENT" },

@@ -1,5 +1,5 @@
 import { QrCode } from "lucide-react";
-import { professionalSignature } from "@nutri-bot/core";
+import { PROFESSIONAL_TEXT, professionalLogoNotice, professionalSignatureLines } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { signIn } from "@/auth";
 import { Separator } from "@/components/primitives/separator";
@@ -19,6 +19,7 @@ import { AfterHoursForm } from "./after-hours-form";
 import { BotAiForm } from "./bot-ai-form";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 import { LogoForm } from "./logo-form";
+import { SignatureForm } from "./signature-form";
 import { disconnectGoogleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -120,20 +121,20 @@ export default async function AjustesPage() {
 
   const pdf = (
     <div className="space-y-6">
-      <Card
-        title="Firma de los informes"
-        description="Tu título y matrícula aparecen al pie del informe antropométrico."
-      >
-        <SettingsSignatureFields
-          defaults={defaults}
-          signaturePreview={professionalSignature({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}
+      <Card title="Firma y matrícula" description={PROFESSIONAL_TEXT.cardDescription}>
+        <SettingsSignatureFields defaults={defaults} />
+        <Separator className="my-4" />
+        <SignatureForm
+          hasSignature={pro.signatureMimeType !== null}
+          version={pro.updatedAt.getTime()}
+          lines={professionalSignatureLines({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}
         />
       </Card>
-      <Card
-        title="Logo"
-        description="Este logo aparece en los PDFs de los planes alimentarios que le enviás a tus pacientes."
-      >
-        <LogoForm hasLogo={Boolean(logo?.logoData)} />
+      <Card title="Logo" description={PROFESSIONAL_TEXT.logoDescription}>
+        <LogoForm
+          hasLogo={Boolean(logo?.logoData)}
+          unsupportedNotice={logo?.logoData ? professionalLogoNotice(pro.logoMimeType) : null}
+        />
       </Card>
       <Card title="Estilo del PDF" description="Color y pie de página del PDF del plan.">
         <SettingsPdfFields defaults={defaults} />

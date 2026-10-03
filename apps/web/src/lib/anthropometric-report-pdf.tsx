@@ -12,7 +12,14 @@ import {
   type IsakReportTextKey,
   type IsakReportTexts,
 } from "@nutri-bot/core";
-import { PdfFooter, PdfHeader, buildCommonStyles, pdfLogoSrc } from "@/lib/pdf-common";
+import {
+  PdfFooter,
+  PdfHeader,
+  PdfSignatureBlock,
+  buildCommonStyles,
+  pdfLogoSrc,
+  type PdfSignatureInput,
+} from "@/lib/pdf-common";
 import { DEFAULT_PDF_ACCENT, pdfColors } from "@/lib/pdf-theme";
 import { BodyFigure, CompositionBarsChart, GirthBarsChart, SomatochartPdf } from "@/lib/report-pdf-charts";
 
@@ -25,6 +32,8 @@ export interface ReportPdfInput {
   signature: string;
   logo: { data: Buffer; mimeType: string } | null;
   accentColor: string | null;
+  /** HU-016 (D7): bloque de firma después de Conclusiones. */
+  signatureBlock: PdfSignatureInput;
 }
 
 /** Ancho útil de A4 (595,28 pt) con los márgenes de 44 pt. */
@@ -287,6 +296,7 @@ export function AnthropometricReportDocument({ input }: { input: ReportPdfInput 
           <Text orphans={2} widows={2}>
             {texts.conclusions}
           </Text>
+          <PdfSignatureBlock signature={input.signatureBlock} />
         </View>
 
         <PdfFooter

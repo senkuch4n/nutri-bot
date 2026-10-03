@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
-import { formatDateTime, formatPrice, messages } from "@nutri-bot/core";
+import { formatDateTime, formatPrice, messages, professionalSignature } from "@nutri-bot/core";
 import { Badge, ButtonLink, Card, Quantity } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
@@ -37,7 +37,10 @@ export default async function PortalHomePage() {
         <h1 className="text-balance text-2xl font-semibold tracking-tight">
           Hola{patient.name ? `, ${patient.name}` : ""} 👋
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">Este es tu espacio con {pro.name}.</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Este es tu espacio con{" "}
+          {professionalSignature({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}.
+        </p>
       </header>
 
       <div className="space-y-4">

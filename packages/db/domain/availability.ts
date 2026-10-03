@@ -7,6 +7,7 @@ import {
   type Rule,
 } from "@nutri-bot/core";
 import { prisma, type Prisma } from "../index";
+import { PROFESSIONAL_SELECT } from "./professionalSelect";
 
 type AvailabilityClient = Pick<Prisma.TransactionClient, "professional" | "service" | "availabilityRule" | "availabilityException" | "appointment">;
 
@@ -15,7 +16,7 @@ function minLeadMinutes(): number {
 }
 
 export async function getProfessional() {
-  const pro = await prisma.professional.findUnique({ where: { id: 1 } });
+  const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: PROFESSIONAL_SELECT });
   if (!pro) {
     throw new Error("Falta la ficha de la profesional. Ejecutá `npm run db:seed`.");
   }
@@ -100,7 +101,7 @@ export async function checkSlotAvailable(params: {
 }, db: AvailabilityClient = prisma): Promise<boolean> {
   const now = params.now ?? new Date();
   const [pro, service] = await Promise.all([
-    db.professional.findUniqueOrThrow({ where: { id: 1 } }),
+    db.professional.findUniqueOrThrow({ where: { id: 1 }, select: PROFESSIONAL_SELECT }),
     db.service.findUnique({ where: { id: params.serviceId } }),
   ]);
   if (!service || !service.active) return false;

@@ -4,12 +4,12 @@ import { Toaster } from "@/components/primitives/sonner";
 import { PortalNav } from "@/components/shell/portal-nav";
 import { Button } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
-import { getProfessionalDisplayName } from "@/lib/shell";
+import { getProfessionalPortalName } from "@/lib/shell";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const [patient, professionalName] = await Promise.all([
     getPortalPatient(),
-    getProfessionalDisplayName(),
+    getProfessionalPortalName(),
   ]);
 
   if (!patient) {

@@ -2,18 +2,25 @@
 
 import { useActionState } from "react";
 import { Image } from "lucide-react";
-import { Button, FormError } from "@/components/ui";
+import { PROFESSIONAL_TEXT } from "@nutri-bot/core";
+import { Alert, Button, FormError } from "@/components/ui";
 import { useActionToast } from "@/lib/notify";
 import { uploadLogoAction, removeLogoAction, type SettingsState } from "./actions";
 
 const initial: SettingsState = { ok: false };
 
-export function LogoForm({ hasLogo }: { hasLogo: boolean }) {
+/**
+ * Logo de los PDF. HU-016 (sección 16, P4): solo PNG o JPG. `unsupportedNotice` != null cuando el
+ * logo guardado está en un formato que react-pdf no dibuja (p. ej. WEBP): no se borra ni se
+ * convierte; se avisa para que lo vuelva a subir.
+ */
+export function LogoForm({ hasLogo, unsupportedNotice }: { hasLogo: boolean; unsupportedNotice: string | null }) {
   const [state, action, pending] = useActionState(uploadLogoAction, initial);
   useActionToast(state, { success: "Logo actualizado" });
 
   return (
     <div className="space-y-3">
+      {unsupportedNotice ? <Alert tone="warning">{unsupportedNotice}</Alert> : null}
       <div className="flex flex-wrap items-center gap-6">
         {hasLogo ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -35,7 +42,7 @@ export function LogoForm({ hasLogo }: { hasLogo: boolean }) {
           <input
             type="file"
             name="logo"
-            accept="image/png,image/jpeg,image/webp"
+            accept="image/png,image/jpeg"
             required
             aria-label="Archivo del logo"
             className="text-sm text-muted-foreground file:mr-3 file:h-8 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-3 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent"
@@ -53,6 +60,7 @@ export function LogoForm({ hasLogo }: { hasLogo: boolean }) {
           </form>
         ) : null}
       </div>
+      <p className="text-xs text-muted-foreground">{PROFESSIONAL_TEXT.logoLimits}</p>
       <FormError message={state.error} />
     </div>
   );

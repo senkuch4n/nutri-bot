@@ -29,10 +29,14 @@ export const FONT_FAMILY = registerFonts();
 // Sin separación de sílabas: react-pdf corta palabras en español con reglas de inglés.
 Font.registerHyphenationCallback((word) => [word]);
 
-/** data: URL del logo de /ajustes, o null. */
-export function pdfLogoSrc(logo: { data: Buffer; mimeType: string } | null): string | null {
-  return logo ? `data:${logo.mimeType};base64,${logo.data.toString("base64")}` : null;
+export type PdfImage = { data: Buffer; mimeType: string };
+
+/** data: URL de una imagen guardada (logo o firma), o null. */
+export function pdfImageSrc(img: PdfImage | null): string | null {
+  return img ? `data:${img.mimeType};base64,${img.data.toString("base64")}` : null;
 }
+/** Compatibilidad: plan-pdf.tsx y el informe lo siguen importando con este nombre. */
+export const pdfLogoSrc = pdfImageSrc;
 
 // ─── Estilos comunes ───────────────────────────────────────────────────────────
 
@@ -136,6 +140,41 @@ export function PdfFooter({
         style={{ width: pageWidth, textAlign: "right" }}
         render={({ pageNumber, totalPages }) => pageLabel(pageNumber, totalPages)}
       />
+    </View>
+  );
+}
+
+// ─── Bloque de firma (HU-016, D7) ─────────────────────────────────────────────
+
+/** HU-016 (D7): datos del bloque de firma. */
+export type PdfSignatureInput = {
+  image: PdfImage | null; // null → solo línea + aclaración (D8)
+  nameLine: string; // professionalSignatureLines(...).nameLine
+  licenseLine: string | null;
+};
+
+const signatureStyles = StyleSheet.create({
+  block: { marginTop: 32, alignSelf: "flex-end", width: 180, alignItems: "center" },
+  image: { width: 180, height: 45, objectFit: "contain", marginBottom: 2 },
+  rule: { alignSelf: "stretch", borderTopWidth: 0.75, borderTopColor: pdfColors.text, marginBottom: 4 },
+  name: { fontSize: 10, fontWeight: 500, textAlign: "center", lineHeight: 1.3 },
+  license: { fontSize: 9, textAlign: "center", lineHeight: 1.3 },
+});
+
+/**
+ * Bloque de firma al final del contenido: imagen (alto máx. 45 pt, proporción), línea y aclaración
+ * en dos líneas, alineado a la derecha. wrap={false}: si no entra, pasa entero a la página siguiente.
+ * Estilos propios (no depende de buildCommonStyles), así el plan lo reusa sin cambios.
+ */
+export function PdfSignatureBlock({ signature }: { signature: PdfSignatureInput }) {
+  const src = pdfImageSrc(signature.image);
+  return (
+    <View style={signatureStyles.block} wrap={false}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image, not an <img> */}
+      {src ? <Image src={src} style={signatureStyles.image} /> : null}
+      <View style={signatureStyles.rule} />
+      <Text style={signatureStyles.name}>{signature.nameLine}</Text>
+      {signature.licenseLine ? <Text style={signatureStyles.license}>{signature.licenseLine}</Text> : null}
     </View>
   );
 }

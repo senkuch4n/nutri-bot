@@ -20,3 +20,4 @@ export * from "./isak";
 export * from "./anthropometricReports";
 export * from "./inquiries";
 export * from "./botAi";
+export * from "./professionalSelect";

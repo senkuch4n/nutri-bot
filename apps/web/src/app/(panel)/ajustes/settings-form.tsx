@@ -143,15 +143,8 @@ export function SettingsPdfFields({ defaults }: { defaults: SettingsDefaults }) 
   );
 }
 
-/** HU-007 (D1): título y matrícula para el pie del informe antropométrico. */
-export function SettingsSignatureFields({
-  defaults,
-  signaturePreview,
-}: {
-  defaults: SettingsDefaults;
-  /** Pie armado con los valores guardados (professionalSignature). */
-  signaturePreview: string;
-}) {
+/** HU-007 (D1), HU-016: título y matrícula (PDF y portal). */
+export function SettingsSignatureFields({ defaults }: { defaults: SettingsDefaults }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <Field label="Título" hint='Va antes de tu nombre. Ej: "Lic."'>
@@ -174,7 +167,6 @@ export function SettingsSignatureFields({
           defaultValue={defaults.licenseNumber}
         />
       </Field>
-      <p className="text-xs text-muted-foreground sm:col-span-2">{`Pie del informe: ${signaturePreview}`}</p>
       <SettingsSubmit />
     </div>
   );

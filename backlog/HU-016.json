@@ -1,0 +1,28 @@
+{
+  "id": "HU-016",
+  "responsable": "senkuch4n",
+  "slug": "matricula-firma",
+  "titulo": "Datos profesionales: matrícula y firma en informes, planes y portal",
+  "origen": "docs/historias-usuario-nutridesk.md — Épica 47 (EP-047)",
+  "estado": "aprobada",
+  "intentos_revision": 1,
+  "hu": "docs/hu-matricula-firma.md",
+  "sdd": "Refactorizaciones/matricula-firma.md",
+  "rama": "feat/hu-016-matricula-firma",
+  "notas": "Borrador: yo como profesional necesito cargar mi título y matrícula (\"Lic. Daiana Ponce, M.P. 852\") para poder mostrarlos en informes, planes y el portal.",
+  "notion": "https://app.notion.com/p/3ee6bad61c79810db8dfc714f3684139",
+  "skills_sdd": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "ui-styling",
+    "web-design-guidelines",
+    "ui-ux-pro-max"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-016.md",
+  "modelo_ronda2": "opus"
+}
