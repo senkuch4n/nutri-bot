@@ -360,3 +360,20 @@
 - **Pendiente aparte:** `test:booking-reason` escenario 14 falla siempre desde el PR #17 (el servicio
   de prueba con seña es inactivo y ahora se rechazan servicios inactivos).
 - **Modelos:** afinador y architect Opus; implementer Opus (2 rondas); reviewer Opus (2 rondas).
+
+## HU-017a · Rediseño Apple: fundaciones (aprobada 2026-10-03, senkuch4n)
+- **Qué:** tokens de diseño (azul `#0066CC`, Inter variable con `opsz`, radios, sombras, curvas), Motion 14 con
+  `LazyMotion`/`m.*`, primitivos rehechos (Button, Card, Dialog, AlertDialog, Sheet con arrastre para cerrar,
+  Tabs, Toaster, scrim), shell del panel y del portal (sidebar, menú táctil) y demos `/dev-diseno` y
+  `/dev-diseno-portal` (404 en producción). Las pantallas de Leo no se tocaron (solo heredan los primitivos).
+- **Peso:** `/` +38,7 KB y `/portal` +19,7 KB (presupuesto +45 KB), gracias al alias `motion/react` →
+  `framer-motion` (desvío D-4) y `framer-motion` 14.0.0 declarado en `apps/web`.
+- **Rondas:** 1ª rechazada (sheet congelado al tocar durante la entrada/salida; scrim que bloqueaba en la salida;
+  Toaster sin estilos). 2ª rechazada (dialog reabierto a mitad de la salida quedaba `inert`; el foco no volvía
+  al disparador en overlays sin `Trigger`). 3ª aprobada. Además: salida del sheet con fallback de 1 s y foco
+  fuera del panel al cerrar; reabrir justo después de Esc ya no se cierra solo.
+- **Verificación:** 1380 tests; `next build`; recorridos en Chrome en `progress/recorrido_HU-017a*.md`.
+- **Dudas no bloqueantes:** overlays con `tailwindcss-animate` sin uso, ref escrito en render en
+  `useExitSnapshot`, `Tabs` no controlado → controlado; sidebar a 1366×768 medida en 634 px (confirmar).
+- **Merge:** después del PR #7 de imleticio.
+- **Modelos:** afinador y architect Opus; implementer Opus (3 rondas); reviewer Opus (3 rondas).

@@ -63,7 +63,6 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         }}
       >
         <AlertDialogContent
-          className="max-w-md"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             cancelRef.current?.focus();
@@ -79,7 +78,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => settle(true)}
-              className={cn(destructive && buttonVariants({ variant: "destructive" }))}
+              // Rojo lleno solo acá: es la confirmación final de una acción destructiva (T13).
+              className={cn(destructive && buttonVariants({ variant: "destructive", size: "lg" }))}
             >
               {options?.confirmLabel}
             </AlertDialogAction>

@@ -4,25 +4,33 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+// HU-017a §9.1: press en pointer-down (§1), hover solo con puntero fino, objetivo táctil de 44 px.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap font-medium press touch-target focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 aria-busy:cursor-progress [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: "bg-primary text-primary-foreground hover:bg-primary-hover pressed:bg-primary-pressed",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive-hover pressed:bg-destructive-pressed",
+        "destructive-tinted":
+          "bg-destructive-muted text-destructive hover:bg-destructive-muted-hover pressed:bg-destructive-muted-pressed pressed:text-destructive-pressed",
+        tinted: "bg-primary-soft text-primary hover:bg-primary-soft-hover pressed:bg-primary-soft-pressed pressed:text-primary-vibrant",
+        secondary: "bg-secondary text-foreground hover:bg-fill-hover pressed:bg-fill-pressed",
+        outline: "border border-border bg-background text-foreground hover:bg-overlay-hover pressed:bg-overlay-pressed",
+        ghost: "text-foreground hover:bg-overlay-hover pressed:bg-overlay-pressed",
+        plain: "text-primary hover:text-primary-hover pressed:opacity-60",
+        link: "[--press-scale:1] text-primary underline-offset-4 hover:underline pressed:opacity-60",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-sm",
-        lg: "h-11 rounded-md px-5",
-        icon: "h-9 w-9",
+        default: "h-9 rounded-md px-4 text-callout font-medium",
+        sm: "h-8 rounded-md px-3 text-subheadline font-medium",
+        lg: "h-11 rounded-lg px-5 text-base font-semibold",
+        icon: "size-9 rounded-md",
+        "icon-sm": "size-8 rounded-md",
+        "icon-lg": "size-11 rounded-lg [&_svg]:size-5",
       },
     },
+    compoundVariants: [{ variant: "link", class: "h-auto px-0" }],
     defaultVariants: {
       variant: "default",
       size: "default",

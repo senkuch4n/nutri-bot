@@ -1,11 +1,14 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import {
-  ArrowLeft,
+  ArrowDownRight,
+  ArrowUpRight,
+  ChevronLeft,
   CircleAlert,
   CircleCheck,
   Info,
   LoaderCircle,
+  Minus,
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
@@ -38,7 +41,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-card text-card-foreground",
+        "rounded-xl bg-card text-card-foreground shadow-card more-contrast:border more-contrast:border-input",
         padding === "md" && "p-6",
         className,
       )}
@@ -51,8 +54,8 @@ export function Card({
           )}
         >
           <div className="min-w-0">
-            {title ? <h2 className="text-base font-semibold">{title}</h2> : null}
-            {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+            {title ? <h2 className="text-headline">{title}</h2> : null}
+            {description ? <p className="mt-1 text-subheadline text-muted-foreground">{description}</p> : null}
           </div>
           {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
         </div>
@@ -78,16 +81,16 @@ export function PageHeader({
       {back ? (
         <Link
           href={back.href}
-          className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="-ml-1 mb-3 inline-flex items-center gap-0.5 rounded-md text-callout text-primary press-none pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
+          <ChevronLeft className="size-4" strokeWidth={2} aria-hidden />
           {back.label}
         </Link>
       ) : null}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {description ? <p className="mt-2 text-sm text-muted-foreground">{description}</p> : null}
+          <h1 className="text-balance text-title-1">{title}</h1>
+          {description ? <p className="mt-1.5 text-body text-muted-foreground">{description}</p> : null}
         </div>
         {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
       </div>
@@ -96,20 +99,24 @@ export function PageHeader({
 }
 
 export function SectionLabel({ children }: { children: ReactNode }) {
-  return <h2 className="mb-4 text-base font-semibold text-foreground">{children}</h2>;
+  return <h2 className="mb-3 text-headline text-foreground">{children}</h2>;
 }
 
 // ─── Botones ───────────────────────────────────────────────────────────────────
 
-type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "link";
+type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "link" | "tinted" | "plain";
 type ButtonSize = "sm" | "md" | "lg" | "icon";
 
+// HU-017a §6.2: primary = filled tint, secondary = gray, danger = rojo suave (el rojo lleno queda
+// para la confirmación final), ghost = plain neutro, plain = texto tint, link = tint sin subrayado.
 const variantMap = {
   primary: "default",
-  secondary: "outline",
-  danger: "destructive",
+  secondary: "secondary",
+  danger: "destructive-tinted",
   ghost: "ghost",
   link: "link",
+  tinted: "tinted",
+  plain: "plain",
 } as const;
 
 const sizeMap = { sm: "sm", md: "default", lg: "lg", icon: "icon" } as const;
@@ -161,10 +168,76 @@ export function StatTile({
   children?: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border bg-card px-4 py-3">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      {value !== undefined ? <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p> : null}
+    <div className="rounded-xl bg-card px-4 py-3 shadow-card more-contrast:border more-contrast:border-input">
+      <p className="text-subheadline text-muted-foreground">{label}</p>
+      {value !== undefined ? <p className="mt-1 text-metric-md tabular-nums">{value}</p> : null}
       {children}
+    </div>
+  );
+}
+
+/**
+ * Número grande con etiqueta (HU-017a §9.4): peso, kcal, porcentajes. El color de la tendencia lo
+ * decide quien llama (`sentiment`), porque si subir es bueno o malo es una regla de dominio.
+ */
+export function Metric({
+  label,
+  value,
+  unit,
+  decimals = 1,
+  size = "md",
+  trend,
+}: {
+  label: string;
+  value: number | null | undefined;
+  unit?: string;
+  decimals?: number;
+  size?: "md" | "lg";
+  trend?: { delta: number; unit?: string; sentiment: "positive" | "negative" | "neutral"; label?: string };
+}) {
+  const fmt = (n: number) => new Intl.NumberFormat("es-AR", { maximumFractionDigits: decimals }).format(n);
+  const empty = value === null || value === undefined || Number.isNaN(value);
+  const trendMeta = trend
+    ? {
+        positive: "text-success",
+        negative: "text-destructive",
+        neutral: "text-muted-foreground",
+      }[trend.sentiment]
+    : "";
+  const TrendIcon = !trend || trend.delta === 0 ? Minus : trend.delta > 0 ? ArrowUpRight : ArrowDownRight;
+  // Signo menos tipográfico (U+2212), no guion.
+  const deltaText = trend
+    ? `${trend.delta > 0 ? "+" : trend.delta < 0 ? "\u2212" : ""}${fmt(Math.abs(trend.delta))}${trend.unit ? "\u00A0" + trend.unit : ""}`
+    : "";
+  const spoken = trend
+    ? (trend.label ??
+      (trend.delta === 0
+        ? "sin cambios"
+        : `${trend.delta > 0 ? "subió" : "bajó"} ${fmt(Math.abs(trend.delta))}${trend.unit ? " " + trend.unit : ""}`))
+    : "";
+
+  return (
+    <div>
+      <p className="text-subheadline text-muted-foreground">{label}</p>
+      <p className={cn("mt-0.5 tabular-nums", size === "lg" ? "text-metric" : "text-metric-md")}>
+        {empty ? (
+          <span className="text-tertiary">—</span>
+        ) : (
+          <>
+            {fmt(value)}
+            {unit ? (
+              <span className="text-subheadline font-medium text-muted-foreground">{"\u00A0" + unit}</span>
+            ) : null}
+          </>
+        )}
+      </p>
+      {trend ? (
+        <p className={cn("mt-0.5 inline-flex items-center gap-1 text-footnote font-medium tabular-nums", trendMeta)}>
+          <TrendIcon className="size-3.5" strokeWidth={2} aria-hidden />
+          <span aria-hidden>{deltaText}</span>
+          <span className="sr-only">{spoken}</span>
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -225,7 +298,7 @@ export function AdequacyBar({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-callout">
         <span className="font-medium">{label}</span>
         <span className="flex items-baseline gap-2 tabular-nums">
           <span>
@@ -234,7 +307,7 @@ export function AdequacyBar({
             <Quantity value={target} unit={unit} decimals={decimals} />
           </span>
           <span className="text-muted-foreground">{percent}%</span>
-          <span className={cn("text-xs font-medium", meta.text)}>{meta.label}</span>
+          <span className={cn("text-footnote font-semibold", meta.text)}>{meta.label}</span>
         </span>
       </div>
       <div
@@ -274,14 +347,14 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium">{label}</span>
+      <span className="mb-1.5 block text-subheadline font-medium text-foreground">{label}</span>
       {children}
       {error ? (
-        <span role="alert" className="mt-1 block text-xs text-destructive">
+        <span role="alert" className="mt-1.5 block text-footnote text-destructive">
           {error}
         </span>
       ) : hint ? (
-        <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
+        <span className="mt-1.5 block text-footnote text-muted-foreground">{hint}</span>
       ) : null}
     </label>
   );
@@ -290,14 +363,16 @@ export function Field({
 export function FormError({ message }: { message?: string | null }) {
   if (!message) return null;
   return (
-    <p role="alert" className="text-sm text-destructive">
+    <p role="alert" className="text-callout text-destructive">
       {message}
     </p>
   );
 }
 
+// Borde a 3:1 (1.4.11); foco = borde tint + halo. En táctil la regla global de globals.css lleva el
+// texto a 16 px (sin zoom en Safari iOS).
 export const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-callout text-foreground placeholder:text-placeholder transition-[border-color,box-shadow] duration-hover ease-out-soft focus-visible:border-ring focus-visible:shadow-focus focus-visible:outline-none aria-[invalid=true]:border-destructive disabled:cursor-not-allowed disabled:bg-secondary disabled:text-tertiary";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input {...props} className={cn(inputClass, className)} />;
@@ -331,7 +406,7 @@ export function Badge({
 }) {
   return (
     <span
-      className={cn("inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium", badgeTones[tone])}
+      className={cn("inline-flex items-center rounded-xs px-2 py-0.5 text-footnote font-semibold", badgeTones[tone])}
     >
       {children}
     </span>
@@ -339,10 +414,10 @@ export function Badge({
 }
 
 const alertTones = {
-  info: { icon: Info, className: "border-info/30 bg-info-muted text-info" },
-  warning: { icon: TriangleAlert, className: "border-warning/30 bg-warning-muted text-warning" },
-  danger: { icon: CircleAlert, className: "border-destructive/30 bg-destructive-muted text-destructive" },
-  success: { icon: CircleCheck, className: "border-success/30 bg-success-muted text-success" },
+  info: { icon: Info, className: "bg-info-muted text-info more-contrast:border-info" },
+  warning: { icon: TriangleAlert, className: "bg-warning-muted text-warning more-contrast:border-warning" },
+  danger: { icon: CircleAlert, className: "bg-destructive-muted text-destructive more-contrast:border-destructive" },
+  success: { icon: CircleCheck, className: "bg-success-muted text-success more-contrast:border-success" },
 } as const;
 
 /** Callout con ícono y título: el tono no depende solo del color. */
@@ -361,12 +436,12 @@ export function Alert({
   return (
     <div
       role={tone === "danger" ? "alert" : "status"}
-      className={cn("flex gap-3 rounded-lg border px-4 py-3 text-sm", toneClass, className)}
+      className={cn("flex gap-3 rounded-lg px-4 py-3 text-callout more-contrast:border", toneClass, className)}
     >
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
-        {title ? <p className="font-medium">{title}</p> : null}
-        {children ? <div className={cn(title && "mt-1", "text-foreground/90")}>{children}</div> : null}
+        {title ? <p className="font-semibold">{title}</p> : null}
+        {children ? <div className={cn(title && "mt-1", "text-foreground")}>{children}</div> : null}
       </div>
     </div>
   );
@@ -385,9 +460,9 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
-      {Icon ? <Icon className="mb-3 h-8 w-8 text-muted-foreground" aria-hidden /> : null}
-      <p className="text-balance text-base font-medium">{title}</p>
-      {description ? <p className="mt-1 max-w-sm text-pretty text-sm text-muted-foreground">{description}</p> : null}
+      {Icon ? <Icon className="mb-3 size-8 text-tertiary" strokeWidth={1.75} aria-hidden /> : null}
+      <p className="text-balance text-headline">{title}</p>
+      {description ? <p className="mt-1 max-w-sm text-pretty text-subheadline text-muted-foreground">{description}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );

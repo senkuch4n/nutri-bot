@@ -1,0 +1,13 @@
+{
+  "id": "HU-017d",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-apple-portal",
+  "titulo": "Rediseño Apple (4/5): portal del paciente (inicio, evolución, plan, diario; sheets arrastrables)",
+  "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
+  "estado": "no_afinada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-rediseno-apple.md",
+  "sdd": null,
+  "rama": null,
+  "notas": "Depende de HU-017a."
+}

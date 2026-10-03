@@ -1,0 +1,13 @@
+{
+  "id": "HU-017f",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-apple-modo-oscuro",
+  "titulo": "Rediseño Apple (opcional): modo oscuro según el sistema",
+  "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
+  "estado": "no_afinada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-rediseno-apple.md",
+  "sdd": null,
+  "rama": null,
+  "notas": "Depende de HU-017a–e."
+}
