@@ -156,3 +156,197 @@ Con `npm run dev` y la sesión iniciada:
 5. Al terminar, borrar el paciente de prueba desde el panel.
 
 **Pendiente para 018b-2:** el recorrido completo de 11.1 (editor por día, copiar/repetir/deshacer, vista Semana, portal con pestañas y PDF por día sobre datos reales de prueba).
+
+---
+
+## 018b-2 (editor semanal, fases E–G)
+
+**Estado: done.** Rama `feat/hu-018b2-editor-semanal`, que sale de `develop` con la 018b-1 ya mergeada (PR #21). Lo implementó Opus con los skills `apple-design`, `ui-ux-pro-max` y `web-design-guidelines`.
+- **Sin migración**: `schema.prisma` no cambió y `prisma migrate status` dice "Database schema is up to date!" (22 migraciones).
+- No se tocaron el modelo ni las operaciones de domain de la 018b-1. Solo se sumaron las comidas por defecto (E1).
+- Se aplicaron las decisiones de §15 y D2–D12 de §12.
+
+### Commits (locales, sin push)
+
+| Fase | Commit | Mensaje |
+|---|---|---|
+| E | `0738780` | HU-018b: plan nuevo con comidas por defecto y actions del editor semanal |
+| F | `122329b` | HU-018b: editor semanal (días, modos, opciones, copiar y repetir con deshacer, objetivo del día) |
+| G | HEAD de la rama (el que contiene este archivo) | HU-018b: script de flujo del menú semanal |
+
+### Archivos
+
+**Fase E: domain y actions**
+- `packages/db/domain/nutritionPlans.ts`: `createPlan` crea el plan y `createDefaultWeeklyMeals` en una sola `$transaction`.
+- `packages/db/domain/planTemplates.ts`: `createTemplate`, lo mismo (12-D4). `applyTemplateToPatient` no cambió: copia exacta, sin comidas por defecto.
+- `packages/db/domain/consultations.ts`: `createPlanForConsultation` llama a `createDefaultWeeklyMeals` dentro de su transacción.
+- `packages/db/domain/weeklyMenu.test.ts`: 3 casos nuevos (`createPlan`, `createTemplate` y `createPlanForConsultation` crean las 5 comidas en orden y con modo y opciones) y una aserción más: aplicar una plantilla no crea comidas por defecto.
+- `apps/web/src/app/(panel)/weekly-menu-actions.ts` (nuevo, 6.1): las 7 actions del contrato con zod.
+  - `restoreMealsAction` es estricto: `.strict()`, hasta 20 comidas y 400 ítems, gramos entre 0 y 99999, textos de hasta 4000.
+  - Cualquier error devuelve "No se pudo guardar. Probá de nuevo.".
+  - Revalida `/pacientes/{patientId}` y la ruta del plan, o `/plantillas/{id}` para plantillas.
+- `apps/web/src/app/(panel)/weekly-menu-actions.test.ts` (nuevo): 6 tests (undo, revalidación, errores, zod y foto estricta).
+- `apps/web/src/lib/notify.ts`: `notify.undo` (8 s, "Deshacer" con botón de `h-11`).
+- `apps/web/src/lib/design-tokens.ts`: suma `chartPalette.macro`. `design-tokens.test.ts` ya recorre `chartPalette` y ahora incluye `macro` (todos ≥ 3:1).
+- **Pendiente §16 (IA):**
+  - Cambio en `planes/[planId]/ai-actions.ts`: después de validar la respuesta de la IA, **relee el plan** con `getPlan`. Si el plan ya no existe, devuelve "Plan no encontrado". Si ya tiene ítems, devuelve el error de siempre y no borra ni crea nada. Si no, borra solo las comidas de esa segunda lectura.
+  - Test nuevo `ai-actions.test.ts` con 3 casos (IA mockeada, sin APIs reales).
+  - Elegí releer y no hacer una operación transaccional de domain. Así `food-policy.test.ts` (de Leo) sigue viendo `addMeal`/`addMealItem` sin cambiar sus aserciones.
+
+**Fase F: UI** (`apps/web/src/components/weekly-menu/`, salvo lo indicado)
+- `day-target-strip.tsx` (7.3) y su test (3 casos: con objetivo, sin objetivo en un plan, plantilla).
+  - Con objetivo: 4 celdas, cada una con el número, "de X" y una barra `role="meter"`.
+    - La barra lleva `aria-valuetext` y su color sale de `chartPalette.macro`. La pista llega al 110 % del objetivo, así la marca del 100 % se ve; el relleno se corta en el objetivo.
+    - El estado va con ícono y texto (`formatTargetStatus`).
+    - Pie: "Objetivo: consulta del dd/MM/yyyy · Promedio semanal: … kcal".
+  - Sin objetivo: `MacroTotals`, más el `Alert` "Calculá el requerimiento para ver cuánto falta." con el link "Ir a la consulta".
+  - La barra anima con `springs.standard` (bounce 0). Con movimiento reducido, `MotionConfig reducedMotion="user"` la hace saltar.
+- `weekly-overview.tsx` (7.5) y su test, que también cubre `labels.ts` y `day-param.ts`.
+  - Escritorio: tabla. Las comidas `EVERY_DAY` van en una celda con `colSpan={7}`, la marca "Todos los días" y "Elegí una:".
+  - Celdas: hasta 3 nombres, después "+N", con botones de 44 px.
+  - Fila "Total": kcal y `summarizeDayStatus`, o "Sin cargar" si el día no tiene comidas.
+  - Debajo, "Promedio diario de la semana" contra el objetivo.
+  - Celular: una tarjeta por día.
+- `meal-card-menu.tsx` (7.4): menú "⋯" con ítems de 44 px, en este orden:
+  1. Repetir en todos los días (con `useConfirm` solo si va a pisar otros días).
+  2. Cambiar a Cambia cada día / Igual todos los días.
+  3. Opciones (elige una).
+  4. Renombrar.
+  5. Subir y Bajar (deshabilitados en los bordes).
+  6. Borrar comida.
+- `meal-mode-dialog.tsx`: "¿Qué día conservar?", con radios de 44 px que dicen "N ítems" o "vacío". Arranca en el lunes y avisa con `deleteOtherDaysWarning`.
+- `rename-meal-dialog.tsx`.
+- `copy-day-dialog.tsx`: tiene dos variantes.
+  - "Copiar el lunes a…": casillas de 44 px, "Ya tiene comidas" en los días con contenido y el aviso "Martes y miércoles ya tienen comidas. Se van a reemplazar.".
+  - "Copiar al jueves": radio con los días cargados.
+- `use-menu-undo.ts` (7.9).
+- `labels.ts` (nuevo, puro): textos del editor (`copiedDayMessage`, `replaceDaysWarning`, `deleteOtherDaysWarning`, `withArticle`, `agreeWithMeal`, `itemLabel`).
+- `day-param.ts` (nuevo, puro): `?dia=` ↔ día, y `initialDayFor`.
+- `apps/web/src/components/meals-editor.tsx` (de Leo): reescrito como `"use client"` (7.2).
+  - Se conservan el nombre `MealsEditor`, `export type { FoodOption }`, todas las props de antes y el formulario "Agregar alimento" con `FoodPicker`, `NumberInput`, "Descripción libre" y "Nota".
+  - Props nuevas: `kind`, `target`, `targetMissingHref` e `initialDay`.
+  - **Pendiente §16 (weekday):** el formulario manda `<input type="hidden" name="weekday">`, con el día de la pestaña en las comidas `PER_DAY` y `""` en las `EVERY_DAY`.
+- `planes/[planId]/page.tsx` (F5): carga `getPlanTarget` y `getPlanConsultationId`, que se llama solo si no hay objetivo.
+  - Arma `target` con `sourceLabel` y la fecha `dd/MM/yyyy` en la zona de la profesional.
+  - Arma `targetMissingHref`: la consulta del plan, o `/pacientes/{id}?tab=consultas` si no tiene (D11).
+  - Calcula `initialDay` con `searchParams.dia`.
+  - Ya no tiene el `MacroTotals` fijo: la franja está dentro del editor.
+- `plantillas/[id]/page.tsx`: lo mismo, con `target={null}` y `targetMissingHref={null}`.
+- `lib/food-policy.test.ts` (de Leo): solo sumé `getPlanTarget` y `getPlanConsultationId` (los dos devuelven `null`) al objeto `mocks`. **No cambié ninguna aserción.** La SDD nombraba solo `getPlanTarget`, pero la página también llama a `getPlanConsultationId` cuando no hay objetivo, y sin ese mock el test rompe.
+
+**Fase G**
+- `packages/db/scripts/test-weekly-menu.ts` (nuevo, 10.4). Ver "Script de flujo".
+
+**No se tocaron:** `apps/bot/**`, `schema.prisma`, migraciones, `food-picker.tsx`, `food-catalog.tsx`, `delete-meal-button.tsx`, `kcal-breakdown-popover.tsx`, `planes/actions.ts`, `segmented-control.tsx`, `macro-totals.tsx`, `primitives/*`, `domain/weeklyMenu.ts`, seeds, portal y PDF (ya hechos en 018b-1).
+
+### Verificación (§11)
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, **web** y **bot** limpios |
+| `npm run test` | **80 archivos, 1454 tests OK**. Son 23 más que en 018b-1: domain +3, actions +6, IA +3, franja +3 y Semana/textos +8 |
+| `npm run lint --workspace apps/web` | Sin errores. Queda solo el warning de antes en `ajustes/logo-form.tsx:36` |
+| `next build` | OK (`/pacientes/[id]/planes/[planId]` 2,5 kB / 232 kB, `/plantillas/[id]` 1,02 kB / 230 kB, `/portal/plan` 5,54 kB) |
+| `prisma migrate status` | "Database schema is up to date!" (22 migraciones) |
+| `tsx scripts/test-weekly-menu.ts` | **OK**, 12 pasos (ver abajo) |
+| `./ops/harness/verify.sh` | "Arnés OK". Avisa "Se tocó el bot" porque cambió `packages/db/domain`, pero el bot no se tocó y nada encoló en `OutboundMessage` (11 filas antes y después) |
+| `test-weekly-menu-migration.ts --compare` | `FALLA`, pero solo en el plan `cmufow0kr001mzf4w3fp65h8e` ("Plan del 24/09/2026"), y no por esta HU. Ver abajo |
+
+**Sobre `next build`.** El `next dev` del usuario no se tocó. Corrí el build en una copia del repo en el scratchpad (rsync sin `.git`, `.next`, `node_modules` ni las carpetas de sesión de WhatsApp, con `node_modules` enlazado) y después la borré.
+
+**Sobre el `--compare` de 10.3.** El plan `cmufow0kr001mzf4w3fp65h8e` tiene `updatedAt` y `pdfGeneratedAt` = 2026-10-03 06:25:01 (-03). Eso es **antes** del primer commit de esta rama (06:26:58) y antes de cualquier corrida mía, o sea, durante el recorrido o la aprobación de la 018b-1.
+- Cambiaron sus ítems (la base pasó de 34 comidas y 113 ítems a 33 y 110) y su PDF se generó por primera vez (el md5 era `null` en el snapshot).
+- Los otros 8 planes del snapshot dan igual.
+- Ese plan no lo toqué. El script compara contra el snapshot de antes de la migración, así que cualquier edición posterior desde el panel aparece como diferencia.
+
+### Script de flujo (10.4)
+
+```
+$ cd packages/db && npx dotenv -e ../../.env -- tsx scripts/test-weekly-menu.ts
+  ✓ 1. createPlan trae Desayuno…Cena 'Cambia cada día' y Colaciones con opciones
+  ✓ 2. createTemplate trae las mismas 5 comidas
+  ✓ 3. ítems del lunes con order correlativo; el día sin weekday se rechaza
+  ✓ 4. copyDay MON → TUE, WED y Deshacer deja martes y miércoles vacíos
+  ✓ 5. repeatMealInAllDays: los 7 días con el desayuno del lunes, sigue PER_DAY
+  ✓ 6. setMealMode en los dos sentidos y Deshacer vuelve a la foto anterior
+  ✓ 7. setMealOptions: la comida de opciones suma el promedio al día
+  ✓ 8. renameMeal (trim) y moveMeal, con el borde sin cambios
+  ✓ 9. addMeal en un plan semanal crea la comida 'Cambia cada día'
+  ✓ 10. applyTemplateToPatient copia modos, opciones, días e ítems
+  ✓ 11. getPlanTarget = null (sin prescripción)
+  ✓ 12. computeWeeklyTotals: 7 días cargados, promedio 1449.3 kcal
+OK
+```
+
+**Datos que crea.** Su propio paciente ("Prueba HU-018b", jid `5490000018018@s.whatsapp.net`), un plan, una plantilla y el plan que sale de aplicarla. Lee 4 alimentos SARA 2 existentes, que no modifica.
+
+**Limpieza.** En el `finally` borra **solo por los ids** que insertó: la plantilla, los 2 planes y el paciente. Después verifica que no quede ninguno. Si al empezar ya existe un paciente con el jid de prueba, aborta sin borrarlo.
+
+**Sin transacción que se revierta.** Las operaciones de domain abren su propia `$transaction` sobre el cliente global, así que el script no puede envolverlas en una.
+
+**Conteos antes y después.** `Patient|NutritionPlan|PlanMeal|PlanMealItem|PlanTemplate|TemplateMeal|OutboundMessage` = `15|10|33|110|0|0|11` en los dos casos.
+
+No hubo WhatsApp ni IA, y no se regeneró ningún PDF.
+
+### Contrato compartido
+
+- `weekly-menu-actions.ts`: `MenuActionResult` y las 7 actions con los nombres y las firmas de 6.1. En `kind` usé el tipo `MealOwnerKind` de domain, que es el mismo `"plan" | "template"`.
+- `notify.undo(message, onUndo)` y `chartPalette.macro` coinciden con 7.9 y 7.10.
+- `MealsEditor`: las props de 7.2 (`kind`, `target`, `targetMissingHref` e `initialDay`). `PlanTargetView = { kcal, protein, carbs, fat, sourceLabel }` se exporta desde `day-target-strip.tsx`.
+- Componentes con los nombres de archivo de 7.1: `DayTargetStrip`, `WeeklyOverview`, `MealCardMenu`, `CopyDayDialog`, `MealModeDialog`, `RenameMealDialog` y `useMenuUndo`.
+- **Archivos nuevos que no están en el contrato:** `weekly-menu/labels.ts` y `weekly-menu/day-param.ts` (textos y `?dia=`, puros y testeados).
+- Domain: ninguna firma cambió. `createPlan`, `createTemplate` y `createPlanForConsultation` mantienen firma y retorno.
+
+### Decisiones no obvias
+
+- **Borrar comida desde el "⋯".** No monté `DeleteMealButton` adentro del menú porque es un `<form>` y el menú se desmonta al elegir un ítem. El ítem "Borrar comida" usa el mismo `useConfirm`, con el mismo título, texto y botón, y llama a la misma `deleteMealAction`. `delete-meal-button.tsx` no se tocó, pero el editor ya no lo usa.
+- **El menú es `modal={false}`**, para que los diálogos que abre (modo y renombrar) no se crucen con el bloqueo de punteros de Radix. El foco al cerrar lo maneja `preserveUserFocusOnClose` de 017a.
+- **Concordancia en los textos.** La SDD pedía "los " + nombre + "s", pero eso da "los meriendas" y "los colaciones". `deleteOtherDaysWarning`, `withArticle` y `agreeWithMeal` concuerdan el artículo y el participio: "las meriendas", "¿Repetir la merienda del lunes?", "Cena del lunes repetida…". Con nombres de más de una palabra usa el texto genérico de la SDD.
+- **"¿Qué día conservar?" siempre arranca en el lunes**, como dice la HU, aunque se abra desde otra pestaña. Si la comida no tiene ítems en ningún día, cambia de modo sin diálogo (igual queda "Deshacer").
+- **Franja fija solo desde `md`.** En el celular, las 4 celdas (2 × 2) más el título y el pie ocupan unos 200 px. Fijas, junto con el selector, se comían media pantalla, así que en el celular la franja se desplaza con la página. Desde `md` es `sticky` (`top-14`, y `top-0` desde `lg`) con `material-bar`. Las tarjetas de comida llevan `scroll-mt` para que "tocar una celda" de la vista Semana no las deje debajo de la franja.
+- **Plan no semanal.** No hay selector ni vista Semana. La franja se titula "Total del día" (antes decía "Total del plan") y usa `days.MON`, que es el mismo número de siempre. Si una comida pasa a "Cambia cada día" desde la lista, el editor abre en el lunes.
+- **Celda "Todos los días" de la vista Semana:** lleva al lunes, porque esa comida es igual todos los días.
+- **Formulario "Agregar alimento":** se le pone `key` por comida y día, así al cambiar de pestaña no arrastra lo que se tipeó para otro día. El botón dice "Agregar al martes" en las comidas por día.
+- **Movimiento** (`apple-design`): spring sin rebote en la barra, diálogos y menú con los primitivos de 017a, y cambio de día instantáneo. Con movimiento reducido, el `scrollIntoView` usa `behavior: "auto"`.
+- **Autochequeo `web-design-guidelines`:** botones de solo ícono con `aria-label`, foco visible en las celdas y los links, `tabular-nums`, `break-words`/`min-w-0` para nombres largos, estados vacíos, casillas y radios con la fila entera clicable, URL con `?dia=`, sin lecturas de layout en el render y efectos solo en el cliente (sin riesgo de hidratación). Corregí el link "Ir a la consulta", que no tenía estado de hover ni foco visible. Queda pendiente el placeholder "Ej: Desayuno" de "Nueva comida", que ya estaba antes de esta HU.
+
+### Recorrido en Chrome para el orquestador (018b-2, §11.1)
+
+Con `npm run dev` (panel en :3000) y la sesión iniciada. No hace falta el bot. Crear antes un paciente de prueba a mano, con un teléfono inventado. **No editar planes reales:** los existentes solo se abren. **No regenerar el PDF de planes reales**, porque pisa el `pdfData` guardado.
+
+1. **Plan existente, solo mirar:** se ve como antes, sin selector de días, con la franja "Total del día" y los mismos números que antes. Micronutrientes iguales.
+2. **Comidas por defecto.** En el paciente de prueba, "Nuevo plan". Trae:
+   - Desayuno, Almuerzo, Merienda y Cena, con el título "{comida} · {día}";
+   - Colaciones, con "Todos los días" y "Elegí una".
+
+   Abre en "Semana", porque el plan está vacío, y la URL dice `?dia=semana`.
+3. **Editor por día.**
+   1. Tocar "Lun" y agregar 2 alimentos al desayuno con "Agregar al lunes". La franja del lunes cambia y "Lun" pierde el punto de "sin cargar".
+   2. Si el paciente no tiene prescripción, aparece "Calculá el requerimiento para ver cuánto falta." con "Ir a la consulta".
+   3. Con prescripción (cargar una consulta con requerimiento al paciente de prueba), se ven "1.240 de 1.800 kcal", la barra con la marca y "Faltan …" o "En objetivo".
+4. **Copiar y Deshacer.**
+   1. "Copiar este día a…", marcar martes y miércoles y tocar "Copiar". Aparece el toast "Lunes copiado a martes y miércoles · Deshacer".
+   2. Tocar "Deshacer": martes y miércoles vuelven a estar vacíos.
+   3. En la pestaña "Jue" (vacía), ver "El jueves todavía no tiene comidas." y "Copiar otro día acá".
+5. **Repetir.** "⋯ → Repetir en todos los días" en el desayuno del lunes. Si otro día ya tenía desayuno, primero pide confirmación con "… ya tiene(n) desayuno. Se van a reemplazar.". Después, los 7 días tienen ese desayuno y aparece el toast con "Deshacer".
+6. **Opciones.** Agregar 3 alimentos a Colaciones. Aparecen "Opciones: X a Y kcal" y "Suma al día el promedio: Z kcal", y el total del día suma el promedio.
+7. **Cambio de modo.**
+   1. "⋯ → Cambiar a Igual todos los días" en el desayuno. Aparece el diálogo "¿Qué día conservar?" con el lunes marcado, "N ítems" o "vacío" en cada día, y "Se van a borrar los desayunos de los otros días.".
+   2. Tocar "Cambiar": aparece el toast con "Deshacer". Probar "Deshacer".
+   3. Probar también "Cambiar a Cambia cada día" en Colaciones. El toast dice "…; ya no es de opciones".
+8. **Vista Semana.**
+   1. Tocar "Semana": tabla con una fila por comida, "Todos los días" en una sola celda, "Sin cargar" en los días vacíos, la fila "Total" con el estado y abajo "Promedio diario de la semana".
+   2. Tocar una celda: lleva a ese día y desplaza hasta esa comida.
+9. **Renombrar, Subir y Bajar** desde el "⋯". "Subir" está deshabilitado en la primera comida.
+10. **PDF.** "Generar PDF" del plan **de prueba**: primero las comidas "Todos los días" y después cada comida con "Lunes", "Martes"…, cerrando con "Promedio diario".
+11. **Portal.** Marcar el plan de prueba como "Activo" y abrirlo en el portal con la sesión del paciente de prueba: hoy seleccionado, pestañas Lun…Dom y "Elegí una" en Colaciones.
+12. **Plantillas.**
+    1. "Nueva plantilla": trae las mismas 5 comidas, sin objetivo. La franja muestra totales y "Promedio semanal".
+    2. Cargar algo en un día y aplicar la plantilla al paciente de prueba: el plan nuevo copia los modos y los días.
+13. **Celular.** Achicar la ventana a 390 px en DevTools y repetir 3 y 8:
+    - el selector queda en 8 columnas de 44 px de alto;
+    - el "⋯" y los botones miden 44 px;
+    - la vista Semana se ve como tarjetas por día;
+    - la franja no queda fija (decisión de arriba).
+14. **IA (opcional, gasta API):** en un plan de prueba recién creado (comidas por defecto vacías), "Armar con IA" reemplaza las comidas vacías por comidas "Igual todos los días".
+15. **Limpieza.** Al terminar, borrar el paciente de prueba desde el panel (se lleva sus planes). Borrar también la plantilla de prueba.
