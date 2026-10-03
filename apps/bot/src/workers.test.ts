@@ -25,7 +25,8 @@ describe("payment cron without Baileys or database", () => {
     vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
     mocks.reconcile.mockResolvedValue({ processed: 1, failed: 0 });
   });
-  it("reconciles every minute before the five-minute expiration", async () => {
+  it("reconciles and expires every minute, not only on five-minute boundaries", async () => {
+    vi.setSystemTime(new Date("2026-10-01T12:01:00Z"));
     startCron();
     expect(mocks.schedule.mock.calls[0]?.[0]).toBe("* * * * *");
     await mocks.schedule.mock.calls[0]?.[1]();

@@ -4,7 +4,7 @@ import { prisma, type Payment as DbPayment } from "../index";
 import { getProfessional } from "./availability";
 
 function mercadoPagoClient(): MercadoPagoConfig {
-  const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+  const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
   if (!accessToken) throw new Error("Falta MERCADOPAGO_ACCESS_TOKEN.");
   return new MercadoPagoConfig({ accessToken, options: { timeout: 10_000 } });
 }
@@ -12,51 +12,71 @@ function mercadoPagoClient(): MercadoPagoConfig {
 export async function createDepositCheckout(
   appointmentId: string,
 ): Promise<{ checkoutUrl: string; paymentId: string; amount: number }> {
-  const returnUrl = process.env.MERCADOPAGO_RETURN_URL?.trim();
-  if (!returnUrl) throw new Error("Falta MERCADOPAGO_RETURN_URL. Configurá una URL pública de retorno para Mercado Pago.");
+  try {
+    const returnUrl = process.env.MERCADOPAGO_RETURN_URL?.trim();
+    if (!returnUrl) throw new Error("Falta MERCADOPAGO_RETURN_URL. Configurá una URL pública de retorno para Mercado Pago.");
+    const client = mercadoPagoClient();
 
-  const [appointment, pro] = await Promise.all([
-    prisma.appointment.findUniqueOrThrow({
-      where: { id: appointmentId },
-      include: { service: true, patient: true },
-    }),
-    getProfessional(),
-  ]);
-  if (!appointment.service.requiresDeposit || !appointment.service.depositKind || appointment.service.depositValue == null) {
-    throw new Error("El servicio no tiene una seña configurada.");
-  }
+    const [appointment, pro] = await Promise.all([
+      prisma.appointment.findUniqueOrThrow({
+        where: { id: appointmentId },
+        include: { service: true, patient: true },
+      }),
+      getProfessional(),
+    ]);
+    if (appointment.status !== "AWAITING_PAYMENT") throw new Error("El turno no está esperando una seña.");
+    if (!appointment.service.requiresDeposit || !appointment.service.depositKind || appointment.service.depositValue == null) {
+      throw new Error("El servicio no tiene una seña configurada.");
+    }
 
-  const amount = computeDepositAmount(
-    Number(appointment.service.price),
-    appointment.service.depositKind,
-    Number(appointment.service.depositValue),
-  );
-  if (amount <= 0) throw new Error("El monto de la seña debe ser mayor a cero.");
+    const amount = computeDepositAmount(
+      Number(appointment.service.price),
+      appointment.service.depositKind,
+      Number(appointment.service.depositValue),
+    );
+    if (amount <= 0) throw new Error("El monto de la seña debe ser mayor a cero.");
 
-  const payment = await prisma.payment.create({
-    data: { appointmentId, kind: "DEPOSIT", status: "PENDING", amount },
-  });
-  const preference = await new Preference(mercadoPagoClient()).create({
-    body: {
-      items: [{ id: appointment.service.id, title: appointment.service.name, quantity: 1, unit_price: amount, currency_id: pro.currency }],
-      external_reference: payment.id,
-      notification_url: process.env.MERCADOPAGO_NOTIFICATION_URL || undefined,
-      back_urls: {
-        success: returnUrl,
-        pending: returnUrl,
-        failure: returnUrl,
+    const payment = await prisma.payment.create({
+      data: { appointmentId, kind: "DEPOSIT", status: "PENDING", amount },
+    });
+    const preference = await new Preference(client).create({
+      body: {
+        items: [{ id: appointment.service.id, title: appointment.service.name, quantity: 1, unit_price: amount, currency_id: pro.currency }],
+        external_reference: payment.id,
+        notification_url: process.env.MERCADOPAGO_NOTIFICATION_URL || undefined,
+        expires: true,
+        expiration_date_to: new Date(appointment.createdAt.getTime() + 15 * 60_000).toISOString(),
+        back_urls: {
+          success: returnUrl,
+          pending: returnUrl,
+          failure: returnUrl,
+        },
+        auto_return: "approved",
       },
-      auto_return: "approved",
-    },
-  });
-  const checkoutUrl = preference.init_point;
-  if (!preference.id || !checkoutUrl) throw new Error("Mercado Pago no devolvió un link de pago.");
+    });
+    const checkoutUrl = preference.init_point;
+    if (!preference.id || !checkoutUrl) throw new Error("Mercado Pago no devolvió un link de pago.");
 
-  await prisma.payment.update({
-    where: { id: payment.id },
-    data: { preferenceId: preference.id, checkoutUrl },
-  });
-  return { checkoutUrl, paymentId: payment.id, amount };
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { preferenceId: preference.id, checkoutUrl },
+    });
+    return { checkoutUrl, paymentId: payment.id, amount };
+  } catch (error) {
+    // Release only this reservation, atomically with its pending payments. Use the
+    // same lock order as reconciliation/expiry so a concurrent approval wins safely.
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${appointmentId} ORDER BY id FOR UPDATE`;
+      const cancelled = await tx.appointment.updateMany({
+        where: { id: appointmentId, status: "AWAITING_PAYMENT" },
+        data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: "No se pudo generar el checkout de la seña" },
+      });
+      if (cancelled.count > 0) {
+        await tx.payment.updateMany({ where: { appointmentId, status: "PENDING" }, data: { status: "CANCELLED" } });
+      }
+    });
+    throw error;
+  }
 }
 
 export async function handleMercadoPagoWebhook(

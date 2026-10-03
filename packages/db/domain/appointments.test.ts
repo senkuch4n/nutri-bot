@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   enqueueMessage: vi.fn(),
   prisma: {
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     service: { findUniqueOrThrow: vi.fn() },
     patient: { findUniqueOrThrow: vi.fn() },
     appointment: { create: vi.fn(), update: vi.fn() },
@@ -28,7 +29,7 @@ import { createAppointment, InvalidBookingReasonError, updateAppointmentReason }
 
 const TZ = "America/Argentina/Buenos_Aires";
 const STARTS = new Date("2026-10-12T13:00:00Z");
-const SERVICE = { id: "s1", name: "Primera consulta", durationMin: 30, price: 25000, requiresDeposit: false };
+const SERVICE = { id: "s1", name: "Primera consulta", durationMin: 30, price: 25000, requiresDeposit: false, depositKind: "FIXED", depositValue: 5000 };
 const PATIENT = { id: "p1", name: "Ana (TEST)", phone: "5490000000031", whatsappJid: "5490000000031@s.whatsapp.net" };
 
 const base = { patientId: "p1", serviceId: "s1", startsAt: STARTS };

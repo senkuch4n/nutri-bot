@@ -9,6 +9,10 @@ describe("public Mercado Pago webhook matcher", () => {
   it("excludes the exact webhook", () => {
     expect(matcher.test("/api/webhooks/mercadopago")).toBe(false);
   });
+  it("serves the Numa logo without authentication", () => {
+    expect(matcher.test("/numa-logo.png")).toBe(false);
+    expect(matcher.test("/numa-logo.png/private")).toBe(true);
+  });
   it.each(["/api/webhooks/other", "/api/webhooks/mercadopago-private", "/api/webhooks/mercadopago/other", "/agenda"])("keeps %s protected", (pathname) => {
     expect(matcher.test(pathname)).toBe(true);
   });

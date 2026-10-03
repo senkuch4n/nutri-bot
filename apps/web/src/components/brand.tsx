@@ -1,7 +1,8 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 /**
- * Marca: glifo + "NutriBot" y, opcionalmente, el nombre de la nutricionista debajo (D13).
+ * Marca: logo + "Numa" y, opcionalmente, el nombre de la nutricionista debajo (D13).
  * `compact` deja solo el glifo con el nombre en sr-only (sidebar colapsada).
  */
 export function Wordmark({
@@ -15,12 +16,12 @@ export function Wordmark({
 }) {
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-2", className)}>
-      <LeafMark className="h-5 w-5 shrink-0 text-foreground" />
+      <Image src="/numa-logo.png" alt="" width={40} height={40} className="h-10 w-10 shrink-0 object-contain" />
       {compact ? (
-        <span className="sr-only">NutriBot</span>
+        <span className="sr-only">Numa</span>
       ) : (
         <span className="min-w-0 leading-tight">
-          <span className="block text-sm font-semibold text-foreground">NutriBot</span>
+          <span className="block text-sm font-semibold text-foreground">Numa</span>
           {subtitle ? (
             <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
               {subtitle}

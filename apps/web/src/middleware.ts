@@ -5,5 +5,5 @@ export default NextAuth(authConfig).auth;
 
 export const config = {
   // /portal no usa el login de Google: cada página valida la sesión del paciente (patient-session.ts).
-  matcher: ["/((?!api/webhooks/mercadopago$|api/auth|login|inicio|portal|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!numa-logo\\.png$|api/webhooks/mercadopago$|api/auth|login|inicio|portal|_next/static|_next/image|favicon.ico).*)"],
 };
