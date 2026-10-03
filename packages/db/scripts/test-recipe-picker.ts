@@ -16,7 +16,15 @@ import assert from "node:assert/strict";
 import sharp from "sharp";
 import { computeRecipeMacros, recipeItemMacros, scaleMacros, type FoodGroupKey, type Weekday } from "@nutri-bot/core";
 import { prisma } from "../index";
-import { archiveRecipe, createRecipe, getRecipeUsage, patientCanSeeRecipePhoto, setRecipePhoto } from "../domain/recipes";
+import {
+  archiveRecipe,
+  createRecipe,
+  getRecipePreview,
+  getRecipeUsage,
+  listPlanRecipePreviews,
+  patientCanSeeRecipePhoto,
+  setRecipePhoto,
+} from "../domain/recipes";
 import { createPlan, getPlan, updatePlan } from "../domain/nutritionPlans";
 import { applyTemplateToPatient, createTemplate, getTemplate } from "../domain/planTemplates";
 import {
@@ -213,6 +221,25 @@ async function main() {
   const stillThere = after!.meals.flatMap((m) => m.items).find((i) => i.id === snack.itemIds[0]);
   assert.equal(stillThere?.recipe?.status, "ARCHIVED");
   step(9, "archiveRecipe → addRecipeItems da RecipeNotAvailableError y el plan sigue mostrando el ítem");
+
+  // 10. (018c-2) Detalle: una receta archivada se sigue viendo en el plan, cada plan la lista una sola
+  //     vez (el aplicado la tiene en Desayuno), sin datos de importación ni bytes. Un borrador no se
+  //     muestra. (Se pasa a DRAFT la receta de ESTE script, que se borra por id en el finally.)
+  const preview = await getRecipePreview(recipeId);
+  assert.ok(preview);
+  assert.equal(preview.status, "ARCHIVED");
+  assert.equal(preview.photo?.id, photoId);
+  assert.equal(preview.sourceName, "Prueba");
+  assert.ok(preview.ingredients.length >= 2 && preview.ingredients.every((i) => i.name.length > 0));
+  assert.doesNotMatch(JSON.stringify(preview), /rawText|importHints|published/);
+  assert.ok(preview.perPortion && Math.abs(preview.perPortion.kcal - perPortion.kcal) < 0.05);
+  const planPreviews = await listPlanRecipePreviews(plan.id);
+  assert.deepEqual(planPreviews.map((r) => r.id), [recipeId]);
+  assert.deepEqual((await listPlanRecipePreviews(applied.id)).map((r) => r.id), [recipeId]);
+  await prisma.recipe.update({ where: { id: recipeId }, data: { status: "DRAFT" } });
+  assert.equal(await getRecipePreview(recipeId), null);
+  assert.deepEqual(await listPlanRecipePreviews(plan.id), []);
+  step(10, "getRecipePreview / listPlanRecipePreviews: archivada visible, sin repetir, sin importación; borrador → null");
 }
 
 const before = await controlCounts();

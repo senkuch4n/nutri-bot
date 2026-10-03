@@ -88,6 +88,19 @@ export function pickerScope(
   return { kind: "DAYS", focusDay: focus, days };
 }
 
+/**
+ * HU-018c-2 (revisión de 018c-1): el alcance que mide el impacto de UNA receta, con los mismos días en
+ * los que "Agregar" de verdad la va a agregar (`daysToAdd = daysMissingRecipe(...)`). Así el "Se pasa …
+ * el jueves" nunca habla de un día que ya la tiene. Si el día que se edita ya la tiene (la tarjeta está
+ * en "Agregada", D5) o no es DAYS, devuelve el alcance tal cual.
+ */
+export function scopeForDaysToAdd(scope: PickerScope, daysToAdd: readonly Weekday[]): PickerScope {
+  if (scope.kind !== "DAYS" || !daysToAdd.includes(scope.focusDay)) return scope;
+  const days = WEEKDAYS.filter((d) => daysToAdd.includes(d) && scope.days.includes(d));
+  if (days.length === scope.days.length) return scope;
+  return { kind: "DAYS", focusDay: scope.focusDay, days };
+}
+
 /** Días de `days` en los que la comida NO tiene ya un ítem de esa receta (no se duplica). */
 export function daysMissingRecipe(
   meal: { mode: "EVERY_DAY" | "PER_DAY"; items: readonly { weekday: Weekday | null; recipeId?: string | null }[] },
@@ -332,10 +345,33 @@ export const RECIPE_PICKER_TEXT = {
   stepperMinus: "Restar media porción de {recipe}",
   stepperPlus: "Sumar media porción de {recipe}",
   viewRecipe: "Ver receta",
+  // HU-018c-2: detalle de la receta (buscador y portal).
+  ingredientsTitle: "Ingredientes",
+  preparationTitle: "Preparación",
+  tipsTitle: "Tips y conservación",
+  previewLoadError: "No se pudo cargar la receta.",
+  portalSheetDescription: "Ingredientes y preparación de la receta.",
+  previewDescription: "Foto, ingredientes y preparación de la receta, con lo que suma al día.",
   sessionExpired: RECIPE_TEXT.sessionExpired,
   stripWeek: "Promedio diario de la semana",
   stripPlan: "Total del día",
 } as const;
+
+/** HU-018c-2: "Rinde 4 porciones" (los ingredientes son para la receta entera). null si no hay rendimiento. */
+export function recipeYieldText(yieldPortions: number | null): string | null {
+  if (yieldPortions === null || !Number.isFinite(yieldPortions) || yieldPortions <= 0) return null;
+  return `Rinde ${formatPortions(yieldPortions)}`;
+}
+
+/** HU-018c-2: "Fuente: Nutriarte" / "Foto: Ana" (null si no hay dato). */
+export function recipeSourceText(sourceName: string | null): string | null {
+  const s = sourceName?.trim() ?? "";
+  return s ? `Fuente: ${s}` : null;
+}
+export function recipePhotoCreditText(credit: string | null): string | null {
+  const s = credit?.trim() ?? "";
+  return s ? `Foto: ${s}` : null;
+}
 
 export function pickerTitle(mealName: string, scope: PickerScope): string {
   if (scope.kind === "DAYS") return `Agregar a ${mealName} · ${WEEKDAY_LABELS[scope.focusDay].long}`;

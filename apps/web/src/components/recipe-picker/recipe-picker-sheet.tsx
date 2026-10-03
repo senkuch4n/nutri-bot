@@ -23,6 +23,7 @@ import {
   prepareRecipeImpact,
   recipeAddedMessage,
   recipeCountText,
+  scopeForDaysToAdd,
   type Macros,
   type PickerScope,
   type RecipeFilters as Filters,
@@ -41,6 +42,7 @@ import type { PlanTargetView } from "@/components/weekly-menu/day-target-strip";
 import type { RecipeCardView } from "@/lib/recipe-view";
 import { PickerCardFooter, type PickerCardImpactView } from "./picker-card-footer";
 import { PickerDayStrip } from "./picker-day-strip";
+import { RecipePreviewDialog } from "./recipe-preview-dialog";
 import { usePickerRecipes } from "./use-picker-recipes";
 import { useRecipeItemActions, useRecipePortions } from "./use-recipe-item-actions";
 
@@ -98,6 +100,8 @@ export function RecipePickerSheet({
   const [filters, setFilters] = useState<Filters>(EMPTY_RECIPE_FILTERS);
   const [markedDays, setMarkedDays] = useState<Weekday[]>([]);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // HU-018c-2: receta abierta en el detalle (el sheet no se desmonta: la grilla queda en su lugar).
+  const [detailCard, setDetailCard] = useState<RecipeCardView | null>(null);
 
   // Los filtros y los días se reinician cada vez que se abre (o se abre para otra comida u otro día).
   const mealName = meal?.name ?? "";
@@ -106,6 +110,7 @@ export function RecipePickerSheet({
     setFilters(initialPickerFilters(mealName));
     setMarkedDays(focusDay ? [focusDay] : []);
     setPreviewId(null);
+    setDetailCard(null);
   }, [open, mealId, focusDay, mealName]);
 
   // Si la comida desaparece (se borró en otra pestaña), el buscador se cierra.
@@ -208,6 +213,7 @@ export function RecipePickerSheet({
         cards={shown}
         hrefFor={null}
         layout="panel"
+        onOpen={setDetailCard}
         onPreviewChange={(card, active) =>
           setPreviewId((prev) => (active ? card.id : prev === card.id ? null : prev))
         }
@@ -216,9 +222,11 @@ export function RecipePickerSheet({
             card={card}
             kind={kind}
             ownerId={ownerId}
+            meals={meals}
             meal={meal}
             scope={scope}
             impactCtx={impactCtx}
+            target={target}
           />
         )}
       />
@@ -285,26 +293,55 @@ export function RecipePickerSheet({
             {body}
           </div>
         ) : null}
+
+        {meal && scope ? (
+          <RecipePreviewDialog
+            card={detailCard}
+            onClose={() => setDetailCard(null)}
+            renderFooter={(card) => (
+              <PickerCard
+                card={card}
+                kind={kind}
+                ownerId={ownerId}
+                meals={meals}
+                meal={meal}
+                scope={scope}
+                impactCtx={impactCtx}
+                target={target}
+                variant="dialog"
+              />
+            )}
+          />
+        ) : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-/** Pie conectado de una tarjeta: impacto, agregar, porciones y quitar. */
+/**
+ * Pie conectado de una tarjeta (o del detalle, `variant="dialog"`): impacto, agregar, porciones y
+ * quitar. En el detalle el botón dice el destino ("Agregar a Desayuno · Martes") salvo con varios días.
+ */
 function PickerCard({
   card,
   kind,
   ownerId,
+  meals,
   meal,
   scope,
   impactCtx,
+  target,
+  variant = "card",
 }: {
   card: RecipeCardView;
   kind: MealOwnerKind;
   ownerId: string;
+  meals: MealView[];
   meal: MealView;
   scope: PickerScope;
   impactCtx: RecipeImpactContext | null;
+  target: PlanTargetView | null;
+  variant?: "card" | "dialog";
 }) {
   const { add, remove } = useRecipeItemActions(kind, ownerId);
   // Transiciones: el botón sigue "pendiente" hasta que llega la comida revalidada (sin parpadeo).
@@ -322,10 +359,19 @@ function PickerCard({
   const days = scope.kind === "DAYS" ? scope.days : WEEKDAYS;
   const daysToAdd = daysMissingRecipe({ mode: meal.mode, items }, card.id, days);
 
-  const impact = impactCtx && card.perPortion ? computeRecipeImpact(impactCtx, card.perPortion) : null;
+  // HU-018c-2 (revisión de 018c-1): el impacto mide los mismos días que el botón (`daysToAdd`). Si
+  // algún día marcado ya tiene la receta, se recalcula solo para esta tarjeta (caso raro, D5).
+  const cardScope = scopeForDaysToAdd(scope, daysToAdd);
+  const cardCtx =
+    cardScope === scope || !impactCtx
+      ? impactCtx
+      : prepareRecipeImpact({ meals, mealId: meal.id, scope: cardScope, target });
+  const impact = cardCtx && card.perPortion ? computeRecipeImpact(cardCtx, card.perPortion) : null;
   const impactView: PickerCardImpactView | null = impact
-    ? { ...formatRecipeImpact(impact, scope), fits: impact.fit.kind === "FITS" }
+    ? { ...formatRecipeImpact(impact, cardScope), fits: impact.fit.kind === "FITS" }
     : null;
+  const addCount = scope.kind === "DAYS" ? daysToAdd.length : 1;
+  const addLabel = variant === "dialog" && addCount <= 1 ? pickerTitle(meal.name, scope) : addButtonLabel(addCount);
 
   function onAdd() {
     if (pending) return;
@@ -359,7 +405,7 @@ function PickerCard({
       portions={addedItem?.portions ?? 1}
       recipeName={card.name}
       impact={impactView}
-      addLabel={addButtonLabel(scope.kind === "DAYS" ? daysToAdd.length : 1)}
+      addLabel={addLabel}
       addAriaLabel={addAriaLabel(card.name, meal.name, scope)}
       pending={pending}
       error={error}

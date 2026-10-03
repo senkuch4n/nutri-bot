@@ -1,4 +1,5 @@
 import type { RecipeStatusKey, RecipeTypeKey } from "@nutri-bot/core";
+import type { RecipePreview } from "@nutri-bot/db/domain";
 import type { RecipeCardView } from "@/lib/recipe-view";
 
 // HU-018c: tipos del buscador de recetas. Viven acá (y no en `recipe-picker-actions.ts`) porque un
@@ -6,6 +7,8 @@ import type { RecipeCardView } from "@/lib/recipe-view";
 
 export type PickerActionError = { ok: false; error: string };
 export type ListPickerRecipesResult = { ok: true; cards: RecipeCardView[] } | PickerActionError;
+/** HU-018c-2: detalle de la receta en el buscador. */
+export type RecipePreviewResult = { ok: true; recipe: RecipePreview } | PickerActionError;
 export type AddRecipeResult = { ok: true; itemIds: string[] } | PickerActionError;
 export type PickerMutationResult = { ok: true } | PickerActionError;
 

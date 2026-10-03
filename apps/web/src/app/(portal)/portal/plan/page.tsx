@@ -1,11 +1,12 @@
 import { ClipboardList } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
-import { RECIPE_ITEM_SELECT } from "@nutri-bot/db/domain";
+import { RECIPE_ITEM_SELECT, listPlanRecipePreviews } from "@nutri-bot/db/domain";
 import { WEEKDAYS, computeWeeklyTotals, weekdayInTimeZone, type Macros, type Weekday } from "@nutri-bot/core";
 import { Card, EmptyState } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
 import { toMealView } from "@/lib/meal-view";
+import { portalMealsForClient, toPortalRecipeMap } from "@/lib/portal-recipe";
 import { PortalPlanView } from "./plan-view";
 
 export const dynamic = "force-dynamic";
@@ -52,11 +53,17 @@ export default async function PortalPlanPage() {
     };
   }
 
+  // HU-018c-2 (SDD 7.6): el detalle de las recetas del plan ACTIVE del paciente (solo esas: el plan se
+  // buscó por patientId y status ACTIVE), sin macros. Los ítems de receta viajan sin macros: los
+  // totales de arriba ya se calcularon con ellos.
+  const recipes = toPortalRecipeMap(await listPlanRecipePreviews(plan.id));
+
   return (
     <PortalPlanView
       title={plan.title}
       notes={plan.notes}
-      meals={meals}
+      meals={portalMealsForClient(meals)}
+      recipes={recipes}
       totals={totals}
       hasPdf={Boolean(plan.pdfData)}
       weekly={weekly}
