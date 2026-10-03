@@ -1,10 +1,11 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, expireStalePendingPayments, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueueAttendanceConfirmations, enqueueDueReminders, enqueuePrepInstructions, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
 import { logger } from "./logger";
+import { getBotAiConfig } from "./ai/runtime";
 
 const MAX_ATTEMPTS = 5;
 let outboxRunning = false;
@@ -120,6 +121,8 @@ export function startCron(): void {
     }
   });
 
+  // HU-012 (D7): retención de las preguntas a la IA (antes del resumen, que tiene que ser el último).
+  cron.schedule("30 4 * * *", () => runBotAiPurge());
   // HU-011: resumen de consultas fuera de horario (último cron: los tests miran calls[0]).
   cron.schedule("* * * * *", () => runAfterHoursDigest());
 }
@@ -141,6 +144,12 @@ export async function runStartupJobs(): Promise<void> {
   } catch (err) {
     logger.error({ err }, "Error en el resumen de consultas fuera de horario (arranque)");
   }
+  // HU-012: retención de preguntas a la IA también al arrancar.
+  try {
+    await runBotAiPurge();
+  } catch (err) {
+    logger.error({ err }, "Error borrando preguntas a la IA vencidas (arranque)");
+  }
 }
 
 let digestRunning = false;
@@ -156,5 +165,21 @@ export async function runAfterHoursDigest(): Promise<void> {
     logger.error({ err }, "Error en el resumen de consultas fuera de horario");
   } finally {
     digestRunning = false;
+  }
+}
+
+let aiPurgeRunning = false;
+
+/** HU-012 (D7): borra las preguntas a la IA de más de BOT_AI_RETENTION_DAYS días. No se solapa. */
+export async function runBotAiPurge(): Promise<void> {
+  if (aiPurgeRunning) return;
+  aiPurgeRunning = true;
+  try {
+    const n = await purgeExpiredBotAiQuestions({ retentionDays: getBotAiConfig().limits.retentionDays });
+    if (n > 0) logger.info({ n }, "Preguntas a la IA vencidas borradas");
+  } catch (err) {
+    logger.error({ err }, "Error borrando preguntas a la IA vencidas");
+  } finally {
+    aiPurgeRunning = false;
   }
 }

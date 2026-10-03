@@ -268,3 +268,24 @@
 - **Modelos:** afinador y architect Opus; implementer Opus (se colgó una vez y se retomó);
   reviewer Opus. Skills: migracion-prisma, ui (SDD); migracion-prisma, ui-ux-pro-max,
   ui-styling, web-design-guidelines (impl).
+
+---
+
+## 2026-10-02 — HU-012 `preguntas-bot-ia` — APROBADA (1ª ronda) · senkuch4n
+
+- **Qué:** opción **5️⃣ Hacer una pregunta** en el menú del bot (solo con el interruptor de
+  `/ajustes` prendido y `API_KEY_IA_ANTHROPIC` cargada). Claude Haiku 4.5 (`claude-haiku-4-5`,
+  fallback DeepSeek por env) responde con 4 tools de solo lectura (servicios, disponibilidad,
+  turnos propios, datos del consultorio + "Información para el asistente"), sin datos clínicos ni
+  de otros pacientes y sin sacar/cancelar turnos. "0" desde el modo pregunta crea el
+  `PatientInquiry` con "Pregunta al asistente: …" (flujo HU-011). Límites 20/día por paciente, 300
+  global, 500 caracteres; cola por contacto; fallback fijo ante errores. Registro en
+  `BotAiQuestion` con retención de 90 días.
+- **Migración** aditiva (tabla `BotAiQuestion` + columnas en `Professional`), con respaldo previo.
+- **Verificación:** 863 tests (83 nuevos), `test:bot-ai` 18/18 con proveedor falso (ninguna
+  llamada real a la API), regresión HU-011 12/12 y confirmación 5/5, base sin restos.
+- **Pendiente (no bloqueante, ver `progress/review_HU-012.md`):** si falla la base en el modo
+  pregunta el paciente no recibe `AI_ERROR`; el historial de la sesión (`ConversationState.context`)
+  queda fuera de la retención de 90 días; probar con la clave real (recorrido del usuario).
+- **Modelos:** afinador y architect Opus; implementer Opus; reviewer Opus. Skills: migracion-prisma,
+  ui (SDD); migracion-prisma, claude-api, ui-styling, web-design-guidelines (impl).

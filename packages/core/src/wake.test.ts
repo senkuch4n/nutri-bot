@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isExitCommand, isExitWord, isMenuCommand, isWakeWord, normalize } from "./wake";
+import { isExitCommand, isExitWord, isMenuCommand, isWakeWord, menuDigit, normalize } from "./wake";
 
 describe("normalize", () => {
   it("saca acentos y pasa a minúsculas", () => {
@@ -68,6 +68,26 @@ describe("isMenuCommand (HU-011, estricto)", () => {
   it("no vuelve al menú si la palabra está dentro de una pregunta", () => {
     for (const t of ["¿qué menú me conviene para la cena?", "salir", "menu menu"]) {
       expect(isMenuCommand(t), t).toBe(false);
+    }
+  });
+});
+
+describe("menuDigit (HU-012)", () => {
+  it("devuelve el dígito si el mensaje entero es un dígito dentro del rango", () => {
+    expect(menuDigit("1", 5)).toBe("1");
+    expect(menuDigit(" 5 ", 5)).toBe("5");
+    expect(menuDigit("0", 5)).toBe("0");
+  });
+
+  it("admite el keycap", () => {
+    expect(menuDigit("5️⃣", 5)).toBe("5");
+    expect(menuDigit("0️⃣", 4)).toBe("0");
+  });
+
+  it("null fuera de rango o si no es un dígito suelto", () => {
+    expect(menuDigit("5", 4)).toBeNull();
+    for (const t of ["15", "1.", "uno", "", "  "]) {
+      expect(menuDigit(t, 5), t).toBeNull();
     }
   });
 });

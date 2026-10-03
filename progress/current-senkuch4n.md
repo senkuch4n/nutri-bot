@@ -132,3 +132,11 @@ orquestador, para que las revise a la mañana:
 - HU-011: implementer (Opus) `done` en 2 tramos (el 1º se colgó). 780 tests, test:after-hours 12/12. Recorrido en progress/recorrido_HU-011.md: OK con 2 observaciones (texto del vacío, mapeo Desde/Hasta). → `en_revision`.
 - **HU-011 aprobada** (1ª ronda, reviewer Opus). Ver history. Siguiente: commit, PR a develop, Notion → Hecha.
 - Directo (fix/hu-011-detalles): texto del vacío de /mensajes y form de /ajustes sin reset de React 19 tras error (probado en Chrome: el error se ve y los inputs conservan lo tipeado; config intacta).
+- **HU-012** `preguntas-bot-ia` (de hus-last-meet.md) → reservada en Notion, rama `feat/hu-012-preguntas-bot-ia` → `afinando`. Métodos de pago quedó como Tarea directa en Notion (para después).
+- HU-012 afinada (D1–D14) → `afinada_pendiente_validacion`.
+- HU-012 **validada**: D1 Claude Haiku 4.5 (fallback DeepSeek por env), D4 a+c (0 desde el modo pregunta precarga la consulta), D7 textos+tokens 90 días, resto según recomendaciones.
+- HU-012 → `en_arquitectura` (migracion-prisma + ui; datos del skill claude-api pasados al architect).
+- HU-012: SDD lista (Refactorizaciones/preguntas-bot-ia.md, tabla BotAiQuestion, 4 tools de solo lectura, P1–P14 con default) → `arquitectura_lista`.
+- HU-012: usuario acepta P1–P5/P7–P14; P6 con prefijo "Pregunta al asistente: ". → `implementando` (Opus; migracion-prisma, claude-api, ui-styling, web-design-guidelines).
+- HU-012: implementer (Opus) `done`: 863 tests, test:bot-ai 18/18, sin llamadas reales. Recorrido OK (progress/recorrido_HU-012.md). develop avanzó con un fix de HU-010 (sin solaparse). → `en_revision`.
+- **HU-012 aprobada** (1ª ronda, reviewer Opus). Ver history.

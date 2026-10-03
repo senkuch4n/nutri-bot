@@ -6,22 +6,36 @@ import {
   createDepositCheckout,
   createPatientToken,
   findOrCreatePatientByJid,
+  countBotAiQuestionsToday,
   getProfessional,
+  markBotAiQuestionHandedOff,
+  recordBotAiQuestion,
   recordInquiryMessage,
+  runBotAiTool,
 } from "@nutri-bot/db/domain";
 import {
   afterHoursConfigFrom,
   formatClock,
   formatServiceList,
+  inquiryBodyFromAiQuestion,
+  isBotAiAvailable,
   isExitCommand,
   isExitWord,
   isMenuCommand,
   isWakeWord,
   isWithinAfterHours,
+  menuDigit,
+  mergeBotAiLimits,
   messages,
   normalize,
+  trimHistory,
   type AfterHoursConfig,
+  type AiTurn,
+  type BotAiLimits,
 } from "@nutri-bot/core";
+import { answerQuestion } from "./ai/ask";
+import type { BotAiProvider } from "./ai/provider";
+import { getBotAiConfig, getBotAiRuntime } from "./ai/runtime";
 import {
   cancelableAppointments,
   listActiveServices,
@@ -44,7 +58,19 @@ export type ConversationOptions = {
   afterHours?: AfterHoursConfig;
   /** SOLO pruebas: reemplaza Professional.phoneJid como destino de las alertas (null = sin alertas). */
   alertJid?: string | null;
+  /** HU-012: proveedor de IA. undefined = el del .env (getBotAiRuntime; null si falta la clave);
+   *  null = sin IA. Las pruebas pasan uno falso. */
+  aiProvider?: BotAiProvider | null;
+  /** SOLO pruebas: reemplaza Professional.botAiEnabled. */
+  aiEnabled?: boolean;
+  /** SOLO pruebas: pisa límites de D6 (sobre getBotAiConfig().limits). */
+  aiLimits?: Partial<BotAiLimits>;
+  /** HU-012: muestra "escribiendo…" mientras la IA piensa. */
+  typing?: () => Promise<void>;
 };
+
+/** HU-012: estado de la IA para ESTE mensaje. `provider` no es null si `available`. */
+type AiState = { available: boolean; provider: BotAiProvider | null };
 
 const STEP = {
   /** El bot no está atendiendo a este contacto: ignora todo salvo una palabra clave. */
@@ -60,6 +86,8 @@ const STEP = {
   CONFIRM_ATTENDANCE: "CONFIRM_ATTENDANCE",
   /** HU-011: el paciente eligió 0; lo que escriba en la sesión se guarda como consulta. */
   AWAIT_INQUIRY: "AWAIT_INQUIRY",
+  /** HU-012: modo pregunta; el texto libre va a la IA. */
+  AWAIT_QUESTION: "AWAIT_QUESTION",
 } as const;
 
 /** Tras este tiempo de inactividad, una conversación abierta vuelve a DORMANT. */
@@ -79,6 +107,11 @@ type Ctx = {
   alerted?: boolean;
   /** HU-011: ya se mandó la confirmación en esta sesión. */
   confirmed?: boolean;
+  /** HU-012: vueltas de esta sesión del modo pregunta (trimHistory). */
+  aiHistory?: AiTurn[];
+  /** HU-012 (D4 c): última pregunta "derivable" con 0 y su fila de BotAiQuestion. */
+  lastQuestion?: string;
+  lastQuestionLogId?: string;
 };
 
 async function loadState(jid: string): Promise<{ step: string; ctx: Ctx; updatedAt: Date }> {
@@ -132,6 +165,15 @@ export async function handleIncoming(
   const ctx = state.ctx;
   let step = state.step;
 
+  // HU-012: la opción 5 existe solo con el interruptor prendido Y un proveedor (clave en el .env).
+  const provider = opts.aiProvider !== undefined ? opts.aiProvider : (getBotAiRuntime()?.provider ?? null);
+  const aiEnabled = opts.aiEnabled ?? pro.botAiEnabled;
+  const ai: AiState = {
+    available: isBotAiAvailable({ enabled: aiEnabled, hasProvider: provider !== null }),
+    provider,
+  };
+  const menuText = messages.menu({ withQuestions: ai.available });
+
   // Una conversación abierta pero inactiva vuelve a estar "dormida".
   if (step !== STEP.DORMANT && now.getTime() - state.updatedAt.getTime() > SESSION_TIMEOUT_MS) {
     step = STEP.DORMANT;
@@ -145,7 +187,7 @@ export async function handleIncoming(
       await send(messages.ASK_NAME);
     } else {
       await save(jid, STEP.MENU);
-      await send(messages.welcomeBack(patient.name));
+      await send(messages.welcomeBack(patient.name, menuText));
     }
     return;
   }
@@ -161,10 +203,30 @@ export async function handleIncoming(
     }
     if (isMenuCommand(text)) {
       await save(jid, STEP.MENU);
-      await send(messages.MENU);
+      await send(menuText);
       return;
     }
-    return handleInquiryText(jid, text, ctx, patient, pro, send, opts, now);
+    return handleInquiryText(jid, text, ctx, patient, pro, send, opts, now, menuText, ai);
+  }
+
+  // HU-012: modo pregunta. Comandos estrictos y dígitos sueltos no llaman a la IA.
+  if (step === STEP.AWAIT_QUESTION) {
+    if (isExitCommand(text)) {
+      await save(jid, STEP.DORMANT);
+      await send(messages.DORMANT_BYE);
+      return;
+    }
+    if (isMenuCommand(text)) {
+      await save(jid, STEP.MENU);
+      await send(menuText);
+      return;
+    }
+    const d = menuDigit(text, 5);
+    if (d === "0" && ctx.lastQuestion) {
+      return handoffFromQuestion(jid, ctx, patient, pro, send, opts, now);
+    }
+    if (d !== null) return handleMenu(jid, d, send, pro, opts, now, menuText, ai);
+    return handleQuestionText(jid, text, ctx, patient, pro, send, opts, now, ai);
   }
 
   if (isExitWord(text)) {
@@ -181,19 +243,19 @@ export async function handleIncoming(
     }
     await prisma.patient.update({ where: { id: patient.id }, data: { name } });
     await save(jid, STEP.MENU);
-    await send(messages.greetByName(name));
+    await send(messages.greetByName(name, menuText));
     return;
   }
 
   if (isWakeWord(text) && /\bmenu\b/.test(normalize(text))) {
     await save(jid, STEP.MENU);
-    await send(messages.MENU);
+    await send(menuText);
     return;
   }
 
   switch (step) {
     case STEP.MENU:
-      return handleMenu(jid, text, send, pro, opts, now);
+      return handleMenu(jid, text, send, pro, opts, now, menuText, ai);
     case STEP.BOOK_SERVICE:
       return handleBookService(jid, text, send);
     case STEP.BOOK_DAY:
@@ -201,16 +263,16 @@ export async function handleIncoming(
     case STEP.BOOK_SLOT:
       return handleBookSlot(jid, text, ctx, send);
     case STEP.BOOK_CONFIRM:
-      return handleBookConfirm(jid, text, ctx, patient.id, send);
+      return handleBookConfirm(jid, text, ctx, patient.id, send, menuText);
     case STEP.CANCEL_PICK:
       return handleCancelPick(jid, text, ctx, send);
     case STEP.CANCEL_CONFIRM:
-      return handleCancelConfirm(jid, text, ctx, send);
+      return handleCancelConfirm(jid, text, ctx, send, menuText);
     case STEP.CONFIRM_ATTENDANCE:
-      return handleConfirmAttendance(jid, text, ctx, send);
+      return handleConfirmAttendance(jid, text, ctx, send, menuText);
     default:
       await save(jid, STEP.MENU);
-      await send(messages.MENU);
+      await send(menuText);
   }
 }
 
@@ -221,6 +283,8 @@ async function handleMenu(
   pro: Professional,
   opts: ConversationOptions,
   now: Date,
+  menuText: string,
+  ai: AiState,
 ): Promise<void> {
   const choice = text.trim().replace(/\D/g, "");
 
@@ -246,7 +310,7 @@ async function handleMenu(
     const appts = await cancelableAppointments(patient.id);
     if (appts.length === 0) {
       await send(messages.NO_APPTS_TO_CANCEL);
-      await send(messages.MENU);
+      await send(menuText);
       return;
     }
     await save(jid, STEP.CANCEL_PICK, { apptIds: appts.map((a) => a.id) });
@@ -304,6 +368,13 @@ async function handleMenu(
     }
     // HU-011 (D4): de día también se captura lo que escriba después.
     await save(jid, STEP.AWAIT_INQUIRY, { alerted: Boolean(alertJid), confirmed: false });
+    return;
+  }
+
+  // HU-012: opción 5 (oculta si la IA no está disponible: como hoy, no se entiende).
+  if (choice === "5" && ai.available) {
+    await save(jid, STEP.AWAIT_QUESTION, { aiHistory: [] }); // historial nuevo al entrar (P7)
+    await send(messages.QUESTION_MODE_INTRO);
     return;
   }
 
@@ -378,6 +449,7 @@ async function handleBookConfirm(
   ctx: Ctx,
   patientId: string,
   send: Send,
+  menuText: string,
 ): Promise<void> {
   if (isNo(text)) {
     await send("Sin problema, no reservé nada. Escribí *menú* si querés hacer otra cosa.");
@@ -390,7 +462,7 @@ async function handleBookConfirm(
   }
   if (!ctx.serviceId || !ctx.startsAt) {
     await save(jid, STEP.MENU);
-    await send(messages.MENU);
+    await send(menuText);
     return;
   }
 
@@ -451,7 +523,13 @@ async function handleCancelPick(jid: string, text: string, ctx: Ctx, send: Send)
   );
 }
 
-async function handleCancelConfirm(jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
+async function handleCancelConfirm(
+  jid: string,
+  text: string,
+  ctx: Ctx,
+  send: Send,
+  menuText: string,
+): Promise<void> {
   if (isNo(text)) {
     await send("Listo, dejo el turno como está. Escribí *menú* para volver.");
     await save(jid, STEP.MENU);
@@ -463,7 +541,7 @@ async function handleCancelConfirm(jid: string, text: string, ctx: Ctx, send: Se
   }
   if (!ctx.apptId) {
     await save(jid, STEP.MENU);
-    await send(messages.MENU);
+    await send(menuText);
     return;
   }
 
@@ -487,10 +565,16 @@ async function handleCancelConfirm(jid: string, text: string, ctx: Ctx, send: Se
   await save(jid, STEP.MENU);
 }
 
-async function handleConfirmAttendance(jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
+async function handleConfirmAttendance(
+  jid: string,
+  text: string,
+  ctx: Ctx,
+  send: Send,
+  menuText: string,
+): Promise<void> {
   if (!ctx.apptId) {
     await save(jid, STEP.MENU);
-    await send(messages.MENU);
+    await send(menuText);
     return;
   }
   const appt = await prisma.appointment.findUnique({ where: { id: ctx.apptId }, include: { service: true } });
@@ -555,9 +639,12 @@ async function handleInquiryText(
   send: Send,
   opts: ConversationOptions,
   now: Date,
+  menuText: string,
+  ai: AiState,
 ): Promise<void> {
-  // P4: un dígito suelto es una opción del menú, no una consulta.
-  if (/^[0-4]$/.test(text.trim())) return handleMenu(jid, text, send, pro, opts, now);
+  // P4: un dígito suelto es una opción del menú, no una consulta (HU-012: el 5 si hay IA).
+  const d = menuDigit(text, ai.available ? 5 : 4);
+  if (d !== null) return handleMenu(jid, d, send, pro, opts, now, menuText, ai);
 
   const config = afterHoursConfigFor(pro, opts);
   const alertJid = alertJidFor(pro, opts);
@@ -599,8 +686,104 @@ export async function handleIncomingMedia(
   if (pro.botPaused) return;
   // findUnique (no loadState): no crea pacientes ni estado para contactos desconocidos.
   const row = await prisma.conversationState.findUnique({ where: { patientJid: jid } });
-  if (!row || row.step !== STEP.AWAIT_INQUIRY) return;
+  if (!row || (row.step !== STEP.AWAIT_INQUIRY && row.step !== STEP.AWAIT_QUESTION)) return;
   if (now.getTime() - row.updatedAt.getTime() > SESSION_TIMEOUT_MS) return; // silencio, como hoy
-  await send(messages.INQUIRY_TEXT_ONLY);
-  await save(jid, STEP.AWAIT_INQUIRY, (row.context ?? {}) as Ctx);
+  // HU-012: en el modo pregunta la IA solo entiende texto.
+  await send(row.step === STEP.AWAIT_QUESTION ? messages.AI_TEXT_ONLY : messages.INQUIRY_TEXT_ONLY);
+  await save(jid, row.step, (row.context ?? {}) as Ctx);
+}
+
+// --- HU-012: preguntas al bot con IA (opción 5) ---
+
+/** D4 (c): "0" desde el modo pregunta con una pregunta previa → consulta con la pregunta cargada. */
+async function handoffFromQuestion(
+  jid: string,
+  ctx: Ctx,
+  patient: PatientRow,
+  pro: Professional,
+  send: Send,
+  opts: ConversationOptions,
+  now: Date,
+): Promise<void> {
+  const config = afterHoursConfigFor(pro, opts);
+  const alertJid = alertJidFor(pro, opts);
+  const afterHours = isWithinAfterHours(now, config, pro.timezone);
+  const { inquiry } = await recordInquiryMessage({
+    patientId: patient.id,
+    // Sección 15 (P6): con prefijo, para que ella sepa que la IA ya respondió algo.
+    text: inquiryBodyFromAiQuestion(ctx.lastQuestion ?? ""),
+    at: now,
+    afterHours,
+    inquiryId: null,
+  });
+  if (ctx.lastQuestionLogId) {
+    await markBotAiQuestionHandedOff({ id: ctx.lastQuestionLogId, patientId: patient.id, at: now });
+  }
+  let alerted = false;
+  // De día: alerta inmediata (HU-011). De noche: va en el resumen de la mañana.
+  if (!afterHours && !inquiry.receivedAfterHours && alertJid) {
+    await enqueueHandoffAlert(patient, alertJid);
+    alerted = true;
+  }
+  // P6: solo la confirmación de la HU-011 (la consulta ya está cargada).
+  await send(
+    afterHours ? messages.inquirySavedAfterHours({ attendFrom: formatClock(config.end) }) : messages.INQUIRY_SAVED_DAY,
+  );
+  await save(jid, STEP.AWAIT_INQUIRY, { inquiryId: inquiry.id, alerted, confirmed: true });
+}
+
+/** Texto libre en el modo pregunta: va a la IA (con límites, registro y limpieza de formato). */
+async function handleQuestionText(
+  jid: string,
+  text: string,
+  ctx: Ctx,
+  patient: PatientRow,
+  pro: Professional,
+  send: Send,
+  opts: ConversationOptions,
+  now: Date,
+  ai: AiState,
+): Promise<void> {
+  if (!ai.available || !ai.provider) {
+    // La apagaron (o se fue la clave) en medio de la sesión.
+    await save(jid, STEP.MENU);
+    await send(messages.AI_UNAVAILABLE);
+    return;
+  }
+  const limits = mergeBotAiLimits(getBotAiConfig().limits, opts.aiLimits);
+  void opts.typing?.().catch(() => {}); // "escribiendo…" (no se espera)
+  const title = pro.title?.trim();
+  const result = await answerQuestion(
+    {
+      provider: ai.provider,
+      limits,
+      countToday: () => countBotAiQuestionsToday({ patientId: patient.id, now, tz: pro.timezone }),
+      record: (row) => recordBotAiQuestion({ ...row, patientId: patient.id, askedAt: now }),
+      runTool: (name, input) =>
+        runBotAiTool({ name, input, patientId: patient.id, now, afterHours: opts.afterHours }),
+      log: logger,
+    },
+    {
+      text,
+      history: ctx.aiHistory ?? [],
+      now,
+      tz: pro.timezone,
+      professionalName: title ? `${title} ${pro.name}` : pro.name,
+    },
+  );
+  const history = result.turn
+    ? trimHistory([...(ctx.aiHistory ?? []), result.turn], limits.historyTurns)
+    : (ctx.aiHistory ?? []);
+  const next: Ctx = { aiHistory: history };
+  if (result.question) {
+    next.lastQuestion = result.question;
+    if (result.logId) next.lastQuestionLogId = result.logId;
+  } else {
+    // TOO_LONG: se conserva la pregunta derivable anterior.
+    if (ctx.lastQuestion) next.lastQuestion = ctx.lastQuestion;
+    if (ctx.lastQuestionLogId) next.lastQuestionLogId = ctx.lastQuestionLogId;
+  }
+  // Se guarda ANTES de mandar: un mensaje encolado detrás (D14) ya ve el historial. Renueva la sesión.
+  await save(jid, STEP.AWAIT_QUESTION, next);
+  await send(result.reply);
 }

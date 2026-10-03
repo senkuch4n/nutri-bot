@@ -19,3 +19,4 @@ export * from "./prescriptions";
 export * from "./isak";
 export * from "./anthropometricReports";
 export * from "./inquiries";
+export * from "./botAi";

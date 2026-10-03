@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn() }));
+const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -8,7 +8,9 @@ vi.mock("@nutri-bot/db/domain", () => ({
   enqueueDueReminders: vi.fn(), enqueueAttendanceConfirmations: vi.fn(),
   enqueuePrepInstructions: vi.fn(), syncGoogleCalendar: vi.fn(),
   enqueueAfterHoursDigest: mocks.digest,
+  purgeExpiredBotAiQuestions: mocks.purge,
 }));
+vi.mock("./ai/runtime", () => ({ getBotAiConfig: () => ({ limits: { retentionDays: 90 } }) }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
 vi.mock("./outbound-payload", () => ({ OUTBOX_INCLUDE: {}, resolveOutboundPayload: vi.fn() }));
 vi.mock("./env", () => ({ env: { pollIntervalMs: 4000 } }));
@@ -95,5 +97,29 @@ describe("after-hours digest cron (HU-011)", () => {
     expect(mocks.digest).toHaveBeenCalledTimes(1);
     finish({ digested: 0, outboundId: null });
     await first;
+  });
+});
+
+describe("bot AI retention cron (HU-012)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+  it("runs daily at 04:30 with the configured retention, before the digest", async () => {
+    mocks.purge.mockResolvedValue(3);
+    startCron();
+    const idx = mocks.schedule.mock.calls.findIndex((c) => c[0] === "30 4 * * *");
+    expect(idx).toBeGreaterThan(0);
+    expect(idx).toBe(mocks.schedule.mock.calls.length - 2);
+    await mocks.schedule.mock.calls[idx]![1]();
+    expect(mocks.purge).toHaveBeenCalledWith({ retentionDays: 90 });
+  });
+  it("contains errors and runs again on the next tick", async () => {
+    mocks.purge.mockRejectedValueOnce(new Error("db down")).mockResolvedValueOnce(0);
+    startCron();
+    const tick = mocks.schedule.mock.calls.find((c) => c[0] === "30 4 * * *")![1];
+    await expect(tick()).resolves.toBeUndefined();
+    expect(mocks.error).toHaveBeenCalled();
+    await tick();
+    expect(mocks.purge).toHaveBeenCalledTimes(2);
   });
 });
