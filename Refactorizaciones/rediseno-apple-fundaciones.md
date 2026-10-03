@@ -1323,3 +1323,21 @@ nombres shadcn con los valores Notion y los componentes nuevos funcionando (conv
   entre servidor y cliente en `AppSidebar` y en la demo: el árbol de componentes difiere entre SSR y
   cliente, probablemente un wrapper que se renderiza solo en el cliente). Verificar en Chrome que ni
   `/dev-diseno`, ni `/dev-diseno-portal`, ni las pantallas reales muestran errores de hidratación.
+
+## 23. Ajustes tras la 1ª revisión (2026-10-03) — tienen prioridad
+
+Ver `progress/review_HU-017a.md` ("Cambios requeridos"). Hay que corregir:
+
+1. **Sheet congelado por un toque durante la entrada o la salida** (`use-dismiss-drag.ts`, `sheet.tsx`). Solo
+   detener la animación cuando el gesto se captura de verdad. Si se detuvo y no hubo captura, retomar hacia
+   el destino vigente: 0 si está presente; `size` + `safeToRemove` si está saliendo. Ignorar o completar
+   bien los gestos que empiecen mientras el sheet no está presente. El §3 "agarrar en vuelo" se mantiene
+   para el arrastre real.
+2. **El scrim no bloquea la entrada durante la salida** (`dialog.tsx` `AnimatedScrim`, `alert-dialog.tsx`,
+   `sheet.tsx`): con `open=false`, `pointer-events: none` en el scrim (y `RemoveScroll` que no dure toda la
+   salida si se puede), sin que `onCloseAutoFocus` le robe el foco a lo que el usuario tocó durante la salida.
+3. **Toaster** (`sonner.tsx`): que los estilos de descripción, acción y cancelar apliquen (`group` +
+   `group/toast`, o selectores que matcheen el `li`).
+
+**Sumado por el usuario:** medir el peso. Correr `next build` sobre `3457e3f` en un worktree aparte (con
+`next dev` apagado) y comparar el First Load de `/` y `/portal` contra el actual (presupuesto +≤ 45 KB).
