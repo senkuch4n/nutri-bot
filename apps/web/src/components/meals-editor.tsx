@@ -29,6 +29,7 @@ import { copiedDayMessage, itemLabel } from "@/components/weekly-menu/labels";
 import { MealCardMenu } from "@/components/weekly-menu/meal-card-menu";
 import { useMenuUndo } from "@/components/weekly-menu/use-menu-undo";
 import { WeeklyOverview } from "@/components/weekly-menu/weekly-overview";
+import type { RecipeItemView } from "@/components/recipe-picker/types";
 
 export type { FoodOption } from "@/components/food-catalog";
 
@@ -44,6 +45,8 @@ export interface MealItemView {
   kcalBreakdown: AtwaterBreakdown | null;
   /** HU-018b: null = todos los días (comida EVERY_DAY). */
   weekday: Weekday | null;
+  /** HU-018c: ítem de receta (macros ya multiplicados por las porciones). Opcional: los fixtures de 018b no cambian. */
+  recipe?: RecipeItemView | null;
 }
 
 export interface MealView {
