@@ -64,28 +64,6 @@ export const colors = {
 
 export type ColorToken = keyof typeof colors;
 
-/** Tokens que no existían en el sistema HU-002 (conviven con los nombres shadcn hasta el "flip", §7.8). */
-export const newColorTokens = [
-  "grouped",
-  "muted-foreground-vibrant",
-  "tertiary",
-  "placeholder",
-  "fill-hover",
-  "fill-pressed",
-  "primary-hover",
-  "primary-pressed",
-  "primary-soft",
-  "primary-soft-hover",
-  "primary-soft-pressed",
-  "primary-vibrant",
-  "destructive-hover",
-  "destructive-pressed",
-  "destructive-muted-hover",
-  "destructive-muted-pressed",
-  "destructive-vibrant",
-  "overlay",
-] as const satisfies readonly ColorToken[];
-
 /** Fondo agrupado cálido del portal (D2). */
 export const portalColorOverrides: Partial<Record<ColorToken, `#${string}`>> = { grouped: "#FBFAF7" };
 
@@ -133,7 +111,7 @@ export const typeScale = {
 
 export type TypeToken = keyof typeof typeScale;
 
-/** Re-mapeo de la escala por defecto de Tailwind (se aplica en el "flip", §7.8). Sin peso. */
+/** Re-mapeo de la escala por defecto de Tailwind (`text-xs…4xl`, §7.2): tracking y leading por tamaño, sin peso. */
 export const legacyTypeScale = {
   xs: { size: "0.75rem", lineHeight: "1rem", tracking: "0em" },
   sm: { size: "0.875rem", lineHeight: "1.25rem", tracking: "-0.006em" },

@@ -5,8 +5,7 @@ import { PortalNav } from "@/components/shell/portal-nav";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessionalPortalName } from "@/lib/shell";
 
-// HU-017a §10.3. `theme-portal` = fondo agrupado cálido (D2). `theme-warm` (paleta Notion del portal)
-// convive hasta el "flip" de la fase 7, que la retira.
+// HU-017a §10.3. `theme-portal` = fondo agrupado cálido (D2); el resto de la paleta es la del panel.
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const [patient, professionalName] = await Promise.all([
     getPortalPatient(),
@@ -15,7 +14,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   if (!patient) {
     return (
-      <div className="theme-warm theme-portal grid min-h-[100dvh] place-items-center bg-grouped px-4 text-foreground">
+      <div className="theme-portal grid min-h-[100dvh] place-items-center bg-grouped px-4 text-foreground">
         <div className="w-full max-w-sm rounded-xl bg-card p-8 text-center shadow-card more-contrast:border more-contrast:border-input">
           <Wordmark subtitle={professionalName} className="mb-6 justify-center" />
           <h1 className="text-balance text-title-2">Portal del paciente</h1>
@@ -30,7 +29,7 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   return (
-    <div className="theme-warm theme-portal relative min-h-[100dvh] bg-grouped text-foreground">
+    <div className="theme-portal relative min-h-[100dvh] bg-grouped text-foreground">
       <PortalHeader professionalName={professionalName} />
       {/* El contenido pasa por debajo del header y de la tab bar (materiales translúcidos). */}
       <main

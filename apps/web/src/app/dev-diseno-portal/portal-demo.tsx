@@ -38,7 +38,6 @@ export function PortalDemo() {
 
   return (
     <div
-      data-apple-preview
       className={cn(
         "theme-portal relative min-h-[100dvh] bg-grouped text-foreground",
         reduceTransparency && "a11y-reduce-transparency",

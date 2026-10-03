@@ -27,8 +27,7 @@ export function SimToggle({ label, checked, onChange }: { label: string; checked
 }
 
 /**
- * Marco de las páginas demo: activa el alcance `data-apple-preview` (lenguaje completo antes del
- * flip), barra de simulación (transparencia reducida, más contraste, movimiento reducido) e índice.
+ * Marco de la demo: barra de simulación (transparencia reducida, más contraste, movimiento reducido) e índice.
  */
 export function DemoFrame({
   anchors,
@@ -48,7 +47,6 @@ export function DemoFrame({
 
   return (
     <div
-      data-apple-preview
       className={cn(reduceTransparency && "a11y-reduce-transparency", moreContrast && "a11y-more-contrast", className)}
     >
       <MotionConfig reducedMotion={reduceMotion ? "always" : "user"}>
