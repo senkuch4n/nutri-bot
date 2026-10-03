@@ -230,3 +230,7 @@ orquestador, para que las revise a la mañana:
 - PR #25 (fix login Google) mergeado. Falta definir GOOGLE_CALENDAR_OWNER_EMAIL en producción. Traer develop a la rama de 018c antes de implementar.
 - HU-018c SDD lista (Refactorizaciones/buscador-recetas.md; sin migración; corte 018c-1 buscador / 018c-2 detalle de receta; hallazgo: copiar/repetir/deshacer y aplicar plantilla perderían recipeId). → `arquitectura_lista`.
 - HU-018c: usuario aprueba SDD (018c-1 → 018c-2; D1–D9 aceptadas). → `implementando` 018c-1 (Opus; apple-design, ui-ux-pro-max).
+- 2026-10-03: el usuario activó modo autónomo ("realizá todas las HU que puedas; si no podés avanzar con una, avanzá con otra"). Decisiones que normalmente se preguntan: se toma la recomendada y se anota acá y en backlog.
+- Seña con Mercado Pago probada por el usuario: funciona.
+- HU-018c-1 done; recorrido OK (progress/recorrido_HU-018c.md); datos de prueba borrados. → `en_revision` (reviewer Opus, recomendado; modo autónomo).
+- HU-018c-1 **aprobada**. PR a develop. Sigue 018c-2 en rama encadenada (feat/hu-018c2-detalle-receta desde 018c-1) para no esperar el merge.

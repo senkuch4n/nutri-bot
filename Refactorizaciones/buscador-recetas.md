@@ -1345,3 +1345,11 @@ checklist y la sección 7 sin rediseñar.
   y en el portal), en una rama nueva desde `develop` con 018c-1 mergeado.
 - **Sección 13:** aceptadas todas las recomendaciones (D1–D9).
 - **Implementer:** Opus, con los skills `apple-design` y `ui-ux-pro-max`.
+
+## 17. Pendientes para 018c-2 (de la revisión de 018c-1)
+
+- Test unitario (vitest con mocks) de `applyTemplateToPatient` con un ítem de receta.
+- Con varios días marcados, el impacto y el botón tienen que medir los mismos días (`daysToAdd`, no `scope.days`).
+- "Quitar" del ítem de receta en el editor: llevarlo a 44 px.
+- Portal: que los macros de los ítems de receta no viajen al cliente (junto con `PortalRecipeView`, SDD 7.6).
+- Recorrido en el navegador del PDF y del portal con un plan de prueba.
