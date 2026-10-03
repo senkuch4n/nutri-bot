@@ -1,6 +1,6 @@
 # impl HU-017a — Rediseño Apple (1/5): fundaciones y shell
 
-Estado: **done-fase6** (fases 0 a 6 hechas; las 7–9 esperan que el usuario apruebe la demo, §21).
+Estado: **done** (fases 0–9; demo aprobada por el usuario, SDD §22). Falta solo el recorrido con sesión en Chrome (lista en "Fases 7–9").
 
 SDD: `Refactorizaciones/rediseno-apple-fundaciones.md` (manda §21). Rama `feat/hu-017-rediseno-apple`.
 Skills: `apple-design` (base), `web-design-guidelines` (autochequeo).
@@ -316,3 +316,137 @@ prefijo), borrar `:root` viejo y `.theme-warm`, re-mapear `shadow-sm…xl`, regl
 global → política §7.7, `body text-body`, fundido de `#contenido > *`, `chart-theme.ts` desde
 `chartPalette`; quitar `data-apple-preview` de las demos; fase 8 (greps de §17.3, `tracking-tight`);
 fase 9 (recorrido completo §17).
+
+# Fases 7–9 (demo aprobada, SDD §22)
+
+## Arreglo previo: hidratación de `/dev-diseno` — commit `f4f53ea`
+
+- **No lo pude reproducir.** Armé una réplica fiel en rutas públicas temporales (mismo layout que
+  `(panel)/layout.tsx` con datos falsos: `TooltipProvider` → `ConfirmProvider` → skip link →
+  `AppSidebar` + `MobileTopbar` → `main`, más `loading.tsx`, layout async con server action y la
+  página demo completa) con un `next dev` limpio en :3100, y la cargué con Playwright en Chrome real
+  (`channel: "chrome"`) y Chromium, a 1366 y 390, con y sin `reducedMotion: reduce`, y con un user
+  agent **no headless** (Next 15.5 trata a los navegadores headless como bots y les sirve la metadata
+  bloqueante en lugar de streaming). El `aside id` y todos los ids eran iguales en el SSR y en el
+  cliente, y no hubo ningún aviso de hidratación. Borré las rutas de prueba.
+- Lo único que distingue `/dev-diseno` de `/pacientes` por encima de `AppSidebar` era el
+  `export const metadata` de la página (único en todo el panel). Además el calendario de la demo
+  renderiza cosas que dependen de la hora (hoy, indicador de "ahora", título de la semana).
+  Cambios defensivos:
+  1. Las dos páginas demo ya **no exportan `metadata`**: el `noindex` va como `<meta name="robots">`
+     dentro de la página (React 19 lo sube al `<head>`; verificado en el HTML).
+  2. `FullCalendar` de la demo se monta **solo en el cliente** (skeleton de la misma altura hasta el
+     `useEffect`), así ningún valor dependiente de la hora puede diferir entre servidor y cliente.
+- Hipótesis más probable para lo que vio el orquestador: bundles de servidor y cliente desfasados en el
+  `next dev` del usuario, que estuvo levantado durante todas mis ediciones (Fast Refresh). **Hay que
+  confirmarlo en Chrome con un `next dev` recién levantado** (punto 1 de la lista de abajo).
+
+## Fase 7 — El flip — commit `b96d1a4`
+
+- 7.1 Plugin: `:root` recibe **todos** los colores de `design-tokens.ts` (`cssVariablesFor(colors)`)
+  + materiales + movimiento; `.theme-portal, :root:has(.theme-portal)` con `--grouped` cálido;
+  `prefers-contrast: more` y `:root:has(.a11y-more-contrast)` con el separador `#C7C7CC`. Se borró
+  el bloque `:root` viejo de `globals.css` y `.theme-warm` (queda solo `color-scheme: light`). Se
+  retiró el alcance `:root:has([data-apple-preview])` (desvío D-2): el "flip" fue moverlo a `:root`.
+- 7.2 `fontSize` `xs…4xl` = `legacyTypeScale` (valores directos, sin las variables con fallback de
+  D-2), `borderRadius` = `radii` (sin `var(--radius)`), `boxShadow` sm=card, DEFAULT/md=float,
+  lg/xl=modal.
+- 7.3 `globals.css`: se borró la regla global de reduced-motion (todo a 0,01 ms) y quedó la política
+  §7.7 en CSS (`scroll-behavior: auto`, toasts de Sonner solo con opacidad/altura; el resto ya estaba en
+  los componentes: skeleton `motion-safe:animate-pulse`, tooltip sin zoom, press sin escala, overlays
+  y sidebar en Motion). `body` con `text-body` y `font-optical-sizing: auto`. `#contenido > *` y
+  `[data-portal-main] > *` con fundido de 150 ms. `:focus-visible` con `--ring` (ya estaba).
+- 7.4 Tema de FullCalendar (§11) sin prefijo, reemplazando al anterior (se conservan
+  `.fc-non-business` plano y la flecha del indicador oculta).
+- 7.5 `lib/chart-theme.ts` sale de `chartPalette` (mismos exports y claves; `chartDefaultColor` pasa
+  de tipo literal a `string`, sin efecto en los consumidores: tsc verde).
+- Verificación: tsc web verde, `npm run test` 68/1341 verdes; `/inicio` y `/portal` sin sesión a 1366
+  y 390 en Chrome sin errores de consola ni de hidratación; `body` 15/22 px `#1D1D1F`. Capturas en
+  `docs/auditoria-apple/017a/despues/` (sobrescriben las de la fase 6).
+
+## Fase 8 — Retirar lo viejo — commit `f8cbc9a`
+
+- `theme-warm` fuera de `(portal)/layout.tsx` y `app/not-found.tsx` (D-3 cerrado);
+  `data-apple-preview` fuera de las dos demos; export `newColorTokens` (ya sin uso) fuera de
+  `design-tokens.ts`; comentarios de "hasta el flip" actualizados.
+- Greps de §17.3 en `apps/web/src`, todos en 0 salvo lo esperado:
+  - `theme-warm|var(--radius)` → 0. Valores Notion → 0 (solo el propio test que verifica que no estén).
+  - `prefers-reduced-motion` → solo la política nueva (`globals.css` 2, `sidebar-layout.css` 1). `0.01ms` → 0.
+  - `scaleX|previousBounds|clip-path` en `components/shell` → 0. `bg-primary/10` en `components` → 0.
+  - `motion.div|from "framer-motion"` → 0. Hex en `components`, `globals.css`, `chart-theme.ts` (sin `brand.tsx`) → 0.
+  - `dev-diseno` en `components/shell` y `lib` → 0. `data-apple-preview` → 0.
+- 8.2 `tracking-tight` en los archivos de §14.1 → 0 (ya se había ido en las fases 4–6).
+- 8.3 `sidebar-layout.css`: px solo en las media queries (`min-width: 1024px`) y en el borde de 1 px
+  de más contraste.
+
+## Fase 9 — Verificación final
+
+```
+npm run typecheck              → core, db, bot, web: sin errores
+npm run test                   → Test Files 68 passed (68) · Tests 1341 passed (1341)
+npm run lint -w apps/web       → 1 warning preexistente (ajustes/logo-form.tsx:36, alt-text), ninguno nuevo
+./ops/harness/verify.sh        → Arnés OK (WARN "se tocó el bot" = los apps/bot/.whatsapp-auth.vieja* sin trackear, ajenos)
+next build (apps/web, sin next dev levantado) → Compiled successfully, 41 rutas
+```
+
+- **La demo no existe en producción:** `/dev-diseno-portal` se prerenderiza como **404**
+  (`.next/server/app/dev-diseno-portal.meta` → `"status": 404`, HTML con
+  `NEXT_HTTP_ERROR_FALLBACK;404`). `/dev-diseno` es dinámica (está bajo el layout del panel, que lee
+  la sesión) y su primera línea es `notFound()` cuando `NODE_ENV === "production"`; sin sesión el
+  middleware redirige antes, así que el 404 con sesión queda para el recorrido. Ninguna navegación
+  enlaza a las demos.
+- First Load JS del build: `/` 339 kB, `/portal` 107 kB, `/pacientes` 146 kB, `/pacientes/[id]`
+  362 kB, compartido 103 kB. No tengo la medición de antes (no se corrió `next build` antes de la
+  HU), así que no puedo comparar contra el presupuesto de §17.1 (+≤ 45 KB gz). `domMax` se carga en
+  diferido.
+- Alcance contra `origin/develop`: 112 archivos; ninguno en la zona de imleticio, `packages/` ni
+  `apps/bot/`.
+- `next build` regeneró `apps/web/.next`: el próximo `npm run dev` recompila desde cero (ayuda a
+  descartar la hipótesis de bundles desfasados).
+
+### Commits de esta ronda
+
+`f4f53ea` hidratación · `b96d1a4` fase 7 · `f8cbc9a` fase 8 · (este reporte va en un commit aparte).
+
+## Recorrido pendiente en Chrome (orquestador, con sesión y `npm run dev` recién levantado)
+
+Solo lectura: no guardar, no borrar, no enviar avisos, no "generar con IA". Con la consola abierta: el
+criterio es **cero avisos de hidratación** y cero errores en cada pantalla (carga completa, no
+navegación).
+
+1. **Hidratación:** `/dev-diseno`, `/dev-diseno-portal`, `/pacientes`, `/` (recarga dura en cada
+   una). Si `/dev-diseno` sigue avisando, copiar el diff completo del aviso (el primer nodo distinto,
+   no solo los ids) al reporte.
+2. **Escritorio 1366×768:**
+   - `/` (calendario: botones gray, activo elevado; abrir "Nuevo turno" y cerrar con Esc a mitad de la
+     animación; clic en un turno → sheet no modal, elegir otro turno sin cerrar).
+   - `/disponibilidad` (abrir y cancelar agregar bloque).
+   - `/servicios` (switch Activo: solo mirar el press; "Editar" → sheet, cerrar a mitad).
+   - `/pacientes` (press de fila, header sticky).
+   - `/pacientes/[id]` (las 7 pestañas: el indicador se desliza; Evolución: gráficos con colores nuevos).
+   - Una consulta, su antropometría y el informe.
+   - `/mensajes`, `/pagos` (StatTile), `/avisos`, `/asistente`, `/ajustes` (4 secciones) y `/ajustes/whatsapp`.
+   - Una URL inexistente (404) y un `loading` con Network en Slow 3G.
+   - Sidebar: colapsar/expandir dos veces rápido (invierte, el contenido no se estira); entra sin scroll
+     (`nav.scrollHeight <= nav.clientHeight`); activo con fondo + color + peso + ícono.
+3. **Zona de imleticio (solo mirar):** `/alimentos`, `/alimentos/[id]`, `/alimentos/nuevo` (sin
+   enviar), `/plantillas`, `/plantillas/[id]`, `/pacientes/[id]/planes/[planId]`. Abrir el buscador
+   de `food-picker` (su popover propio queda con sombra nivel 2 y radio 8, sin spring: esperado hasta
+   017e) y el popover de kcal (material + spring desde el disparador).
+4. **Móvil 390×844 con emulación táctil:**
+   - `/` y `/pacientes/[id]`: topbar translúcida, línea que aparece al scrollear, pestañas sticky bajo `top-14`.
+   - Menú: ítems de 44 px, cerrar arrastrando hacia la izquierda.
+   - Inputs: tocar uno → `font-size` computado 16 px.
+5. **Portal** (token de paciente, sin escribir): `/portal`, `/portal/plan`, `/portal/evolucion`,
+   `/portal/diario` (no enviar) a 390, 768 y 1366. Revisar:
+   - fondo cálido;
+   - header y tab bar translúcidos, con el contenido pasando por debajo;
+   - activo de la tab bar en azul oscuro y semibold;
+   - inputs a 17 px.
+
+   "Salir" al final; también el portal sin sesión.
+6. **Accesibilidad del sistema:** macOS Reducir movimiento (sheet, modal, menú y pestañas con
+   fundido; gráficos sin crecer; press solo de tono), Reducir transparencia y Aumentar contraste
+   (chrome sólido, borde visible); Tab por sidebar, botones, pestañas, segmentado, switch e inputs
+   (anillo azul), Dialog y Sheet con foco atrapado, Esc cierra y el foco vuelve al disparador.
+7. **Producción (opcional):** con `next start` y sesión, `/dev-diseno` → 404.
