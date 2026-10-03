@@ -4,18 +4,18 @@
   "intentos_revision": 0,
   "hu": "docs/hu-plan-recetas-buscador.md",
   "sdd": "Refactorizaciones/buscador-recetas.md",
-  "rama": "feat/hu-018c-buscador-recetas",
+  "rama": "feat/hu-018c2-detalle-receta",
   "origen": "Partición de HU-018",
   "slug": "buscador-recetas",
   "titulo": "Buscador de recetas tipo Google Shopping dentro de cada comida, con impacto en los macros del día (uno o varios días)",
-  "estado": "arquitectura_lista",
+  "estado": "implementando",
   "notas": "Depende de 018a y 018b.",
   "skills_architect": [
     "ui"
   ],
   "entregas": {
     "018c-1": "aprobada (2026-10-03, PR a develop)",
-    "018c-2": "pendiente"
+    "018c-2": "implementando (rama encadenada sobre 018c-1 / PR #26)"
   },
   "modelo": "opus",
   "skills": [

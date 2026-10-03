@@ -234,3 +234,4 @@ orquestador, para que las revise a la mañana:
 - Seña con Mercado Pago probada por el usuario: funciona.
 - HU-018c-1 done; recorrido OK (progress/recorrido_HU-018c.md); datos de prueba borrados. → `en_revision` (reviewer Opus, recomendado; modo autónomo).
 - HU-018c-1 **aprobada**. PR a develop. Sigue 018c-2 en rama encadenada (feat/hu-018c2-detalle-receta desde 018c-1) para no esperar el merge.
+- HU-018c-2 → `implementando` (Opus; apple-design, ui-ux-pro-max — recomendados, modo autónomo). Rama feat/hu-018c2-detalle-receta encadenada sobre feat/hu-018c-buscador-recetas (PR #26).
