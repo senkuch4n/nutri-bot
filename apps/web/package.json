@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "predev": "node -e \"const fs=require('fs');if(!fs.existsSync('.env'))fs.symlinkSync('../../.env','.env')\"",
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
+    "predev:webpack": "npm run predev",
+    "dev:webpack": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
