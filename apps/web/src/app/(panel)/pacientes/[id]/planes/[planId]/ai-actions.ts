@@ -75,11 +75,11 @@ export async function generateAiPlanAction(
     }),
     prisma.clinicalRecord.findUnique({ where: { patientId } }),
     getLatestFormulaMeasurements(patientId),
-    listFoods({ activeOnly: true }),
+    listFoods({ activeOnly: true, source: "SARA2" }),
   ]);
 
   if (foods.length === 0) {
-    return { ok: false, error: "Todavía no hay alimentos cargados en la base." };
+    return { ok: false, error: "No hay alimentos SARA 2 disponibles. Cargá la base SARA 2 antes de generar un plan." };
   }
 
   // Formato compacto "ref|nombre|grupo|kcal" (HU-005, D10): con ~1000 alimentos el JSON con ids

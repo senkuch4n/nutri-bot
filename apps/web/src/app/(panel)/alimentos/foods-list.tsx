@@ -1,14 +1,13 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { Apple, Plus, Search, SearchX } from "lucide-react";
+import { Apple, Search, SearchX } from "lucide-react";
 import { foodSearchText, matchesFoodQuery } from "@nutri-bot/core";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { FoodSourceBadge } from "@/components/food-source-badge";
 import { Label } from "@/components/primitives/label";
 import { Switch } from "@/components/primitives/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
-import { Badge, Button, ButtonLink, Card, EmptyState, Input, Quantity, Select } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Quantity, Select } from "@/components/ui";
 import { FOOD_GROUP_LABELS, FOOD_GROUPS, foodGroupLabel, foodGroupShortLabel } from "@/lib/food-groups";
 
 export interface FoodRow {
@@ -22,8 +21,6 @@ export interface FoodRow {
   fatPer100: string;
   active: boolean;
 }
-
-type SourceFilter = "ALL" | "SARA2" | "PROPIO";
 
 const PAGE_SIZE = 50;
 const countFormat = new Intl.NumberFormat("es-AR");
@@ -81,7 +78,6 @@ const columns: DataTableColumn<FoodRow>[] = [
 
 export function FoodsList({ foods }: { foods: FoodRow[] }) {
   const [q, setQ] = useState("");
-  const [source, setSource] = useState<SourceFilter>("ALL");
   const [group, setGroup] = useState<string>("");
   const [showInactive, setShowInactive] = useState(false);
   const inactiveId = useId();
@@ -94,17 +90,15 @@ export function FoodsList({ foods }: { foods: FoodRow[] }) {
       searchable
         .filter(({ row, text }) => {
           if (!showInactive && !row.active) return false;
-          if (source !== "ALL" && row.source !== source) return false;
           if (group && row.group !== group) return false;
           return matchesFoodQuery(text, q);
         })
         .map(({ row }) => row),
-    [searchable, q, source, group, showInactive],
+    [searchable, q, group, showInactive],
   );
 
   function clearFilters() {
     setQ("");
-    setSource("ALL");
     setGroup("");
   }
 
@@ -112,20 +106,14 @@ export function FoodsList({ foods }: { foods: FoodRow[] }) {
     foods.length === 0 ? (
       <EmptyState
         icon={Apple}
-        title="Todavía no hay alimentos"
-        description="Cargá el primero para usarlo al armar planes y plantillas."
-        action={
-          <ButtonLink href="/alimentos/nuevo" variant="secondary">
-            <Plus aria-hidden />
-            Nuevo alimento
-          </ButtonLink>
-        }
+        title="Todavía no hay alimentos SARA 2"
+        description="Cargá la base SARA 2 para usarla al armar planes y plantillas."
       />
     ) : (
       <EmptyState
         icon={SearchX}
         title="No hay alimentos que coincidan"
-        description="Probá con otro nombre, otra fuente u otro grupo."
+        description="Probá con otro nombre u otro grupo."
         action={
           <Button variant="secondary" onClick={clearFilters}>
             Limpiar filtros
@@ -156,24 +144,6 @@ export function FoodsList({ foods }: { foods: FoodRow[] }) {
             className="pl-9"
           />
         </div>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={source}
-          onValueChange={(v) => v && setSource(v as SourceFilter)}
-          aria-label="Filtrar por fuente"
-          className="rounded-md border border-input p-0.5 [&>button]:border-0"
-        >
-          <ToggleGroupItem value="ALL" className="data-[state=on]:font-semibold">
-            Todas
-          </ToggleGroupItem>
-          <ToggleGroupItem value="SARA2" className="data-[state=on]:font-semibold">
-            SARA 2
-          </ToggleGroupItem>
-          <ToggleGroupItem value="PROPIO" className="data-[state=on]:font-semibold">
-            Propios
-          </ToggleGroupItem>
-        </ToggleGroup>
         <Select
           aria-label="Filtrar por grupo"
           value={group}
@@ -207,7 +177,7 @@ export function FoodsList({ foods }: { foods: FoodRow[] }) {
           maxHeightClassName="max-h-[calc(100vh-17rem)]"
           empty={empty}
           pageSize={PAGE_SIZE}
-          pageResetKey={[q, source, group, showInactive].join("|")}
+          pageResetKey={[q, group, showInactive].join("|")}
         />
       </Card>
     </div>

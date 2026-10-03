@@ -7,10 +7,9 @@ export interface AiCatalogFood {
   kcalPer100: number;
 }
 
-/** AI-only preference. Caller supplies active foods; manual selection stays unfiltered. */
+/** SARA 2 is required for new AI plans. Caller supplies active foods. */
 export function selectAiCatalogFoods<T extends { source: FoodSourceKey }>(foods: readonly T[]): readonly T[] {
-  const saraFoods = foods.filter((food) => food.source === "SARA2");
-  return saraFoods.length > 0 ? saraFoods : foods;
+  return foods.filter((food) => food.source === "SARA2");
 }
 
 export const AI_CATALOG_MAX_CHARS = 60_000;

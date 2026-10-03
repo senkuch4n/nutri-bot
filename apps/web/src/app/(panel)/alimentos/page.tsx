@@ -1,24 +1,17 @@
 import { listFoods } from "@nutri-bot/db/domain";
-import { Plus } from "lucide-react";
-import { ButtonLink, PageHeader } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { FoodsList } from "./foods-list";
 
 export const dynamic = "force-dynamic";
 
 export default async function AlimentosPage() {
-  const foods = await listFoods({ activeOnly: false });
+  const foods = await listFoods({ activeOnly: false, source: "SARA2" });
 
   return (
     <div>
       <PageHeader
         title="Alimentos"
-        description="Base de alimentos con valores cada 100 g: SARA 2 (Ministerio de Salud, 2022) y tus alimentos propios."
-        action={
-          <ButtonLink href="/alimentos/nuevo">
-            <Plus aria-hidden />
-            Nuevo alimento
-          </ButtonLink>
-        }
+        description="Base oficial de alimentos SARA 2 (Ministerio de Salud, 2022), con valores cada 100 g."
       />
       <FoodsList
         foods={foods.map((f) => ({
