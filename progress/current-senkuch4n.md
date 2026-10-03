@@ -151,3 +151,9 @@ orquestador, para que las revise a la mañana:
 - **HU-013 aprobada** (1ª ronda, reviewer Opus). Ver history.
 - Pendientes del review HU-013 (en la rama de la HU, PR #10): limpieza de texto de sesiones vencidas generalizada a BOOK_REASON/BOOK_CONFIRM (clearExpiredSessionText); SLOT_TAKEN con motivo ofrece otros días y lo conserva; jids propios en test-booking-reason. Rebase sobre develop (#8, #11). 984 tests, 4 simulaciones OK.
 - Directo (fix/confirmacion-asistencia-vence): bug confirmado con la simulación — un sí/no tardío (pasados 20 min) al pedido de confirmación de asistencia se ignoraba. Ahora cuenta si el mensaje ENTERO es un sí/no claro (lateAttendanceAnswer) y el turno no empezó; lo demás sigue en silencio. confirm-flow 8/8, 1007 tests.
+- **HU-014** `recordatorios-por-servicio` (EP-050) → reservada en Notion, rama `feat/hu-014-recordatorios-por-servicio` → `afinando`. #10 y #12 mergeados.
+- HU-014 afinada (D1–D10) → `afinada_pendiente_validacion`.
+- HU-014 **validada**: D1–D10 según recomendaciones (D2 confirmación como recordatorio más; D5 margen 2 h; D7 separados).
+- HU-014 → `en_arquitectura` (migracion-prisma + refactor + ui).
+- HU-014: SDD lista (Refactorizaciones/recordatorios-por-servicio.md; Service.reminders JSONB, OutboundMessage.dedupeKey, Appointment.bookedAt; un cron */5 reemplaza recordatorio+confirmación; P1–P10) → `arquitectura_lista`.
+- HU-014: usuario acepta P1–P10. → `implementando` (Opus; migracion-prisma, ui-styling, web-design-guidelines, ui-ux-pro-max).

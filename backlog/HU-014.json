@@ -1,0 +1,26 @@
+{
+  "id": "HU-014",
+  "responsable": "senkuch4n",
+  "slug": "recordatorios-por-servicio",
+  "titulo": "Recordatorios según el tipo de turno",
+  "origen": "docs/historias-usuario-nutridesk.md — Épica 50 (EP-050)",
+  "estado": "implementando",
+  "intentos_revision": 0,
+  "hu": "docs/hu-recordatorios-por-servicio.md",
+  "sdd": "Refactorizaciones/recordatorios-por-servicio.md",
+  "rama": "feat/hu-014-recordatorios-por-servicio",
+  "notion": "https://app.notion.com/p/3ee6bad61c7981828c0bf3e6d1ab2092",
+  "notas": "Borrador: que el recordatorio dependa del tipo de consulta (control: 1 semana antes; primera consulta: 2 días antes y 24 hs antes) para reducir ausencias sin molestar de más. Hoy hay un solo reminderLeadHours y una confirmación 3 días antes (Épica 8). Configurable por servicio.",
+  "skills_sdd": [
+    "migracion-prisma",
+    "refactor",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "ui-styling",
+    "web-design-guidelines",
+    "ui-ux-pro-max"
+  ]
+}
