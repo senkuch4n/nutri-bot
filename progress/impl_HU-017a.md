@@ -689,3 +689,120 @@ táctil en DevTools para los puntos 1 a 3.
    - Popover de kcal en un plan (zona de imleticio, solo abrir y cerrar): clic afuera durante la salida
      → el clic actúa.
    - Menú "…" de la demo: elegir un ítem con Enter → el foco vuelve al botón "…".
+
+# Ronda 3 (review ronda 2 CHANGES_REQUESTED, SDD §24, último reintento)
+
+## 1. Dialog/AlertDialog reabierto durante la salida quedaba `inert` — commit `15e7fc7`
+
+- `ExitFocusGuard` (`modal-scrim.tsx`) ahora delega en `applyExitGuard` (`lib/overlay-focus.ts`, puro):
+  - Al salir: `inert = true` y, si el foco estaba adentro, `blur()`.
+  - **Al volver a estar presente:** `inert = false`. `AnimatePresence` re-presenta la misma instancia
+    si se reabre antes de que termine la salida.
+- Tests (`overlay-focus.test.ts`): salir con el foco adentro, salir con el foco afuera, y
+  **cerrar y reabrir a mitad → deja de ser `inert`**.
+- Caso en la demo: `/dev-diseno` → Overlays → **"Cerrar y reabrir a mitad"**. Abre un dialog, lo
+  cierra a los 700 ms y lo reabre a los 820 ms, con la salida todavía en curso. Hay que poder escribir
+  en el campo.
+
+## 2. El foco vuelve al botón que abrió el overlay (sin `Trigger` de Radix) — commit `e46e214`
+
+- Nuevo `lib/use-return-focus.ts`: `useOverlayOpenInfo(open)` en el Root de Dialog, AlertDialog y
+  Sheet. Su efecto de layout, al pasar `open` a `true`, guarda dos cosas:
+  - el elemento que tenía el foco: corre antes del efecto del `FocusScope` de Radix, que mueve el foco
+    (además el Portal de Radix monta el contenido un commit después);
+  - el instante de la apertura.
+
+  Lo comparten por `OverlayOpenInfoContext`.
+- `preserveUserFocusOnClose(handler, { returnTo })` en `onCloseAutoFocus`:
+  1. Corre el handler del consumidor.
+  2. Si el usuario eligió otro elemento durante la salida, se respeta (como antes).
+  3. Si no, deja que Radix haga lo suyo (enfocar su `Trigger`, si hay) y en un microtask, si el foco
+     quedó en `body` y el elemento guardado sigue conectado, lo enfoca (`restoreFocus`).
+
+  Cubre `Modal` ("Nuevo turno", disponibilidad, pagos), `useConfirm` y el sheet de
+  `servicios/service-card.tsx` sin tocar pantallas.
+- **Hallazgo al verificarlo en el navegador:** reabrir un dialog durante su salida (clic en "Nuevo
+  turno" ~100 ms después de Esc) lo volvía a cerrar al instante. La traza mostró el camino:
+  - el `pointerdown` de ese mismo clic ocurrió con el dialog cerrado;
+  - Radix lo despacha como "pointerdown afuera" (en ese camino, recién en el `click`), cuando el dialog
+    ya se había reabierto;
+  - eso llama a `onDismiss`.
+
+  Arreglo:
+  - `ignoreOutsideBeforeOpen` en `onPointerDownOutside` de Dialog y Sheet: si el evento original es
+    anterior a la última apertura, se ignora.
+  - Un clic afuera real, con el overlay abierto, sigue cerrando.
+  - AlertDialog no cierra con clic afuera, así que no lo necesita.
+- Tests (`overlay-focus.test.ts`, 18 en total):
+  - `restoreFocus`: foco en body → enfoca; foco real → no lo pisa; disparador desconectado → nada.
+  - "Esc en un overlay controlado → vuelve al botón".
+  - "el usuario tocó otro control → no se le devuelve".
+  - "con `Trigger` de Radix → no hace nada extra".
+  - `startedBeforeOpen` e `ignoreOutsideBeforeOpen`: el toque previo a la reapertura no cierra; un clic
+    afuera posterior sí.
+- **Verificación en Chrome real (Playwright, `channel: "chrome"`).** Usé una ruta pública temporal
+  (ya borrada) con `Modal`, un `Sheet` controlado y `useConfirm`, como "Nuevo turno", "Editar
+  servicio" y "Borrar":
+
+| Caso | Resultado |
+|---|---|
+| Teclado: Tab + Enter en el botón → Esc | el foco vuelve a "Nuevo turno", "Editar" y "Borrar" |
+| Clic con mouse → Esc | el foco vuelve a "Nuevo turno" |
+| Esc → clic en "Nuevo turno" a los ~80 ms (mouse y táctil) | queda `open`, sin `inert`, el campo acepta texto |
+| Clic afuera con el overlay abierto (mouse y táctil, dialog y sheet) | cierra; al final 0 `[role=dialog]` |
+
+## 3. `framer-motion` declarado — commit `26796b6`
+
+- `node_modules/motion/package.json` depende de `framer-motion` **14.0.0** exacto. Se declaró igual
+  en `apps/web/package.json` (`npm install framer-motion@14.0.0 --save-exact --workspace apps/web`).
+- `package-lock.json` cambió en +1 línea: hay una sola entrada `node_modules/framer-motion`, y
+  `npm ls` muestra la de `motion` como `deduped`.
+- El comentario del alias en `next.config.mjs` lo menciona.
+
+## Verificación ronda 3
+
+```
+npm run typecheck              → core, db, bot, web: sin errores
+npm run test                   → Test Files 73 passed (73) · Tests 1380 passed (1380)  (+12 en la ronda)
+npm run lint -w apps/web       → 1 warning preexistente (ajustes/logo-form.tsx:36), ninguno nuevo
+./ops/harness/verify.sh        → Arnés OK (WARN "se tocó el bot" = apps/bot/.whatsapp-auth.vieja* sin trackear)
+next build (apps/web, sin ningún next dev levantado) → OK; único warning el preexistente de `jose`
+                               en Edge; /dev-diseno-portal prerenderiza 404
+```
+
+- Borré `.next/types` dos veces: lo dejan desfasado el `next dev` de la ruta temporal y el build, y
+  `tsc` lo incluye. Es generado: se regenera solo.
+
+Peso, sumando todos los chunks iniciales de la ruta, gzip (misma medición que la ronda 2):
+
+| Ruta | Antes (`3457e3f`) | Ahora | Δ | Presupuesto |
+|---|---|---|---|---|
+| `/` | 299,2 KB | 337,9 KB | +38,7 KB | ✓ +≤ 45 |
+| `/portal` | 128,4 KB | 148,1 KB | +19,7 KB | ✓ +≤ 45 |
+| `/pacientes/[id]` | 321,8 KB | 363,6 KB | +41,8 KB | — |
+
+En la tabla de Next: `/` 314 kB (antes 279) y `/portal` 107 kB (igual).
+
+## Para el orquestador en Chrome (ronda 3)
+
+Con sesión, `npm run dev` recién levantado (hay un `.next` de producción del build) y la consola
+abierta (0 errores, 0 avisos de hidratación).
+
+1. **Reabrir enseguida (1366×768):**
+   - En `/`, clic en "Nuevo turno", Esc e **inmediatamente** clic otra vez en "Nuevo turno" (antes de
+     ~300 ms). El dialog queda abierto y se puede usar: Tab entre campos, escribir. No tiene que
+     cerrarse solo ni quedar inerte; en Elements, sin `inert` en el contenido.
+   - Repetir en `/dev-diseno` con "Cerrar y reabrir a mitad".
+   - Repetir a 390×844 con emulación táctil.
+2. **El foco vuelve al botón que abrió** (teclado: llegar con Tab y abrir con Enter):
+   - `/servicios` → "Editar" de un servicio → Esc: foco en ese "Editar".
+   - `/` → "Nuevo turno" → Esc: foco en "Nuevo turno".
+   - Un "Borrar" con confirmación (p. ej. un bloque en `/disponibilidad`) → Cancelar o Esc: foco en
+     ese "Borrar". **No confirmar.**
+   - Con mouse: abrir y cerrar con Esc → mismo resultado.
+3. **Sin regresiones:**
+   - Clic afuera con un dialog o sheet abierto lo cierra.
+   - Esc durante la salida y clic en otro control: el foco queda en ese control.
+   - El menú móvil (sheet izquierdo con `SheetTrigger`) devuelve el foco a la hamburguesa.
+   - Los pasos de la ronda 2 (rueda en la entrada + Esc → se desmonta en ≤ 1 s).
+4. **Sidebar a 1366×768:** `nav[aria-label="Principal"]` → `scrollHeight <= clientHeight`.
