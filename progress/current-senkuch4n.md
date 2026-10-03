@@ -205,3 +205,6 @@ orquestador, para que las revise a la mañana:
 - HU-017a ronda 3 (último reintento) → `implementando` (Opus): inert al reabrir, foco al disparador, framer-motion declarado (SDD §24).
 - HU-017a ronda 3: recorrido OK (reabrir durante la salida; foco vuelve a 'Nuevo turno' y 'Editar'). → `en_revision` (ronda 3, última).
 - HU-017a **aprobada** (reviewer ronda 3). Historia actualizada; PR a develop (mergear después del #7 de imleticio).
+- HU-018b: architect (Opus, skill migracion-prisma) → Refactorizaciones/menu-semanal.md. Comentario a imleticio en la tarjeta de Notion.
+- HU-018b SDD lista (Refactorizaciones/menu-semanal.md, 12 dudas técnicas). verify.sh OK → `arquitectura_lista`.
+- HU-018b: usuario aprueba SDD (dos PR: 018b-1 modelo → 018b-2 editor; D2–D12 aceptadas). → `implementando` 018b-1 (Opus; migracion-prisma, apple-design, web-design-guidelines, ui-ux-pro-max).

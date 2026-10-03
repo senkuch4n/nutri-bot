@@ -3,11 +3,22 @@
   "responsable": "senkuch4n",
   "intentos_revision": 0,
   "hu": "docs/hu-plan-recetas-buscador.md",
-  "sdd": null,
+  "sdd": "Refactorizaciones/menu-semanal.md",
   "rama": "feat/hu-018-plan-recetas-buscador",
   "origen": "Partición de HU-018",
   "slug": "menu-semanal",
   "titulo": "Menú semanal: comidas por día (Lun–Dom), opciones, copiar/repetir días, franja del día + promedio semanal, migración sin pérdida, plantillas, portal y PDF mínimo por día",
-  "estado": "en_arquitectura",
-  "notas": "Primera de la HU-018. Zona de imleticio (editor de planes/plantillas, portal, PDF): la hace senkuch4n avisándole; Leo revisa el PR y su HU-015 se construye encima."
+  "estado": "implementando",
+  "notas": "Primera de la HU-018. Zona de imleticio (editor de planes/plantillas, portal, PDF): la hace senkuch4n avisándole; Leo revisa el PR y su HU-015 se construye encima.",
+  "skills_architect": [
+    "migracion-prisma"
+  ],
+  "entrega_actual": "018b-1 (modelo)",
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "apple-design",
+    "web-design-guidelines",
+    "ui-ux-pro-max"
+  ]
 }
