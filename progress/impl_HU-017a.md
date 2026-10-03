@@ -40,3 +40,36 @@ rechaza: `#D70015` sobre chrome con negro debajo da **3,35:1** (bar/float 3,81).
 material) y `MATERIAL_TEXT_TOKENS` usa ese en lugar de `destructive`. Dentro de `.material-*` se
 redefine `--destructive` → vibrant (igual que `--muted-foreground`), así el ítem destructivo del menú y
 cualquier texto rojo de un toast quedan AA sin que el consumidor haga nada.
+
+## Fase 2 — Tokens nuevos conviviendo con los viejos
+
+- 2.1 `tailwind.config.ts` importa `./src/lib/design-tokens` y genera las variables con un plugin
+  (`addBase`): en `:root` **solo nombres nuevos** (17 colores nuevos, materiales, duraciones,
+  curvas); `.theme-portal, :root:has(.theme-portal)` con `--grouped` cálido. `extend.colors` con
+  los roles nuevos (`grouped`, `tertiary`, `placeholder`, `fill-hover|pressed`,
+  `primary-hover|pressed|soft|soft-hover|soft-pressed|vibrant`, `destructive-hover|pressed|muted-hover|muted-pressed|vibrant`,
+  `muted-foreground-vibrant`, `overlay-hover|pressed`, `scrim`), `fontSize` semánticos (con peso),
+  `boxShadow` card/float/modal/thumb/focus, `rounded-xs`, duraciones (`duration-press`…),
+  `ease-out-soft`, `animate-fade-in`/`fade-in-content`/`rise-in`, variantes `pressed:` y
+  `more-contrast:`, `future.hoverOnlyWhenSupported`.
+- 2.2 `globals.css` (agregado, sin borrar nada): `.press`, `.press-sm`, `.press-none`, `.touch-target`,
+  `.material-chrome|bar|float` con scroll edge, fallbacks (`@supports`, reduced-transparency,
+  contrast more) y simulación (`.a11y-reduce-transparency`, `.a11y-more-contrast`),
+  `-webkit-tap-highlight-color`, `::selection`.
+- Verificación: tsc web verde; `/inicio` 200; en el CSS compilado `:root` tiene `--primary-soft`,
+  `--material-chrome-alpha`, `--duration-press`; `hover:` sale dentro de
+  `@media (hover: hover) and (pointer: fine)`; `.rounded-md` y `.text-sm` dan el mismo valor que antes
+  (fallback).
+
+### Desvío D-2: alcance "preview" para que la demo muestre el lenguaje completo antes del flip
+
+Con §21 la demo se aprueba **antes** de la fase 7, pero hasta la fase 7 los nombres shadcn
+(`primary`, `muted-foreground`…) conservan los valores Notion: la demo mostraría botones negros. Para
+que el usuario apruebe lo que de verdad va a ver, el plugin emite además
+`:root:has([data-apple-preview])` con **todos** los colores Apple, radios y escala tipográfica
+re-mapeada. Las dos páginas demo marcan su raíz con `data-apple-preview`; el resto de las pantallas
+no cambia. Para que radios y `text-xs…4xl` se puedan re-mapear por alcance, sus utilidades pasan a
+leer variables con **fallback idéntico al valor actual** (`rounded-md` =
+`var(--radius-md, calc(var(--radius) - 2px))`, `text-sm` = `var(--text-sm, .875rem)` /
+`var(--text-sm-lh, 1.25rem)` / `letter-spacing: var(--text-sm-tracking)` sin fallback → se hereda
+como hoy). En la fase 7 el "flip" se reduce a mover ese bloque a `:root`.

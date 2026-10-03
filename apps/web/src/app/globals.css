@@ -152,3 +152,162 @@
 .fc .fc-event:focus-visible {
   @apply outline-none ring-2 ring-ring ring-offset-1;
 }
+
+/* ═══ HU-017a: lenguaje Apple (convive con lo anterior hasta el "flip", SDD §7.8) ═══ */
+
+@layer base {
+  /* El flash gris de iOS no es nuestro feedback: lo dan .press / pressed: (§1). */
+  a,
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+  }
+}
+
+@layer components {
+  /* ─── Press (§1: feedback en pointer-down, instantáneo; suelta con transición) ─── */
+  .press,
+  .press-sm,
+  .press-none {
+    transition:
+      transform var(--duration-release) var(--ease-out),
+      background-color var(--duration-hover) var(--ease-out),
+      color var(--duration-hover) var(--ease-out),
+      opacity var(--duration-hover) var(--ease-out),
+      box-shadow var(--duration-hover) var(--ease-out);
+  }
+  .press {
+    --press-scale: 0.97;
+  }
+  .press-sm {
+    --press-scale: 0.985;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .press:active:hover,
+    .press-sm:active:hover {
+      transform: scale(var(--press-scale));
+      transition-duration: var(--duration-press);
+    }
+  }
+  @media not ((hover: hover) and (pointer: fine)) {
+    .press:active,
+    .press-sm:active {
+      transform: scale(var(--press-scale));
+      transition-duration: var(--duration-press);
+    }
+  }
+  :is(.press, .press-sm):is(:disabled, [aria-disabled="true"]) {
+    transform: none !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .press:active,
+    .press-sm:active {
+      transform: none !important; /* queda el cambio de tono */
+    }
+  }
+
+  /* ─── Objetivo táctil de 44 × 44 sin cambiar el tamaño visible (requiere `relative`) ─── */
+  @media (pointer: coarse) {
+    .touch-target::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      transform: translate(-50%, -50%);
+    }
+  }
+
+  /* ─── Materiales (§7.5, §12): translúcidos solo en chrome y superficies flotantes chicas ─── */
+  .material-chrome,
+  .material-bar,
+  .material-float {
+    /* Vibrancy: dentro de un material el texto secundario y el rojo usan sus variantes oscuras. */
+    --muted-foreground: var(--muted-foreground-vibrant);
+    --destructive: var(--destructive-vibrant);
+  }
+  .material-chrome {
+    background-color: hsl(var(--background) / var(--material-chrome-alpha));
+    -webkit-backdrop-filter: blur(var(--material-chrome-blur)) saturate(var(--material-chrome-saturate));
+    backdrop-filter: blur(var(--material-chrome-blur)) saturate(var(--material-chrome-saturate));
+    /* Scroll edge: sin borde fijo; aparece cuando el contenido pasa por debajo. */
+    box-shadow: 0 0.5px 0 hsl(var(--border) / 0);
+    transition: box-shadow var(--duration-hover) var(--ease-out);
+  }
+  .material-chrome[data-scrolled="true"] {
+    box-shadow: 0 0.5px 0 hsl(var(--border));
+  }
+  .material-bar {
+    background-color: hsl(var(--background) / var(--material-bar-alpha));
+    -webkit-backdrop-filter: blur(var(--material-bar-blur)) saturate(var(--material-bar-saturate));
+    backdrop-filter: blur(var(--material-bar-blur)) saturate(var(--material-bar-saturate));
+    box-shadow:
+      inset 0 0.5px 0 rgb(255 255 255 / 0.4),
+      0 -0.5px 0 hsl(var(--overlay) / 0.08);
+  }
+  .material-float {
+    background-color: hsl(var(--background) / var(--material-float-alpha));
+    -webkit-backdrop-filter: blur(var(--material-float-blur)) saturate(var(--material-float-saturate));
+    backdrop-filter: blur(var(--material-float-blur)) saturate(var(--material-float-saturate));
+    box-shadow: theme("boxShadow.float");
+  }
+
+  /* Sin soporte de blur, transparencia reducida o más contraste → materiales sólidos. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .material-chrome,
+    .material-bar,
+    .material-float {
+      background-color: hsl(var(--background));
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .material-chrome,
+    .material-bar,
+    .material-float {
+      background-color: hsl(var(--background));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  :root:has(.a11y-reduce-transparency) :is(.material-chrome, .material-bar, .material-float) {
+    background-color: hsl(var(--background));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  @media (prefers-contrast: more) {
+    .material-chrome,
+    .material-bar,
+    .material-float {
+      background-color: hsl(var(--background));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .material-chrome {
+      box-shadow: 0 1px 0 hsl(var(--input));
+    }
+    .material-bar {
+      box-shadow: 0 -1px 0 hsl(var(--input));
+    }
+    .material-float {
+      box-shadow: theme("boxShadow.float"), 0 0 0 1px hsl(var(--input));
+    }
+  }
+  :root:has(.a11y-more-contrast) :is(.material-chrome, .material-bar, .material-float) {
+    background-color: hsl(var(--background));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root:has(.a11y-more-contrast) .material-chrome {
+    box-shadow: 0 1px 0 hsl(var(--input));
+  }
+  :root:has(.a11y-more-contrast) .material-bar {
+    box-shadow: 0 -1px 0 hsl(var(--input));
+  }
+  :root:has(.a11y-more-contrast) .material-float {
+    box-shadow: theme("boxShadow.float"), 0 0 0 1px hsl(var(--input));
+  }
+}
