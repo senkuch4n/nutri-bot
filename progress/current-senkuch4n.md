@@ -150,3 +150,4 @@ orquestador, para que las revise a la mañana:
 - HU-013: implementer (Opus) `done`: 962 tests, test:booking-reason 17/17, regresiones OK, datos reales intactos. Recorrido OK (progress/recorrido_HU-013.md). → `en_revision`.
 - **HU-013 aprobada** (1ª ronda, reviewer Opus). Ver history.
 - Pendientes del review HU-013 (en la rama de la HU, PR #10): limpieza de texto de sesiones vencidas generalizada a BOOK_REASON/BOOK_CONFIRM (clearExpiredSessionText); SLOT_TAKEN con motivo ofrece otros días y lo conserva; jids propios en test-booking-reason. Rebase sobre develop (#8, #11). 984 tests, 4 simulaciones OK.
+- Directo (fix/confirmacion-asistencia-vence): bug confirmado con la simulación — un sí/no tardío (pasados 20 min) al pedido de confirmación de asistencia se ignoraba. Ahora cuenta si el mensaje ENTERO es un sí/no claro (lateAttendanceAnswer) y el turno no empezó; lo demás sigue en silencio. confirm-flow 8/8, 1007 tests.
