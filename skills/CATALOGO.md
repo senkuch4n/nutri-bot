@@ -11,5 +11,6 @@
 | `ui` | `skills/ui.txt` | Bajar objetivos UX a pantallas concretas. Etapa previa a la HU, no del implementer. |
 
 Los skills de UI de Claude Code (`ui-ux-pro-max`, `ui-styling`,
-`web-design-guidelines`) no van en esta tabla: el `implementer` los invoca
+`web-design-guidelines` y `apple-design`, este último del proyecto en
+`.claude/skills/apple-design/SKILL.md`) no van en esta tabla: el `implementer` los invoca
 solo con el `Skill` tool cuando el checklist toca UI visible.
