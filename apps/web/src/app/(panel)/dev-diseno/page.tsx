@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ButtonsSection } from "./_sections/buttons";
 import { ColorsSection } from "./_sections/colors";
+import { ContentSection } from "./_sections/content";
 import { DemoFrame, type DemoAnchor } from "./_sections/demo-frame";
 import { FormsSection } from "./_sections/forms";
+import { ListsSection } from "./_sections/lists";
 import { MaterialsSection } from "./_sections/materials";
 import { MotionSection } from "./_sections/motion";
 import { OverlaysSection } from "./_sections/overlays";
+import { SelectionSection } from "./_sections/selection";
 import { ShapeSection } from "./_sections/shape";
+import { StatesSection } from "./_sections/states";
 import { TypographySection } from "./_sections/typography";
 
 export const metadata: Metadata = { title: "Demo de diseño", robots: { index: false, follow: false } };
@@ -17,8 +22,13 @@ const anchors: DemoAnchor[] = [
   { id: "forma", label: "Forma" },
   { id: "materiales", label: "Materiales" },
   { id: "movimiento", label: "Movimiento" },
+  { id: "botones", label: "Botones" },
   { id: "formularios", label: "Formularios" },
+  { id: "seleccion", label: "Selección" },
+  { id: "contenido", label: "Contenido" },
+  { id: "listas", label: "Listas" },
   { id: "overlays", label: "Overlays" },
+  { id: "estados", label: "Estados" },
 ];
 
 /** Demo interna del lenguaje Apple (HU-017a, D12). Solo en desarrollo; no aparece en ninguna navegación. */
@@ -31,8 +41,13 @@ export default function DevDisenoPage() {
       <ShapeSection />
       <MaterialsSection />
       <MotionSection />
+      <ButtonsSection />
       <FormsSection />
+      <SelectionSection />
+      <ContentSection />
+      <ListsSection />
       <OverlaysSection />
+      <StatesSection />
     </DemoFrame>
   );
 }

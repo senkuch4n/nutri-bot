@@ -150,3 +150,31 @@ sin cambios (ya cumplen). Demo: secciones 7 (formularios) y 11 (overlays).
 - Verificación: tsc web verde, `next lint` sin warnings, smoke SSR de la demo con providers OK.
   **Sin verificación interactiva en navegador** (ver 0.3): el patrón Radix + Motion, el arrastre y el
   foco quedan para el recorrido del orquestador (lista al final).
+
+## Fase 5 — Componentes de aplicación
+
+- 5.1 `components/ui.tsx` (misma API): `ButtonVariant` suma `tinted` y `plain`; mapping
+  `primary→default`, `secondary→secondary (gray)`, `danger→destructive-tinted`, `ghost`, `link`,
+  `tinted`, `plain` (Q12, Q13). `Card` sin borde (`rounded-xl shadow-card`, `more-contrast:` borde),
+  título `text-headline`. `PageHeader` `text-title-1`, back con `ChevronLeft` + texto tint.
+  `SectionLabel` `text-headline`. `StatTile` `text-metric-md`. `Field` subheadline/footnote.
+  `inputClass` borde `input`, foco `border-ring` + `shadow-focus`, `aria-invalid` rojo, placeholder
+  `placeholder`, deshabilitado `bg-secondary text-tertiary`. `Badge` footnote semibold `rounded-xs`.
+  `Alert` sin borde (borde solo con más contraste), título semibold, cuerpo `text-foreground`.
+  `EmptyState` ícono `text-tertiary`. `AdequacyBar` footnote semibold. **Nuevo `Metric`** (firma de
+  §6.3): número `text-metric`/`metric-md`, unidad con NBSP, `null` → "—" terciario, tendencia con
+  flecha, signo menos U+2212, color por `sentiment` y `sr-only` ("subió 1,2 kg").
+- 5.2 `globals.css` (sin layer, al final): inputs ≥ 16 px con `pointer: coarse`; 17 px dentro de
+  `.theme-portal`. Verificado en el CSS compilado.
+- 5.3 `segmented-control.tsx` (ToggleGroup single con `role="radiogroup"`, ignora el
+  deseleccionar, thumb `layoutId` dentro de un `LayoutGroup` propio, tamaños sm/md/lg, `fullWidth`)
+  y `grouped-list.tsx` (server-safe; `href`→`Link` con chevron, `onClick`→`button`, separador
+  hairline desde el texto, resaltado de fila sin escala, destructiva, deshabilitada).
+- 5.4 `skeletons.tsx` (tarjetas `rounded-xl shadow-card`), `status-screen.tsx` (ícono en círculo
+  `bg-secondary`, título `text-title-2`, fundido de entrada).
+- 5.5 `login-screen.tsx`: `bg-grouped`, tarjeta con `rise-in` (solo fundido con movimiento
+  reducido), título `text-title-1`, **`SubmitButton`** con `pendingLabel="Abriendo Google…"` (la action
+  `signIn` no cambia). `/inicio` responde 200 con el markup nuevo.
+- Demo: secciones 6 (botones), 8 (selección), 9 (contenido), 10 (listas), 12 (estados).
+- Verificación: tsc web verde; `next lint` de `src` → solo el warning preexistente de
+  `ajustes/logo-form.tsx` (no es de esta HU); smoke SSR de la demo completa OK.

@@ -49,14 +49,14 @@ export function TableSkeleton({
   bare?: boolean;
 }) {
   return (
-    <Wrapper bare={bare} className="rounded-lg border">
-      <div className="flex gap-6 border-b px-3 py-3">
+    <Wrapper bare={bare} className="overflow-hidden rounded-xl bg-card shadow-card">
+      <div className="flex gap-6 border-b border-border px-3 py-3">
         {Array.from({ length: columns }, (_, i) => (
           <Skeleton key={i} className="h-3 flex-1" />
         ))}
       </div>
       {Array.from({ length: rows }, (_, r) => (
-        <div key={r} className="flex gap-6 border-b px-3 py-3.5 last:border-0">
+        <div key={r} className="flex gap-6 border-b border-border px-3 py-3.5 last:border-0">
           {Array.from({ length: columns }, (_, c) => (
             <Skeleton key={c} className="h-4 flex-1" />
           ))}
@@ -68,7 +68,7 @@ export function TableSkeleton({
 
 export function CardSkeleton({ lines = 3, bare }: { lines?: number; bare?: boolean }) {
   return (
-    <Wrapper bare={bare} className="rounded-lg border bg-card p-6">
+    <Wrapper bare={bare} className="rounded-xl bg-card p-6 shadow-card">
       <Skeleton className="mb-4 h-5 w-40" />
       <div className="space-y-3">
         {Array.from({ length: lines }, (_, i) => (

@@ -311,3 +311,16 @@
     box-shadow: theme("boxShadow.float"), 0 0 0 1px hsl(var(--input));
   }
 }
+
+/* ─── Inputs sin zoom en Safari iOS (§9.2, T17): ≥ 16 px en táctil; 17 px en el portal ───
+   Sin @layer: gana a las utilidades text-* de cualquier pantalla (incluida la zona de imleticio). */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
+  }
+}
+.theme-portal :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  font-size: theme("fontSize.body-lg[0]");
+}
