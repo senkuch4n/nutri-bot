@@ -223,3 +223,6 @@ orquestador, para que las revise a la mañana:
 - HU-018a-1 **aprobada** (ronda 2). HU-018a → `arquitectura_lista` para 018a-2. PR a develop.
 - PR #23 (018a-1) mergeado. Rama feat/hu-018a2-carga-asistida desde develop.
 - HU-018a-2 → `implementando` (Opus; apple-design, ui-ux-pro-max).
+- HU-018a-2 done (extractor en seco: 320 borradores, 0 gramos inventados; 1619 tests). Recorrido: **Build Error en Turbopack** (export type re-export en actions.ts 'use server', bc034b7) → devuelto al implementer antes del reviewer.
+- HU-018a-2: arreglo Turbopack (cccfd78); recorrido OK. → `en_revision`.
+- HU-018a-2 **aprobada**. HU-018a → `aprobada`. PR a develop. Siguen: 018c (buscador) y la tarea directa del bug de auth.ts.
