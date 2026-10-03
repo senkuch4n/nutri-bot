@@ -388,3 +388,17 @@
   1431 tests; typecheck web y bot. Aprobada en la primera revisión.
 - **Pendiente:** 018b-2 (editor semanal), con dos ajustes de la revisión (SDD §16).
 - **Modelos:** afinador y architect Opus; implementer Opus; reviewer Opus.
+
+## HU-018b-2 · Menú semanal: editor (aprobada 2026-10-03, senkuch4n)
+- **Qué:** plan y plantilla nuevos con Desayuno/Almuerzo/Merienda/Cena "Cambia cada día" y Colaciones "Todos los
+  días · Elegí una"; selector Semana/Lun…Dom (`?dia=`); franja del día contra el objetivo (±5 %); "Copiar este día
+  a…", "Repetir en todos los días", cambio de modo con "¿Qué día conservar?", opciones con promedio y rango,
+  renombrar/subir/bajar, todo con "Deshacer"; vista Semana; IA relee el plan antes de reemplazar comidas vacías.
+- **Verificación:** 1454 tests; `test-weekly-menu.ts` (12 pasos, datos propios borrados por id); recorrido en
+  Chrome con paciente de prueba (`progress/recorrido_HU-018b.md`). Aprobada en la primera revisión.
+- **Dudas no bloqueantes:** foco al cerrar "Renombrar"/"¿Qué día conservar?" y al Subir/Bajar (probar con
+  teclado); promedio semanal duplicado con redondeo distinto en la vista Semana; la franja fija tapa el
+  encabezado de la tabla Semana.
+- **Ojo al actualizar:** después de `db:migrate`/`db:generate`, reiniciar `npm run dev` (el cliente Prisma viejo
+  queda en memoria).
+- **Modelos:** implementer Opus; reviewer Opus.

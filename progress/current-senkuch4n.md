@@ -212,3 +212,5 @@ orquestador, para que las revise a la mañana:
 - HU-018b-1 **aprobada** (1ª revisión). HU-018b → `arquitectura_lista` para 018b-2 (después del merge). Pendientes en SDD §16. PR a develop.
 - PR #21 (018b-1) mergeado. Rama feat/hu-018b2-editor-semanal desde develop para 018b-2.
 - HU-018b-2 → `implementando` (Opus; apple-design, ui-ux-pro-max, web-design-guidelines).
+- HU-018b-2 done; recorrido OK con observaciones menores (progress/recorrido_HU-018b.md). next dev reiniciado (cliente Prisma viejo). → `en_revision`.
+- HU-018b-2 **aprobada**. HU-018b → `aprobada`. PR a develop. Sigue HU-018a (recetario).

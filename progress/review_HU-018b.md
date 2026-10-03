@@ -124,3 +124,165 @@ Ninguno.
 - `nextItemOrder` y `assertWeekdayMatchesMeal` no verifican que la comida sea del dueño. Ya era así
   antes: las actions de alta de ítem nunca comprobaron que `mealId` fuera de `planId`, y el panel es
   de una sola profesional. Conviene revisarlo cuando lleguen las actions de 018b-2.
+
+---
+
+## 018b-2 (editor semanal, fases E–G)
+
+**Veredicto:** APPROVED
+
+Revisé la rama `feat/hu-018b2-editor-semanal`, con el diff `git diff 745acd9..HEAD` (`0738780`,
+`122329b`, `cb9e59f`), contra la SDD `Refactorizaciones/menu-semanal.md`: fases E–G de la §9, §15,
+D2–D12 de la §12 y los dos pendientes de la §16. También leí la sección "018b-2" de
+`progress/impl_HU-018b.md` y `progress/recorrido_HU-018b.md`. El diff no toca `schema.prisma`, las
+migraciones ni `apps/bot`.
+
+### Verificación que corrí yo
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, **bot** y **web** limpios (exit 0) |
+| `npm run test` | 80 archivos, 1454 tests OK |
+| `npm run lint --workspace apps/web` | exit 0. Solo el warning de antes en `ajustes/logo-form.tsx:36` |
+| `./ops/harness/verify.sh` | "Arnés OK" (exit 0). El WARN del bot lo dispara `packages/db/domain`; `apps/bot` no se tocó |
+
+No corrí `next build` (hay un `next dev` en marcha), ni el script de flujo 10.4, porque escribe en la
+base. Ese script lo revisé leyéndolo. La `FALLA` de `--compare` en `cmufow0kr…` no cuenta como defecto
+de esta HU, como indicaste.
+
+### Puntos pedidos
+
+1. **Actions nuevas: zod y dueño (D6).** `apps/web/src/app/(panel)/weekly-menu-actions.ts`:
+   - Cada action pasa por `run()` (l. 46-61): `safeParse` antes de llamar a domain, y cualquier error
+     se convierte en "No se pudo guardar. Probá de nuevo.".
+   - La foto de "Deshacer" se valida estricta (l. 97-114): `.strict()` en la foto y en cada ítem,
+     hasta 20 comidas, 400 ítems en total (con el `refine`), gramos entre 0 y 99999, textos de hasta
+     4000 y `weekday`/`mode` como enums.
+   - La pertenencia se verifica en domain: `restoreMealSnapshots` cuenta las comidas por `ownerKey` y
+     revisa las invariantes antes de escribir, en `$transaction`. Las demás operaciones pasan por
+     `loadOwnedMeal` o filtran por dueño (`copyDay`).
+   - La revalidación coincide con 6.1.
+   - Tests en `weekly-menu-actions.test.ts`: zod antes de domain y foto con campos extra o fuera de
+     rango.
+2. **IA (§16, primer pendiente).** `ai-actions.ts:168-179`: después de validar la propuesta, relee el
+   plan con `getPlan`.
+   - Si ya no existe → "Plan no encontrado".
+   - Si ya tiene ítems → el error de siempre, sin borrar ni crear.
+   - Si no, borra solo las comidas de la segunda lectura.
+   - `ai-actions.test.ts` cubre los 3 casos.
+
+   La §16 aceptaba releer como alternativa a la transacción.
+3. **Concordancia de género.** `components/weekly-menu/labels.ts:21-63`:
+   - `deleteOtherDaysWarning` da "las meriendas", "las cenas", "las colaciones" y "los desayunos".
+     Con nombres de más de una palabra usa el texto genérico de la SDD.
+   - `withArticle` da "la merienda", y `agreeWithMeal` da "repetida" y "repetidas".
+   - Tiene tests en `weekly-overview.test.tsx`.
+   - El desvío respecto del "los + nombre + s" de la SDD 7.4 está justificado en el impl y mejora el
+     texto.
+4. **Accesibilidad.**
+   - Selector de días: `h-11` (de 018b-1).
+   - Menú "⋯": trigger `icon-lg` con `aria-label` e ítems `h-11` (`meal-card-menu.tsx:30, 127-131`).
+   - Filas de los diálogos: `min-h-11` (`copy-day-dialog.tsx:11-12`, `meal-mode-dialog.tsx:57`).
+   - Celdas de la vista Semana: botones `min-h-11` con `aria-label` y foco visible
+     (`weekly-overview.tsx:31-32`).
+   - Barra de la franja: `role="meter"` con `aria-valuetext` (`day-target-strip.tsx:87-95`). Los
+     estados llevan texto e ícono, no solo color.
+   - Toast con "Deshacer": `!h-11`.
+   - Los diálogos usan el `Dialog` de 017a, que devuelve el foco con `preserveUserFocusOnClose` +
+     `returnFocus`.
+   - El foco al cerrar los diálogos que se abren desde el menú no lo pude comprobar sin navegador
+     (ver Dudas).
+5. **El plan no semanal se ve igual.**
+   - Sin selector ni vista Semana (`meals-editor.tsx:151-153, 177`).
+   - Una sola lista y la franja con `days.MON.macros`, el mismo número de siempre (l. 135-136).
+   - El título pasa de "Total del plan" a "Total del día", como pide la SDD en 11.1 paso 1.
+   - Ahora aparece el "⋯" en cada comida y, si no hay prescripción, el aviso "Calculá el
+     requerimiento…". Los dos son de la SDD (7.2 y 7.3).
+   - El formulario de ítem manda `weekday=""` (l. 324, 418): sigue entrando como `EVERY_DAY`.
+6. **Zona de imleticio.**
+   - `food-picker.tsx`, `food-catalog.tsx`, `delete-meal-button.tsx`, `kcal-breakdown-popover.tsx`
+     y `planes/actions.ts` no están en el diff.
+   - `meals-editor.tsx` se reescribió como pide la SDD 2.1/7.2. Conserva el nombre, el
+     `export type { FoodOption }`, todas las props anteriores y el formulario "Agregar alimento" con
+     `FoodPicker` tal cual, y suma el input oculto `weekday`. Ese input cierra el segundo pendiente de
+     la §16.
+   - `food-policy.test.ts` solo suma 2 mocks (`getPlanTarget` y `getPlanConsultationId`) y no cambia
+     aserciones. El segundo mock está justificado (la página lo llama sin objetivo).
+   - Desvío menor de la SDD 7.4 punto 7: "Borrar comida" ya no usa `DeleteMealButton`. Usa el mismo
+     `useConfirm` y la misma `deleteMealAction`; la razón está en el impl.
+
+### Otros chequeos
+- **E1.**
+  - `createPlan` y `createTemplate` crean el dueño y `createDefaultWeeklyMeals` en una sola
+    `$transaction` (`nutritionPlans.ts:33-38`, `planTemplates.ts:24-29`).
+  - `createPlanForConsultation` lo hace dentro de su transacción (`consultations.ts:184-185`).
+  - `applyTemplateToPatient` sigue copiando la plantilla exacta (D4).
+  - Hay tests de domain para los tres.
+- **E3.** `notify.undo` y `chartPalette.macro` coinciden con 7.9 y 7.10. `design-tokens.test.ts`
+  incluye `macro` en el contraste.
+- **D7/D11.**
+  - `page.tsx` arma el objetivo con `getPlanTarget` y el rótulo "Objetivo: consulta del dd/MM/yyyy"
+    en la zona de la profesional.
+  - El link sin objetivo va a `/pacientes/{id}/consultas/{consultationId}` o a
+    `/pacientes/{id}?tab=consultas`. Las dos rutas existen (`requirement-summary-card.tsx` usa las
+    mismas).
+- **D8.** "Repetir" pide confirmación solo si otros días tienen ítems (`meal-card-menu.tsx:71-87`).
+- **D12.** Al pasar a "Cambia cada día", el toast dice "…; ya no es de opciones" (l. 89-94).
+- **`?dia=`.**
+  - `day-param.ts`: el día inicial es el de la URL si es válido; si no, "Semana" con el plan vacío y
+    el lunes si tiene ítems.
+  - La URL se sincroniza con `replaceState` (`meals-editor.tsx:117-123`).
+- **Script 10.4** (`packages/db/scripts/test-weekly-menu.ts`).
+  - Crea su propio paciente con un jid ficticio y aborta si ya existe uno con ese jid (l. ~110-118).
+  - En el `finally` borra **solo por id** la plantilla, los planes y el paciente (l. 293-295) y
+    después verifica los conteos por id.
+  - No usa `deleteMany` por filtro, no encola en `OutboundMessage` y no llama a la IA.
+
+## Checkpoints
+- C1 backlog válido, 1 HU activa por responsable: [x]
+- C1 bitácora del responsable al día: [x]
+- C1 no toca archivos de HU de la otra persona: [x] (solo toca los archivos de código de la zona de Leo que autoriza la SDD 2.1)
+- C1 `verify.sh` exit 0: [x]
+- C2 HU completa: [x]
+- C2 SDD con contrato: [x]
+- C2 firmas = contrato (6.1, 7.1–7.10): [x] (extras `labels.ts`/`day-param.ts` declarados y puros)
+- C3 lógica pura en core/puro, base en domain, sin duplicar web/bot: [x]
+- C3 domain cambiado: web y bot compilan: [x]
+- C3 migraciones: [x] (no aplica: no hay migración)
+- C3 rutas protegidas / portal: [x] (sin rutas nuevas; el portal no cambia)
+- C3 bot en silencio / textos: [x] (no aplica)
+- C3 sin `console.log` de debug ni TODOs: [x] (`console.error("[weekly-menu]")` es el log de error de las actions)
+- C4 typecheck limpio: [x]
+- C4 tests de la lógica nueva y `npm run test` OK: [x]
+- C4 flujo del bot simulado: [x] (no aplica)
+- C4 PDF real: [x] (el recorrido generó el PDF del plan de prueba sin errores; los tests del PDF son de 018b-1)
+- C5 impl con "018b-2": [x]
+- C5 review con veredicto: [x]
+- C5 sin scripts sueltos ni datos de prueba: [x] (los scripts son los de 10.3 y 10.4, que pide la SDD; el recorrido y el script borraron su paciente por id)
+
+## Cambios requeridos
+Ninguno.
+
+## Dudas (no bloqueantes)
+- **Foco al cerrar "Renombrar" y "¿Qué día conservar?".** Se abren desde un ítem del menú, que se
+  desmonta (`modal={false}`). `returnFocus` puede apuntar a ese ítem, que ya no está conectado, y el
+  foco quedaría en `body` en vez de volver al "⋯". Además, mientras la action corre, el "⋯" queda
+  `disabled={busy}` (`meal-card-menu.tsx:132`) y pierde el foco. Lo mismo pasa al Subir/Bajar, que
+  reordena la tarjeta. No lo pude verificar sin navegador. Probarlo con teclado en el PR y, si se
+  pierde, devolver el foco al trigger del menú.
+- **Recorrido, observación 1.** En la vista Semana, "Promedio diario de la semana" aparece dos veces:
+  en la franja (`MacroTotals`, con decimales) y en la tarjeta de abajo (`weekly-overview.tsx:167-197`,
+  enteros). Por eso se ve "1,4 g" contra "1 g". Las dos están en la SDD (7.2 y 7.5), pero conviene
+  unificar el redondeo u ocultar una.
+- **Recorrido, observación 2.** Desde `md`, la franja fija (`meals-editor.tsx:156`) tapa el encabezado
+  de la tabla Semana al desplazar. Se podría hacer el `<thead>` sticky debajo de la franja o no fijar
+  la franja en la vista Semana.
+- **Franja sin objetivo.** Muestra el `<h2>` con el título y además el `MacroTotals` con el mismo
+  `label` (`day-target-strip.tsx:144-145`), así que el texto puede salir repetido.
+- **Opciones.** Prender o apagar "Opciones (elige una)" muestra un toast de guardado. La SDD 7.4
+  dice "sin toast con Deshacer", y no lleva Deshacer, así que cumple.
+- **Auth de las actions.** `weekly-menu-actions.ts` no llama a `auth()`: depende del middleware, como
+  las demás actions del panel (patrón del repo, no de esta HU). Conviene revisarlo aparte porque el
+  matcher excluye `/portal`.
+- **PR.** Avisar que, después de `db:migrate`/`db:generate`, hay que reiniciar `npm run dev` (lo
+  anota el recorrido: el cliente de Prisma viejo tiraba `Unknown argument mode`).
