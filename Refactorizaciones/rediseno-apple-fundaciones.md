@@ -1314,3 +1314,12 @@ nombres shadcn con los valores Notion y los componentes nuevos funcionando (conv
   `develop` y vuelven por PR a `develop` (AGENTS.md). El merge final de 017a espera al PR #7 (D11).
 - **Commits por fase** en la rama (locales, sin push), como dice la sección 15, con
   `git add` solo de los archivos de la fase.
+
+## 22. Aprobación de la demo (2026-10-03)
+
+- El usuario **aprobó la demo tal cual** (sin ajustes de color, tipografía, movimiento ni materiales).
+- Se ejecutan las fases 7, 8 y 9.
+- **Antes de la fase 7:** corregir el warning de hidratación de `/dev-diseno` (ids de `useId` distintos
+  entre servidor y cliente en `AppSidebar` y en la demo: el árbol de componentes difiere entre SSR y
+  cliente, probablemente un wrapper que se renderiza solo en el cliente). Verificar en Chrome que ni
+  `/dev-diseno`, ni `/dev-diseno-portal`, ni las pantallas reales muestran errores de hidratación.

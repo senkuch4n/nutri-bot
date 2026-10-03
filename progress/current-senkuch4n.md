@@ -179,3 +179,6 @@ orquestador, para que las revise a la mañana:
 - HU-017a → `en_arquitectura` (apple-design + refactor + ui).
 - HU-017a: SDD lista (Refactorizaciones/rediseno-apple-fundaciones.md, 1305 líneas: tokens en design-tokens.ts, Motion 14 con LazyMotion, Inter opsz, 3 componentes nuevos, shell, demo /dev-diseno, 7 fases con commit propio; Q1–Q13 con default) → `arquitectura_lista`.
 - HU-017a: usuario acepta Q1–Q13; corte después de la fase 6 para aprobar la demo. → `implementando` (Opus; apple-design, web-design-guidelines) fases 0–6.
+- HU-017a: implementer `done-fase6` (6 commits locales f404ed6…637363f; 1341 tests). Sin recorrido en navegador: lo hace el orquestador. Desvíos D-1 destructive-vibrant, D-2 scope data-apple-preview, D-3 theme-portal. Ojo: dice que las pantallas reales cambian en parte antes de la fase 7.
+- HU-017a: el orquestador abrió la demo (/dev-diseno carga, 43 pares de contraste AA). Hallazgo: warning de hidratación (useId distinto servidor/cliente) en /dev-diseno, sidebar y demo; /pacientes sin avisos. Pantallas reales ya cambian en parte (ítem activo azul, tipografía). Demo en revisión del usuario.
+- HU-017a: **el usuario aprueba la demo** (2026-10-03). Sigue fases 7–9 + arreglo del warning de hidratación en /dev-diseno.
