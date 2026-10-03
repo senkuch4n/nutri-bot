@@ -32,12 +32,28 @@ import {
   unarchiveRecipe,
   type RecipeInput,
 } from "../domain/recipes";
-import { processRecipePhoto } from "../media/recipe-photo";
+import { processImportPage, processRecipePhoto } from "../media/recipe-photo";
+import { extractRecipesFromPages } from "@nutri-bot/core/recipe-import";
+import {
+  chooseImportCandidateAsPhoto,
+  deleteUnreviewedDrafts,
+  getImportImageBytes,
+  listDraftQueue,
+  upsertImportedDraft,
+} from "../domain/recipeImport";
+import { exportPublishedRecipes, importRecipeBundle } from "../domain/recipeTransfer";
+import { F1_PAGE } from "../../core/src/recipe-import/__fixtures__/synthetic";
+import { updateRecipe } from "../domain/recipes";
 
 const TEST_JID = "5490000018001@s.whatsapp.net";
 const TEST_PHONE = "5490000018001";
 
-const created = { recipeId: null as string | null, patientId: null as string | null, planId: null as string | null };
+const created = {
+  recipeId: null as string | null,
+  patientId: null as string | null,
+  planId: null as string | null,
+  draftIds: [] as string[],
+};
 
 function step(n: number, text: string) {
   console.log(`  ✓ ${n}. ${text}`);
@@ -47,6 +63,7 @@ async function cleanup() {
   if (created.planId) await prisma.nutritionPlan.delete({ where: { id: created.planId } });
   if (created.patientId) await prisma.patient.delete({ where: { id: created.patientId } });
   if (created.recipeId) await prisma.recipe.delete({ where: { id: created.recipeId } });
+  for (const id of created.draftIds) await prisma.recipe.deleteMany({ where: { id } });
 }
 
 async function main() {
@@ -167,6 +184,71 @@ async function main() {
   await unarchiveRecipe(id);
   assert.equal((await getRecipe(id))?.status, "PUBLISHED");
   step(8, "archiveRecipe / unarchiveRecipe");
+
+  // 9 (018a-2). Carga asistida con un borrador SINTÉTICO (fixture de core, receta inventada) y una
+  // importKey propia de la prueba, así no choca con ningún borrador real.
+  const base = extractRecipesFromPages([F1_PAGE], { file: "Prueba HU-018a-2.pdf" }).drafts[0]!;
+  const draft = { ...base, importKey: `prueba-hu-018a-2:${Date.now()}:bolitas` };
+  const pagePng = await sharp({ create: { width: 600, height: 840, channels: 3, background: { r: 250, g: 250, b: 245 } } }).png().toBuffer();
+  const pageImg = await processImportPage(pagePng);
+  const images = [
+    { kind: "PAGE" as const, order: 0, data: pageImg.data, thumbData: null, width: pageImg.width, height: pageImg.height },
+    { kind: "CANDIDATE" as const, order: 0, data: processed.data, thumbData: processed.thumbData, width: processed.width, height: processed.height },
+  ];
+  const c1 = await upsertImportedDraft(draft, images);
+  created.draftIds.push(c1.id);
+  assert.equal(c1.outcome, "created");
+  const d1 = await getRecipe(c1.id);
+  assert.equal(d1?.status, "DRAFT");
+  assert.equal(d1?.origin, "IMPORT");
+  assert.ok(d1?.ingredients.every((i) => i.food === null), "el parser no elige alimentos");
+  assert.deepEqual(d1?.ingredients.map((i) => i.grams), draft.ingredients.map((i) => (i.noQuantity ? null : i.grams)));
+  assert.ok(d1?.import?.pageImageId && d1.import.candidateIds.length === 1);
+  assert.equal((await getImportImageBytes(d1.import.pageImageId, "thumb"))?.mimeType, "image/webp");
+  assert.ok((await listDraftQueue({ file: "Prueba HU-018a-2.pdf" })).some((q) => q.id === c1.id));
+  const again = await upsertImportedDraft(draft, null);
+  assert.deepEqual(again, { id: c1.id, outcome: "updated" });
+  assert.equal((await getRecipe(c1.id))?.import?.candidateIds.length, 1, "images null conserva las imágenes");
+  step(9, "upsertImportedDraft: created → updated (sin alimentos, gramos del texto, imágenes)");
+
+  // 10. Revisado (updateRecipe sobre DRAFT marca reviewedAt) → la extracción ya no lo pisa.
+  await updateRecipe(c1.id, {
+    name: "Bolitas de mijo (revisada)",
+    type: "MAIN_DISH",
+    moments: ["LUNCH"],
+    tags: [],
+    yieldPortions: 8,
+    portionHousehold: "3 bolitas",
+    portionGrams: null,
+    preparation: null,
+    tips: null,
+    sourceName: "Prueba",
+    published: null,
+    ingredients: [{ foodId: a.id, label: null, grams: 200, noQuantity: false, household: null, rawText: "Mijo 200g" }],
+  });
+  assert.equal((await upsertImportedDraft(draft, null)).outcome, "skipped-reviewed");
+  assert.equal((await getRecipe(c1.id))?.name, "Bolitas de mijo (revisada)");
+  assert.equal(await deleteUnreviewedDrafts([c1.id]), 0, "un borrador revisado no se deshace");
+  const photo = await chooseImportCandidateAsPhoto(c1.id, d1.import.candidateIds[0]!, "Foto: prueba");
+  assert.equal((await getRecipe(c1.id))?.photo?.id, photo.photoId);
+  step(10, "revisado → skipped-reviewed; undo no lo borra; la candidata pasa a foto");
+
+  // 11. Deshacer: un borrador nuevo sin revisar se borra por id.
+  const c2 = await upsertImportedDraft({ ...draft, importKey: `${draft.importKey}:2` }, null);
+  created.draftIds.push(c2.id);
+  assert.equal(c2.outcome, "created");
+  assert.equal(await deleteUnreviewedDrafts([c2.id]), 1);
+  assert.equal(await prisma.recipe.count({ where: { id: c2.id } }), 0);
+  step(11, "deleteUnreviewedDrafts borra solo el id sin revisar");
+
+  // 12. Bundle en seco contra esta base: la receta publicada de la prueba no se escribe.
+  const before = await prisma.recipe.count();
+  const bundle = await exportPublishedRecipes({ ids: [id] });
+  assert.equal(bundle.recipes.length, 1);
+  const outcomes = await importRecipeBundle(bundle, { dryRun: true });
+  assert.equal(outcomes.length, 1);
+  assert.equal(await prisma.recipe.count(), before, "en seco no escribe");
+  step(12, `export → import en seco: ${outcomes[0]!.result}, sin escribir`);
 }
 
 function macros(f: { kcalPer100: unknown; proteinPer100: unknown; carbsPer100: unknown; fatPer100: unknown; fiberPer100: unknown }) {
@@ -191,7 +273,9 @@ main()
       await cleanup();
       const left = created.recipeId ? await prisma.recipe.count({ where: { id: created.recipeId } }) : 0;
       assert.equal(left, 0, "la receta de prueba no se borró");
-      console.log("  ✓ limpieza por id (plan, paciente, receta)");
+      const drafts = created.draftIds.length > 0 ? await prisma.recipe.count({ where: { id: { in: created.draftIds } } }) : 0;
+      assert.equal(drafts, 0, "los borradores de prueba no se borraron");
+      console.log("  ✓ limpieza por id (plan, paciente, receta y borradores de prueba)");
     } catch (err) {
       failed = true;
       console.error("FALLA en la limpieza:", err);

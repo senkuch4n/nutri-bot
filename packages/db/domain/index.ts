@@ -12,6 +12,7 @@ export * from "./nutritionPlans";
 export * from "./planTemplates";
 export * from "./weeklyMenu";
 export * from "./recipes";
+export * from "./recipeImport";
 export * from "./professionalAssets";
 export * from "./payments";
 export * from "./mercadopago-signature";
