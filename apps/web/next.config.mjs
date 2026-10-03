@@ -4,10 +4,10 @@ const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
   transpilePackages: ["@nutri-bot/core", "@nutri-bot/db"],
-  serverExternalPackages: ["@prisma/client", ".prisma/client", "googleapis", "google-auth-library"],
+  serverExternalPackages: ["@prisma/client", ".prisma/client", "googleapis", "google-auth-library", "sharp"],
   experimental: {
-    // Logo del profesional (subida como Server Action) y PDFs de planes.
-    serverActions: { bodySizeLimit: "3mb" },
+    // Logo, foto de receta (5 MB + payload, HU-018a) y PDFs.
+    serverActions: { bodySizeLimit: "6mb" },
   },
   // Mismo alias en `next dev --turbopack`, así desarrollo y producción resuelven igual.
   turbopack: { resolveAlias: { "motion/react": "framer-motion" } },
