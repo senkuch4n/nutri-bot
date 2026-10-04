@@ -130,7 +130,7 @@ No se escribió en la base: ni filas de prueba ni migraciones. No hay mensajes d
 | `6dd682a` | D: Resumen con una acción principal y datos en lenguaje común |
 | `6644339` | E: Historial, Consultas y Plan |
 | `5dddc5d` | R1: "Por completar" se cierra con un clic aunque la búsqueda tenga coincidencias |
-| (este commit) | F: loading de la ficha, autochequeo y verificación |
+| `efa9515` | F: loading de la ficha, autochequeo y verificación (y este archivo) |
 
 ## Archivos
 
@@ -184,7 +184,7 @@ de firma. Las props nuevas de `Metric`, `NewConsultationButton` y `CalendarClien
 | Comando | Resultado |
 |---|---|
 | `npm run typecheck` | core, db, bot y web en verde |
-| `npm run test` | 103 archivos, 1778 tests en verde. Nuevos: `patient-summary` (37), `patient-tab-route` (20), `pacientes/actions` (+7, total 13) |
+| `npm run test` | 103 archivos, 1778 tests en verde. Nuevos: `patient-summary` (32), `patient-tab-route` (20), `pacientes/actions` (+7, total 13) |
 | `npm run lint --workspace apps/web` | solo el warning previo de `ajustes/logo-form.tsx` |
 | `./ops/harness/verify.sh` | "Arnés OK". El aviso "Se tocó el bot" sale de las carpetas sin trackear `apps/bot/.whatsapp-auth.vieja*` |
 | `next build` (webpack, copia en el scratchpad) | exit 0. Compila `/pacientes/[id]` y `/`. Solo los warnings previos (`jose` en Edge, alt de `logo-form`) |
