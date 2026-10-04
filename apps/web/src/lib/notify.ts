@@ -4,8 +4,10 @@ import { toast } from "sonner";
 // Se usa desde componentes cliente. El <Toaster /> está montado en los layouts del panel y del portal.
 
 export const notify = {
-  saved: (message?: string) => {
-    toast.success(message ?? "Cambios guardados");
+  /** `action` (opcional): botón en el toast, p. ej. "Abrir" la consulta restaurada (HU-017c-3). */
+  saved: (message?: string, options?: { action?: { label: string; onClick: () => void } }) => {
+    const action = options?.action;
+    toast.success(message ?? "Cambios guardados", action ? { action: { label: action.label, onClick: action.onClick } } : undefined);
   },
   error: (message?: string) => {
     toast.error(message ?? "No se pudo guardar. Probá de nuevo.");
@@ -16,12 +18,18 @@ export const notify = {
   /**
    * HU-018b (SDD 7.9): toast con "Deshacer" (8 s). El botón de acción lleva 44 px de alto
    * (objetivo de toque); su color sale de `toastClassNames.actionButton`.
+   *
+   * HU-017c-3 (D12a): `onExpire` (opcional) corre cuando el toast se va sin "Deshacer": vence el
+   * plazo (`onAutoClose`) o se cierra (`onDismiss`). El clic en "Deshacer" no dispara ninguno de los
+   * dos en sonner 2. Con el mouse encima el plazo se pausa.
    */
-  undo: (message: string, onUndo: () => void | Promise<void>) => {
+  undo: (message: string, onUndo: () => void | Promise<void>, options?: { onExpire?: () => void }) => {
+    const onExpire = options?.onExpire;
     toast(message, {
       duration: 8000,
       action: { label: "Deshacer", onClick: () => void onUndo() },
       classNames: { actionButton: "!h-11 !px-4 !text-callout !font-semibold" },
+      ...(onExpire ? { onAutoClose: () => onExpire(), onDismiss: () => onExpire() } : {}),
     });
   },
 };
