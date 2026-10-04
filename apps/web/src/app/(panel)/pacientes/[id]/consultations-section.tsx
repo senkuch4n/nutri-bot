@@ -1,25 +1,22 @@
 "use client";
 
-import { useMemo } from "react";
-import { Stethoscope } from "lucide-react";
-import type { ConsultationChip } from "@nutri-bot/core";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { Badge, Card, EmptyState } from "@/components/ui";
+import { Plus, Stethoscope } from "lucide-react";
+import { GroupedList, GroupedListRow } from "@/components/grouped-list";
+import { Button, EmptyState } from "@/components/ui";
 import { NewConsultationButton } from "./consultation-date-sheet";
 
 export interface ConsultationRow {
   id: string;
-  consultedAtISO: string;
-  /** "dd/MM/yyyy" en la zona de la profesional */
-  dateLabel: string;
-  /** "HH:mm" si viene de un turno; null si es sin turno */
-  timeLabel: string | null;
-  /** Nombre del servicio del turno; null si es sin turno */
-  originLabel: string | null;
-  chips: ConsultationChip[];
+  /** "Miércoles 24/09" (formatConsultationDay, en la zona de la profesional). */
+  dayLabel: string;
+  /** "Con turno (Control) · 10:00" o "Sin turno". */
+  originLabel: string;
+  /** "Se registró: peso, calorías y notas" o "Sin registros". */
+  recordedText: string;
 }
 
-/** Pestaña Consultas (HU-003): una fila por consulta, de la más nueva a la más vieja. */
+/** Pestaña Consultas (HU-017c-2): "Nueva consulta" arriba y una lista agrupada, de la más nueva a la
+ *  más vieja, en lenguaje común. */
 export function ConsultationsSection({
   patientId,
   todayKey,
@@ -29,64 +26,55 @@ export function ConsultationsSection({
   todayKey: string;
   consultations: ConsultationRow[];
 }) {
-  const columns = useMemo<DataTableColumn<ConsultationRow>[]>(
-    () => [
-      {
-        id: "fecha",
-        header: "Fecha",
-        cell: (c) => (
-          <span className="whitespace-nowrap font-medium tabular-nums">
-            {c.dateLabel}
-            {c.timeLabel ? <span className="font-normal text-muted-foreground"> · {c.timeLabel} hs</span> : null}
-          </span>
-        ),
-        sortValue: (c) => new Date(c.consultedAtISO),
-      },
-      {
-        id: "origen",
-        header: "Origen",
-        cell: (c) => (c.originLabel ? <span>{c.originLabel}</span> : <Badge tone="neutral">Sin turno</Badge>),
-      },
-      {
-        id: "contenido",
-        header: "Contenido",
-        cell: (c) =>
-          c.chips.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {c.chips.map((chip) => (
-                <Badge key={chip} tone="neutral">
-                  {chip}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <span className="text-muted-foreground">Sin registros</span>
-          ),
-      },
-    ],
-    [],
+  const newButton = (
+    <NewConsultationButton
+      patientId={patientId}
+      todayKey={todayKey}
+      trigger={
+        <Button type="button" variant="tinted">
+          <Plus aria-hidden />
+          Nueva consulta
+        </Button>
+      }
+    />
   );
 
-  const newButton = <NewConsultationButton patientId={patientId} todayKey={todayKey} />;
-
   return (
-    <Card title="Consultas" padding="none" actions={consultations.length > 0 ? newButton : undefined}>
-      <DataTable
-        columns={columns}
-        rows={consultations}
-        getRowId={(c) => c.id}
-        rowHref={(c) => `/pacientes/${patientId}/consultas/${c.id}`}
-        initialSort={{ columnId: "fecha", direction: "desc" }}
-        caption="Consultas"
-        empty={
+    <section aria-labelledby="consultas-titulo" className="max-w-3xl">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 id="consultas-titulo" className="text-title-3">
+          Consultas
+        </h2>
+        {consultations.length > 0 ? newButton : null}
+      </div>
+      {consultations.length === 0 ? (
+        <div className="rounded-xl bg-card shadow-card more-contrast:border more-contrast:border-input">
           <EmptyState
             icon={Stethoscope}
             title="Todavía no hay consultas"
             description="Se crean solas al marcar un turno como completado, o podés crear una a mano."
             action={newButton}
           />
-        }
-      />
-    </Card>
+        </div>
+      ) : (
+        <GroupedList>
+          {consultations.map((c) => (
+            <GroupedListRow
+              key={c.id}
+              size="lg"
+              href={`/pacientes/${patientId}/consultas/${c.id}`}
+              label={c.dayLabel}
+              description={
+                <>
+                  <span className="tabular-nums">{c.originLabel}</span>
+                  {" · "}
+                  {c.recordedText}
+                </>
+              }
+            />
+          ))}
+        </GroupedList>
+      )}
+    </section>
   );
 }

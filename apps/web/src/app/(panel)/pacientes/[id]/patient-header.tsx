@@ -1,65 +1,67 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
-import { HIDDEN_NUMBER_TEXT, classifyWhatsappJid, formatPhone, whatsappChatUrl } from "@nutri-bot/core";
+import {
+  HIDDEN_NUMBER_TEXT,
+  PATIENT_SUMMARY_TEXT,
+  classifyWhatsappJid,
+  formatPhone,
+  whatsappChatUrl,
+} from "@nutri-bot/core";
 import { buttonVariants } from "@/components/primitives/button";
-import { Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ClinicalAlert } from "./clinical-alert";
+import { HeaderNameButton } from "./header-name-button";
 
-/** Filas 1 a 3 del encabezado persistente (server). La fila de pestañas la arma PatientTabs. */
+const T = PATIENT_SUMMARY_TEXT;
+
+/** Encabezado de la ficha (HU-017c-2, server): quién es. Va dentro del chrome pegado de PatientTabs,
+ *  que agrega las pestañas debajo. El próximo turno pasó al Resumen. */
 export function PatientHeader({
+  patientId,
   name,
   phone,
   whatsappJid,
   ageYears,
-  nextAppointment,
   riskBackground,
 }: {
+  patientId: string;
   name: string | null;
   phone: string;
-  /** HU-017c-1: define si se muestra el teléfono y el botón de WhatsApp (los @lid no tienen número). */
+  /** Define si se muestra el teléfono y el botón de WhatsApp (los @lid no tienen número, D3). */
   whatsappJid: string;
   ageYears: number | null;
-  nextAppointment: { label: string; serviceName: string; awaitingPayment: boolean } | null;
   riskBackground: string | null;
 }) {
   const chatUrl = whatsappChatUrl({ whatsappJid, phone });
-  const phoneLabel = classifyWhatsappJid(whatsappJid) === "phone" ? formatPhone(phone) : HIDDEN_NUMBER_TEXT;
+  const isPhone = classifyWhatsappJid(whatsappJid) === "phone";
+  const phoneLabel = isPhone ? formatPhone(phone) : null;
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight">
-          {name ?? "Paciente sin nombre"}
-        </h1>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className={cn("min-w-0 truncate text-title-1", !name && "text-muted-foreground")}>
+            {name ?? T.unnamed}
+          </h1>
+          {!name ? <HeaderNameButton patientId={patientId} phoneLabel={phoneLabel} /> : null}
+        </div>
         {chatUrl ? (
           <a
             href={chatUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "shrink-0")}
+            className={cn(buttonVariants({ variant: "secondary" }), "shrink-0")}
           >
             <MessageCircle aria-hidden />
-            Abrir chat de WhatsApp
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-            <span className="sr-only"> (se abre en otra pestaña)</span>
+            {T.whatsapp}
+            <ExternalLink className="text-muted-foreground" aria-hidden />
+            <span className="sr-only"> {T.opensInNewTab}</span>
           </a>
         ) : null}
       </div>
 
-      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-        <span>{ageYears !== null ? `${ageYears} años` : "Edad sin cargar"}</span>
-        <span aria-hidden>·</span>
-        <span className="tabular-nums">{phoneLabel}</span>
-        <span aria-hidden>·</span>
-        {nextAppointment ? (
-          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span>
-              Próximo turno: {nextAppointment.label} · {nextAppointment.serviceName}
-            </span>
-            {nextAppointment.awaitingPayment ? <Badge tone="warning">Esperando pago</Badge> : null}
-          </span>
-        ) : (
-          <span>Sin turnos próximos</span>
-        )}
+      <p className="mt-1 text-callout text-muted-foreground">
+        {ageYears !== null ? T.ageYears(ageYears) : T.ageNotLoaded}
+        <span aria-hidden> · </span>
+        <span className={cn(isPhone && "whitespace-nowrap tabular-nums")}>{phoneLabel ?? HIDDEN_NUMBER_TEXT}</span>
       </p>
 
       {riskBackground ? <ClinicalAlert background={riskBackground} compact /> : null}

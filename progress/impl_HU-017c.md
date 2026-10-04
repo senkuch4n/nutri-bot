@@ -110,3 +110,248 @@ No se escribió en la base: ni filas de prueba ni migraciones. No hay mensajes d
 ## Pendiente para el orquestador
 
 - Recorrido 10.3 en Chrome (datos de prueba por id, según la SDD), capturas y las tareas de D1.
+
+---
+
+# 017c-2: ficha de 4 pestañas y Resumen
+
+- **Estado:** done
+- **Rama:** `feat/hu-017c2-ficha`, encadenada sobre `feat/hu-017c-pacientes` (decisión Q6). Sin push.
+- **SDD:** `Refactorizaciones/017c-pacientes-consultas.md`, entrega 017c-2, "Decisiones" y "Agregados a 017c-2" (R1).
+- **Modelo:** Opus. **Skills:** `apple-design` y `ui-ux-pro-max` antes del JSX; `web-design-guidelines` como autochequeo final.
+
+## Commits (uno por fase)
+
+| Commit | Fase |
+|---|---|
+| `5215bc2` | A: resumen del paciente en lenguaje común (core) |
+| `b542ffa` | B: alias de pestañas y "Editar datos" (action) |
+| `14baad9` | C: ficha de 4 pestañas con alias de URL |
+| `6dd682a` | D: Resumen con una acción principal y datos en lenguaje común |
+| `6644339` | E: Historial, Consultas y Plan |
+| `5dddc5d` | R1: "Por completar" se cierra con un clic aunque la búsqueda tenga coincidencias |
+| `efa9515` | F: loading de la ficha, autochequeo y verificación (y este archivo) |
+
+## Archivos
+
+**packages/core:**
+- `src/patient-summary.ts` + test (nuevo): `formatShortDate`, `formatConsultationDay`, `RecordedItem`, `consultationRecordedItems`,
+  `recordedItemsText`, `WeightPoint`, `WeightTrend`, `weightTrend`, `AppointmentStatusLike`, `appointmentHistoryText`,
+  `APPOINTMENT_STATUS_TEXT`, `ACTIVITY_PLAIN_LABELS`, `missingForCaloriesText`, `PATIENT_SUMMARY_TEXT`. Un export extra
+  fuera del contrato: `joinSpanish` (la unión "a, b y c", que usan dos funciones del contrato). Ningún nombre choca.
+- `src/patient-formula-data.ts`: `missingFormulaDataMessage` dice "Editar datos" e "Historial" (0.1). Tests actualizados
+  en `patient-formula-data.test.ts` y `energy-requirement.test.ts`.
+- `src/index.ts`: `export * from "./patient-summary"`.
+
+**apps/web:**
+- `lib/patient-tab-route.ts` + test (nuevo): `PATIENT_TABS`, `PatientTab`, `HISTORY_VIEWS`, `HistoryView`,
+  `resolvePatientTab`, `patientTabQuery`, con la firma de la SDD 4.2.
+- `pacientes/actions.ts`: `updatePatientDataAction` + `PatientDataState` (nuevos); se borró `updatePatientAction`
+  (sin consumidores). `PatientState` y `updateFormulaDataAction` se quedan. Test en `pacientes/actions.test.ts`.
+- `pacientes/[id]/clinical-actions.ts`: se borró `updateClinicalRecordAction`.
+- `pacientes/[id]/patient-tabs.tsx` (reescrito): 4 pestañas, `?tab=`/`?vista=` con alias, chrome `material-chrome`
+  pegado con scroll edge (`useScrollEdge`), contador de Consultas en texto, punto + `sr-only` en Historial,
+  `PatientTabLink` (`{ tab, view?, focus? }`), `PatientTabButton` y `usePatientTabs()`. El foco `datos` lleva a
+  `#datos-paciente` y enfoca su título (`tabIndex={-1}`).
+- `pacientes/[id]/patient-header.tsx` (reescrito), `header-name-button.tsx` (nuevo, reutiliza `name-contact-sheet.tsx`),
+  `clinical-alert.tsx` ("Ver antecedentes" → Resumen con foco en los datos).
+- Resumen: `summary-section.tsx`, `summary-card.tsx`, `weight-sparkline.tsx`, `patient-data-section.tsx`,
+  `detail-disclosure.tsx`, `edit-patient-sheet.tsx` (nuevos).
+- Historial, Consultas y Plan: `history-section.tsx` (nuevo), `appointments-section.tsx`, `consultations-section.tsx`,
+  `diary-section.tsx`, `plans-section.tsx` (solo lo visual).
+- `pacientes/[id]/page.tsx` (reescrito), `pacientes/[id]/loading.tsx` (reescrito).
+- `consultation-date-sheet.tsx`: `NewConsultationButton` suma `trigger?` (opcional; sin él, el botón de siempre).
+- `consultas/[consultationId]/requirement-section.tsx` y `antropometria/page.tsx`: solo el `href`, de `?tab=datos` a `?editar=datos`.
+- `(calendario)/page.tsx` acepta `?fecha=` (validado con `isValidDayKey`). `calendar-client.tsx` suma `focusDate?`, que va
+  a `initialDate` de FullCalendar (no al modal de turno nuevo).
+- `components/ui.tsx`: `Metric.trend` suma `display?: "delta" | "label"` (opcional; default igual que hoy).
+- `pacientes/patient-directory.tsx`: R1.
+- Borrados: `evolution-summary.tsx`, `formula-data-section.tsx`, `requirement-summary-card.tsx`, `patient-form.tsx`,
+  `clinical-record-form.tsx`.
+
+Sin cambios en `packages/db`, `apps/bot`, `schema.prisma`, migraciones ni la zona de imleticio. `FormulaDataSheet`,
+`FormulaDataForm` y `updateFormulaDataAction` se quedan para la consulta y el estudio ISAK.
+
+## Contrato compartido
+
+Los nombres y firmas coinciden con la SDD de 017c-2: §4.1 (core), §4.2 (`patient-tab-route.ts`), §4.3
+(`updatePatientDataAction(prev, formData)`, `PatientDataState` con los 5 `fieldErrors`) y §4.4 (`?fecha=`, `focusDate?`).
+`PatientTabLink` toma `{ tab: PatientTab; view?: HistoryView; focus?: "datos" }`. Ningún export existente de core cambió
+de firma. Las props nuevas de `Metric`, `NewConsultationButton` y `CalendarClient` son opcionales.
+
+## Verificación
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, bot y web en verde |
+| `npm run test` | 103 archivos, 1778 tests en verde. Nuevos: `patient-summary` (32), `patient-tab-route` (20), `pacientes/actions` (+7, total 13) |
+| `npm run lint --workspace apps/web` | solo el warning previo de `ajustes/logo-form.tsx` |
+| `./ops/harness/verify.sh` | "Arnés OK". El aviso "Se tocó el bot" sale de las carpetas sin trackear `apps/bot/.whatsapp-auth.vieja*` |
+| `next build` (webpack, copia en el scratchpad) | exit 0. Compila `/pacientes/[id]` y `/`. Solo los warnings previos (`jose` en Edge, alt de `logo-form`) |
+| `next build --turbopack` (misma copia) | exit 0, "Compiled successfully". Sin el error de exports en `"use server"` |
+| Alcance (10.2 / 10-2) | contra `origin/develop`: ningún archivo de imleticio (`alimentos/`, `plantillas/`, `pacientes/[id]/planes/`, `food-picker`, `meals-editor`, `plan-pdf`, `pdf-theme`), ni de `apps/bot`, `packages/db`, `schema.prisma` o migraciones |
+| `plans-section.tsx` | el diff no tiene líneas `+`/`-` con `createPlanAction`, `applyTemplateAction`, `useActionState`, `name=` ni `action={`: los formularios quedan iguales |
+
+La copia del scratchpad se borró. El dev server de :3100 no se tocó (responde 200). No se escribió en la base: ni filas
+de prueba ni migraciones (la `food_measures` aplicada no se tocó). No hay mensajes de WhatsApp y no se corrió `db:seed`.
+
+## Decisiones no obvias y desvíos
+
+1. **Tendencia de peso visible.** `Metric` mostraba el delta ("−6,8 kg") y dejaba la frase solo para lectores de
+   pantalla. La HU pide ver "Bajó 6,8 kg desde el 11/05", así que `trend` suma `display: "label"` (opcional). El color
+   sigue en `neutral` (D10). El rótulo de la métrica es "Medido el 24/09".
+2. **Tarjeta Peso como `<a>`.** Las tarjetas que cambian de pestaña son un `<a href="?tab=historial">` que intercepta el
+   clic (sin ir al servidor). Un `<button>` no puede tener el `<p>`/`<div>` de `Metric` adentro, y el `<a>` además
+   sirve para Cmd/Ctrl+clic. Las tarjetas sin destino ("Sin turno", "Sin plan activo", sin mediciones) son estáticas.
+   "Ver planes" y "Cargar peso" van en el pie, como botones aparte.
+3. **"Datos de la paciente".**
+   - Filas propias dentro de `GroupedList`, no `GroupedListRow`. Su `value` es `shrink-0` y no entra a 390 px con
+     "1.698 kcal por día · 24/09". Las filas propias pasan el valor a la línea de abajo si no entra, y los textos
+     largos (antecedentes, objetivos, calorías sin indicar) van debajo del rótulo.
+   - El aviso completo de antecedentes de riesgo (`ClinicalAlert`) está arriba de la lista, como pide la SDD. La fila
+     "Antecedentes" dice "… (riesgo)".
+   - Con faltantes, el aviso amarillo muestra "Completar" si falta algo del Sheet, y "Cargar peso" si falta peso o talla.
+     Si faltan las dos cosas, aparecen los dos botones.
+   - "Ver detalle" incluye el texto "Estos datos los usan las fórmulas de calorías." y la lista de qué fórmulas usan
+     cada dato (Mifflin-St Jeor, Harris-Benedict, Schofield, Katch-McArdle, Cunningham, Hamwi). Esa lista vive en la
+     UI, no en core.
+4. **"Editar datos".**
+   - El form no usa `action={…}`: se envía con `onSubmit` + `startTransition(() => formAction(data))`. React 19
+     resetea los campos no controlados al terminar una form action, y con un error se perdería lo escrito.
+   - Con error, el foco va al primer campo marcado.
+   - La fecha de nacimiento se guarda como medianoche UTC del día elegido. Es la columna `@db.Date`, y
+     `computeAgeYears` lee el día en UTC. La action vieja usaba el mediodía local del servidor.
+   - Una fecha inválida ("2026-02-30") da `fieldErrors.birthDate`.
+   - Un nombre vacío se guarda como `null`, igual que antes; el contacto vuelve a "Por completar".
+   - `?editar=datos` abre el Sheet y sale de la URL al cerrarlo.
+5. **Encabezado.**
+   - El back "‹ Pacientes" queda fuera del chrome pegado: scrollea y no le suma alto al encabezado en el celular.
+     Adentro van el nombre, la edad, el teléfono, la franja de antecedentes y las pestañas.
+   - El chrome publica su alto en `--patient-chrome-h`, que usa el `scroll-margin-top` de `#datos-paciente`.
+6. **Enlaces "Ir a Datos"** de la consulta y del estudio ISAK: cambió solo el `href` (la SDD dice "solo el `href`").
+   El texto "Ir a Datos" queda; se puede revisar en 017c-3.
+7. **Turnos en Historial:**
+   - La fecha usa `formatAppointmentWhen`, que da "Hoy", "Mañana" o el día completo.
+   - La tabla de escritorio conserva la columna Precio.
+   - Un turno sin motivo dice "Sin motivo" en vez de "—".
+8. **Consultas:** la lista queda en un componente cliente, para que 017c-3 pueda filtrar los borrados pendientes ahí.
+9. **R1:**
+   - La elección de la usuaria manda: `null` (sin elección) o `true`/`false`.
+   - Si la cerró durante una búsqueda, una búsqueda nueva la vuelve a abrir sola cuando hay coincidencias.
+   - Si la abrió ella, sigue abierta.
+10. **Capturas:** no se hicieron (esta sesión no tiene navegador). El recorrido 10-2 y las tareas de D1 quedan para el orquestador.
+
+## Autochequeo web-design-guidelines
+
+- Arreglado: los enlaces de texto ("Ver antecedentes", "Ver consulta") ahora tienen estado hover.
+- Revisado y en regla:
+  - Todos los íconos llevan `aria-hidden`.
+  - Los botones tienen texto.
+  - La pestaña y la vista viven en la URL.
+  - Las tarjetas son `<a>`/`Link`.
+  - Hay `scroll-margin-top` en el destino interno.
+  - El movimiento reducido se respeta en el disclosure.
+  - Los campos tienen `name` y `<label>`.
+  - El foco va al primer error.
+  - "Guardando…" lleva "…".
+  - Los números usan `tabular-nums`.
+- Se dejó como está, a propósito:
+  - Sin aviso de cambios sin guardar al cerrar el Sheet "Editar datos". Los Sheets de hoy tampoco lo tienen, y la SDD
+    no lo pide.
+  - Mayúscula solo en la primera palabra de títulos y botones: es la convención del español.
+
+## Pendiente para el orquestador
+
+- Recorrido 10-2 en Chrome (1366/768/390, alias de `?tab=`, "Volver a <paciente>" desde un plan, lo escrito en
+  "Nueva medición" se conserva, "Editar datos" guardando solo en una paciente de prueba creada por id, movimiento
+  reducido). Incluye R2 (pasos 9–12 de §10.3) y las tres tareas de D1 en `progress/recorrido_HU-017c-2.md`.
+
+## Arreglo en runtime: íconos que cruzaban a un componente cliente (`f5e6e2f`)
+
+- **Qué fallaba:** el recorrido encontró que `/pacientes/<id>` caía en "Algo salió mal". `summary-section.tsx`
+  (server) le pasaba a `SummaryCard` (cliente) el componente del ícono (`icon={Scale}`), que es una función.
+  Next lo rechaza en runtime y el build no lo detecta.
+- **Arreglo:** `SummaryCard.icon` pasa a ser `ReactNode` y recibe el ícono ya renderizado (`icon={<Scale />}`). El
+  tamaño y el trazo los pone la tarjeta (`[&_svg]:size-4`).
+- **Revisión del diff completo (017c-1 + 017c-2):** no hay otro caso.
+  - `consultations-section.tsx`, `plans-section.tsx`, `patient-directory.tsx` y `dev-diseno/_sections/lists.tsx` son
+    `"use client"`: el ícono no sale del cliente.
+  - `diary-section.tsx` y `appointments-section.tsx` son server y le pasan íconos a `EmptyState`, o los renderizan
+    ellos. `EmptyState` es server-safe y no es cliente.
+  - El resto de los server components (`page.tsx`, `patient-header.tsx`, `patient-data-section.tsx`, `clinical-alert.tsx`,
+    `pacientes/page.tsx`) solo le pasan a los componentes cliente datos serializables y elementos ya renderizados.
+- **Verificación nueva, en runtime:**
+  - Build en una copia del scratchpad, `next start -p 3197` y una cookie de sesión de Auth.js generada en local con el
+    `AUTH_SECRET` del `.env`. El script vivía en la copia y se borró con ella.
+  - Se pidieron con GET `/pacientes/cmtyq7tys0000xnwszq8d9maa` (también con `?tab=historial&vista=turnos`,
+    `?tab=datos&editar=datos` y `?tab=planes`), `/pacientes` y `/?fecha=2026-10-08`. Todas dieron 200, sin filas de
+    error en el payload RSC (`E{"digest"…}`) y sin "cannot be passed" en el log del servidor.
+  - "Algo salió mal" no aparece en el HTML aunque la página falle: lo dibuja el `error.tsx` en el cliente. Por eso el
+    criterio son las filas `E{"digest"}` del payload.
+  - Control negativo: el build con el código anterior daba 200, pero con 2 filas `E{"digest"}` y 4 "cannot be passed"
+    en el log. El chequeo detecta el problema.
+  - Solo lectura: GET, sin escribir en la base.
+- typecheck (4 workspaces), test (103 archivos, 1778 tests), lint (solo el warning previo de `logo-form`), `next build` y
+  `next build --turbopack` en verde. El dev server de :3100 no se tocó (responde 200).
+
+## Ronda 2 (017c-2): la pestaña de la URL sobrevive a las server actions (`9da10e9`)
+
+Alcance: el cambio requerido 1 de `progress/review_HU-017c.md` (sección 017c-2) y algunas de sus dudas no bloqueantes.
+
+**Cambio requerido 1, arreglado.**
+- **`lib/patient-tab-route.ts`** suma tres helpers:
+  - `patientTabHref(href, tab, view)`: la URL con la query canónica; conserva el resto de los parámetros.
+  - `withoutSearchParam(href, name)`.
+  - `replaceUrlInRouter(href, history?)`: llama a `history.replaceState(null, "", href)`. Con estado `null`, Next 15
+    sincroniza su URL canónica. Con `window.history.state` (que trae `__NA`) no la sincroniza, y la próxima server
+    action la vuelve a pisar.
+- **`patient-tabs.tsx`:** la URL ya no se escribe dentro de un updater de `setState`.
+  - Los handlers (`go`, `setTab`, `setView`) calculan el estado siguiente desde un `stateRef`, llaman a `setState` y
+    escriben la URL.
+  - Todo pasa por `replaceUrlInRouter`.
+- **`edit-patient-sheet.tsx`:** al cerrar, `?editar=datos` sale con `replaceUrlInRouter(withoutSearchParam(...))`.
+
+**Tests (`patient-tab-route.test.ts`, +7):**
+- `patientTabHref` y `withoutSearchParam`.
+- `replaceUrlInRouter` llama a `replaceState` con estado `null` exactamente una vez, y no hace nada si la URL no cambia.
+- Una guarda: `patient-tabs.tsx` y `edit-patient-sheet.tsx` no llaman a `history.replaceState` directo y usan el helper.
+
+**Dudas no bloqueantes resueltas:**
+- **Pestaña Consultas:** el número es `aria-hidden`, con un `sr-only` " (5 consultas)". Ya no se lee "Consultas5".
+- **"Ir a Datos" → "Editar datos"**, en `requirement-section.tsx` y `antropometria/page.tsx`. Es el mismo enlace
+  `?editar=datos`, ahora con un texto que existe en la ficha.
+- **Fecha de nacimiento futura:** `updatePatientDataAction` la rechaza con `fieldErrors.birthDate` "La fecha de
+  nacimiento no puede ser futura".
+  - Compara en la zona de la profesional: `getProfessional` + `isFutureDayKey`.
+  - Solo consulta a la profesional si hay fecha.
+  - Test nuevo en `actions.test.ts`; `getProfessional` va mockeado.
+- **"Nueva consulta" en la pestaña Consultas** pasa a `tinted`: la única primaria llena queda en el Resumen.
+
+**Dudas que quedan abiertas:**
+- El alto del chrome a 390 px y las capturas o el recorrido a 1366/768/390 con movimiento reducido (R2) siguen para el
+  recorrido del orquestador.
+
+**Verificación:**
+- typecheck (4 workspaces) y test (103 archivos, 1785 tests) en verde.
+- lint: solo el warning previo de `logo-form`.
+- `next build` (exit 0) y `next build --turbopack` ("Compiled successfully"), en una copia del scratchpad.
+
+**En runtime** (copia del scratchpad + `next start -p 3197` + cookie de sesión generada en local + Chromium headless
+con `playwright-core`; todo en el scratchpad, ya borrado):
+- **Paciente de prueba:** el recorrido creó la paciente `hu017c2-r2-url` (JID `5493510017201@s.whatsapp.net`, sin
+  turnos) y la borró por id. Después del borrado: 0 filas de `Patient`, `Consultation`, `EvolutionEntry` y
+  `ClinicalRecord` con ese id. No se tocaron datos de la usuaria ni se crearon turnos.
+- **Con el arreglo, todo OK:**
+  - `?editar=datos` abre el Sheet, y al cerrarlo el parámetro sale de la URL.
+  - Historial → `?tab=historial`; Turnos → `?tab=historial&vista=turnos`.
+  - Después de agregar una medición (server action), la URL sigue en `?tab=historial`.
+  - Al recargar, la pestaña activa es Historial y el Sheet no se abre solo.
+  - Resumen → sin `tab`. "Editar datos" → Guardar → la URL sigue sin `tab` ni `editar`.
+  - Sin errores de JS.
+- **Control negativo**, el mismo guion contra un build con el código anterior:
+  - después de "Guardar" en Resumen, la URL volvió a `?tab=historial`, que era la vieja;
+  - el toast de la medición no apareció.
+  
+  El chequeo detecta la regresión.
+
+El dev server de :3100 no se tocó (responde 200).

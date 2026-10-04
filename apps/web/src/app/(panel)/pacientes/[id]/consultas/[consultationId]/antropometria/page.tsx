@@ -257,8 +257,8 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
                     </FormulaDataSheet>
                   ) : null}
                   {patient.birthDate === null ? (
-                    <ButtonLink href={`/pacientes/${id}?tab=datos`} variant="secondary" size="sm">
-                      Ir a Datos
+                    <ButtonLink href={`/pacientes/${id}?editar=datos`} variant="secondary" size="sm">
+                      Editar datos
                     </ButtonLink>
                   ) : null}
                 </div>

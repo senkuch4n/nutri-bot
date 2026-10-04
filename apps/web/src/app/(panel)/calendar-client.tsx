@@ -51,6 +51,7 @@ export function CalendarClient({
   businessHours,
   slotMin,
   slotMax,
+  focusDate,
 }: {
   services: ServiceOption[];
   legend: { name: string; color: string }[];
@@ -60,6 +61,8 @@ export function CalendarClient({
   businessHours: BusinessHours[];
   slotMin: string;
   slotMax: string;
+  /** HU-017c-2 (Q7, opcional): "yyyy-MM-dd" en el que abre el calendario. Sin él, hoy, como siempre. */
+  focusDate?: string;
 }) {
   const calRef = useRef<FullCalendar>(null);
   // Área del calendario: los clics adentro no cierran el panel del turno (se puede elegir otro).
@@ -163,6 +166,7 @@ export function CalendarClient({
           ref={calRef}
           plugins={PLUGINS}
           initialView="timeGridWeek"
+          initialDate={focusDate}
           headerToolbar={HEADER_TOOLBAR}
           locale="es"
           firstDay={1}

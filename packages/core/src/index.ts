@@ -39,3 +39,4 @@ export * from "./whatsapp-contact";
 export * from "./phone-format";
 export * from "./relative-date";
 export * from "./patient-directory";
+export * from "./patient-summary";

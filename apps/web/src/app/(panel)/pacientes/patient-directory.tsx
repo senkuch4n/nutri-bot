@@ -42,7 +42,9 @@ export function PatientDirectory({
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
-  const [incompleteByUser, setIncompleteByUser] = useState(false);
+  // R1 (agregado de 017c-2): lo que elige la usuaria manda sobre la apertura automática. null = sin
+  // elección; entonces se abre sola si la búsqueda tiene coincidencias sin nombre.
+  const [incompleteChoice, setIncompleteChoice] = useState<boolean | null>(null);
   const [editing, setEditing] = useState<PatientDirectoryRow | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const savedRef = useRef(false);
@@ -56,7 +58,16 @@ export function PatientDirectory({
     () => (searching ? unnamed.filter((r) => matchesPatientQuery(r, q)) : unnamed),
     [unnamed, q, searching],
   );
-  const incompleteOpen = incompleteByUser || (searching && unnamedShown.length > 0);
+  const incompleteAuto = searching && unnamedShown.length > 0;
+  const incompleteOpen = incompleteChoice ?? incompleteAuto;
+
+  // Una búsqueda nueva vuelve a abrirla sola si tiene coincidencias, salvo que la usuaria la haya
+  // abierto ella (abierta se queda abierta).
+  const wasSearching = useRef(searching);
+  useEffect(() => {
+    if (searching && !wasSearching.current) setIncompleteChoice((choice) => (choice === false ? null : choice));
+    wasSearching.current = searching;
+  }, [searching]);
 
   const focusSearch = useCallback(() => inputRef.current?.focus({ preventScroll: true }), []);
   const clearSearch = useCallback(() => {
@@ -222,7 +233,7 @@ export function PatientDirectory({
           rows={unnamedShown}
           open={incompleteOpen}
           searching={searching}
-          onToggle={() => setIncompleteByUser(!incompleteOpen)}
+          onToggle={() => setIncompleteChoice(!incompleteOpen)}
           onSetName={openNameSheet}
         />
       ) : null}

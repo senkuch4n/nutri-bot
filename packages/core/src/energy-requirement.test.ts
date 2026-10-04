@@ -583,7 +583,7 @@ describe("getRequirementBlockingMissing", () => {
     const items = getRequirementBlockingMissing({ ...complete, hasBirthDate: false });
     expect(items.map((i) => i.key)).toEqual(["birthDate"]);
     expect(missingFormulaDataMessage(items)).toBe(
-      'Faltan datos para los cálculos: fecha de nacimiento. La fecha de nacimiento se carga en "Datos".',
+      'Faltan datos para los cálculos: fecha de nacimiento. La fecha de nacimiento se carga en "Editar datos".',
     );
   });
 

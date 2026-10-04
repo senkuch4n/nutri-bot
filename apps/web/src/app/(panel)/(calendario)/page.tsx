@@ -1,6 +1,6 @@
 import { es } from "date-fns/locale";
 import { prisma } from "@nutri-bot/db";
-import { formatInTimeZone, fromZonedTime } from "@nutri-bot/core";
+import { formatInTimeZone, fromZonedTime, isValidDayKey } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
 import { CalendarClient } from "../calendar-client";
@@ -16,7 +16,10 @@ function hhmmss(min: number): string {
   return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}:00`;
 }
 
-export default async function CalendarPage() {
+export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ fecha?: string | string[] }> }) {
+  // HU-017c-2 (Q7): `?fecha=yyyy-MM-dd` abre el calendario en ese día (lo usa la tarjeta "Próximo turno").
+  const { fecha } = await searchParams;
+  const focusDate = typeof fecha === "string" && isValidDayKey(fecha) ? fecha : undefined;
   const pro = await getProfessional();
   const tz = pro.timezone;
   const now = new Date();
@@ -82,6 +85,7 @@ export default async function CalendarPage() {
       businessHours={businessHours}
       slotMin={slotMin}
       slotMax={slotMax}
+      focusDate={focusDate}
     />
   );
 }

@@ -9,14 +9,14 @@
   "hu": "docs/hu-017c-pacientes-consultas.md",
   "sdd": "Refactorizaciones/017c-pacientes-consultas.md",
   "rama": "feat/hu-017c-pacientes",
-  "notas": "Depende de HU-017a. Foco de usabilidad (decisión del usuario 2026-10-03): simplificar la página de pacientes para una usuaria que no maneja computadoras, con ui-ux-pro-max. Diagnóstico y propuestas 1–6 en progress/current-senkuch4n.md (2026-10-03); antes de afinar, observar a la nutricionista 5 minutos usando la ficha. Afinada en modo autónomo (2026-10-04) sin la observación previa de la nutricionista: se usa el diagnóstico de la bitácora.",
+  "notas": "Depende de HU-017a. Foco de usabilidad (decisión del usuario 2026-10-03): simplificar la página de pacientes para una usuaria que no maneja computadoras, con ui-ux-pro-max. Diagnóstico y propuestas 1–6 en progress/current-senkuch4n.md (2026-10-03); antes de afinar, observar a la nutricionista 5 minutos usando la ficha. Afinada en modo autónomo (2026-10-04) sin la observación previa de la nutricionista: se usa el diagnóstico de la bitácora. El contador intentos_revision se reinicia por entrega (017c-2 usó 1).",
   "skills_architect": [
     "ui"
   ],
   "entregas": {
     "017c-1": "aprobada (2026-10-04, 1ª revisión)",
-    "017c-2": "implementando",
-    "017c-3": "pendiente",
+    "017c-2": "aprobada (2026-10-04, ronda 2)",
+    "017c-3": "implementando",
     "017c-4": "pendiente"
   },
   "modelo": "opus",
@@ -26,5 +26,5 @@
     "web-design-guidelines"
   ],
   "modelo_reviewer": "opus",
-  "entrega_actual": "017c-2"
+  "entrega_actual": "017c-3"
 }

@@ -78,8 +78,8 @@ export function RequirementSection({
             </FormulaDataSheet>
           ) : null}
           {missingBirthDate ? (
-            <ButtonLink href={`/pacientes/${patientId}?tab=datos`} variant="secondary" size="sm">
-              Ir a Datos
+            <ButtonLink href={`/pacientes/${patientId}?editar=datos`} variant="secondary" size="sm">
+              Editar datos
             </ButtonLink>
           ) : null}
         </div>
