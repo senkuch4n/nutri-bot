@@ -112,6 +112,9 @@ export function RequirementSection({
 
   if (prescription === null || deleting) {
     const waitId = `${consultationId}-calculo-espera`;
+    // R5 (017c-4): la key sigue oculta unos segundos después del commit (`releaseAfterMs`), pero si la
+    // página revalidada ya trae `prescription === null` el cálculo se borró de verdad: se puede calcular.
+    const waitingUndo = deleting && prescription !== null;
     return (
       <Card title={TITLE}>
         <div className="space-y-4">
@@ -121,14 +124,14 @@ export function RequirementSection({
           <Button
             type="button"
             size="lg"
-            disabled={calculator === null || deleting}
-            aria-describedby={deleting ? waitId : undefined}
+            disabled={calculator === null || waitingUndo}
+            aria-describedby={waitingUndo ? waitId : undefined}
             onClick={() => setMode("edit")}
           >
             <Calculator aria-hidden />
             Calcular requerimiento
           </Button>
-          {deleting ? (
+          {waitingUndo ? (
             <p id={waitId} className="text-footnote text-muted-foreground">
               Vas a poder calcular de nuevo cuando se cierre el aviso de “Deshacer”.
             </p>

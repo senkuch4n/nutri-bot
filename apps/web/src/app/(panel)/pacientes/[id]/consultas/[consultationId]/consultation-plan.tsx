@@ -1,9 +1,9 @@
 "use client";
 
 import { useActionState, useTransition } from "react";
-import { ClipboardList, Plus, Unlink } from "lucide-react";
+import { ClipboardList, LoaderCircle, Plus, Unlink } from "lucide-react";
 import { MoreActionsMenu } from "@/components/more-actions-menu";
-import { Badge, Button, ButtonLink, Card, Field, FormError, Select } from "@/components/ui";
+import { Badge, Button, ButtonLink, Card, Field, FormError, Select, cn } from "@/components/ui";
 import { UNDO_TEXT } from "@/lib/deferred-delete";
 import { notify, useActionToast } from "@/lib/notify";
 import type { ActionState } from "../../clinical-actions";
@@ -40,7 +40,8 @@ export function ConsultationPlan({
   /** Planes del paciente ya ordenados: activos, borradores, archivados; cada grupo por creación desc. */
   options: PlanOption[];
 }) {
-  const [, startClear] = useTransition();
+  // R6 (017c-4): mientras se quita el plan, la tarjeta lo dice y el ítem del menú queda deshabilitado.
+  const [clearing, startClear] = useTransition();
   const [creating, startCreate] = useTransition();
   const [state, action, setting] = useActionState(setConsultationPlanAction, initial);
   useActionToast(state, { success: "Plan indicado en la consulta" });
@@ -67,7 +68,7 @@ export function ConsultationPlan({
   if (plan) {
     return (
       <Card title="Plan indicado">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={cn("flex flex-wrap items-center gap-2 transition-opacity", clearing && "opacity-60")}>
           <span className="min-w-0 break-words font-medium">{plan.title}</span>
           <Badge tone={statusTone[plan.status]}>{statusLabel[plan.status]}</Badge>
         </div>
@@ -85,10 +86,19 @@ export function ConsultationPlan({
                 icon: <Unlink />,
                 // Sin confirmación: es reversible (HU §4.3). "Deshacer" vuelve a indicar el mismo plan.
                 onSelect: () => removePlan(plan.id),
+                disabledReason: clearing ? "Quitando el plan…" : undefined,
               },
             ]}
           />
         </div>
+        <p aria-live="polite" className="mt-2 flex items-center gap-1.5 text-footnote text-muted-foreground empty:mt-0">
+          {clearing ? (
+            <>
+              <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
+              Quitando el plan de la consulta…
+            </>
+          ) : null}
+        </p>
       </Card>
     );
   }

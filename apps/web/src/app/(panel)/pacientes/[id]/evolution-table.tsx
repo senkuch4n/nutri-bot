@@ -51,7 +51,12 @@ function EvolutionRowMenu({ patientId, entry }: { patientId: string; entry: Evol
     const labels = VALUE_LABELS.filter(([key]) => entry[key] !== null).map(([, label]) => label);
     const ok = await confirm(
       isak
-        ? { title: ISAK_TEXT.deleteTitle, description: ISAK_TEXT.deleteDescription, confirmLabel: ISAK_TEXT.deleteLabel }
+        ? {
+            title: ISAK_TEXT.deleteTitle,
+            // R7 (017c-4): "y su informe" si el estudio lo tiene, como en la consulta.
+            description: entry.hasReport ? ISAK_TEXT.deleteWithReportDescription : ISAK_TEXT.deleteDescription,
+            confirmLabel: ISAK_TEXT.deleteLabel,
+          }
         : {
             title: UNDO_TEXT.measurement.confirmTitle,
             description: UNDO_TEXT.measurement.confirmDescription(day, labels),

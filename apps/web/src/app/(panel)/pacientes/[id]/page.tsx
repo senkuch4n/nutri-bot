@@ -55,7 +55,8 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
           orderBy: { startsAt: "desc" },
         },
         clinicalRecord: true,
-        evolutionEntries: { orderBy: { recordedAt: "desc" } },
+        // R7 (017c-4): Historial necesita saber si el estudio ISAK tiene informe ("y su informe").
+        evolutionEntries: { orderBy: { recordedAt: "desc" }, include: { anthropometricReport: { select: { id: true } } } },
       },
     }),
     listPatientPlans(id),
