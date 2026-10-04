@@ -6,12 +6,20 @@
  *   3. `order` es correlativo dentro de cada (mealId, weekday).
  * Todas las escrituras van en `prisma.$transaction`.
  */
-import { DEFAULT_WEEKLY_MEALS, WEEKDAYS, normalizePortions } from "@nutri-bot/core";
+import {
+  DEFAULT_WEEKLY_MEALS,
+  MEASURE_GRAMS_MAX,
+  MEASURE_GRAMS_MIN,
+  WEEKDAYS,
+  measureItemGrams,
+  normalizeMeasureQty,
+  normalizePortions,
+} from "@nutri-bot/core";
 import { prisma, type MealMode, type Prisma, type Weekday } from "../index";
 
 export type MealOwnerKind = "plan" | "template";
 
-/** Un ítem tal como se copia o se restaura. HU-018c: + recipeId y portions. */
+/** Un ítem tal como se copia o se restaura. HU-018c: + recipeId y portions. HU-018d: + medida casera. */
 export interface MenuItemData {
   foodId: string | null;
   customLabel: string | null;
@@ -23,6 +31,11 @@ export interface MenuItemData {
   recipeId: string | null;
   /** HU-018c: porciones de la receta (null si no es receta). */
   portions: number | null;
+  /** HU-018d: medida casera (las 4 juntas o ninguna; copias de la FoodMeasure al agregar, D4). */
+  measureQty: number | null;
+  measureName: string | null;
+  measurePlural: string | null;
+  measureGrams: number | null;
 }
 
 /** Foto completa de una comida (todos sus días) para "Deshacer". */
@@ -68,6 +81,10 @@ interface ItemRow {
   weekday: Weekday | null;
   recipeId: string | null;
   portions: { toString(): string } | null;
+  measureQty: { toString(): string } | null;
+  measureName: string | null;
+  measurePlural: string | null;
+  measureGrams: { toString(): string } | null;
 }
 interface MealRow {
   id: string;
@@ -112,12 +129,19 @@ function delegates(kind: MealOwnerKind, tx: Client): {
 
 const itemsOrder = [{ weekday: "asc" as const }, { order: "asc" as const }];
 
-/** Único lugar que lista los campos que se copian de un ítem (HU-018c: + recipeId y portions). */
+/**
+ * Único lugar que lista los campos que se copian de un ítem (HU-018c: + recipeId y portions;
+ * HU-018d: + los cuatro de la medida casera).
+ */
 function itemCopyData(
   item: Pick<ItemRow, "foodId" | "customLabel" | "notes"> & {
     quantityGrams: unknown;
     recipeId?: string | null;
     portions?: unknown;
+    measureQty?: unknown;
+    measureName?: string | null;
+    measurePlural?: string | null;
+    measureGrams?: unknown;
   },
 ): Omit<MenuItemData, "weekday" | "order"> {
   return {
@@ -127,6 +151,10 @@ function itemCopyData(
     notes: item.notes,
     recipeId: item.recipeId ?? null,
     portions: item.portions == null ? null : Number(item.portions),
+    measureQty: item.measureQty == null ? null : Number(item.measureQty),
+    measureName: item.measureName ?? null,
+    measurePlural: item.measurePlural ?? null,
+    measureGrams: item.measureGrams == null ? null : Number(item.measureGrams),
   };
 }
 
@@ -290,7 +318,31 @@ function assertSnapshotInvariants(snapshot: MealSnapshot) {
     } else if (portions !== null) {
       throw new MealModeError("Solo un ítem de receta lleva porciones.");
     }
+    assertMeasureInvariants(i);
   }
+}
+
+const MEASURE_ERROR = "Un ítem en medida casera lleva alimento, cantidad válida y sus gramos.";
+
+/** HU-018d (M1 y M2): las 4 columnas de medida juntas, solo con alimento y con gramos coherentes. */
+function assertMeasureInvariants(i: MenuItemData) {
+  const values = [i.measureQty ?? null, i.measureName ?? null, i.measurePlural ?? null, i.measureGrams ?? null];
+  const present = values.filter((v) => v !== null).length;
+  if (present === 0) return;
+  if (present !== 4) throw new MealModeError(MEASURE_ERROR);
+  const qty = i.measureQty as number;
+  const grams = i.measureGrams as number;
+  const ok =
+    i.foodId !== null &&
+    (i.recipeId ?? null) === null &&
+    (i.portions ?? null) === null &&
+    i.customLabel === null &&
+    normalizeMeasureQty(qty) !== null &&
+    grams >= MEASURE_GRAMS_MIN &&
+    grams <= MEASURE_GRAMS_MAX &&
+    i.quantityGrams !== null &&
+    Math.abs(i.quantityGrams - measureItemGrams(qty, grams)) <= 0.01;
+  if (!ok) throw new MealModeError(MEASURE_ERROR);
 }
 
 /**

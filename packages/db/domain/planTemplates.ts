@@ -64,6 +64,11 @@ type TemplateItemData = {
   order: number;
   /** HU-018b. Default null (todos los días). Se valida con assertWeekdayMatchesMeal. */
   weekday?: Weekday | null;
+  /** HU-018d: medida casera (copias de resolveMeasureItem). Las 4 juntas o ninguna. */
+  measureQty?: number | string | null;
+  measureName?: string | null;
+  measurePlural?: string | null;
+  measureGrams?: number | string | null;
 };
 
 export async function addTemplateMealItem(mealId: string, data: TemplateItemData) {
@@ -108,6 +113,11 @@ export async function applyTemplateToPatient(templateId: string, patientId: stri
                 // HU-018c: las recetas se copian con sus porciones.
                 recipeId: item.recipeId,
                 portions: item.portions,
+                // HU-018d: la medida casera (copia) viaja con el ítem.
+                measureQty: item.measureQty,
+                measureName: item.measureName,
+                measurePlural: item.measurePlural,
+                measureGrams: item.measureGrams,
               })),
             },
           })),

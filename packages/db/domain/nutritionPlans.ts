@@ -79,6 +79,11 @@ type MealItemData = {
   order: number;
   /** HU-018b. Default null (todos los días). Se valida con assertWeekdayMatchesMeal. */
   weekday?: Weekday | null;
+  /** HU-018d: medida casera (copias de resolveMeasureItem). Las 4 juntas o ninguna. */
+  measureQty?: number | string | null;
+  measureName?: string | null;
+  measurePlural?: string | null;
+  measureGrams?: number | string | null;
 };
 
 export async function addMealItem(mealId: string, data: MealItemData) {

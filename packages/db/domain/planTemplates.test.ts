@@ -30,7 +30,8 @@ const template = {
       isOptions: false,
       items: [
         { foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "THU", recipeId: "r1", portions: dec(2) },
-        { foodId: "f1", customLabel: null, quantityGrams: dec(250), notes: "sin azúcar", order: 1, weekday: "THU", recipeId: null, portions: null },
+        { foodId: "f1", customLabel: null, quantityGrams: dec(250), notes: "sin azúcar", order: 1, weekday: "THU", recipeId: null, portions: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null },
+        { foodId: "f2", customLabel: null, quantityGrams: dec(10), notes: null, order: 2, weekday: "THU", recipeId: null, portions: null, measureQty: dec(1), measureName: "cda", measurePlural: "cdas", measureGrams: dec(10) },
       ],
     },
   ],
@@ -53,6 +54,21 @@ describe("applyTemplateToPatient", () => {
     expect(recipeItem).toMatchObject({ recipeId: "r1", weekday: "THU", foodId: null, quantityGrams: null, customLabel: null, order: 0 });
     expect(Number(recipeItem.portions.toString())).toBe(2);
     expect(foodItem).toMatchObject({ foodId: "f1", recipeId: null, portions: null, weekday: "THU", notes: "sin azúcar" });
+    expect(foodItem).toMatchObject({ measureQty: null, measureName: null, measurePlural: null, measureGrams: null });
+  });
+
+  it("HU-018d: copia la medida casera del ítem (cantidad, nombre, plural y gramos por medida)", async () => {
+    p().planTemplate.findUnique.mockResolvedValue(template);
+    p().nutritionPlan.create.mockResolvedValue({ id: "plan1" });
+    p().nutritionPlan.findUnique.mockResolvedValue({ id: "plan1" });
+
+    await applyTemplateToPatient("tpl1", "pat1");
+
+    const measureItem = p().nutritionPlan.create.mock.calls[0][0].data.meals.create[0].items.create[2];
+    expect(measureItem).toMatchObject({ foodId: "f2", measureName: "cda", measurePlural: "cdas", order: 2, weekday: "THU" });
+    expect(Number(measureItem.measureQty.toString())).toBe(1);
+    expect(Number(measureItem.measureGrams.toString())).toBe(10);
+    expect(Number(measureItem.quantityGrams.toString())).toBe(10);
   });
 
   it("si la plantilla no existe, no crea nada", async () => {

@@ -22,7 +22,7 @@ import {
 
 const snapshot = {
   mealId: "meal1", mode: "EVERY_DAY" as const, isOptions: false,
-  items: [{ foodId: "f1", customLabel: null, quantityGrams: 150, notes: null, order: 0, weekday: null, recipeId: null, portions: null }],
+  items: [{ foodId: "f1", customLabel: null, quantityGrams: 150, notes: null, order: 0, weekday: null, recipeId: null, portions: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null }],
 };
 
 beforeEach(() => {
@@ -89,7 +89,7 @@ describe("weekly-menu-actions", () => {
 
   it("HU-018c: una foto con receta pasa; con receta y alimento no; sin los campos nuevos pasa con null", async () => {
     mocks.restoreMealSnapshots.mockResolvedValue(undefined);
-    const recipeItem = { foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 1, weekday: null, recipeId: "rec1", portions: 1.5 };
+    const recipeItem = { foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 1, weekday: null, recipeId: "rec1", portions: 1.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null };
     const withRecipe = { ...snapshot, items: [snapshot.items[0]!, recipeItem] };
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [withRecipe] })).toEqual({ ok: true });
     expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [withRecipe]);
@@ -107,10 +107,38 @@ describe("weekly-menu-actions", () => {
     expect(mocks.restoreMealSnapshots).not.toHaveBeenCalled();
 
     const legacyItem: Record<string, unknown> = { ...snapshot.items[0]! };
-    delete legacyItem.recipeId;
-    delete legacyItem.portions;
+    for (const key of ["recipeId", "portions", "measureQty", "measureName", "measurePlural", "measureGrams"]) delete legacyItem[key];
     const legacy = { ...snapshot, items: [legacyItem] };
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [legacy] as never })).toEqual({ ok: true });
+    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot]);
+  });
+
+  it("HU-018d: una foto con medida pasa; medida sin alimento o con 3 de 4 campos no; foto vieja pasa con null", async () => {
+    mocks.restoreMealSnapshots.mockResolvedValue(undefined);
+    const measureItem = {
+      ...snapshot.items[0]!, quantityGrams: 270, measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180,
+    };
+    const withMeasure = { ...snapshot, items: [measureItem] };
+    expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [withMeasure] })).toEqual({ ok: true });
+    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [withMeasure]);
+
+    mocks.restoreMealSnapshots.mockClear();
+    const bad = [
+      { ...measureItem, foodId: null },
+      { ...measureItem, measurePlural: null },
+      { ...measureItem, measureQty: 1.3 },
+      { ...measureItem, measureGrams: 2001 },
+      { ...measureItem, recipeId: "rec1" },
+      { ...measureItem, customLabel: "arroz" },
+    ];
+    for (const item of bad) {
+      expect((await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [{ ...snapshot, items: [item] }] })).ok).toBe(false);
+    }
+    expect(mocks.restoreMealSnapshots).not.toHaveBeenCalled();
+
+    const legacyItem: Record<string, unknown> = { ...snapshot.items[0]! };
+    for (const key of ["measureQty", "measureName", "measurePlural", "measureGrams"]) delete legacyItem[key];
+    expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [{ ...snapshot, items: [legacyItem] }] as never })).toEqual({ ok: true });
     expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot]);
   });
 });

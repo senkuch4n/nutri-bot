@@ -69,8 +69,8 @@ describe("setMealMode", () => {
     expect(before).toEqual({
       mealId: "meal1", mode: "EVERY_DAY", isOptions: true,
       items: [
-        { foodId: "f-a", customLabel: null, quantityGrams: 150, notes: null, order: 0, weekday: null, recipeId: null, portions: null },
-        { foodId: "f-b", customLabel: null, quantityGrams: 150, notes: null, order: 1, weekday: null, recipeId: null, portions: null },
+        { foodId: "f-a", customLabel: null, quantityGrams: 150, notes: null, order: 0, weekday: null, recipeId: null, portions: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null },
+        { foodId: "f-b", customLabel: null, quantityGrams: 150, notes: null, order: 1, weekday: null, recipeId: null, portions: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null },
       ],
     });
   });
@@ -165,7 +165,7 @@ describe("repeatMealInAllDays", () => {
 describe("restoreMealSnapshots", () => {
   const snap = {
     mealId: "meal1", mode: "PER_DAY" as const, isOptions: false,
-    items: [{ foodId: "f1", customLabel: null, quantityGrams: 80, notes: "n", order: 0, weekday: "MON" as const, recipeId: null, portions: null }],
+    items: [{ foodId: "f1", customLabel: null, quantityGrams: 80, notes: "n", order: 0, weekday: "MON" as const, recipeId: null, portions: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null }],
   };
   it("borra los ítems de la comida, restaura el modo y recrea los de la foto", async () => {
     p().planMeal.count.mockResolvedValue(1);
@@ -174,7 +174,7 @@ describe("restoreMealSnapshots", () => {
     expect(p().planMealItem.deleteMany).toHaveBeenCalledWith({ where: { mealId: "meal1" } });
     expect(p().planMeal.update).toHaveBeenCalledWith({ where: { id: "meal1" }, data: { mode: "PER_DAY", isOptions: false } });
     expect(createdRows(p().planMealItem)).toEqual([
-      { mealId: "meal1", foodId: "f1", customLabel: null, quantityGrams: 80, notes: "n", order: 0, weekday: "MON", recipeId: null, portions: null },
+      { mealId: "meal1", foodId: "f1", customLabel: null, quantityGrams: 80, notes: "n", order: 0, weekday: "MON", recipeId: null, portions: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null },
     ]);
   });
   it("comida de otro dueño → MealOwnershipError y no escribe nada", async () => {
@@ -356,7 +356,7 @@ describe("fotos con recetas (018c)", () => {
     p().planMeal.findMany.mockResolvedValue([meal("PER_DAY", [recipeItem("r", "MON"), item("a", "MON", 1)], { id: "m1" })]);
     const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["FRI"] });
     expect(createdRows(p().planMealItem)[0]).toEqual({
-      mealId: "m1", foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "FRI", recipeId: "rec1", portions: 1.5,
+      mealId: "m1", foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "FRI", recipeId: "rec1", portions: 1.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null,
     });
     expect(createdRows(p().planMealItem)[1]).toMatchObject({ foodId: "f-a", recipeId: null, portions: null });
     expect(snapshots[0]!.items[0]).toMatchObject({ recipeId: "rec1", portions: 1.5 });
@@ -378,15 +378,15 @@ describe("fotos con recetas (018c)", () => {
     p().planMeal.count.mockResolvedValue(1);
     await restoreMealSnapshots("plan", "plan1", [{
       mealId: "meal1", mode: "PER_DAY", isOptions: false,
-      items: [{ foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON", recipeId: "rec1", portions: 0.5 }],
+      items: [{ foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON", recipeId: "rec1", portions: 0.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null }],
     }]);
     expect(createdRows(p().planMealItem)).toEqual([
-      { mealId: "meal1", foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON", recipeId: "rec1", portions: 0.5 },
+      { mealId: "meal1", foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON", recipeId: "rec1", portions: 0.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null },
     ]);
   });
 
   it("una foto con receta y alimento, o porciones sin receta, da MealModeError sin escribir", async () => {
-    const base = { foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON" as const, recipeId: "rec1", portions: 1 };
+    const base = { foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON" as const, recipeId: "rec1", portions: 1, measureQty: null, measureName: null, measurePlural: null, measureGrams: null };
     const bad = [
       { ...base, foodId: "f1" },
       { ...base, quantityGrams: 100 },
@@ -490,5 +490,72 @@ describe("setRecipeItemPortions / removeMenuItems", () => {
     await expect(removeMenuItems("plan", "plan1", [])).rejects.toBeInstanceOf(RangeError);
     await expect(removeMenuItems("plan", "plan1", Array.from({ length: 51 }, (_, i) => `i${i}`))).rejects.toBeInstanceOf(RangeError);
     expect(p().planMealItem.deleteMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("HU-018d: medida casera en copias e invariantes", () => {
+  const dec = (v: number) => ({ toString: () => String(v) });
+  const measureItem = (id: string, weekday: string | null, order = 0) =>
+    item(id, weekday, order, {
+      quantityGrams: dec(270), recipeId: null, portions: null,
+      measureQty: dec(1.5), measureName: "taza", measurePlural: "tazas", measureGrams: dec(180),
+    });
+  const MEASURE = { measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270 };
+
+  it("copyDay copia los cuatro campos de la medida", async () => {
+    p().planMeal.findMany.mockResolvedValue([meal("PER_DAY", [measureItem("a", "MON")], { id: "m1" })]);
+    const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["THU"] });
+    expect(createdRows(p().planMealItem)).toEqual([
+      { mealId: "m1", foodId: "f-a", customLabel: null, notes: null, order: 0, weekday: "THU", recipeId: null, portions: null, ...MEASURE },
+    ]);
+    expect(snapshots[0]!.items[0]).toMatchObject(MEASURE);
+  });
+
+  it("repeatMealInAllDays copia la medida a los otros 6 días", async () => {
+    p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", [measureItem("a", "MON")]));
+    await repeatMealInAllDays("plan", "plan1", "meal1", "MON");
+    const rows = createdRows(p().planMealItem);
+    expect(rows).toHaveLength(6);
+    expect(rows.every((r: any) => r.measureName === "taza" && r.measureQty === 1.5 && r.measureGrams === 180 && r.measurePlural === "tazas")).toBe(true);
+  });
+
+  it("setMealMode EVERY_DAY → PER_DAY copia la medida a los 7 días", async () => {
+    p().templateMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", [measureItem("a", null)]));
+    await setMealMode("template", "t1", "meal1", { mode: "PER_DAY" });
+    const rows = createdRows(p().templateMealItem);
+    expect(rows).toHaveLength(7);
+    expect(rows.every((r: any) => r.measureName === "taza" && r.quantityGrams === 270)).toBe(true);
+  });
+
+  const base = {
+    foodId: "f1", customLabel: null, quantityGrams: 270, notes: null, order: 0, weekday: "MON" as const,
+    recipeId: null, portions: null, measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180,
+  };
+  const restore = (i: typeof base | Record<string, unknown>) =>
+    restoreMealSnapshots("plan", "plan1", [{ mealId: "meal1", mode: "PER_DAY", isOptions: false, items: [i as typeof base] }]);
+
+  it("restoreMealSnapshots acepta una foto con medida válida y la recrea", async () => {
+    p().planMeal.count.mockResolvedValue(1);
+    await restore(base);
+    expect(createdRows(p().planMealItem)).toEqual([{ mealId: "meal1", ...base }]);
+  });
+
+  it("restoreMealSnapshots rechaza medidas inválidas sin escribir", async () => {
+    const bad = [
+      { ...base, measurePlural: null }, // 3 de 4
+      { ...base, foodId: null }, // sin alimento
+      { ...base, recipeId: "rec1" }, // con receta
+      { ...base, measureQty: 1.3, quantityGrams: 234 }, // cantidad fuera de la grilla
+      { ...base, quantityGrams: 300 }, // gramos que no coinciden
+      { ...base, customLabel: "arroz" }, // con descripción libre
+      { ...base, measureGrams: 0 }, // gramos por medida fuera de rango
+    ];
+    for (const i of bad) await expect(restore(i)).rejects.toBeInstanceOf(MealModeError);
+    expect(p().$transaction).not.toHaveBeenCalled();
+  });
+
+  it("tolera 0,01 g de diferencia por redondeo", async () => {
+    p().planMeal.count.mockResolvedValue(1);
+    await expect(restore({ ...base, quantityGrams: 270.01 })).resolves.toBeUndefined();
   });
 });
