@@ -588,9 +588,34 @@ model Food {
   planItems         PlanMealItem[]
   templateItems     TemplateMealItem[]
   recipeIngredients RecipeIngredient[] // HU-018a
+  measures          FoodMeasure[] // HU-018d
 
   @@index([group])
   @@index([source, active])
+}
+
+/// HU-018d: medida casera de un alimento ("1 taza = 180 g"). La equivalencia es POR alimento.
+/// Se cargan a mano (D1) o salen de convertir el unitHint (D9). Se pueden cargar en SARA 2: la
+/// composición del alimento no cambia.
+model FoodMeasure {
+  id        String   @id @default(cuid())
+  food      Food     @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  foodId    String
+  /// Singular, como lo escribió ella ("taza", "unidad mediana"). trim + espacios colapsados, 1..40.
+  name      String
+  /// foodSearchText(name) (core): unicidad por alimento sin mayúsculas ni tildes.
+  nameKey   String
+  /// Plural escrito a mano (D6). null = el automático (pluralizeMeasureName de core). 1..40.
+  plural    String?
+  /// Gramos que pesa UNA medida. 0,1..2000, 1 decimal. Líquidos: 1 ml ≈ 1 g (D8).
+  grams     Decimal  @db.Decimal(6, 1)
+  /// Orden en la lista. La primera es la que se propone al agregar (D13).
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([foodId, nameKey])
+  @@index([foodId, order])
 }
 
 enum PlanStatus {
@@ -672,6 +697,17 @@ model PlanMealItem {
   recipeId      String?
   /// HU-018a (D9): porciones de la receta, pasos de ½ entre 0,5 y 4. null si no es receta.
   portions      Decimal?  @db.Decimal(3, 1)
+  /// HU-018d: ítem de alimento en medida casera. Las 4 van juntas (todas null o todas con valor) y
+  /// solo con foodId (nunca con recipeId). Son COPIAS de la medida al agregar (D4): cambiar o borrar
+  /// la FoodMeasure no toca el ítem. quantityGrams = measureItemGrams(measureQty, measureGrams).
+  /// Cantidad: ¼..20 de a ¼ (D5).
+  measureQty    Decimal?  @db.Decimal(4, 2)
+  /// Singular ("taza").
+  measureName   String?
+  /// Plural ya resuelto al agregar (el escrito a mano o el automático): "tazas".
+  measurePlural String?
+  /// Gramos por medida al agregar (para recalcular con el stepper).
+  measureGrams  Decimal?  @db.Decimal(6, 1)
 
   @@index([mealId, order])
   @@index([recipeId])
@@ -720,6 +756,17 @@ model TemplateMealItem {
   recipeId      String?
   /// HU-018a (D9): porciones de la receta, pasos de ½ entre 0,5 y 4. null si no es receta.
   portions      Decimal?     @db.Decimal(3, 1)
+  /// HU-018d: ítem de alimento en medida casera. Las 4 van juntas (todas null o todas con valor) y
+  /// solo con foodId (nunca con recipeId). Son COPIAS de la medida al agregar (D4): cambiar o borrar
+  /// la FoodMeasure no toca el ítem. quantityGrams = measureItemGrams(measureQty, measureGrams).
+  /// Cantidad: ¼..20 de a ¼ (D5).
+  measureQty    Decimal?     @db.Decimal(4, 2)
+  /// Singular ("taza").
+  measureName   String?
+  /// Plural ya resuelto al agregar (el escrito a mano o el automático): "tazas".
+  measurePlural String?
+  /// Gramos por medida al agregar (para recalcular con el stepper).
+  measureGrams  Decimal?     @db.Decimal(6, 1)
 
   @@index([mealId, order])
   @@index([recipeId])
