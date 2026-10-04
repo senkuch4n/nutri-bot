@@ -16,7 +16,10 @@ vi.mock("@nutri-bot/db", () => ({
     $transaction: mocks.transaction,
   },
 }));
-vi.mock("@nutri-bot/db/domain", () => ({ updatePatientFormulaData: vi.fn() }));
+vi.mock("@nutri-bot/db/domain", () => ({
+  updatePatientFormulaData: vi.fn(),
+  getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
+}));
 
 import { setPatientNameAction, updatePatientDataAction } from "./actions";
 
@@ -159,6 +162,12 @@ describe("updatePatientDataAction", () => {
     );
     expect(result.ok).toBe(false);
     expect(Object.keys(result.fieldErrors ?? {}).sort()).toEqual(["background", "birthDate", "goals", "notes"]);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("una fecha de nacimiento futura → error en el campo, sin escribir", async () => {
+    const result = await updatePatientDataAction({ ok: false }, form({ ...full, birthDate: "2999-01-01" }));
+    expect(result).toEqual({ ok: false, fieldErrors: { birthDate: "La fecha de nacimiento no puede ser futura" } });
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 

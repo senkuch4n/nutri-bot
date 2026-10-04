@@ -79,7 +79,7 @@ export function RequirementSection({
           ) : null}
           {missingBirthDate ? (
             <ButtonLink href={`/pacientes/${patientId}?editar=datos`} variant="secondary" size="sm">
-              Ir a Datos
+              Editar datos
             </ButtonLink>
           ) : null}
         </div>

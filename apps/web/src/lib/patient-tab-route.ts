@@ -49,3 +49,31 @@ export function patientTabQuery(tab: PatientTab, view: HistoryView): URLSearchPa
   if (tab === "historial" && view !== DEFAULT_VIEW) params.set("vista", view);
   return params;
 }
+
+/** La URL de `href` con la pestaña y la vista canónicas; conserva el resto de los parámetros y el hash. */
+export function patientTabHref(href: string, tab: PatientTab, view: HistoryView): string {
+  const url = new URL(href);
+  url.searchParams.delete("tab");
+  url.searchParams.delete("vista");
+  patientTabQuery(tab, view).forEach((value, key) => url.searchParams.set(key, value));
+  return url.toString();
+}
+
+/** La URL de `href` sin el parámetro `name` (p. ej. `editar`). */
+export function withoutSearchParam(href: string, name: string): string {
+  const url = new URL(href);
+  url.searchParams.delete(name);
+  return url.toString();
+}
+
+/**
+ * Cambia la URL sin navegar y de forma que el router de Next se entere (ronda 2 de 017c-2).
+ * El primer argumento tiene que ser `null`: Next 15 parchea `history.replaceState` y, si el estado
+ * trae su marca interna (`__NA`, la que tiene `window.history.state`), deja pasar la llamada sin
+ * sincronizar su URL canónica. Entonces la próxima server action o `router.refresh` vuelve a escribir
+ * la URL vieja. Llamarla desde un handler o un efecto, nunca dentro de un updater de `setState`.
+ */
+export function replaceUrlInRouter(href: string, history: Pick<History, "replaceState"> = window.history): void {
+  if (href === window.location.href) return;
+  history.replaceState(null, "", href);
+}

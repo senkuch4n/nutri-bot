@@ -258,7 +258,7 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
                   ) : null}
                   {patient.birthDate === null ? (
                     <ButtonLink href={`/pacientes/${id}?editar=datos`} variant="secondary" size="sm">
-                      Ir a Datos
+                      Editar datos
                     </ButtonLink>
                   ) : null}
                 </div>

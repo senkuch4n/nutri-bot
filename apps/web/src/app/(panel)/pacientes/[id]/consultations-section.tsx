@@ -31,7 +31,7 @@ export function ConsultationsSection({
       patientId={patientId}
       todayKey={todayKey}
       trigger={
-        <Button type="button">
+        <Button type="button" variant="tinted">
           <Plus aria-hidden />
           Nueva consulta
         </Button>

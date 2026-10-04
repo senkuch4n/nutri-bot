@@ -3,13 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
-import { updatePatientFormulaData } from "@nutri-bot/db/domain";
+import { getProfessional, updatePatientFormulaData } from "@nutri-bot/db/domain";
 import {
   ACTIVITY_LEVEL_VALUES,
   BODY_FRAME_VALUES,
   NUTRITION_GOAL_VALUES,
   PATIENT_DIRECTORY_TEXT,
   SEX_VALUES,
+  isFutureDayKey,
   isValidDayKey,
 } from "@nutri-bot/core";
 
@@ -55,6 +56,7 @@ export type PatientDataState = {
 const PATIENT_DATA_TEXT = {
   invalid: "Datos inválidos",
   birthDateInvalid: "Fecha inválida",
+  birthDateFuture: "La fecha de nacimiento no puede ser futura",
   notesTooLong: "Las notas pueden tener hasta 2000 caracteres",
   textTooLong: "Puede tener hasta 4000 caracteres",
 } as const;
@@ -86,6 +88,10 @@ export async function updatePatientDataAction(
   if (notes.length > 2000) fieldErrors.notes = PATIENT_DATA_TEXT.notesTooLong;
   if (background.length > 4000) fieldErrors.background = PATIENT_DATA_TEXT.textTooLong;
   if (goals.length > 4000) fieldErrors.goals = PATIENT_DATA_TEXT.textTooLong;
+  if (!fieldErrors.birthDate && birthDate !== "") {
+    const pro = await getProfessional();
+    if (isFutureDayKey(birthDate, new Date(), pro.timezone)) fieldErrors.birthDate = PATIENT_DATA_TEXT.birthDateFuture;
+  }
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
 
   const enums = z

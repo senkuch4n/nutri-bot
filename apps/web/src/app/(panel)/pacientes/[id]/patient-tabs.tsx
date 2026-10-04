@@ -18,7 +18,8 @@ import { useScrollEdge } from "@/components/shell/use-scroll-edge";
 import { Button } from "@/components/ui";
 import {
   PATIENT_TABS,
-  patientTabQuery,
+  patientTabHref,
+  replaceUrlInRouter,
   resolvePatientTab,
   type HistoryView,
   type PatientTab,
@@ -55,12 +56,9 @@ export function usePatientTabs(): PatientTabsContextValue {
   return value;
 }
 
+/** Escribe la pestaña en la URL sincronizada con el router de Next (ver `replaceUrlInRouter`). */
 function writeUrl(tab: PatientTab, view: HistoryView) {
-  const url = new URL(window.location.href);
-  url.searchParams.delete("tab");
-  url.searchParams.delete("vista");
-  patientTabQuery(tab, view).forEach((value, key) => url.searchParams.set(key, value));
-  window.history.replaceState(window.history.state, "", url);
+  replaceUrlInRouter(patientTabHref(window.location.href, tab, view));
 }
 
 /** Lleva "Datos de la paciente" a la vista (debajo del encabezado pegado) y le da el foco al título. */
@@ -137,37 +135,35 @@ export function PatientTabs({
   const desktop = useMediaQuery("(min-width: 1024px)");
   const { sentinelRef, scrolled } = useScrollEdge(desktop ? 0 : 56);
 
-  const go = useCallback((target: PatientTabTarget) => {
-    setState((prev) => {
-      const view = target.view ?? prev.view;
-      writeUrl(target.tab, view);
-      return { tab: target.tab, view, focus: null };
-    });
-    if (target.focus === "datos") {
-      setPendingFocus(true);
-      return;
-    }
-    // Si el encabezado ya está pegado arriba, el contenido nuevo arranca donde empiezan las pestañas.
-    const root = rootRef.current;
-    const sticky = stickyRef.current;
-    if (root && sticky && root.getBoundingClientRect().top < sticky.getBoundingClientRect().top) {
-      root.scrollIntoView({ block: "start" });
-    }
+  // Último estado confirmado, para que los handlers calculen el siguiente sin escribir la URL dentro
+  // de un updater de setState (React puede llamarlo en el render y dos veces en StrictMode).
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const apply = useCallback((tab: PatientTab, view: HistoryView) => {
+    setState({ tab, view, focus: null });
+    writeUrl(tab, view);
   }, []);
 
-  const setTab = useCallback((tab: PatientTab) => {
-    setState((prev) => {
-      writeUrl(tab, prev.view);
-      return { tab, view: prev.view, focus: null };
-    });
-  }, []);
+  const go = useCallback(
+    (target: PatientTabTarget) => {
+      apply(target.tab, target.view ?? stateRef.current.view);
+      if (target.focus === "datos") {
+        setPendingFocus(true);
+        return;
+      }
+      // Si el encabezado ya está pegado arriba, el contenido nuevo arranca donde empiezan las pestañas.
+      const root = rootRef.current;
+      const sticky = stickyRef.current;
+      if (root && sticky && root.getBoundingClientRect().top < sticky.getBoundingClientRect().top) {
+        root.scrollIntoView({ block: "start" });
+      }
+    },
+    [apply],
+  );
 
-  const setView = useCallback((view: HistoryView) => {
-    setState((prev) => {
-      writeUrl(prev.tab, view);
-      return { ...prev, view, focus: null };
-    });
-  }, []);
+  const setTab = useCallback((tab: PatientTab) => apply(tab, stateRef.current.view), [apply]);
+  const setView = useCallback((view: HistoryView) => apply(stateRef.current.tab, view), [apply]);
 
   return (
     <PatientTabsContext.Provider value={{ tab: state.tab, view: state.view, go, setView }}>
@@ -192,7 +188,15 @@ export function PatientTabs({
                 <TabsTrigger key={value} value={value} className="max-sm:justify-center max-sm:text-subheadline">
                   {TAB_LABELS[value]}
                   {value === "consultas" && consultationCount > 0 ? (
-                    <span className="ml-1 font-normal tabular-nums text-muted-foreground">{consultationCount}</span>
+                    <>
+                      <span aria-hidden className="ml-1 font-normal tabular-nums text-muted-foreground">
+                        {consultationCount}
+                      </span>
+                      <span className="sr-only">
+                        {" "}
+                        ({consultationCount} {consultationCount === 1 ? "consulta" : "consultas"})
+                      </span>
+                    </>
                   ) : null}
                   {value === "historial" && diaryHasRecent ? (
                     <>

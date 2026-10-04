@@ -36,6 +36,7 @@ import {
 } from "@/components/primitives/sheet";
 import { Button, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { notify } from "@/lib/notify";
+import { replaceUrlInRouter, withoutSearchParam } from "@/lib/patient-tab-route";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { updatePatientDataAction, type PatientDataState } from "../actions";
 
@@ -92,11 +93,8 @@ export function EditPatientProvider({
     setOpen(next);
     if (next) return;
     // Al cerrar, `?editar=datos` sale de la URL (recargar no lo vuelve a abrir).
-    const url = new URL(window.location.href);
-    if (url.searchParams.has("editar")) {
-      url.searchParams.delete("editar");
-      window.history.replaceState(window.history.state, "", url);
-    }
+    // `replaceUrlInRouter` (estado null): Next se entera y una server action posterior no lo vuelve a poner.
+    replaceUrlInRouter(withoutSearchParam(window.location.href, "editar"));
   }, []);
 
   return (
