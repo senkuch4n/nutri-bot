@@ -13,8 +13,9 @@ import { notify } from "@/lib/notify";
 export type CommitResult = { ok: boolean; error?: string };
 
 export interface DeferredDeleteStore {
-  /** Oculta `key` al instante y deja el borrado pendiente. Devuelve el id de la entrada. */
-  schedule(entry: { key: string; commit: () => Promise<CommitResult> }): string;
+  /** Oculta `key` al instante y deja el borrado pendiente. Devuelve el id de la entrada.
+   *  `guardUnload` (HU-017b-1, default false): cuenta para `hasGuardedPending` (aviso al cerrar). */
+  schedule(entry: { key: string; commit: () => Promise<CommitResult>; guardUnload?: boolean }): string;
   /** Deshace: saca `key` de los pendientes sin llamar a commit. true si llegó a tiempo. */
   undo(id: string): boolean;
   /** Ejecuta commit (una sola vez por entrada). Si falla, vuelve a mostrar `key` y devuelve el error. */
@@ -22,6 +23,8 @@ export interface DeferredDeleteStore {
   isPending(key: string): boolean;
   subscribe(listener: () => void): () => void;
   getSnapshot(): ReadonlySet<string>;
+  /** HU-017b-1: true si hay alguna entrada con guardUnload en estado "pending" o "committing". */
+  hasGuardedPending(): boolean;
 }
 
 export interface DeferredDeleteStoreOptions {
@@ -35,7 +38,13 @@ export interface DeferredDeleteStoreOptions {
 }
 
 type EntryState = "pending" | "committing" | "done" | "undone";
-type Entry = { key: string; commit: () => Promise<CommitResult>; state: EntryState; result?: Promise<CommitResult> };
+type Entry = {
+  key: string;
+  commit: () => Promise<CommitResult>;
+  state: EntryState;
+  guardUnload: boolean;
+  result?: Promise<CommitResult>;
+};
 
 const SKIPPED: CommitResult = { ok: true };
 
@@ -59,10 +68,10 @@ export function createDeferredDeleteStore(options: DeferredDeleteStoreOptions = 
   }
 
   return {
-    schedule({ key, commit }) {
+    schedule({ key, commit, guardUnload = false }) {
       counter += 1;
       const id = `${key}#${counter}`;
-      entries.set(id, { key, commit, state: "pending" });
+      entries.set(id, { key, commit, state: "pending", guardUnload });
       recompute();
       return id;
     },
@@ -113,6 +122,14 @@ export function createDeferredDeleteStore(options: DeferredDeleteStoreOptions = 
     },
     getSnapshot() {
       return snapshot;
+    },
+    // pending → committing no cambia ni las keys ocultas ni este valor (los dos estados cuentan), así
+    // que no hace falta avisar ahí; schedule, undo y el fin del commit ya llaman a recompute.
+    hasGuardedPending() {
+      for (const e of entries.values()) {
+        if (e.guardUnload && (e.state === "pending" || e.state === "committing")) return true;
+      }
+      return false;
     },
   };
 }
@@ -190,6 +207,12 @@ export type DeferredDeleteOptions = {
   afterSchedule?: () => void;
   /** "Abrir" la consulta restaurada. */
   undoneAction?: { label: string; href: string };
+  /** HU-017b-1 (T10): avisa con beforeunload mientras esté pendiente o enviándose. */
+  guardUnload?: boolean;
+  /** HU-017b-1: toast si el commit falla. Default UNDO_TEXT.deleteError. */
+  errorMessage?: string;
+  /** HU-017b-1: corre después de un commit exitoso (además de router.refresh()). P. ej. refetch del calendario. */
+  onCommitted?: () => void;
 };
 
 /**
@@ -201,7 +224,7 @@ export function useDeferredDelete(): (opts: DeferredDeleteOptions) => void {
   const router = useRouter();
   return useCallback(
     (opts: DeferredDeleteOptions) => {
-      const id = deferredDeletes.schedule({ key: opts.key, commit: opts.commit });
+      const id = deferredDeletes.schedule({ key: opts.key, commit: opts.commit, guardUnload: opts.guardUnload });
       // onAutoClose y onDismiss pueden llegar los dos: se atiende solo la primera resolución.
       let settled = false;
       notify.undo(
@@ -221,8 +244,10 @@ export function useDeferredDelete(): (opts: DeferredDeleteOptions) => void {
             if (settled) return;
             settled = true;
             void deferredDeletes.commit(id).then((result) => {
-              if (result.ok) router.refresh();
-              else notify.error(UNDO_TEXT.deleteError);
+              if (result.ok) {
+                router.refresh();
+                opts.onCommitted?.();
+              } else notify.error(opts.errorMessage ?? UNDO_TEXT.deleteError);
             });
           },
         },

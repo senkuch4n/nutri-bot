@@ -172,3 +172,64 @@ describe("prescriptionDeletionKey", () => {
     expect(store.isPending(prescriptionDeletionKey("rx1"))).toBe(true);
   });
 });
+
+// HU-017b-1 (SDD 4.8): aviso al cerrar la pestaña con algo pendiente.
+describe("hasGuardedPending", () => {
+  it("schedule con guardUnload → true; undo → false", () => {
+    const store = createDeferredDeleteStore();
+    const id = store.schedule({ key: "appointment-cancel:a1", commit: async () => ({ ok: true }), guardUnload: true });
+    expect(store.hasGuardedPending()).toBe(true);
+    store.undo(id);
+    expect(store.hasGuardedPending()).toBe(false);
+  });
+
+  it("durante committing → true; tras un commit exitoso → false aunque la key siga oculta", async () => {
+    const timers = manualTimers();
+    const store = createDeferredDeleteStore({ setTimer: timers.setTimer });
+    let resolveCommit: (r: { ok: boolean }) => void = () => {};
+    const id = store.schedule({
+      key: "appointment-cancel:a1",
+      commit: () => new Promise((resolve) => (resolveCommit = resolve)),
+      guardUnload: true,
+    });
+    const pending = store.commit(id);
+    expect(store.hasGuardedPending()).toBe(true);
+    resolveCommit({ ok: true });
+    await pending;
+    expect(store.hasGuardedPending()).toBe(false);
+    expect(store.isPending("appointment-cancel:a1")).toBe(true); // releaseAfterMs
+    timers.flush();
+    expect(store.isPending("appointment-cancel:a1")).toBe(false);
+  });
+
+  it("tras un commit fallido → false", async () => {
+    const store = createDeferredDeleteStore();
+    const id = store.schedule({ key: "appointment-cancel:a1", commit: async () => ({ ok: false }), guardUnload: true });
+    await store.commit(id);
+    expect(store.hasGuardedPending()).toBe(false);
+  });
+
+  it("una entrada sin guardUnload no cuenta; dos entradas se resuelven por separado", async () => {
+    const store = createDeferredDeleteStore({ setTimer: manualTimers().setTimer });
+    store.schedule({ key: "isak:e1", commit: async () => ({ ok: true }) });
+    expect(store.hasGuardedPending()).toBe(false);
+    const guarded = store.schedule({ key: "appointment-cancel:a1", commit: async () => ({ ok: true }), guardUnload: true });
+    expect(store.hasGuardedPending()).toBe(true);
+    await store.commit(guarded);
+    expect(store.hasGuardedPending()).toBe(false);
+    expect(store.isPending("isak:e1")).toBe(true);
+  });
+
+  it("subscribe avisa en cada transición que cambia hasGuardedPending", async () => {
+    const store = createDeferredDeleteStore({ setTimer: manualTimers().setTimer });
+    const seen: boolean[] = [];
+    store.subscribe(() => seen.push(store.hasGuardedPending()));
+    const a = store.schedule({ key: "appointment-cancel:a1", commit: async () => ({ ok: true }), guardUnload: true });
+    store.undo(a);
+    const b = store.schedule({ key: "appointment-cancel:a1", commit: async () => ({ ok: true }), guardUnload: true });
+    await store.commit(b);
+    const c = store.schedule({ key: "appointment-cancel:a2", commit: async () => ({ ok: false }), guardUnload: true });
+    await store.commit(c);
+    expect(seen).toEqual([true, false, true, false, true, false]);
+  });
+});
