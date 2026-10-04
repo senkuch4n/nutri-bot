@@ -26,6 +26,7 @@ export function NewAppointmentModal({
   services,
   tz,
   initialDate,
+  initialStart,
 }: {
   open: boolean;
   onClose: () => void;
@@ -33,6 +34,8 @@ export function NewAppointmentModal({
   services: ServiceOption[];
   tz: string;
   initialDate?: string;
+  /** HU-017b-1 (Q4): horario tocado en la grilla (ISO); queda elegido si está libre. */
+  initialStart?: string;
 }) {
   const [serviceId, setServiceId] = useState("");
   const [date, setDate] = useState(initialDate ?? todayInTz(tz));
@@ -59,10 +62,15 @@ export function NewAppointmentModal({
     setLoadingSlots(true);
     fetch(`/api/slots?serviceId=${serviceId}&date=${date}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((data: string[]) => setSlots(data))
+      .then((data: string[]) => {
+        setSlots(data);
+        const wanted = initialStart ? new Date(initialStart).getTime() : null;
+        const match = wanted === null ? undefined : data.find((d) => new Date(d).getTime() === wanted);
+        if (match) setSlot(match);
+      })
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false));
-  }, [serviceId, date]);
+  }, [serviceId, date, initialStart]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
