@@ -242,3 +242,11 @@ orquestador, para que las revise a la mañana:
 - Orden siguiente: 018d → 017c → 017b → 017d → 017f. PR #26 sigue abierto (lo revisa imleticio).
 - HU-018c-2 done (4bcc6ea); recorrido OK (detalle en el buscador). → `en_revision` (reviewer Opus).
 - HU-018c-2 **aprobada** (1ª revisión). HU-018c → `aprobada`. PR a develop (encadenado sobre #26).
+- HU-018d → `afinando` (afinador Opus; rama feat/hu-018d-medidas-caseras encadenada sobre 018c-2).
+- HU-018d afinada (docs/hu-medidas-caseras.md); validada en modo autónomo con todas las recomendaciones (D2 pendiente de preguntarle a la nutricionista; 018d-2 opcional). → `en_arquitectura` (architect Opus; migracion-prisma + ui).
+- HU-018d SDD lista (Refactorizaciones/medidas-caseras.md; T1–T17 aceptadas; corte 018d-1a/1b; hallazgo T1: los unitHint están en alimentos PROPIO, ya no usables). → `implementando` 018d-1a (Opus; migracion-prisma, apple-design, ui-ux-pro-max).
+- Bloqueo de macOS (EPERM en los archivos del arnés) resuelto por el usuario. Los subagentes del arnés dejaron de estar cargados en la sesión: se lanzan como general-purpose con las instrucciones de .claude/agents/<rol>.md. 018d-1a relanzada (Opus).
+- HU-018d-1a done (8 commits, migración food_measures aplicada); recorrido OK (progress/recorrido_HU-018d.md). → `en_revision` (reviewer Opus).
+- HU-018d-1a **aprobada** (1ª revisión). PR a develop (encadenado sobre #27). → 018d-1b `implementando` (Opus; apple-design, ui-ux-pro-max; suma R2–R4 de la revisión).
+- HU-018d-1b done (stepper, conversión de unitHint en seco: 77 a crear / 2 ilegibles, R2–R4, prellenado de 'Pasar a medida'); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-018d-1b **aprobada**. HU-018d → `aprobada`. PR #28 actualizado. Pendiente del usuario: `npm run measures:convert-hints -- --apply` si quiere convertir los unitHint. Sigue HU-017c.

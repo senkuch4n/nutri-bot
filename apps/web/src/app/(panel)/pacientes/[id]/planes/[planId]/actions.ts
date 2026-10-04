@@ -17,7 +17,9 @@ import {
   enqueuePlanPdfMessage,
   nextItemOrder,
 } from "@nutri-bot/db/domain";
-import { isWeekday } from "@nutri-bot/core";
+import { MEASURE_TEXT, isWeekday } from "@nutri-bot/core";
+import { readMeasureFields, resolveFormMeasure } from "@/lib/measure-form";
+import type { AddMealItemResult } from "@/components/food-measures/types";
 import { getProfessional } from "@/lib/professional";
 import { toMealView } from "@/lib/meal-view";
 import { renderPlanPdf } from "@/lib/plan-pdf";
@@ -80,7 +82,7 @@ export async function deletePlanMealAction(formData: FormData): Promise<void> {
   await revalidatePlanPaths(planId);
 }
 
-export async function addPlanMealItemAction(formData: FormData): Promise<void> {
+export async function addPlanMealItemAction(formData: FormData): Promise<AddMealItemResult | void> {
   const planId = String(formData.get("planId") ?? "");
   const mealId = String(formData.get("mealId") ?? "");
   if (!mealId) return;
@@ -100,16 +102,30 @@ export async function addPlanMealItemAction(formData: FormData): Promise<void> {
     }
   }
 
+  // HU-018d (SDD 6.2): medida casera. Con medida, los gramos salen de la medida (el quantityGrams
+  // del formulario se ignora) y el ítem no lleva descripción libre.
+  const measureFields = readMeasureFields(formData, foodId);
+  if (measureFields === "invalid") return;
+  const measure = measureFields ? await resolveFormMeasure(foodId, measureFields) : null;
+  if (measure === "gone") {
+    // 018d-1b (R4): la medida se borró con el editor abierto. Se revalida para que el editor traiga
+    // las medidas actuales y se avisa, sin pasar por el error boundary.
+    await revalidatePlanPaths(planId);
+    return { ok: false, error: MEASURE_TEXT.measureGone };
+  }
+
   const order = await nextItemOrder("plan", mealId, weekday);
 
-  await addMealItem(mealId, {
-    foodId: foodId || null,
-    customLabel: customLabel || null,
-    quantityGrams: quantityRaw ? Number(quantityRaw) : null,
-    notes: notes || null,
-    order,
-    weekday,
-  });
+  await addMealItem(mealId, measure
+    ? { foodId, customLabel: null, notes: notes || null, order, weekday, ...measure }
+    : {
+        foodId: foodId || null,
+        customLabel: customLabel || null,
+        quantityGrams: quantityRaw ? Number(quantityRaw) : null,
+        notes: notes || null,
+        order,
+        weekday,
+      });
   await revalidatePlanPaths(planId);
 }
 

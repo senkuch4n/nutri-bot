@@ -17,6 +17,7 @@ import {
 } from "@nutri-bot/core";
 import type { MealItemView, MealView } from "@/components/meals-editor";
 import type { RecipeItemView } from "@/components/recipe-picker/types";
+import type { MeasureItemView } from "@/components/food-measures/types";
 
 interface RawFood {
   id: string;
@@ -70,6 +71,11 @@ interface RawItem {
   recipeId?: string | null;
   portions?: unknown;
   recipe?: RawRecipe | null;
+  /** HU-018d: medida casera (copia guardada en el ítem). */
+  measureQty?: unknown;
+  measureName?: string | null;
+  measurePlural?: string | null;
+  measureGrams?: unknown;
 }
 
 interface RawMeal {
@@ -232,9 +238,19 @@ export function toMealView(meals: RawMeal[]): MealView[] {
         macros,
         kcalBreakdown,
         weekday: item.weekday ?? null,
+        measure: toMeasureView(item),
       };
     }),
   }));
+}
+
+/** HU-018d: la medida casera del ítem, o null si es un ítem en gramos (o le falta algún campo). */
+function toMeasureView(item: RawItem): MeasureItemView | null {
+  if (item.measureName == null) return null;
+  const qty = toNumber(item.measureQty);
+  const gramsPerUnit = toNumber(item.measureGrams);
+  if (qty === null || gramsPerUnit === null || item.measurePlural == null) return null;
+  return { qty, name: item.measureName, plural: item.measurePlural, gramsPerUnit };
 }
 
 /** HU-018c: ítem de receta. Sin popover de Atwater (D13): el desglose está en la ficha de la receta. */

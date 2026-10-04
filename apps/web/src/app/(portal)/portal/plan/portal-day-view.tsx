@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { WEEKDAY_LABELS, itemsForDay, recipePortionText, type Macros, type Weekday } from "@nutri-bot/core";
+import {
+  WEEKDAY_LABELS,
+  formatGrams,
+  itemsForDay,
+  measureAmountText,
+  recipePortionText,
+  type Macros,
+  type Weekday,
+} from "@nutri-bot/core";
 import type { MealItemView, MealView } from "@/components/meals-editor";
 import { MacroTotals } from "@/components/macro-totals";
 import { Badge, Card, Quantity } from "@/components/ui";
@@ -58,7 +66,15 @@ export function PortalMealItems({
       ) : (
         <li key={item.id} className="flex items-baseline justify-between gap-4 py-3 text-sm">
           <span className="min-w-0 break-words">{item.foodName ?? item.customLabel ?? "—"}</span>
-          {item.quantityGrams ? (
+          {item.measure ? (
+            // HU-018d (D3 = a): la medida casera y debajo, chico y gris, los gramos.
+            <span className="flex shrink-0 flex-col items-end text-right">
+              <span className="text-sm">{measureAmountText(item.measure.qty, item.measure)}</span>
+              <span className="text-footnote tabular-nums text-muted-foreground">
+                {formatGrams(Number(item.quantityGrams))}
+              </span>
+            </span>
+          ) : item.quantityGrams ? (
             <Quantity
               value={Number(item.quantityGrams)}
               unit="g"

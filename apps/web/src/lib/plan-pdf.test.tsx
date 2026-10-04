@@ -108,4 +108,16 @@ describe("PlanDocument (HU-018b)", () => {
     expect(out.filter((t) => t.includes("Fuente"))).toHaveLength(1);
     expect(out).not.toContain("—");
   });
+
+  it("HU-018d: el ítem en medida casera sale como «1½ tazas (270 g)» y el de gramos como siempre", () => {
+    const measureItem: MealItemView = {
+      ...item("Arroz blanco, hervido", "TUE", 351), quantityGrams: "270",
+      measure: { qty: 1.5, name: "taza", plural: "tazas", gramsPerUnit: 180 },
+    };
+    const out = render([meal("Almuerzo", "PER_DAY", [measureItem, { ...item("Banana", "TUE", 110), quantityGrams: "120" }])]);
+    expect(out).toContain("Arroz blanco, hervido");
+    expect(out).toContain("1½ tazas (270 g)");
+    expect(out).toContain("120 g");
+    expect(out).not.toContain("270 g");
+  });
 });
