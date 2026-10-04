@@ -472,3 +472,82 @@ Ninguno.
   - movimiento reducido;
   - el toast con lector de pantalla;
   - cerrar el toast con swipe (el `Toaster` del panel no tiene X).
+
+---
+
+# 017c-4
+
+# Review — HU-017c (entrega 017c-4: informe antropométrico, su PDF y R5–R7)
+
+**Veredicto:** CHANGES_REQUESTED
+
+Diff revisado: `git diff feat/hu-017c3-consulta...HEAD` en `feat/hu-017c4-informe` (`31036d2`..`d16e33a`), sin los
+archivos del arnés. Typecheck, tests, `verify.sh`, la compilación de Tailwind y el PDF los corrí yo.
+
+## Checkpoints
+- C1 backlog válido, 1 HU activa por responsable: [x] `backlog/HU-017c.json` en `en_revision`, entrega 017c-4.
+- C1 bitácora refleja la HU: [x] `progress/current-senkuch4n.md` (última línea: 017c-4 `implementando`; el pase a revisión lo anota el orquestador).
+- C1 no toca HU de la otra persona: [x] Ni zona de imleticio ni archivos de sus HU. `plan-pdf.tsx`, `plan-pdf.test.tsx`, `pdf-theme.ts`, `ajustes/**`, `planes/**`, `alimentos/**` y `plantillas/**` quedan fuera del diff (el grep también encuentra `report-pdf-theme.ts`, pero es un falso positivo).
+- C1 `verify.sh` exit 0: [x] "Arnés OK". El WARN de bot viene de las entregas anteriores de la cadena: este diff no toca `apps/bot`.
+- C2 HU completa: [x] `docs/hu-017c-pacientes-consultas.md` §4.5 y su Gherkin.
+- C2 SDD completa: [x] sección 017c-4, Decisiones y "Agregados a 017c-4".
+- C2 firmas = contrato: [x] `report-pdf-theme.ts` exporta lo de §4.1 con esos nombres y valores (más `reportPdfFigureNeutral`, `reportPdfGridColor` y `ReportPdfTextStyle`, que no rompen nada). `buildCommonStyles(accentColor, palette = pdfColors)` y `palette?` opcional en `PdfHeader`, `PdfFooter` y `PdfSignatureBlock` (`pdf-common.tsx:71,105,143,178`). `informe/page.tsx:25-32` pasa `patientName`, `whatsappJid` y `phone`.
+- C3 arquitectura: [x] Core, db y bot sin cambios. Los textos nuevos, solo del panel, están en `apps/web/src/lib/report-editor-text.ts` (puro y con test). `ISAK_REPORT_TEXT` no cambia (D11b).
+- C3 schema/domain: [x] sin cambios (n/a). Typecheck de los 4 workspaces en verde.
+- C3 migraciones: [x] n/a.
+- C3 auth/portal: [x] No hay rutas nuevas.
+- C3 bot silencioso y textos: [x] n/a. El caption sigue siendo `ISAK_REPORT_TEXT.whatsappCaption`.
+- C3 sin console.log/TODO: [x] grep limpio sobre los archivos del diff.
+- C4 typecheck: [x] `npm run typecheck` exit 0 (core, db, bot, web).
+- C4 tests: [x] `npm run test` da 110 archivos y 1835 tests en verde. `plan-pdf.test.tsx` pasa 4/4 y el archivo no tiene cambios.
+- C4 bot simulado: [x] n/a.
+- C4 PDF verificado: [x] Lo regeneré con `HU016_PDF_DIR` y cwd en `apps/web` (en el scratchpad): A4, 4 páginas, Inter 400/500/600 incrustadas (`pdffonts`). Con `pdftoppm -gray`, en la página 3 los 4 tejidos se distinguen. El PDF del plan no puede cambiar. Con `palette` omitido, `buildCommonStyles` da lo mismo que con `pdfColors` (test). La línea de firma por defecto sigue en `pdfColors.text`, igual que el `signatureStyles.rule` de antes. `plan-pdf.tsx` no pasa `palette`.
+- C5 impl existe: [x] sección 017c-4 de `progress/impl_HU-017c.md`.
+- C5 review con veredicto: [x] esta sección.
+- C5 sin scripts ni datos sueltos: [x] El diff no agrega scripts. El implementer declara que sus datos de prueba se borraron por id (no lo verifiqué contra la base: no escribo ahí).
+
+## Puntos que pidió el orquestador
+
+- **PDF del plan intacto:** OK (ver C4). `pdf-theme.ts` no cambió (no figura en el diff) y `plan-pdf.test.tsx` no tiene cambios.
+- **Confirmación de envío:**
+  - No encola sin confirmar: `send()` (`report-editor.tsx:259-268`) hace `await confirm(...)` y vuelve si no hay `ok`, antes de `run("send", …)`.
+  - No manda dos veces:
+    - el botón queda `disabled={busy}` mientras corre cualquier acción;
+    - `useConfirm` resuelve una sola vez: al cerrar, `pending` pasa a null;
+    - una segunda llamada mientras hay un diálogo abierto resuelve la anterior con `false` (`components/confirm.tsx:36-49`);
+    - un doble clic sobre "Enviar por WhatsApp" abre un solo diálogo efectivo.
+  - Los textos coinciden con SDD 4.4: `¿Enviar el informe a ${nombre}?` / `Le llega por WhatsApp al ${formatPhone(phone)}.`; "Le llega por WhatsApp." para JID no-phone; botón "Enviar"; `destructive: false`.
+- **Props serializables:** OK. `informe/page.tsx` pasa strings y booleanos (`professionalNotice` pasa a `licenseMissing`/`signatureMissing`). `hasReport` es un booleano opcional dentro de `EvolutionRow`. `disabledReason` es un string dentro de un componente cliente. No cruza ninguna función ni componente.
+- **R5:** cumple lo pedido (se libera cuando llega `prescription === null`), pero abre un caso borde que deja un estado falso. Ver hallazgo 1.
+- **R6:** OK (`consultation-plan.tsx:44,72,89,93-100`). `isPending` de la transición: opacidad, "Quitando el plan de la consulta…" en `aria-live` con spinner `motion-reduce:animate-none`, y el ítem del menú deshabilitado con su motivo.
+- **R7:** OK.
+  - `pacientes/[id]/page.tsx:59` incluye `anthropometricReport: { select: { id } }`.
+  - `evolution-rows.ts:50` pone `hasReport` solo si la relación vino (con test).
+  - `evolution-table.tsx:54-59` usa `ISAK_TEXT.deleteWithReportDescription` cuando `hasReport`.
+  - `EvolutionSection` solo se monta en la ficha, así que no hay consumidores que queden con `undefined`.
+- **Editor:**
+  - la ayuda va como texto secundario bajo el subtítulo;
+  - "Antes de enviar" es un solo `Alert warning` con una fila por problema y su botón, y se oculta si no hay problemas;
+  - el aviso de menor queda aparte como info;
+  - "Editado" y "Restaurar el texto original" aparecen solo si `texts[k] !== drafts[k]`;
+  - "Generar PDF" es `primary lg`.
+- **Barra sticky en < 640 px:** compilé Tailwind con la config del repo. `max-sm:material-bar` genera también las variantes de `prefers-reduced-transparency`, `prefers-contrast` y `:root:has(.a11y-…)`, así que la accesibilidad del material se conserva. `-mx-6` coincide con el `px-6` del `<main>` del panel.
+
+## Cambios requeridos
+1. **R5 deja un estado falso si se recalcula dentro de la ventana `releaseAfterMs`.**
+   - **Dónde:** `apps/web/src/app/(panel)/pacientes/[id]/consultas/[consultationId]/requirement-section.tsx:113` y `:117`.
+   - **Qué pasa:**
+     - Después del commit, la key `prescription:<id>` sigue oculta 10 s (`deferred-delete.ts:44,90-95`). Con R5, en cuanto llega `prescription === null`, la usuaria ya puede apretar "Calcular requerimiento".
+     - Si guarda el cálculo nuevo antes de que venzan esos 10 s, `onDone` pasa a `mode = "view"`. La página revalidada trae `prescription !== null` mientras `deleting` sigue en `true`.
+     - Entonces se entra al bloque vacío (`prescription === null || deleting`) con `waitingUndo === true`.
+   - **Qué ve la usuaria:** el cálculo que acaba de guardar desaparece, el botón queda deshabilitado y aparece "Vas a poder calcular de nuevo cuando se cierre el aviso de 'Deshacer'", cuando ya no hay ningún aviso. El cálculo reaparece solo, a los pocos segundos. Antes de R5 no podía pasar.
+   - **Qué se espera:** que un cálculo creado después del borrado no quede oculto por la key vieja. Por ejemplo, tomar el borrado como terminado una vez que se vio `prescription === null` con la key pendiente, o liberar la key en cuanto la página refleja el borrado.
+   - **Cómo se verifica:** el escenario "borrar → dejar vencer el toast → calcular y guardar enseguida" muestra el cálculo nuevo sin el aviso.
+
+## Dudas (no bloqueantes)
+- **Texto de la fila de la profesional.** La HU dice "Falta tu matrícula o tu firma". El implementer lo cambió por tres variantes más específicas: "Falta tu matrícula", "Falta tu firma" y "Faltan tu matrícula y tu firma". Lo declara (impl, decisión 4) y me parece mejor, pero es un desvío de un texto de la HU: que el orquestador lo confirme.
+- **Tamaño de los botones.** Todos van en `size="lg"`, también los secundarios. La HU (decisión de tamaños) recomienda 36 px para los secundarios. La SDD 4.4 solo pide `secondary`. En el celular, el `lg` parejo tiene sentido en la grilla de 2 columnas.
+- **Toasts sobre la barra sticky.** En el celular, los toasts pueden tapar la barra un momento (impl, decisión 8). Queda para otra entrega (`mobileOffset` del `Toaster`).
+- **Recorrido incompleto del orquestador.** No cubrió la confirmación de envío (abrir y cancelar), los 390 px ni el antes/después del PDF de un plan. Lo hizo el implementer con Chromium headless y yo regeneré el PDF del informe, pero la SDD 10-4 lo pide en el recorrido.
+- **Escala `metric`.** `reportPdfType.metric` está definida pero el PDF no la usa: se volvía a 5 páginas. Está justificado, pero queda un export sin uso.
+- **Fuente en los tests.** `npm run test` desde la raíz genera los PDF de prueba con Helvetica: `FONT_DIR` depende de `process.cwd()`. No es de esta entrega, pero los tests de paleta no prueban la tipografía real.
