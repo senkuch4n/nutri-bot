@@ -445,3 +445,7 @@
 ## HU-018d-1a — Medidas caseras en el plan (aprobada 2026-10-04, senkuch4n)
 - Migración `food_measures` (modelo FoodMeasure + 4 columnas nullable en PlanMealItem/TemplateMealItem). Medidas por alimento en la ficha, alta en medida casera en planes y plantillas (y crear medida desde el editor), copias que conservan la medida, portal y PDF con "1½ tazas (270 g)".
 - Implementer Opus (migracion-prisma, apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones R2–R4 pasan a 018d-1b.
+
+## HU-018d-1b — Stepper y conversión de unitHint (aprobada 2026-10-04, senkuch4n)
+- Stepper de cantidad para ítems en medida casera, aviso "Tenías anotado" + "Pasar a medida" (prellena si el texto es legible), `unitHint` fuera del formulario, script `measures:convert-hints` (en seco en dev: 77 a crear, 2 ilegibles; aplicarlo queda para el usuario), R2–R4 de la revisión de 1a.
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. HU-018d cerrada (018d-2 opcional, solo si la nutricionista la pide).
