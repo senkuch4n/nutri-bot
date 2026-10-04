@@ -232,3 +232,5 @@ orquestador, para que las revise a la mañana:
 - HU-017c SDD lista (Refactorizaciones/017c-pacientes-consultas.md; Q1–Q16 aceptadas salvo Q6: ramas encadenadas). → `implementando` 017c-1 (Opus; ui-ux-pro-max, apple-design, web-design-guidelines).
 - HU-017c-1 done; recorrido OK (progress/recorrido_HU-017c.md; idea: guardar pushName para distinguir 'Por completar'). → `en_revision` (reviewer Opus).
 - HU-017c-1 **aprobada**. PR a develop. → 017c-2 `implementando` (rama feat/hu-017c2-ficha encadenada; Opus).
+- HU-017c-2 done, pero el recorrido encontró que la ficha rompe en runtime (íconos lucide pasados como función a componentes cliente; el build no lo detecta). Devuelto al implementer antes del reviewer.
+- HU-017c-2: arreglo de íconos (f5e6e2f, 9c6017b); recorrido OK. → `en_revision` (reviewer Opus). R3 (hidratación del sidebar) y R4 (coma decimal) pasan a 017c-3.

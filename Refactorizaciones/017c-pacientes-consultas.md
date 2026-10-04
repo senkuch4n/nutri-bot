@@ -1397,3 +1397,10 @@ Revertir 017c-1 vuelve la tabla de pacientes; los helpers de core quedan sin uso
 - R1. "Por completar": que el clic en el disclosure lo cierre aunque haya búsqueda con coincidencias (el usuario manda
   sobre la apertura automática).
 - R2. El recorrido de 017c-2 cubre también teclado, 390 px táctil y movimiento reducido de la lista (pasos 9–12 de §10.3).
+
+## Agregados a 017c-3 (del recorrido de 017c-2)
+
+- R3. Error de hidratación en `AppSidebar` (`aside id` / `aria-controls` de `useId` distintos entre servidor y cliente)
+  en todas las páginas del panel. Encontrar la causa (render condicional que cambia el orden de hooks/ids, p. ej. un
+  `useMediaQuery` que difiere en SSR) y arreglarlo; verificar con la consola limpia al recargar `/pacientes/<id>`.
+- R4. Placeholders numéricos con coma decimal ("70,5", no "70.5") en Historial → Nueva medición.
