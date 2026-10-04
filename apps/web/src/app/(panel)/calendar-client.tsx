@@ -13,6 +13,7 @@ import {
   AGENDA_TEXT,
   APPOINTMENT_STATUS_TEXT,
   calendarPeriodTitle,
+  firstName,
   fromZonedTime,
   type CalendarView,
 } from "@nutri-bot/core";
@@ -23,7 +24,9 @@ import {
   calendarViewFromFc,
   resolveCalendarRoute,
 } from "@/lib/calendar-route";
+import { useDeferredDelete, usePendingDeletions } from "@/lib/deferred-delete";
 import { notify } from "@/lib/notify";
+import { cancelAppointmentAction } from "./actions";
 import { replaceUrlInRouter } from "@/lib/patient-tab-route";
 import { NewAppointmentModal, type ServiceOption } from "./new-appointment-modal";
 import { AppointmentDetailSheet, type SelectedAppointment } from "./appointment-detail-sheet";
@@ -65,6 +68,20 @@ interface Mounted {
 function isoFromDateStr(dateStr: string, tz: string): string {
   const hasOffset = /(?:Z|[+-]\d{2}:?\d{2})$/.test(dateStr);
   return (hasOffset ? new Date(dateStr) : fromZonedTime(dateStr, tz)).toISOString();
+}
+
+/** Key del "Deshacer" de la cancelación de un turno. */
+function cancelKey(appointmentId: string): string {
+  return `appointment-cancel:${appointmentId}`;
+}
+
+/** Oculta los turnos con cancelación pendiente (Q6). Solo toca los que cambian: setProp dispara
+ *  eventsSet, y sin esta guarda habría un loop. */
+function applyPendingCancellations(api: CalendarApi, pending: ReadonlySet<string>) {
+  for (const ev of api.getEvents()) {
+    const display = pending.has(cancelKey(ev.id)) ? "none" : "auto";
+    if (ev.display !== display) ev.setProp("display", display);
+  }
 }
 
 function prefersReducedMotion(): boolean {
@@ -115,6 +132,15 @@ export function CalendarClient({
   const [initialStart, setInitialStart] = useState<string | undefined>();
   const [selected, setSelected] = useState<SelectedAppointment | null>(null);
   const [loading, setLoading] = useState(false);
+  const pendingDeletions = usePendingDeletions();
+  const pendingRef = useRef(pendingDeletions);
+  pendingRef.current = pendingDeletions;
+  const deferredDelete = useDeferredDelete();
+
+  useEffect(() => {
+    const api = calRef.current?.getApi();
+    if (api) applyPendingCancellations(api, pendingDeletions);
+  }, [pendingDeletions, mounted]);
 
   // Montaje solo en el cliente (Q1): recién acá se conoce el ancho; mientras, el esqueleto.
   useEffect(() => {
@@ -176,6 +202,8 @@ export function CalendarClient({
   );
 
   const onEventsSet = useCallback((events: EventApi[]) => {
+    const api = calRef.current?.getApi();
+    if (api) applyPendingCancellations(api, pendingRef.current);
     // Deep link (Q5): el primer turno del día, a la vista una sola vez (y solo si no se ve ya).
     if (!scrollPendingRef.current || events.length === 0) return;
     scrollPendingRef.current = false;
@@ -205,8 +233,29 @@ export function CalendarClient({
       patientId: p.patientId,
       consultation: p.consultation ?? null,
       reason: p.reason ?? null,
+      patientJid: p.patientJid,
+      patientLabel: p.patientLabel,
+      hasFullPayment: Boolean(p.hasFullPayment),
     });
   }, []);
+
+  // D5: el turno se oculta al instante; la cancelación (y el WhatsApp) salen al vencer el "Deshacer".
+  // Como el turno ya no se ve, al cerrarse el panel el foco va al título de la barra.
+  const scheduleCancel = useCallback(
+    (appt: SelectedAppointment) => {
+      lastEventElRef.current = titleRef.current;
+      deferredDelete({
+        key: cancelKey(appt.id),
+        message: AGENDA_TEXT.cancel.scheduled(firstName(appt.patientName)),
+        undoneMessage: AGENDA_TEXT.cancel.undone,
+        commit: () => cancelAppointmentAction(appt.id),
+        guardUnload: true,
+        errorMessage: AGENDA_TEXT.cancel.error,
+        onCommitted: refetch,
+      });
+    },
+    [deferredDelete, refetch],
+  );
 
   // Q4: un toque (sin mantener apretado) en una franja abre "Nuevo turno" con ese horario.
   const onDateClick = useCallback(
@@ -359,6 +408,7 @@ export function CalendarClient({
         onClose={() => setSelected(null)}
         onChanged={refetch}
         onUpdated={setSelected}
+        onCancel={scheduleCancel}
         interactionAreaRef={calendarAreaRef}
         returnFocusRef={lastEventElRef}
       />

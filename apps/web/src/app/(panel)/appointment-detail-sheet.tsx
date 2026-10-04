@@ -1,9 +1,35 @@
 "use client";
 
 import { useEffect, useState, useTransition, type RefObject } from "react";
-import { es } from "date-fns/locale";
-import { Bell, Check, ClipboardList, Pencil, Undo2, UserX } from "lucide-react";
-import { BOOKING_REASON_MAX, formatInTimeZone, formatPrice } from "@nutri-bot/core";
+import {
+  Banknote,
+  Bell,
+  CalendarCheck,
+  Check,
+  ClipboardList,
+  ExternalLink,
+  MessageCircle,
+  Pencil,
+  Undo2,
+  User,
+  UserX,
+  type LucideIcon,
+} from "lucide-react";
+import {
+  AGENDA_TEXT,
+  APPOINTMENT_STATUS_TEXT,
+  BOOKING_REASON_MAX,
+  HIDDEN_NUMBER_TEXT,
+  appointmentDayAtTime,
+  appointmentDayTime,
+  capitalizeFirst,
+  classifyWhatsappJid,
+  formatInTimeZone,
+  formatPhone,
+  formatPrice,
+  whatsappChatUrl,
+} from "@nutri-bot/core";
+import { buttonVariants } from "@/components/primitives/button";
 import { Separator } from "@/components/primitives/separator";
 import {
   Sheet,
@@ -16,12 +42,12 @@ import { useConfirm } from "@/components/confirm";
 import { Badge, Button, ButtonLink, FormError, Textarea, cn } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import {
-  cancelAppointmentAction,
   getAppointmentRemindersAction,
   saveAppointmentReasonAction,
   sendReminderNowAction,
   setStatusAction,
 } from "./actions";
+import { AppointmentPaymentModal } from "./appointment-payment-modal";
 
 export interface SelectedAppointment {
   id: string;
@@ -38,15 +64,23 @@ export interface SelectedAppointment {
   consultation: { id: string; hasContent: boolean } | null;
   /** HU-013: motivo de consulta. */
   reason: string | null;
+  /** HU-017b-1: JID de la paciente (para saber si WhatsApp muestra el número). */
+  patientJid: string;
+  /** HU-017b-1: patientDisplayName (nombre, teléfono con formato o "Sin nombre"). */
+  patientLabel: string;
+  /** HU-017b-1 (D9): ya tiene un pago total aprobado → no se ofrece "Registrar pago". */
+  hasFullPayment: boolean;
 }
+
+const T = AGENDA_TEXT.sheet;
 
 const statusBadge: Record<
   SelectedAppointment["status"],
-  { tone: "info" | "success" | "danger"; label: string }
+  { tone: "info" | "success" | "danger"; icon: LucideIcon }
 > = {
-  CONFIRMED: { tone: "info", label: "Confirmado" },
-  COMPLETED: { tone: "success", label: "Completado" },
-  NO_SHOW: { tone: "danger", label: "No asistió" },
+  CONFIRMED: { tone: "info", icon: CalendarCheck },
+  COMPLETED: { tone: "success", icon: Check },
+  NO_SHOW: { tone: "danger", icon: UserX },
 };
 
 /**
@@ -61,6 +95,7 @@ export function AppointmentDetailSheet({
   onClose,
   onChanged,
   onUpdated,
+  onCancel,
   interactionAreaRef,
   returnFocusRef,
 }: {
@@ -71,6 +106,8 @@ export function AppointmentDetailSheet({
   onChanged: () => void;
   /** Reemplaza el turno mostrado sin cerrar el panel (p. ej. después de "Marcar completado"). */
   onUpdated: (next: SelectedAppointment) => void;
+  /** HU-017b-1 (D5): "Cancelar turno" ya confirmado; lo agenda el calendario con "Deshacer". */
+  onCancel: (appt: SelectedAppointment) => void;
   interactionAreaRef?: RefObject<HTMLElement | null>;
   returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
@@ -110,6 +147,7 @@ export function AppointmentDetailSheet({
             onClose={onClose}
             onChanged={onChanged}
             onUpdated={onUpdated}
+            onCancel={onCancel}
           />
         ) : null}
       </SheetContent>
@@ -117,7 +155,8 @@ export function AppointmentDetailSheet({
   );
 }
 
-type Busy = null | "reminder" | "completed" | "no_show" | "cancel" | "confirm";
+
+type Busy = null | "reminder" | "completed" | "no_show" | "confirm";
 
 function AppointmentBody({
   appt,
@@ -126,6 +165,7 @@ function AppointmentBody({
   onClose,
   onChanged,
   onUpdated,
+  onCancel,
 }: {
   appt: SelectedAppointment;
   tz: string;
@@ -133,9 +173,11 @@ function AppointmentBody({
   onClose: () => void;
   onChanged: () => void;
   onUpdated: (next: SelectedAppointment) => void;
+  onCancel: (appt: SelectedAppointment) => void;
 }) {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
   const confirm = useConfirm();
   // HU-013 (D5): edición del motivo en línea.
   const [editingReason, setEditingReason] = useState(false);
@@ -145,10 +187,11 @@ function AppointmentBody({
   // HU-014 (D8): línea de estado de los recordatorios (solo turnos confirmados).
   const [remindersText, setRemindersText] = useState<string | null>(null);
   const [remindersVersion, setRemindersVersion] = useState(0);
-  // SDD §15 (decisión del usuario): turno cuyo horario ya pasó → sin botón manual y "Turno pasado".
-  // El servidor igual bloquea el envío manual en turnos pasados (P8). El detalle solo se renderiza
-  // en el cliente (al elegir un turno), así que leer el reloj acá no genera desajustes de hidratación.
-  const isPast = new Date(appt.start).getTime() <= Date.now();
+  // SDD §15 (HU-014): turno cuyo horario ya pasó → sin botón manual y "Turno pasado". El detalle solo
+  // se renderiza en el cliente (al elegir un turno): leer el reloj acá no genera desajustes de hidratación.
+  const now = new Date();
+  const start = new Date(appt.start);
+  const isPast = start.getTime() <= now.getTime();
   useEffect(() => {
     if (appt.status !== "CONFIRMED" || isPast) return;
     let alive = true;
@@ -172,7 +215,7 @@ function AppointmentBody({
     startSavingReason(async () => {
       const res = await saveAppointmentReasonAction(appt.id, reasonDraft);
       if (res.ok) {
-        notify.saved("Motivo guardado");
+        notify.saved(T.toastReasonSaved);
         setEditingReason(false);
         onUpdated({ ...appt, reason: res.reason ?? null });
         onChanged();
@@ -208,12 +251,12 @@ function AppointmentBody({
     }
   }
 
-  // "Marcar completado": el dominio crea (o reusa) la consulta; el panel queda abierto con "Abrir consulta".
+  // "Vino a la consulta": el dominio crea (o reusa) la consulta; el panel queda abierto con "Abrir la consulta".
   function markCompleted() {
     run(
       "completed",
       () => setStatusAction(appt.id, "COMPLETED"),
-      (res) => (res.consultation?.created ? "Turno completado. Se creó su consulta." : "Turno completado."),
+      (res) => (res.consultation?.created ? T.toastCompletedCreated : T.toastCompleted),
       {
         keepOpen: true,
         onSuccess: (res) =>
@@ -231,20 +274,20 @@ function AppointmentBody({
     );
   }
 
-  // D3: si la consulta tiene contenido se conserva, pero se avisa antes. La confirmación va en el
-  // handler, fuera de toda transición (React 19). Sin contenido, no se pregunta.
+  // D3 (HU-003): si la consulta tiene contenido se conserva, pero se avisa antes. La confirmación va en
+  // el handler, fuera de toda transición (React 19). Sin contenido, no se pregunta.
   async function backToConfirmed() {
     if (appt.status === "COMPLETED" && appt.consultation?.hasContent) {
       const ok = await confirm({
-        title: "¿Volver el turno a confirmado?",
-        description: `La consulta del ${formatInTimeZone(new Date(appt.start), tz, "dd/MM")} tiene mediciones o notas y se conserva.`,
-        confirmLabel: "Volver a confirmado",
+        title: T.backToConfirmedTitle,
+        description: `La consulta del ${formatInTimeZone(start, tz, "dd/MM")} tiene mediciones o notas y se conserva.`,
+        confirmLabel: T.backToConfirmed,
         cancelLabel: "Cancelar",
         destructive: false,
       });
       if (!ok) return;
     }
-    run("confirm", () => setStatusAction(appt.id, "CONFIRMED"), "Turno vuelto a confirmado");
+    run("confirm", () => setStatusAction(appt.id, "CONFIRMED"), T.toastBackToConfirmed);
   }
 
   async function sendReminder() {
@@ -253,41 +296,87 @@ function AppointmentBody({
     const res = await sendReminderNowAction(appt.id);
     setBusy(null);
     if (res.ok && res.result === "already_pending") {
-      notify.info("Ya hay un recordatorio pendiente de envío para este turno.");
+      notify.info(T.toastReminderPending);
     } else if (res.ok) {
-      notify.info("Recordatorio encolado.");
+      notify.info(T.toastReminderQueued);
       setRemindersVersion((v) => v + 1);
     } else setError(res.error ?? "No se pudo encolar el recordatorio.");
   }
 
+  // D5/D6: confirmación (foco en "Volver") → el panel se cierra y el calendario agenda la cancelación
+  // con "Deshacer" de 8 s. Nada sale hasta que vence el plazo.
+  async function cancelAppointment() {
+    const ok = await confirm({
+      title: AGENDA_TEXT.cancel.title(appt.patientLabel),
+      description: AGENDA_TEXT.cancel.description(appointmentDayAtTime(start, now, tz)),
+      confirmLabel: AGENDA_TEXT.cancel.confirm,
+      cancelLabel: AGENDA_TEXT.cancel.back,
+    });
+    if (!ok) return;
+    onClose();
+    onCancel(appt);
+  }
+
   const badge = statusBadge[appt.status];
+  const BadgeIcon = badge.icon;
   const disabled = busy !== null || savingReason;
-  const dateLabel = `${formatInTimeZone(new Date(appt.start), tz, "EEEE dd/MM/yyyy HH:mm", { locale: es })} hs`;
+  const chatUrl = whatsappChatUrl({ whatsappJid: appt.patientJid, phone: appt.patientPhone });
+  const phoneLine =
+    classifyWhatsappJid(appt.patientJid) === "phone" ? formatPhone(appt.patientPhone) : HIDDEN_NUMBER_TEXT;
+  const canPay = (appt.status === "CONFIRMED" || appt.status === "COMPLETED") && !appt.hasFullPayment;
+  const whenLabel = appointmentDayTime(start, now, tz);
+
+  const payButton = canPay ? (
+    <Button variant="secondary" disabled={disabled} onClick={() => setPaying(true)}>
+      <Banknote aria-hidden />
+      {T.registerPayment}
+    </Button>
+  ) : null;
 
   return (
     <>
       <SheetHeader>
-        <SheetTitle>{appt.patientName ?? appt.patientPhone}</SheetTitle>
-        <SheetDescription>{appt.serviceName}</SheetDescription>
+        <SheetTitle>{appt.patientLabel}</SheetTitle>
+        <SheetDescription>
+          {appt.serviceName} · {capitalizeFirst(whenLabel)}
+        </SheetDescription>
       </SheetHeader>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Badge tone={badge.tone}>{badge.label}</Badge>
-        {appt.googleSynced ? <Badge tone="neutral">En Google Calendar</Badge> : null}
+        <Badge tone={badge.tone}>
+          <span className="inline-flex items-center gap-1">
+            <BadgeIcon className="size-3.5" strokeWidth={2.25} aria-hidden />
+            {APPOINTMENT_STATUS_TEXT[appt.status]}
+          </span>
+        </Badge>
+        {appt.googleSynced ? <span className="text-footnote text-muted-foreground">{T.inGoogle}</span> : null}
       </div>
 
-      <dl className="mt-6 grid grid-cols-[7rem_1fr] gap-y-3 text-sm">
-        <dt className="text-muted-foreground">Paciente</dt>
-        <dd className="font-medium">{appt.patientName ?? "—"}</dd>
-        <dt className="text-muted-foreground">Teléfono</dt>
-        <dd className="font-medium tabular-nums">{appt.patientPhone}</dd>
-        <dt className="text-muted-foreground">Servicio</dt>
-        <dd className="font-medium">{appt.serviceName}</dd>
-        <dt className="text-muted-foreground">Fecha</dt>
-        <dd className="font-medium capitalize">{dateLabel}</dd>
-        <dt className="text-muted-foreground">Precio</dt>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <ButtonLink variant="secondary" href={`/pacientes/${appt.patientId}`}>
+          <User aria-hidden />
+          {T.seeProfile}
+        </ButtonLink>
+        {chatUrl ? (
+          <a
+            href={chatUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            <MessageCircle aria-hidden />
+            {T.whatsapp}
+            <ExternalLink className="!size-3.5 text-muted-foreground" aria-hidden />
+            <span className="sr-only">(se abre en otra pestaña)</span>
+          </a>
+        ) : null}
+      </div>
+      <p className="mt-2 text-footnote tabular-nums text-muted-foreground">{phoneLine}</p>
+
+      <dl className="mt-5 grid grid-cols-[7rem_1fr] gap-y-3 text-callout">
+        <dt className="text-muted-foreground">{T.price}</dt>
         <dd className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</dd>
-        <dt className="text-muted-foreground">Motivo</dt>
+        <dt className="text-muted-foreground">{T.reason}</dt>
         <dd className="min-w-0">
           {editingReason ? (
             <form onSubmit={submitReason} className="space-y-2">
@@ -305,20 +394,14 @@ function AppointmentBody({
               />
               <p
                 id={`motivo-${appt.id}-contador`}
-                className="text-right text-xs tabular-nums text-muted-foreground"
+                className="text-right text-footnote tabular-nums text-muted-foreground"
                 aria-live="polite"
               >
                 {reasonDraft.length}/{BOOKING_REASON_MAX}
               </p>
               <FormError message={reasonError} />
               <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={savingReason}
-                  onClick={cancelReasonEdit}
-                >
+                <Button type="button" variant="ghost" size="sm" disabled={savingReason} onClick={cancelReasonEdit}>
                   Cancelar
                 </Button>
                 <Button type="submit" size="sm" loading={savingReason}>
@@ -327,21 +410,20 @@ function AppointmentBody({
               </div>
             </form>
           ) : (
-            <div className="flex items-start gap-1">
+            <div className="space-y-1">
               <p
                 className={cn(
-                  "min-w-0 flex-1 whitespace-pre-wrap break-words",
+                  "whitespace-pre-wrap break-words",
                   appt.reason ? "font-medium" : "text-muted-foreground",
                 )}
               >
-                {appt.reason ?? "—"}
+                {appt.reason ?? T.noReason}
               </p>
               <Button
                 type="button"
-                variant="ghost"
-                size="icon"
-                className="-my-2 h-8 w-8 shrink-0"
-                aria-label="Editar motivo"
+                variant="plain"
+                size="sm"
+                className="-ml-3"
                 disabled={disabled}
                 onClick={() => {
                   setReasonDraft(appt.reason ?? "");
@@ -350,6 +432,7 @@ function AppointmentBody({
                 }}
               >
                 <Pencil aria-hidden />
+                {T.editReason}
               </Button>
             </div>
           )}
@@ -357,10 +440,10 @@ function AppointmentBody({
 
         {appt.status === "CONFIRMED" ? (
           <>
-            <dt className="text-muted-foreground">Recordatorios</dt>
-            <dd className="text-sm" aria-live="polite">
+            <dt className="text-muted-foreground">{T.reminders}</dt>
+            <dd aria-live="polite">
               {isPast ? (
-                <span className="text-muted-foreground">Turno pasado</span>
+                <span className="text-muted-foreground">{T.pastAppointment}</span>
               ) : remindersText === null ? (
                 <span className="text-muted-foreground">…</span>
               ) : (
@@ -371,91 +454,105 @@ function AppointmentBody({
         ) : null}
       </dl>
 
-      <Separator className="mt-6" />
-
-      <div className="mt-6 space-y-2">
+      <div className="mt-6 space-y-3">
         {appt.status === "CONFIRMED" ? (
           <>
             <Button
-              variant="secondary"
-              className="w-full justify-start"
+              size="lg"
+              className="w-full"
               disabled={disabled}
               loading={busy === "completed"}
               onClick={markCompleted}
             >
               {busy === "completed" ? null : <Check aria-hidden />}
-              Marcar completado
+              {T.completed}
             </Button>
-            <Button
-              variant="secondary"
-              className="w-full justify-start"
-              disabled={disabled}
-              loading={busy === "no_show"}
-              onClick={() =>
-                run("no_show", () => setStatusAction(appt.id, "NO_SHOW"), "Turno marcado como «No asistió»")
-              }
-            >
-              {busy === "no_show" ? null : <UserX aria-hidden />}
-              No asistió
-            </Button>
-            {isPast ? null : (
+            <div className="flex flex-wrap gap-2">
               <Button
-                variant="ghost"
-                className="w-full justify-start"
+                variant="secondary"
                 disabled={disabled}
-                loading={busy === "reminder"}
-                onClick={sendReminder}
+                loading={busy === "no_show"}
+                onClick={() => run("no_show", () => setStatusAction(appt.id, "NO_SHOW"), T.toastNoShow)}
               >
-                {busy === "reminder" ? null : <Bell aria-hidden />}
-                Enviar recordatorio ahora
+                {busy === "no_show" ? null : <UserX aria-hidden />}
+                {T.noShow}
               </Button>
-            )}
-            <Separator className="my-4" />
-            <Button
-              variant="danger"
-              className="w-full"
-              disabled={disabled}
-              loading={busy === "cancel"}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: "¿Cancelar este turno?",
-                  description: "El paciente recibe el aviso de cancelación por WhatsApp. No se puede deshacer.",
-                  confirmLabel: "Cancelar turno",
-                  cancelLabel: "Volver",
-                });
-                if (ok) run("cancel", () => cancelAppointmentAction(appt.id), "Turno cancelado");
-              }}
-            >
-              Cancelar turno
-            </Button>
-            <p className="text-xs text-muted-foreground">El paciente recibe el aviso por WhatsApp.</p>
+              {isPast ? null : (
+                <Button
+                  variant="secondary"
+                  disabled={disabled}
+                  loading={busy === "reminder"}
+                  onClick={sendReminder}
+                >
+                  {busy === "reminder" ? null : <Bell aria-hidden />}
+                  {T.sendReminder}
+                </Button>
+              )}
+              {payButton}
+            </div>
           </>
         ) : (
           <>
             {appt.status === "COMPLETED" && appt.consultation ? (
               <ButtonLink
-                variant="secondary"
-                className="w-full justify-start"
+                size="lg"
+                className="w-full"
                 href={`/pacientes/${appt.patientId}/consultas/${appt.consultation.id}`}
               >
                 <ClipboardList aria-hidden />
-                Abrir consulta
+                {T.openConsultation}
               </ButtonLink>
             ) : null}
-            <Button
-              variant="secondary"
-              className="w-full justify-start"
-              disabled={disabled}
-              loading={busy === "confirm"}
-              onClick={backToConfirmed}
-            >
-              {busy === "confirm" ? null : <Undo2 aria-hidden />}
-              Volver a confirmado
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={disabled}
+                loading={busy === "confirm"}
+                onClick={backToConfirmed}
+              >
+                {busy === "confirm" ? null : <Undo2 aria-hidden />}
+                {T.backToConfirmed}
+              </Button>
+              {payButton}
+            </div>
           </>
         )}
         <FormError message={error} />
       </div>
+
+      {appt.status === "CONFIRMED" ? (
+        <>
+          <Separator className="my-6" />
+          <Button
+            variant="ghost"
+            className="-ml-4 text-destructive"
+            disabled={disabled}
+            onClick={cancelAppointment}
+          >
+            {T.cancel}
+          </Button>
+          <p className="mt-1 text-footnote text-muted-foreground">{T.cancelHint}</p>
+        </>
+      ) : null}
+
+      {canPay ? (
+        <AppointmentPaymentModal
+          open={paying}
+          onClose={() => setPaying(false)}
+          currency={currency}
+          appointment={{
+            id: appt.id,
+            label: `${appt.patientLabel} · ${appt.serviceName} · ${whenLabel}`,
+            priceSnapshot: appt.price,
+            patientLabel: appt.patientLabel,
+          }}
+          onDone={(r) => {
+            setPaying(false);
+            onChanged();
+            if (r.kind === "FULL") onUpdated({ ...appt, hasFullPayment: true });
+          }}
+        />
+      ) : null}
     </>
   );
 }
