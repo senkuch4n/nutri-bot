@@ -35,7 +35,7 @@ import { Alert, Badge, Button, ButtonLink, Card, PageHeader, StatTile } from "@/
 import { getProfessional } from "@/lib/professional";
 import { FormulaDataForm } from "../../../formula-data-form";
 import { FormulaDataSheet } from "../../../formula-data-sheet";
-import { DeleteIsakStudyButton } from "../delete-isak-study-button";
+import { IsakStudyMoreMenu } from "../delete-isak-study-button";
 import {
   BMI_FOR_AGE_TONES,
   BMI_TONES,
@@ -218,7 +218,7 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
             <ButtonLink href={`${consultationHref}?isak=editar#antropometria-isak`} variant="secondary" size="sm">
               Editar
             </ButtonLink>
-            <DeleteIsakStudyButton
+            <IsakStudyMoreMenu
               patientId={id}
               consultationId={consultationId}
               entryId={entry.id}

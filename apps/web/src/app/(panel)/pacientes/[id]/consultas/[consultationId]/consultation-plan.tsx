@@ -1,8 +1,10 @@
 "use client";
 
 import { useActionState, useTransition } from "react";
-import { ClipboardList, Plus } from "lucide-react";
+import { ClipboardList, Plus, Unlink } from "lucide-react";
+import { MoreActionsMenu } from "@/components/more-actions-menu";
 import { Badge, Button, ButtonLink, Card, Field, FormError, Select } from "@/components/ui";
+import { UNDO_TEXT } from "@/lib/deferred-delete";
 import { notify, useActionToast } from "@/lib/notify";
 import type { ActionState } from "../../clinical-actions";
 import {
@@ -38,10 +40,29 @@ export function ConsultationPlan({
   /** Planes del paciente ya ordenados: activos, borradores, archivados; cada grupo por creación desc. */
   options: PlanOption[];
 }) {
-  const [clearing, startClear] = useTransition();
+  const [, startClear] = useTransition();
   const [creating, startCreate] = useTransition();
   const [state, action, setting] = useActionState(setConsultationPlanAction, initial);
   useActionToast(state, { success: "Plan indicado en la consulta" });
+
+  function removePlan(planId: string) {
+    startClear(async () => {
+      const res = await clearConsultationPlanAction(patientId, consultationId);
+      if (!res.ok) {
+        notify.error(res.error);
+        return;
+      }
+      notify.undo(UNDO_TEXT.plan.removed, async () => {
+        const data = new FormData();
+        data.set("patientId", patientId);
+        data.set("consultationId", consultationId);
+        data.set("planId", planId);
+        const undone = await setConsultationPlanAction({ ok: false }, data).catch(() => ({ ok: false }));
+        if (undone.ok) notify.saved(UNDO_TEXT.plan.undone);
+        else notify.error(UNDO_TEXT.undoError);
+      });
+    });
+  }
 
   if (plan) {
     return (
@@ -50,26 +71,23 @@ export function ConsultationPlan({
           <span className="min-w-0 break-words font-medium">{plan.title}</span>
           <Badge tone={statusTone[plan.status]}>{statusLabel[plan.status]}</Badge>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <ButtonLink variant="secondary" size="sm" href={`/pacientes/${patientId}/planes/${plan.id}`}>
+        <div className="mt-4 flex items-center gap-2">
+          <ButtonLink variant="secondary" size="lg" className="flex-1" href={`/pacientes/${patientId}/planes/${plan.id}`}>
             <ClipboardList aria-hidden />
-            Abrir plan
+            Ver plan
           </ButtonLink>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            loading={clearing}
-            onClick={() =>
-              startClear(async () => {
-                const res = await clearConsultationPlanAction(patientId, consultationId);
-                if (res.ok) notify.saved("Plan quitado de la consulta");
-                else notify.error(res.error);
-              })
-            }
-          >
-            Quitar
-          </Button>
+          <MoreActionsMenu
+            label="Más opciones del plan"
+            actions={[
+              {
+                key: "quitar",
+                label: "Quitar plan de esta consulta",
+                icon: <Unlink />,
+                // Sin confirmación: es reversible (HU §4.3). "Deshacer" vuelve a indicar el mismo plan.
+                onSelect: () => removePlan(plan.id),
+              },
+            ]}
+          />
         </div>
       </Card>
     );
@@ -79,6 +97,7 @@ export function ConsultationPlan({
     <Card title="Plan indicado">
       <Button
         type="button"
+        size="lg"
         className="w-full"
         loading={creating}
         onClick={() =>
@@ -107,7 +126,7 @@ export function ConsultationPlan({
                 ))}
               </Select>
             </Field>
-            <Button type="submit" variant="secondary" loading={setting} className="w-full">
+            <Button type="submit" variant="secondary" size="lg" loading={setting} className="w-full">
               {setting ? "Indicando…" : "Indicar"}
             </Button>
             <FormError message={state.error} />
