@@ -289,6 +289,7 @@ export default async function ConsultationPage({
               }}
               calculator={calculator}
               prescription={prescription}
+              prescriptionId={consultation.prescription?.id ?? null}
               bodyFatDateLabel={
                 consultation.prescription?.bodyFatRecordedAt
                   ? dateLabel(consultation.prescription.bodyFatRecordedAt)

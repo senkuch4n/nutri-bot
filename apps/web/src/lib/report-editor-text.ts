@@ -19,12 +19,9 @@ export const REPORT_EDITOR_TEXT = {
 
 export type ReportIssueKey = "stale" | "missingData" | "professional";
 
-/** Qué le falta a la profesional para que el PDF salga completo (HU-016). */
+/** Texto exacto de la HU §4.5 (ronda 2: se volvió al texto validado en vez de las variantes). */
 export function professionalIssueText(p: { licenseMissing: boolean; signatureMissing: boolean }): string | null {
-  if (p.licenseMissing && p.signatureMissing) return "Faltan tu matrícula y tu firma";
-  if (p.licenseMissing) return "Falta tu matrícula";
-  if (p.signatureMissing) return "Falta tu firma";
-  return null;
+  return p.licenseMissing || p.signatureMissing ? "Falta tu matrícula o tu firma" : null;
 }
 
 /** Filas del bloque "Antes de enviar", en el orden de la HU §4.5. Vacío → no se muestra el bloque. */

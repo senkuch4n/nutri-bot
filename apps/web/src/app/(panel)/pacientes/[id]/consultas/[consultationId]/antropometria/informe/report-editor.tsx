@@ -27,6 +27,9 @@ import {
 
 type Running = "save" | "generate" | "send" | null;
 
+/** Secundarias: 44 px en el celular (grilla táctil), 36 px desde sm, como pide la HU para las secundarias. */
+const SECONDARY_SIZE = "sm:h-9 sm:rounded-md sm:px-4 sm:text-callout sm:font-medium";
+
 const T = ISAK_REPORT_TEXT;
 
 // ─── Tabla Anterior / Actual / Dif. ──────────────────────────────────────────
@@ -515,12 +518,20 @@ export function ReportEditor({
             "sm:rounded-xl sm:bg-card sm:p-6 sm:shadow-card sm:more-contrast:border sm:more-contrast:border-input",
           )}
         >
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <Button type="button" size="lg" disabled={busy} loading={running === "generate"} onClick={generate}>
               {running === "generate" ? null : <FileText aria-hidden />}
               {running === "generate" ? T.generating : T.generate}
             </Button>
-            <Button type="button" variant="secondary" size="lg" disabled={busy} loading={running === "save"} onClick={save}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className={SECONDARY_SIZE}
+              disabled={busy}
+              loading={running === "save"}
+              onClick={save}
+            >
               {running === "save" ? null : <Save aria-hidden />}
               {running === "save" ? T.savingTexts : T.saveTexts}
             </Button>
@@ -532,6 +543,7 @@ export function ReportEditor({
                 prefetch={false}
                 variant="secondary"
                 size="lg"
+                className={SECONDARY_SIZE}
               >
                 <Download aria-hidden />
                 {T.download}
@@ -541,7 +553,7 @@ export function ReportEditor({
               type="button"
               variant="secondary"
               size="lg"
-              className={cn(!hasPdf && "max-sm:col-span-2")}
+              className={cn(SECONDARY_SIZE, !hasPdf && "max-sm:col-span-2")}
               disabled={busy}
               loading={running === "send"}
               onClick={() => void send()}

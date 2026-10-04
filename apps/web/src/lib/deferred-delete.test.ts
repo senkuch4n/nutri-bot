@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { UNDO_TEXT, createDeferredDeleteStore, measurementLabelsText } from "./deferred-delete";
+import { UNDO_TEXT, createDeferredDeleteStore, measurementLabelsText, prescriptionDeletionKey } from "./deferred-delete";
 
 /** Timers manuales: el release de las keys se dispara a mano. */
 function manualTimers() {
@@ -141,5 +141,34 @@ describe("UNDO_TEXT", () => {
     expect(UNDO_TEXT.measurement.confirmDescription("24/09", ["Peso"])).toBe("Se borra la medición del 24/09 (peso).");
     expect(UNDO_TEXT.measurement.confirmDescription("24/09", [])).toBe("Se borra la medición del 24/09.");
     expect(measurementLabelsText(["Peso", "Talla"])).toBe(" (peso, talla)");
+  });
+});
+
+// Ronda 2 de 017c-4: borrar un cálculo y guardar otro dentro de `releaseAfterMs` no oculta el nuevo.
+describe("prescriptionDeletionKey", () => {
+  it("la key va por el id de la prescripción", () => {
+    expect(prescriptionDeletionKey("rx1")).toBe("prescription:rx1");
+    expect(prescriptionDeletionKey("rx1")).not.toBe(prescriptionDeletionKey("rx2"));
+  });
+
+  it("después del commit, la key vieja oculta solo el cálculo borrado y nunca uno nuevo", async () => {
+    const timers = manualTimers();
+    const store = createDeferredDeleteStore({ setTimer: timers.setTimer });
+    const id = store.schedule({ key: prescriptionDeletionKey("rx-viejo"), commit: async () => ({ ok: true }) });
+    await store.commit(id);
+    // Dentro de la ventana de release: la vieja sigue oculta…
+    expect(store.isPending(prescriptionDeletionKey("rx-viejo"))).toBe(true);
+    // …la página revalidada sin prescripción no espera nada (R5: se puede calcular)…
+    expect(store.isPending(prescriptionDeletionKey(null))).toBe(false);
+    // …y el cálculo nuevo, guardado enseguida, se ve.
+    expect(store.isPending(prescriptionDeletionKey("rx-nuevo"))).toBe(false);
+    timers.flush();
+    expect(store.isPending(prescriptionDeletionKey("rx-viejo"))).toBe(false);
+  });
+
+  it("mientras corre el plazo de Deshacer, el cálculo borrado (mismo id) queda oculto", () => {
+    const store = createDeferredDeleteStore();
+    store.schedule({ key: prescriptionDeletionKey("rx1"), commit: async () => ({ ok: true }) });
+    expect(store.isPending(prescriptionDeletionKey("rx1"))).toBe(true);
   });
 });
