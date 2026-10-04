@@ -8,6 +8,7 @@ import {
   ACTIVITY_LEVEL_VALUES,
   BODY_FRAME_VALUES,
   NUTRITION_GOAL_VALUES,
+  PATIENT_DIRECTORY_TEXT,
   SEX_VALUES,
 } from "@nutri-bot/core";
 
@@ -68,4 +69,28 @@ export async function updateFormulaDataAction(
   // "layout" también refresca el detalle de la consulta, desde donde se completa con el Sheet (HU-004).
   revalidatePath(`/pacientes/${id}`, "layout");
   return { ok: true };
+}
+
+export type SetPatientNameState = { ok: boolean; error?: string; name?: string };
+
+/** HU-017c-1 ("Poner nombre"): escribe SOLO Patient.name; no toca notas, fecha de nacimiento ni nada
+ *  más (a diferencia de updatePatientAction, que pisa con null lo que no viene en el form). */
+export async function setPatientNameAction(
+  _prev: SetPatientNameState,
+  formData: FormData,
+): Promise<SetPatientNameState> {
+  const id = formData.get("id");
+  const rawName = formData.get("name");
+  if (typeof id !== "string" || id.trim() === "") return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
+  const name = typeof rawName === "string" ? rawName.trim() : "";
+  if (name === "") return { ok: false, error: PATIENT_DIRECTORY_TEXT.nameRequired };
+  if (name.length > 120) return { ok: false, error: PATIENT_DIRECTORY_TEXT.nameTooLong };
+  try {
+    await prisma.patient.update({ where: { id }, data: { name } });
+  } catch {
+    return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
+  }
+  revalidatePath("/pacientes");
+  revalidatePath(`/pacientes/${id}`);
+  return { ok: true, name };
 }
