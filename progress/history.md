@@ -430,3 +430,7 @@
 ## HU-017c-1 — Lista de pacientes simple (aprobada 2026-10-04, senkuch4n)
 - Buscador grande sin acentos, próximo turno en lenguaje común, teléfono con formato, canales @newsletter ocultos, "Por completar" para contactos sin nombre con "Poner nombre", helpers de contacto/teléfono/fechas en core.
 - Implementer Opus (ui-ux-pro-max, apple-design, web-design-guidelines), reviewer Opus: APPROVED en la 1ª revisión.
+
+## HU-017c-2 — Ficha de 4 pestañas y Resumen (aprobada 2026-10-04, senkuch4n)
+- Ficha de 7 a 4 pestañas (Resumen, Consultas, Plan, Historial) con alias de URLs viejas, Resumen con una acción principal y tarjetas en lenguaje común, "Editar datos" en un solo Sheet ($transaction), Historial con segmentado.
+- Recorrido encontró un crash en runtime (íconos como función a componentes cliente), arreglado antes de la revisión. Reviewer: CHANGES_REQUESTED en la 1ª (replaceState con el estado de Next pierde la pestaña tras una server action) → APPROVED en la ronda 2.

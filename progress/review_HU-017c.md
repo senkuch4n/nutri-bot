@@ -236,3 +236,88 @@ archivos del arnés. Comandos que corrí yo:
 - **Fecha de nacimiento futura.** `updatePatientDataAction` no rechaza una fecha futura: solo la limita el `max` del input. La action vieja tampoco lo hacía.
 - **"Nueva consulta" en la pestaña Consultas** usa la variante primaria por defecto (`consultations-section.tsx:31`). No choca con "una sola primaria" porque está en otra pestaña, pero la SDD habla de "única variante `primary` del panel".
 - **Capturas y recorrido completo a 1366/768/390 con movimiento reducido** (10-2 y R2): siguen pendientes.
+
+# 017c-2 — ronda 2
+
+**Veredicto:** APPROVED
+
+Diff revisado: `git diff 034084d..HEAD` en `feat/hu-017c2-ficha` (código de `9da10e9`), sin los archivos del arnés.
+Comandos que corrí yo:
+- `npm run typecheck`: core, db, bot y web en verde (exit 0).
+- `npm run test`: 103 archivos, 1785 tests en verde (exit 0). Coincide con el reporte.
+- `./ops/harness/verify.sh`: "Arnés OK". El aviso "Se tocó el bot" viene de las carpetas sin trackear
+  `apps/bot/.whatsapp-auth.vieja*`. El diff no toca `apps/bot`.
+- Releí el parche de `history.replaceState` de Next 15.5 (`node_modules/next/dist/client/components/app-router.js`,
+  `applyUrlFromHistoryPushReplace` y `replaceState`, líneas 293-334): con `data == null` copia el estado interno y
+  despacha `ACTION_RESTORE` con la URL nueva, así que `canonicalUrl` y `useSearchParams` quedan sincronizados.
+
+## Checkpoints
+
+### C1 — El arnés está sano
+- [x] `backlog/` válido y `verify.sh` en exit 0. Una sola HU activa para senkuch4n.
+- [x] El diff no tiene archivos de HU de imleticio.
+
+### C2 — Cadena de documentos
+- [x] El contrato de §4.2 se mantiene: `resolvePatientTab` y `patientTabQuery` no cambian. Los helpers nuevos
+  (`patientTabHref`, `withoutSearchParam`, `replaceUrlInRouter`, `patient-tab-route.ts:53-79`) se suman sin
+  romper firmas.
+
+### C3 — Arquitectura
+- [x] No cambian `schema.prisma`, `domain`, las migraciones ni el bot. `getProfessional` se usa sin modificarlo.
+- [x] Las rutas no cambian y quedan bajo el mismo middleware de auth.
+- [x] No hay `console.log` ni TODOs agregados.
+
+### C4 — Verificación
+- [x] typecheck y tests en verde, corridos por mí.
+- [x] Los tests nuevos prueban algo real:
+  - `replaceUrlInRouter` se llama con estado `null` exactamente una vez;
+  - no hace nada si la URL no cambia;
+  - una guarda por código fuente impide volver a `history.replaceState` directo en los dos archivos;
+  - la fecha futura da error en el campo y no escribe (`actions.test.ts:168-172`).
+
+### C5 — Cierre
+- [x] La sección "Ronda 2" de `progress/impl_HU-017c.md` describe el arreglo, los tests, el runtime y el control
+  negativo.
+- [x] El recorrido en runtime creó su propia paciente y la borró por id. No tocó datos de la usuaria ni creó turnos
+  ni `OutboundMessage`.
+
+## Hallazgo 1 de la revisión anterior, punto por punto
+
+- **La URL se escribe sincronizada con el router.**
+  - `patient-tabs.tsx:60-62`: `writeUrl` pasa por `replaceUrlInRouter`.
+  - `patient-tab-route.ts:76-79`: `history.replaceState(null, "", href)`.
+  - Con `null`, el parche de Next despacha `ACTION_RESTORE`. Cuando una server action revalida después,
+    `HistoryUpdater` reescribe la URL nueva y no la vieja. **Resuelto.**
+- **Ya no escribe la URL dentro del updater de `setState`.**
+  - `patient-tabs.tsx:138-166`: `apply` llama a `setState({...})` con un valor y después a `writeUrl`, en el handler.
+  - `go`, `setTab` y `setView` leen el estado anterior de `stateRef`. **Resuelto.**
+- **`?editar=datos` sale de la URL y Next se entera:** `edit-patient-sheet.tsx:92-98` usa
+  `replaceUrlInRouter(withoutSearchParam(...))`. Además `fromUrl` (`:76-85`) vuelve a `false`, así que el efecto
+  no reabre el Sheet. **Resuelto.**
+- **Verificación en runtime de que la URL sigue en `?tab=historial` después de guardar una medición:** el reporte
+  la documenta con un build de producción, junto con un control negativo contra el código anterior que reproduce
+  la regresión. No la repetí: no corro el panel ni escribo en la base. El mecanismo coincide con el código de Next
+  que leí.
+- **Interacción con el efecto de `[tabParam, viewParam]`** (`patient-tabs.tsx:100-104`): ahora que
+  `useSearchParams` se actualiza, el efecto corre después de cada cambio de pestaña. Como `patientTabQuery` y
+  `resolvePatientTab` hacen ida y vuelta (está testeado), vuelve a fijar la misma pestaña y la misma vista. Cuesta
+  un render extra y no hay bucle ni salto. Atrás y adelante siguen funcionando.
+
+## Resto de la ronda (las dudas de la revisión anterior)
+- Pestaña Consultas: el número va `aria-hidden` y hay un `sr-only` " (N consulta/s)" (`patient-tabs.tsx:190-199`). OK.
+- "Ir a Datos" → "Editar datos" (`requirement-section.tsx:82` y `antropometria/page.tsx:261`). OK.
+- Fecha de nacimiento futura (`actions.ts:91-94`):
+  - se rechaza con `isFutureDayKey` en la zona de la profesional;
+  - solo consulta la base si la fecha es válida y no está vacía. OK.
+- "Nueva consulta" en la pestaña Consultas pasa a `tinted` (`consultations-section.tsx:34`). OK.
+
+## Cambios requeridos
+
+Ninguno.
+
+## Dudas (no bloqueantes)
+- `getProfessional()` (`actions.ts:92`) está fuera del `try/catch`. Si falta la fila de la profesional, la action tira
+  la excepción en vez de devolver el error genérico. En la práctica no pasa: el panel entero necesita esa fila.
+- Siguen pendientes para el recorrido del orquestador:
+  - el alto del chrome a 390 px;
+  - las capturas a 1366/768/390 con movimiento reducido (R2 y 10-2).
