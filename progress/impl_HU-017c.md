@@ -293,3 +293,65 @@ de prueba ni migraciones (la `food_measures` aplicada no se tocó). No hay mensa
   - Solo lectura: GET, sin escribir en la base.
 - typecheck (4 workspaces), test (103 archivos, 1778 tests), lint (solo el warning previo de `logo-form`), `next build` y
   `next build --turbopack` en verde. El dev server de :3100 no se tocó (responde 200).
+
+## Ronda 2 (017c-2): la pestaña de la URL sobrevive a las server actions (`9da10e9`)
+
+Alcance: el cambio requerido 1 de `progress/review_HU-017c.md` (sección 017c-2) y algunas de sus dudas no bloqueantes.
+
+**Cambio requerido 1, arreglado.**
+- **`lib/patient-tab-route.ts`** suma tres helpers:
+  - `patientTabHref(href, tab, view)`: la URL con la query canónica; conserva el resto de los parámetros.
+  - `withoutSearchParam(href, name)`.
+  - `replaceUrlInRouter(href, history?)`: llama a `history.replaceState(null, "", href)`. Con estado `null`, Next 15
+    sincroniza su URL canónica. Con `window.history.state` (que trae `__NA`) no la sincroniza, y la próxima server
+    action la vuelve a pisar.
+- **`patient-tabs.tsx`:** la URL ya no se escribe dentro de un updater de `setState`.
+  - Los handlers (`go`, `setTab`, `setView`) calculan el estado siguiente desde un `stateRef`, llaman a `setState` y
+    escriben la URL.
+  - Todo pasa por `replaceUrlInRouter`.
+- **`edit-patient-sheet.tsx`:** al cerrar, `?editar=datos` sale con `replaceUrlInRouter(withoutSearchParam(...))`.
+
+**Tests (`patient-tab-route.test.ts`, +7):**
+- `patientTabHref` y `withoutSearchParam`.
+- `replaceUrlInRouter` llama a `replaceState` con estado `null` exactamente una vez, y no hace nada si la URL no cambia.
+- Una guarda: `patient-tabs.tsx` y `edit-patient-sheet.tsx` no llaman a `history.replaceState` directo y usan el helper.
+
+**Dudas no bloqueantes resueltas:**
+- **Pestaña Consultas:** el número es `aria-hidden`, con un `sr-only` " (5 consultas)". Ya no se lee "Consultas5".
+- **"Ir a Datos" → "Editar datos"**, en `requirement-section.tsx` y `antropometria/page.tsx`. Es el mismo enlace
+  `?editar=datos`, ahora con un texto que existe en la ficha.
+- **Fecha de nacimiento futura:** `updatePatientDataAction` la rechaza con `fieldErrors.birthDate` "La fecha de
+  nacimiento no puede ser futura".
+  - Compara en la zona de la profesional: `getProfessional` + `isFutureDayKey`.
+  - Solo consulta a la profesional si hay fecha.
+  - Test nuevo en `actions.test.ts`; `getProfessional` va mockeado.
+- **"Nueva consulta" en la pestaña Consultas** pasa a `tinted`: la única primaria llena queda en el Resumen.
+
+**Dudas que quedan abiertas:**
+- El alto del chrome a 390 px y las capturas o el recorrido a 1366/768/390 con movimiento reducido (R2) siguen para el
+  recorrido del orquestador.
+
+**Verificación:**
+- typecheck (4 workspaces) y test (103 archivos, 1785 tests) en verde.
+- lint: solo el warning previo de `logo-form`.
+- `next build` (exit 0) y `next build --turbopack` ("Compiled successfully"), en una copia del scratchpad.
+
+**En runtime** (copia del scratchpad + `next start -p 3197` + cookie de sesión generada en local + Chromium headless
+con `playwright-core`; todo en el scratchpad, ya borrado):
+- **Paciente de prueba:** el recorrido creó la paciente `hu017c2-r2-url` (JID `5493510017201@s.whatsapp.net`, sin
+  turnos) y la borró por id. Después del borrado: 0 filas de `Patient`, `Consultation`, `EvolutionEntry` y
+  `ClinicalRecord` con ese id. No se tocaron datos de la usuaria ni se crearon turnos.
+- **Con el arreglo, todo OK:**
+  - `?editar=datos` abre el Sheet, y al cerrarlo el parámetro sale de la URL.
+  - Historial → `?tab=historial`; Turnos → `?tab=historial&vista=turnos`.
+  - Después de agregar una medición (server action), la URL sigue en `?tab=historial`.
+  - Al recargar, la pestaña activa es Historial y el Sheet no se abre solo.
+  - Resumen → sin `tab`. "Editar datos" → Guardar → la URL sigue sin `tab` ni `editar`.
+  - Sin errores de JS.
+- **Control negativo**, el mismo guion contra un build con el código anterior:
+  - después de "Guardar" en Resumen, la URL volvió a `?tab=historial`, que era la vieja;
+  - el toast de la medición no apareció.
+  
+  El chequeo detecta la regresión.
+
+El dev server de :3100 no se tocó (responde 200).
