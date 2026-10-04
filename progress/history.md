@@ -434,3 +434,7 @@
 ## HU-017c-2 — Ficha de 4 pestañas y Resumen (aprobada 2026-10-04, senkuch4n)
 - Ficha de 7 a 4 pestañas (Resumen, Consultas, Plan, Historial) con alias de URLs viejas, Resumen con una acción principal y tarjetas en lenguaje común, "Editar datos" en un solo Sheet ($transaction), Historial con segmentado.
 - Recorrido encontró un crash en runtime (íconos como función a componentes cliente), arreglado antes de la revisión. Reviewer: CHANGES_REQUESTED en la 1ª (replaceState con el estado de Next pierde la pestaña tras una server action) → APPROVED en la ronda 2.
+
+## HU-017c-3 — Consulta, ISAK y Deshacer (aprobada 2026-10-04, senkuch4n)
+- Borrado diferido con "Deshacer" (consulta, estudio, cálculo, medición, quitar plan), destructivas en menú "…" con confirmaciones simples, botones grandes con ícono y texto, columna lateral sticky, ISAK con índice y barras z. Arregla el error de hidratación del sidebar en todo el panel (R3) y la coma decimal (R4).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. R5–R7 pasan a 017c-4.

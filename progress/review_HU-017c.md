@@ -321,3 +321,154 @@ Ninguno.
 - Siguen pendientes para el recorrido del orquestador:
   - el alto del chrome a 390 px;
   - las capturas a 1366/768/390 con movimiento reducido (R2 y 10-2).
+
+---
+
+# 017c-3
+
+**Veredicto:** APPROVED
+
+Diff revisado: `git diff feat/hu-017c2-ficha...HEAD` en `feat/hu-017c3-consulta` (`6903313`..`91ab7d3`), sin los
+archivos del arnés. Comandos que corrí yo:
+- `npm run typecheck`: core, db, bot y web en verde (exit 0).
+- `npm run test`: 106 archivos, 1806 tests en verde (exit 0). Coincide con el reporte.
+- `./ops/harness/verify.sh`: "Arnés OK" (exit 0). El aviso "Se tocó el bot" viene de las carpetas sin trackear
+  `apps/bot/.whatsapp-auth.vieja*`. El diff no toca `apps/bot`.
+- Grep de alcance contra la rama base: ningún archivo de `alimentos/`, `plantillas/`, `pacientes/[id]/planes/`,
+  `food-picker`, `meals-editor`, `plan-pdf`, `pdf-theme`, `plans-section`, `apps/bot`, `packages/db`,
+  `schema.prisma` ni migraciones.
+- Grep de las líneas agregadas: no hay `console.log`, TODOs, `replaceState` ni `window.history`.
+- Leí `sonner@2.0.8` (`node_modules/sonner/dist/index.mjs`):
+  - el timer llama a `onAutoClose` y se pausa con `expanded || interacting || isDocumentHidden` (`:643-679`);
+  - `toast.dismiss`, la X y el swipe llaman a `onDismiss` (`:681-686`, `:772`, `:848`);
+  - el clic en la acción solo llama a `deleteToast()`, sin `onDismiss` (`:878-885`);
+  - los toasts que no se ven (más de 3) mantienen su timer.
+- Leí Next 15.5.24: `devtoolSegmentExplorer: true` es el default (`server/config-shared.js:216`), y los
+  `SegmentViewNode` se agregan solo con `NODE_ENV === 'development'` (`server/app-render/create-component-tree.js:268,785`).
+
+## Checkpoints
+
+### C1 — El arnés está sano
+- [x] `backlog/` válido. senkuch4n tiene una sola HU activa (HU-017c, `en_revision`, entrega 017c-3).
+- [x] `progress/current-senkuch4n.md` refleja la entrega.
+- [x] No hay archivos de HU de imleticio en el diff.
+- [x] `verify.sh` termina en exit 0.
+
+### C2 — Cadena de documentos
+- [x] La HU (§4.3, §4.4) y la SDD (017c-3, "Decisiones", "Agregados a 017c-3") están completas.
+- [x] La SDD trae el contrato de §4-3 (`deferred-delete.ts`, `notify.undo`, actions).
+- [x] Firmas y nombres coinciden con el contrato:
+  - `deferred-delete.ts` exporta `CommitResult`, `DeferredDeleteStore` (6 métodos), `createDeferredDeleteStore`,
+    `deferredDeletes`, `usePendingDeletion`, `usePendingDeletions` y `useDeferredDelete` con los campos de §4.1.
+    Los agregados son compatibles: el parámetro opcional `options` (`releaseAfterMs`, `setTimer`), `UNDO_TEXT`,
+    `measurementLabelsText` y `DeferredDeleteOptions`.
+  - `notify.undo(message, onUndo, { onExpire? })` (`notify.ts:26-34`). `notify.saved` suma un `action` opcional;
+    los usos de hoy no cambian.
+  - Actions: `deleteConsultationAction` devuelve `{ ok: true }` sin `redirect` (`consultation-actions.ts:239-250`).
+    `deleteEvolutionEntryByIdAction(patientId, entryId): Promise<ActionState>` (`clinical-actions.ts:67-83`).
+    No queda ninguna referencia a `deleteEvolutionEntryAction`.
+  - Las keys son las de la SDD: `consultation:`, `isak:`, `prescription:` y `measurement:`.
+  - Los textos de las confirmaciones y los toasts coinciden con la tabla de la HU §4.3. Los textos de core de la
+    lista 0.1 cambian con sus tests (`isak-study.ts:162-171`, `energy-requirement.ts:349-356`).
+
+### C3 — Arquitectura
+- [x] El store puro va en `apps/web/src/lib` con su test (T2). Los textos de core son solo del panel (D11b).
+  `domain` no cambia.
+- [x] No cambian `schema.prisma` ni `domain`. Igual compilan los 4 workspaces.
+- [x] No hay migraciones (3-3).
+- [x] No hay rutas nuevas. Las actions quedan bajo el middleware de Auth.js. No toca el portal.
+- [x] No toca el bot.
+- [x] No hay `console.log` ni TODOs en las líneas agregadas.
+
+### C4 — Verificación
+- [x] `npm run typecheck` limpio.
+- [x] Tests reales:
+  - `deferred-delete.test.ts` cubre todos los casos de §9-3: schedule, undo antes y después de commit, commit
+    doble, `{ ok: false }`, commit que tira, dos keys, subscribe con cambio de identidad y `releaseAfterMs`
+    con timers manuales.
+  - `consultation-actions.test.ts`: `{ ok: true }` sin `redirect`, `notDeletable` y una consulta de otro paciente.
+  - `clinical-actions.test.ts`: una medición de otro paciente da error sin borrar ni revalidar; también la
+    inexistente, los ids vacíos y el borrado que tira.
+  - En core, los textos exactos y que ya no dicen "deshacer".
+- [x] No aplica simular el bot.
+- [x] No aplica verificar un PDF.
+
+### C5 — Cierre
+- [x] La sección 017c-3 de `progress/impl_HU-017c.md` describe archivos, contrato, verificación, runtime, R3 y
+  desvíos.
+- [x] `progress/review_HU-017c.md` (esta sección).
+- [x] No quedan scripts sueltos en el repo. Según el reporte, la paciente de prueba se borró por id. No lo
+  verifiqué en la base: esta revisión no consulta la base.
+
+## Puntos que pidió el orquestador
+
+- **Borrado diferido** (`deferred-delete.ts`):
+  - **Al navegar:**
+    - el `<Toaster />` vive en `(panel)/layout.tsx:62` y el store es un singleton de módulo, así que la navegación
+      cliente no corta el plazo;
+    - los cierres del toast son globales de sonner y el `router` de Next es estable, así que el commit corre
+      aunque el componente que borró ya no esté montado.
+    - Al borrar la consulta, `afterSchedule` navega a `?tab=consultas`, y la lista filtra la key
+      (`consultations-section.tsx:31-32`).
+  - **Al cerrar la pestaña o recargar:** se pierde el store, nadie llama a commit y el dato vuelve. Es la falla del
+    lado seguro de D12a. Una navegación con recarga completa se comporta igual.
+  - **Dos borrados seguidos:**
+    - cada uno tiene su entrada (`id = key#n`) y su toast;
+    - el `router.refresh()` del primero no hace reaparecer el segundo, que sigue oculto por la snapshot;
+    - si el primero falla, solo vuelve el primero.
+    - En un mismo toast, el `settled` local (`:197-213`) deja pasar una sola resolución entre `onAutoClose`,
+      `onDismiss` y "Deshacer".
+    - El store, además, guarda la promesa de commit y no lo repite (`:80-81`).
+  - **Error de la action:** si la action devuelve `{ ok: false }`, o el fetch o la action tiran (`:85-89`), la
+    entrada se borra, la key vuelve a verse y sale `notify.error("No se pudo borrar. Probá de nuevo.")`. El
+    reporte lo probó en runtime con la red cortada.
+  - **SSR e hidratación:** `getServerSnapshot` devuelve un `Set` vacío fijo y en el servidor nunca se programa
+    nada, así que no hay diferencias de hidratación.
+- **Pertenencia en las actions de borrado:**
+  - `deleteEvolutionEntryByIdAction` compara `entry.patientId !== patientId` (`clinical-actions.ts:76`);
+  - `deleteConsultationAction`, `deleteIsakStudyAction` (`isak-actions.ts:75`) y `deletePrescriptionAction`
+    (`prescription-actions.ts:72`) usan `belongsToPatient`;
+  - `deleteConsultationMeasurementAction` usa `belongsToPatient` y además compara el `consultationId` de la
+    medición (`consultation-actions.ts:220-222`). Ninguna de estas cambió.
+- **Props de servidor a cliente:**
+  - consulta: `ConsultationMoreMenu` (strings y booleano), `ConsultationDateSheet` (`trigger` es un elemento),
+    `StickyAside` (string e hijos) e `IsakCard` (datos planos, igual que antes);
+  - estudio ISAK: `IsakSectionIndex` (array de `{ id, label }`) e `IsakStudyMoreMenu` (strings y booleano);
+  - `MoreActionsMenu` recibe funciones, pero solo desde componentes cliente.
+  - **No queda ningún caso.** No hay `replaceState` en el diff.
+- **R3:** la causa es real y está bien acotada. `devtoolSegmentExplorer` viene prendido por defecto en Next 15.5
+  y envuelve layouts y páginas en `SegmentViewNode` solo en desarrollo. Eso explica que fallen todos los `useId`
+  de abajo de `PanelLayout`, en una parte de las cargas y nunca en `next start`.
+  - El arreglo (`next.config.mjs:11-17`) es una opción `experimental` de desarrollo con un comentario. No cambia
+    nada en producción.
+  - El recorrido del orquestador confirma la consola limpia en la ficha y en la consulta.
+- **R4:** "70,5", "22,5" y "2,8" (`measurement-fields.tsx:32,105,117`). El input sigue siendo
+  `type="number" inputMode="decimal"`, así que solo cambia el texto de ejemplo.
+- **Zona de imleticio:** intacta (ver el grep de arriba).
+
+## Cambios requeridos
+
+Ninguno.
+
+## Dudas (no bloqueantes)
+
+- **El cálculo sigue oculto 10 s después del commit.** Durante ese tiempo, "Calcular requerimiento" queda
+  deshabilitado con "cuando se cierre el aviso de “Deshacer”", aunque el toast ya se cerró
+  (`requirement-section.tsx:53,117-135` con `releaseAfterMs` en `deferred-delete.ts:44`). Se puede liberar antes,
+  apenas llega la página revalidada (`prescription === null`), o cambiar el texto.
+- **Volver con "Atrás" a la consulta o al estudio dentro de los 8 s** muestra la página completa, porque
+  `consultas/[consultationId]/page.tsx` no se oculta con su key. Si después vence el plazo, el `router.refresh()`
+  lleva a `notFound`. La SDD no lo pide.
+- **Resumen y contador de la pestaña Consultas:** durante el plazo siguen contando la consulta o la medición
+  pendiente, porque son datos del servidor (`patient-tabs.tsx`, `summary-section.tsx`). Solo filtran las listas
+  que nombra la SDD (R-2).
+- **Borrar un estudio ISAK desde Historial** usa siempre `ISAK_TEXT.deleteDescription`, sin "y su informe"
+  (`evolution-table.tsx:53-56`), porque la fila no sabe si el estudio tiene informe. Pasa por
+  `deleteEvolutionEntryByIdAction` y no por `deleteIsakStudyAction`, igual que antes de esta entrega.
+- **"Quitar plan" no muestra estado de carga** (`consultation-plan.tsx:43`, `[, startClear]`). Sin red tarda en
+  aparecer el toast, pero el menú se cierra y no se puede repetir el clic sobre el mismo ítem.
+- **Faltan del recorrido 10-3:**
+  - 1920×1080;
+  - movimiento reducido;
+  - el toast con lector de pantalla;
+  - cerrar el toast con swipe (el `Toaster` del panel no tiene X).
