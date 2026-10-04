@@ -49,7 +49,7 @@ function ConsultationLink({ href }: { href: string }) {
   return (
     <Link
       href={href}
-      className="relative rounded-sm font-medium text-primary touch-target press-none pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="relative rounded-sm font-medium text-primary touch-target press-none transition-colors duration-hover hover:text-primary-hover pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       Ver consulta
     </Link>

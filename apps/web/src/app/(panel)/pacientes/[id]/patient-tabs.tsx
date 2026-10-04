@@ -230,7 +230,7 @@ export function PatientTabLink({
       type="button"
       onClick={() => ctx?.go({ tab, view, focus })}
       className={cn(
-        "relative rounded-sm text-callout font-medium text-primary touch-target press-none pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        "relative rounded-sm text-callout font-medium text-primary touch-target press-none transition-colors duration-hover hover:text-primary-hover pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         className,
       )}
     >
