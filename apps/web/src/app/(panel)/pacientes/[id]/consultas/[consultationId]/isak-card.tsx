@@ -110,7 +110,7 @@ export function IsakCard({
             </Button>
             {deleting ? (
               <p id={`${consultationId}-isak-espera`} className="text-footnote text-muted-foreground">
-                Vas a poder cargar otro cuando se cierre el aviso de &quot;Deshacer&quot;.
+                Vas a poder cargar otro cuando se cierre el aviso de “Deshacer”.
               </p>
             ) : null}
           </div>

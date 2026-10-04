@@ -130,7 +130,7 @@ export function RequirementSection({
           </Button>
           {deleting ? (
             <p id={waitId} className="text-footnote text-muted-foreground">
-              Vas a poder calcular de nuevo cuando se cierre el aviso de &quot;Deshacer&quot;.
+              Vas a poder calcular de nuevo cuando se cierre el aviso de “Deshacer”.
             </p>
           ) : null}
         </div>
