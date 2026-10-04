@@ -228,3 +228,5 @@ orquestador, para que las revise a la mañana:
 - HU-018a-2 **aprobada**. HU-018a → `aprobada`. PR a develop. Siguen: 018c (buscador) y la tarea directa del bug de auth.ts.
 - HU-017c → `afinando` (afinador Opus; rama feat/hu-017c-pacientes desde develop; sin observar a la nutricionista, con el diagnóstico del 2026-10-03).
 - HU-017c afinada y validada (D1–D18; D2/D3 confirmados por lectura: 5 @newsletter, 9 @lid). → `en_arquitectura` (architect Opus + ui). Tarea directa nueva: el bot no debe crear Patient desde @newsletter.
+- Tarea directa: el bot ignora @newsletter y @broadcast (isIgnoredJid + test) → PR #29 a develop.
+- HU-017c SDD lista (Refactorizaciones/017c-pacientes-consultas.md; Q1–Q16 aceptadas salvo Q6: ramas encadenadas). → `implementando` 017c-1 (Opus; ui-ux-pro-max, apple-design, web-design-guidelines).
