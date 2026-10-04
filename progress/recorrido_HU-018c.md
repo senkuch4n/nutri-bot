@@ -20,3 +20,20 @@ al final (1 plan, 3 recetas, el paciente). Datos reales sin tocar.
 ## Nota de entorno
 - La pestaña de la extensión queda oculta y algunos clics por `ref` se pierden (el DOM tiene una copia oculta de la
   página por el streaming de Suspense en dev); con coordenadas anduvo.
+
+# Recorrido HU-018c-2 (orquestador, 2026-10-04, modo autónomo)
+
+Dev en :3100 (el :3000 lo ocupa otro proyecto). Solo lectura sobre "plan maria" (no se agregó ni quitó nada).
+
+## OK
+- Buscador de "Desayuno · Lunes" → "Quitar filtros" → tocar la foto de "Receta Con imagen" abre el diálogo de detalle:
+  foto grande, "Rinde 1 porción · 1 porción: 1 plato", 698 kcal por porción con P/C/G, Ingredientes con medida casera
+  y gramos ("Leche materna · 1 taza (1.000 g)").
+- Pie fijo con "Agregada", stepper de porciones y "Quitar" (la receta ya estaba en la comida); el contenido scrollea
+  por debajo sin taparse.
+- Esc cierra el diálogo y el foco vuelve a la tarjeta. Consola sin errores.
+
+## No recorrido
+- Impacto contra objetivo: el plan no tiene consulta con prescripción.
+- Portal "Ver receta": requiere un token de paciente; lo verificó el implementer contra la base con build de producción
+  (progress/impl_HU-018c.md). 390 px y PDF real: cubiertos por tests.
