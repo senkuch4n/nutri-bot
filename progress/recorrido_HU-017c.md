@@ -54,3 +54,15 @@ Solo lectura sobre María González (no se creó consulta ni se editaron datos).
 - Placeholder del peso "70.5" con punto (debería ser "70,5"). Previo; se suma a 017c-3 (R4).
 - No se pudo achicar la ventana a 390 px (la extensión no aplicó el resize); el responsive queda a cargo del reviewer
   y de tests.
+
+# Recorrido HU-017c-3 (orquestador, 2026-10-04)
+
+Solo lectura (no se borró nada; el Deshacer con datos de prueba lo cubren los tests y la verificación en runtime del
+implementer).
+
+## OK
+- R3: consola limpia al recargar `/pacientes/<id>` y en la consulta (sin el error de hidratación del sidebar).
+- Consulta del sábado 05/09: título "Consulta del sábado 05/09", "Cambiar fecha" con ícono y texto, menú "…" con
+  "Borrar consulta" deshabilitado y la explicación "Para eliminar la consulta primero borrá sus mediciones, la
+  prescripción y quitá el plan indicado."; mediciones con su "…", columna lateral (Plan indicado, Notas), botones
+  grandes con ícono ("Agregar medición", "Cargar antropometría ISAK", "Crear plan").
