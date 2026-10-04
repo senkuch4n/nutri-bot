@@ -397,6 +397,7 @@ export function CalendarClient({
         onCreated={refetch}
         services={services}
         tz={tz}
+        todayKey={todayKey}
         initialDate={initialDate}
         initialStart={initialStart}
       />
