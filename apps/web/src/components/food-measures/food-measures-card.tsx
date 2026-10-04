@@ -6,6 +6,7 @@ import {
   MEASURE_TEXT,
   legacyUnitHintText,
   measureListLine,
+  parseUnitHint,
   removeMeasureTitle,
   unitHintPrefillName,
 } from "@nutri-bot/core";
@@ -14,10 +15,19 @@ import { useConfirm } from "@/components/confirm";
 import { Alert, Button, Card } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { MeasureFormDialog, type MeasureDialogFood } from "./measure-form-dialog";
-import type { FoodMeasureView } from "./types";
+import type { FoodMeasureView, MeasurePrefill } from "./types";
 
 // `initial` se conserva al cerrar: el título no cambia durante la animación de salida.
-type DialogState = { open: boolean; initial?: FoodMeasureView | { name: string } };
+type DialogState = { open: boolean; initial?: FoodMeasureView | MeasurePrefill };
+
+/**
+ * "Pasar a medida": si parseUnitHint lee el texto ("1 taza ≈ 180 g", también N ≠ 1 con la división de
+ * T3), prellena nombre y gramos; si no, el texto (limpio y cortado a 40) va en el nombre.
+ */
+export function legacyMeasurePrefill(unitHint: string): MeasurePrefill {
+  const parsed = parseUnitHint(unitHint);
+  return parsed ? { name: parsed.name, grams: parsed.grams } : { name: unitHintPrefillName(unitHint) };
+}
 
 /**
  * HU-018d (SDD 7.2): tarjeta "Medidas caseras" de la ficha del alimento, arriba de Energía. Lista
@@ -77,7 +87,7 @@ export function FoodMeasuresCard({
               <Button
                 variant="secondary"
                 className="mt-3 h-11"
-                onClick={() => setDialog({ open: true, initial: { name: unitHintPrefillName(legacyHint) } })}
+                onClick={() => setDialog({ open: true, initial: legacyMeasurePrefill(legacyHint) })}
               >
                 {MEASURE_TEXT.legacyButton}
               </Button>

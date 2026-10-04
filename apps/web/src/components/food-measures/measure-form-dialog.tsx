@@ -16,7 +16,7 @@ import { NumberInput } from "@/components/number-input";
 import { Alert, Button, Field, Input } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
-import type { FoodMeasureView, MeasureFieldErrors } from "./types";
+import type { FoodMeasureView, MeasureFieldErrors, MeasurePrefill } from "./types";
 
 export interface MeasureDialogFood {
   id: string;
@@ -48,7 +48,7 @@ export function MeasureFormDialog({
   onClose: () => void;
   food: MeasureDialogFood;
   /** Una medida existente (editar) o solo un nombre para prellenar (nueva). */
-  initial?: FoodMeasureView | { name: string };
+  initial?: FoodMeasureView | MeasurePrefill;
   onSaved: (measure: FoodMeasureView) => void;
   /** Toast al guardar: "Medida guardada" (ficha) o "Medida guardada en …" (editor). */
   savedMessage?: string;
@@ -70,14 +70,15 @@ export function MeasureFormBody({
   savedMessage,
 }: {
   food: MeasureDialogFood;
-  initial?: FoodMeasureView | { name: string };
+  initial?: FoodMeasureView | MeasurePrefill;
   onClose: () => void;
   onSaved: (measure: FoodMeasureView) => void;
   savedMessage: string;
 }) {
   const editing = initial && "id" in initial ? initial : null;
   const [name, setName] = useState(initial?.name ?? "");
-  const [gramsText, setGramsText] = useState(editing ? String(editing.grams) : "");
+  const initialGrams = editing ? editing.grams : initial && "grams" in initial ? initial.grams : undefined;
+  const [gramsText, setGramsText] = useState(initialGrams !== undefined ? String(initialGrams) : "");
   const [plural, setPlural] = useState(editing?.plural ?? "");
   const [pluralOpen, setPluralOpen] = useState(Boolean(editing?.plural));
   const [errors, setErrors] = useState<MeasureFieldErrors>({});

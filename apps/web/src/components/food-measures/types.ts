@@ -32,3 +32,9 @@ export interface MeasureItemView {
  * listo (o dato inválido ignorado, como siempre); con error, el formulario lo muestra en un toast.
  */
 export type AddMealItemResult = { ok: false; error: string };
+
+/** Prellenado del cuadro de medida nueva ("Pasar a medida"): el nombre y, si se pudo leer, los gramos. */
+export interface MeasurePrefill {
+  name: string;
+  grams?: number;
+}

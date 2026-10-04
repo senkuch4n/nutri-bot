@@ -10,7 +10,8 @@ vi.mock("@/app/(panel)/food-measure-actions", () => ({
 }));
 vi.mock("@/components/confirm", () => ({ useConfirm: () => async () => true }));
 
-import { FoodMeasuresCard } from "./food-measures-card";
+import { FoodMeasuresCard, legacyMeasurePrefill } from "./food-measures-card";
+import { MeasureFormBody } from "./measure-form-dialog";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&nbsp;| /g, " ").replace(/\s+/g, " ").trim();
 const food = { id: "f1", name: "Yogur casero", kcalPer100: 62 };
@@ -43,5 +44,30 @@ describe("FoodMeasuresCard: aviso de unitHint (D9, T5)", () => {
       expect(t).not.toContain("Tenías anotado");
       expect(t).toContain("Todavía no tiene medidas caseras.");
     }
+  });
+});
+
+describe("«Pasar a medida»: prellenado (recorrido de 018d-1b)", () => {
+  it("unitHint legible → nombre y gramos de parseUnitHint (con la división de T3 si N ≠ 1)", () => {
+    expect(legacyMeasurePrefill("1 taza ≈ 180 g")).toEqual({ name: "taza", grams: 180 });
+    expect(legacyMeasurePrefill("1 vaso ≈ 200 ml")).toEqual({ name: "vaso", grams: 200 });
+    expect(legacyMeasurePrefill("4 unidades ≈ 25 g")).toEqual({ name: "unidad", grams: 6.3 });
+    expect(legacyMeasurePrefill("1/2 taza ≈ 125 g")).toEqual({ name: "taza", grams: 250 });
+  });
+
+  it("ilegible → el texto limpio en el nombre, sin gramos (como antes)", () => {
+    expect(legacyMeasurePrefill("  porción   chica ")).toEqual({ name: "porción chica" });
+    expect(legacyMeasurePrefill("1 lata ≈  lata 473 ml")).toEqual({ name: "1 lata ≈ lata 473 ml" });
+    expect(legacyMeasurePrefill("x".repeat(60)).name).toHaveLength(40);
+  });
+
+  it("el cuadro arranca con el nombre y los gramos prellenados y la vista previa armada", () => {
+    const html = renderToStaticMarkup(
+      <MeasureFormBody food={food} initial={legacyMeasurePrefill("1 taza ≈ 180 g")} onClose={() => {}} onSaved={() => {}}
+        savedMessage="Medida guardada" />,
+    );
+    expect(html).toMatch(/value="taza"/);
+    expect(html).toMatch(/value="180"/);
+    expect(text(html)).toContain("2 tazas = 360 g");
   });
 });
