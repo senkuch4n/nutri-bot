@@ -8,35 +8,12 @@ import {
   FutureConsultationDateError,
   addEvolutionEntryOnDay,
   deleteEvolutionEntry,
-  upsertClinicalRecord,
 } from "@nutri-bot/db/domain";
 import { getProfessional } from "@/lib/professional";
 import { MEASURE_FIELDS, parseMeasuresFromForm } from "./measure-form-data";
 
 /** `message` (opcional): texto del toast de éxito cuando depende del resultado. */
 export type ActionState = { ok: boolean; error?: string; message?: string };
-
-const clinicalRecordSchema = z.object({
-  patientId: z.string().min(1),
-  background: z.string().trim().max(4000).optional().or(z.literal("")),
-  goals: z.string().trim().max(4000).optional().or(z.literal("")),
-  riskFlag: z.coerce.boolean().optional(),
-});
-
-export async function updateClinicalRecordAction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const parsed = clinicalRecordSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  await upsertClinicalRecord(parsed.data.patientId, {
-    background: parsed.data.background || null,
-    goals: parsed.data.goals || null,
-    riskFlag: parsed.data.riskFlag ?? false,
-  });
-  revalidatePath(`/pacientes/${parsed.data.patientId}`);
-  return { ok: true };
-}
 
 const optionalMeasure = z.string().trim().optional().or(z.literal(""));
 

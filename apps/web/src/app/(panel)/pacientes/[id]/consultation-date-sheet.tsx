@@ -134,18 +134,29 @@ function DateForm(props: Props & { onDone: () => void }) {
   );
 }
 
-/** Botón primario "Nueva consulta" que abre el sheet en modo creación. */
-export function NewConsultationButton({ patientId, todayKey }: { patientId: string; todayKey: string }) {
+/** Botón "Nueva consulta" que abre el sheet en modo creación (con hoy elegido). `trigger` (opcional,
+ *  HU-017c-2) reemplaza el botón chico de siempre, p. ej. por la acción principal del Resumen. */
+export function NewConsultationButton({
+  patientId,
+  todayKey,
+  trigger,
+}: {
+  patientId: string;
+  todayKey: string;
+  trigger?: ReactNode;
+}) {
   return (
     <ConsultationDateSheet
       mode="create"
       patientId={patientId}
       todayKey={todayKey}
       trigger={
-        <Button type="button" size="sm">
-          <Plus aria-hidden />
-          Nueva consulta
-        </Button>
+        trigger ?? (
+          <Button type="button" size="sm">
+            <Plus aria-hidden />
+            Nueva consulta
+          </Button>
+        )
       }
     />
   );

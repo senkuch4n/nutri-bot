@@ -3,13 +3,21 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
 import {
+  capitalizeFirst,
   computeAgeYears,
   consultationChips,
+  consultationRecordedItems,
   dayKeyInTz,
+  formatAppointmentWhen,
   formatDate,
   formatDateTime,
   formatInTimeZone,
   formatPrice,
+  formatShortDate,
+  formatTimeAgo,
+  pickConsultationForDay,
+  recordedItemsText,
+  weightTrend,
 } from "@nutri-bot/core";
 import {
   getLatestFormulaMeasurements,
@@ -20,23 +28,17 @@ import {
   listDiaryEntries,
   type LatestMeasurement,
 } from "@nutri-bot/db/domain";
-import { Card, SectionLabel, StatTile } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { AppointmentsSection } from "./appointments-section";
-import { ClinicalAlert } from "./clinical-alert";
-import { ClinicalRecordForm } from "./clinical-record-form";
 import { ConsultationsSection } from "./consultations-section";
 import { DiarySection } from "./diary-section";
 import { EvolutionSection } from "./evolution-section";
-import { EvolutionSummary } from "./evolution-summary";
 import { HistorySection } from "./history-section";
-import { FormulaDataSection } from "./formula-data-section";
-import { RequirementSummaryCard } from "./requirement-summary-card";
-import { PatientForm } from "./patient-form";
 import { PatientHeader } from "./patient-header";
 import { PatientTabs } from "./patient-tabs";
 import { PlansSection } from "./plans-section";
+import { SummarySection } from "./summary-section";
 
 export const dynamic = "force-dynamic";
 
@@ -68,35 +70,42 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     listDiaryEntries(id),
     getLatestFormulaMeasurements(id),
     listPatientConsultations(id),
-    listLatestPrescriptions(id, 2),
+    listLatestPrescriptions(id, 1),
   ]);
   if (!patient) notFound();
 
-  const summaryMeasurement = (m: LatestMeasurement | null) =>
-    m ? { value: m.value, dateLabel: formatInTimeZone(m.recordedAt, pro.timezone, "dd/MM/yyyy") } : null;
-
+  const tz = pro.timezone;
   const now = new Date();
-  const appts = patient.appointments;
-  const count = (s: keyof typeof statusMeta) => appts.filter((a) => a.status === s).length;
-  const ageYears = patient.birthDate ? computeAgeYears(patient.birthDate, now, pro.timezone) : null;
-
-  const riskBackground =
-    patient.clinicalRecord?.riskFlag && patient.clinicalRecord.background
-      ? patient.clinicalRecord.background
-      : null;
-
-  const evolutionRows = patient.evolutionEntries.map((e) => toEvolutionRow(e, pro.timezone));
   // Hoy en la zona de la profesional (no en UTC: después de las 21 hs en ART ya sería mañana).
-  const todayKey = dayKeyInTz(now, pro.timezone);
+  const todayKey = dayKeyInTz(now, tz);
+  const appts = patient.appointments;
+  const ageYears = patient.birthDate ? computeAgeYears(patient.birthDate, now, tz) : null;
+  const record = patient.clinicalRecord;
+  const riskBackground = record?.riskFlag && record.background ? record.background : null;
+  const evolutionRows = patient.evolutionEntries.map((e) => toEvolutionRow(e, tz));
+
+  // ── Resumen ──
+  const todayConsultation = pickConsultationForDay(consultations.filter((c) => dayKeyInTz(c.consultedAt, tz) === todayKey));
+  // `appts` viene ordenado por startsAt desc: el próximo turno es el último de los futuros.
+  const next = appts
+    .filter((a) => (a.status === "CONFIRMED" || a.status === "AWAITING_PAYMENT") && a.startsAt >= now)
+    .at(-1);
+  const last = consultations[0];
+  // Plan activo más reciente; "desde" = la primera consulta que lo indicó o, si ninguna, su alta.
+  const activePlan = plans
+    .filter((p) => p.status === "ACTIVE")
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+  const [latestPrescription] = prescriptions;
+  const dated = (m: LatestMeasurement | null) => (m ? { value: m.value, dateLabel: formatShortDate(m.recordedAt, tz) } : null);
 
   const consultationRows = consultations.map((c) => ({
     id: c.id,
     consultedAtISO: c.consultedAt.toISOString(),
-    dateLabel: formatInTimeZone(c.consultedAt, pro.timezone, "dd/MM/yyyy"),
-    timeLabel: c.appointment ? formatInTimeZone(c.consultedAt, pro.timezone, "HH:mm") : null,
+    dateLabel: formatInTimeZone(c.consultedAt, tz, "dd/MM/yyyy"),
+    timeLabel: c.appointment ? formatInTimeZone(c.consultedAt, tz, "HH:mm") : null,
     originLabel: c.appointment ? c.appointment.service.name : null,
     chips: consultationChips({
-      measurements: c.evolutionEntries.map((e) => toEvolutionRow(e, pro.timezone)),
+      measurements: c.evolutionEntries.map((e) => toEvolutionRow(e, tz)),
       hasPrescription: c.prescription !== null,
       hasPlan: c.planId !== null,
       notes: c.notes,
@@ -105,28 +114,18 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
 
   const diaryRows = diaryEntries.map((e) => ({
     id: e.id,
-    createdAtLabel: formatDateTime(e.createdAt, pro.timezone),
-    isRecent: Date.now() - e.createdAt.getTime() < 24 * 60 * 60 * 1000,
+    createdAtLabel: formatDateTime(e.createdAt, tz),
+    isRecent: now.getTime() - e.createdAt.getTime() < 24 * 60 * 60 * 1000,
     note: e.note,
     hasPhoto: Boolean(e.photoData),
   }));
-
-  const [latestPrescription, previousPrescription] = prescriptions;
-  const prescriptionDateLabel = (p: (typeof prescriptions)[number]) =>
-    formatInTimeZone(p.consultation.consultedAt, pro.timezone, "dd/MM/yyyy");
-
-  const formulaValues = {
-    sex: patient.sex,
-    activityLevel: patient.activityLevel,
-    nutritionGoal: patient.nutritionGoal,
-    bodyFrame: patient.bodyFrame,
-  };
+  const diaryHasRecent = diaryRows.some((e) => e.isRecent);
 
   return (
     <div>
       <Link
         href="/pacientes"
-        className="-ml-1 inline-flex items-center gap-0.5 rounded-md text-callout text-primary press-none pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="-ml-1 inline-flex min-h-11 items-center gap-0.5 rounded-md text-callout text-primary press-none pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         <ChevronLeft className="size-4" strokeWidth={2} aria-hidden />
         Pacientes
@@ -143,97 +142,97 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
             riskBackground={riskBackground}
           />
         }
-        consultationCount={consultationRows.length}
-        diaryHasRecent={diaryRows.some((e) => e.isRecent)}
+        consultationCount={consultations.length}
+        diaryHasRecent={diaryHasRecent}
         panels={{
           resumen: (
-            <div className="space-y-8">
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
-                <EvolutionSummary entries={evolutionRows} />
-                <div className="space-y-6">
-                  <FormulaDataSection
-                    patientId={patient.id}
-                    values={formulaValues}
-                    ageYears={ageYears}
-                    weight={summaryMeasurement(measurements.weightKg)}
-                    height={summaryMeasurement(measurements.heightCm)}
-                    bodyFat={summaryMeasurement(measurements.bodyFatPercent)}
-                  />
-                  <RequirementSummaryCard
-                    patientId={patient.id}
-                    latest={
-                      latestPrescription
-                        ? {
-                            consultationId: latestPrescription.consultation.id,
-                            dateLabel: prescriptionDateLabel(latestPrescription),
-                            prescribedVctKcal: latestPrescription.prescribedVctKcal,
-                            proteinG: latestPrescription.proteinG,
-                            fatG: latestPrescription.fatG,
-                            carbG: latestPrescription.carbG,
-                          }
-                        : null
+            <SummarySection
+              patientId={patient.id}
+              todayKey={todayKey}
+              todayConsultationId={todayConsultation?.id ?? null}
+              nextAppointment={
+                next
+                  ? {
+                      whenLabel: formatAppointmentWhen(next.startsAt, now, tz),
+                      serviceName: next.service.name,
+                      awaitingPayment: next.status === "AWAITING_PAYMENT",
+                      dayKey: dayKeyInTz(next.startsAt, tz),
                     }
-                    previous={
-                      previousPrescription
-                        ? {
-                            prescribedVctKcal: previousPrescription.prescribedVctKcal,
-                            dateLabel: prescriptionDateLabel(previousPrescription),
-                          }
-                        : null
+                  : null
+              }
+              lastConsultation={
+                last
+                  ? {
+                      id: last.id,
+                      whenLabel: `${capitalizeFirst(formatTimeAgo(last.consultedAt, now, tz))} · ${formatShortDate(last.consultedAt, tz)}`,
+                      recordedText: recordedItemsText(
+                        consultationRecordedItems({
+                          measurements: last.evolutionEntries.map((e) => toEvolutionRow(e, tz)),
+                          hasPrescription: last.prescription !== null,
+                          hasPlan: last.planId !== null,
+                          notes: last.notes,
+                        }),
+                        "short",
+                      ),
                     }
-                  />
-                </div>
-              </div>
-              <section aria-labelledby="turnos-resumen">
-                <SectionLabel>
-                  <span id="turnos-resumen">Turnos</span>
-                </SectionLabel>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <StatTile label="Turnos totales" value={appts.length} />
-                  <StatTile label="Completados" value={count("COMPLETED")} />
-                  <StatTile label="Cancelados" value={count("CANCELLED")} />
-                  <StatTile label="Ausencias" value={count("NO_SHOW")} />
-                </div>
-              </section>
-            <div id="datos-paciente">
-              {riskBackground ? (
-                <div className="mb-6">
-                  <ClinicalAlert background={riskBackground} />
-                </div>
-              ) : null}
-              <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
-                <Card title="Datos del paciente">
-                  <PatientForm
-                    patient={{
-                      id: patient.id,
-                      name: patient.name,
-                      notes: patient.notes,
-                      birthDateISO: patient.birthDate ? patient.birthDate.toISOString().slice(0, 10) : null,
-                    }}
-                  />
-                </Card>
-                <Card title="Ficha clínica">
-                  <ClinicalRecordForm
-                    patientId={patient.id}
-                    record={
-                      patient.clinicalRecord
-                        ? {
-                            background: patient.clinicalRecord.background,
-                            goals: patient.clinicalRecord.goals,
-                            riskFlag: patient.clinicalRecord.riskFlag,
-                          }
-                        : null
+                  : null
+              }
+              activePlan={
+                activePlan
+                  ? {
+                      id: activePlan.id,
+                      title: activePlan.title,
+                      sinceLabel: `desde el ${formatShortDate(activePlan.consultations[0]?.consultedAt ?? activePlan.createdAt, tz)}`,
                     }
-                  />
-                </Card>
-              </div>
-            </div>
-          
-            </div>
+                  : null
+              }
+              weight={weightTrend(
+                patient.evolutionEntries.map((e) => ({
+                  weightKg: e.weightKg !== null ? Number(e.weightKg) : null,
+                  recordedAt: e.recordedAt,
+                })),
+                tz,
+              )}
+              data={{
+                ageYears,
+                values: {
+                  sex: patient.sex,
+                  activityLevel: patient.activityLevel,
+                  nutritionGoal: patient.nutritionGoal,
+                  bodyFrame: patient.bodyFrame,
+                },
+                background: record?.background ?? null,
+                goals: record?.goals ?? null,
+                riskFlag: record?.riskFlag ?? false,
+                weight: dated(measurements.weightKg),
+                height: dated(measurements.heightCm),
+                bodyFat: dated(measurements.bodyFatPercent),
+                prescription: latestPrescription
+                  ? {
+                      kcal: latestPrescription.prescribedVctKcal,
+                      proteinG: latestPrescription.proteinG,
+                      fatG: latestPrescription.fatG,
+                      carbG: latestPrescription.carbG,
+                      dateLabel: formatShortDate(latestPrescription.consultation.consultedAt, tz),
+                    }
+                  : null,
+              }}
+              editable={{
+                id: patient.id,
+                name: patient.name,
+                birthDate: patient.birthDate ? patient.birthDate.toISOString().slice(0, 10) : null,
+                notes: patient.notes,
+                sex: patient.sex,
+                activityLevel: patient.activityLevel,
+                nutritionGoal: patient.nutritionGoal,
+                bodyFrame: patient.bodyFrame,
+                background: record?.background ?? null,
+                goals: record?.goals ?? null,
+                riskFlag: record?.riskFlag ?? false,
+              }}
+            />
           ),
-          consultas: (
-            <ConsultationsSection patientId={patient.id} todayKey={todayKey} consultations={consultationRows} />
-          ),
+          consultas: <ConsultationsSection patientId={patient.id} todayKey={todayKey} consultations={consultationRows} />,
           planes: (
             <PlansSection
               patientId={patient.id}
@@ -241,9 +240,9 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 id: p.id,
                 title: p.title,
                 status: p.status,
-                updatedAtLabel: formatDate(p.updatedAt, pro.timezone),
+                updatedAtLabel: formatDate(p.updatedAt, tz),
                 consultationLabel: p.consultations[0]
-                  ? `Indicado en la consulta del ${formatInTimeZone(p.consultations[0].consultedAt, pro.timezone, "dd/MM")}`
+                  ? `Indicado en la consulta del ${formatInTimeZone(p.consultations[0].consultedAt, tz, "dd/MM")}`
                   : null,
               }))}
               templates={templates.map((t) => ({ id: t.id, title: t.title }))}
@@ -251,22 +250,22 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
           ),
           historial: (
             <HistorySection
-              diaryHasRecent={diaryRows.some((e) => e.isRecent)}
+              diaryHasRecent={diaryHasRecent}
               panels={{
                 medidas: <EvolutionSection patientId={patient.id} entries={evolutionRows} todayKey={todayKey} />,
                 turnos: (
-            <AppointmentsSection
-              appointments={appts.map((a) => ({
-                id: a.id,
-                startsAtLabel: `${formatInTimeZone(a.startsAt, pro.timezone, "dd/MM/yyyy · HH:mm")} hs`,
-                serviceName: a.service.name,
-                priceLabel: formatPrice(a.priceSnapshot.toString(), pro.currency),
-                status: statusMeta[a.status],
-                consultationHref: a.consultation ? `/pacientes/${patient.id}/consultas/${a.consultation.id}` : null,
-                reason: a.reason,
-              }))}
-            />
-          ),
+                  <AppointmentsSection
+                    appointments={appts.map((a) => ({
+                      id: a.id,
+                      startsAtLabel: `${formatInTimeZone(a.startsAt, tz, "dd/MM/yyyy · HH:mm")} hs`,
+                      serviceName: a.service.name,
+                      priceLabel: formatPrice(a.priceSnapshot.toString(), pro.currency),
+                      status: statusMeta[a.status],
+                      consultationHref: a.consultation ? `/pacientes/${patient.id}/consultas/${a.consultation.id}` : null,
+                      reason: a.reason,
+                    }))}
+                  />
+                ),
                 diario: <DiarySection entries={diaryRows} />,
               }}
             />

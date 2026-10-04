@@ -15,6 +15,7 @@ import {
 import { PATIENT_SUMMARY_TEXT } from "@nutri-bot/core";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/primitives/tabs";
 import { useScrollEdge } from "@/components/shell/use-scroll-edge";
+import { Button } from "@/components/ui";
 import {
   PATIENT_TABS,
   patientTabQuery,
@@ -235,5 +236,21 @@ export function PatientTabLink({
     >
       {children}
     </button>
+  );
+}
+
+/** Botón (secundario, con ícono y texto) que cambia de pestaña: "Cargar peso", "Ver planes". */
+export function PatientTabButton({
+  tab,
+  view,
+  focus,
+  children,
+  variant = "secondary",
+}: PatientTabTarget & { children: ReactNode; variant?: "secondary" | "tinted" }) {
+  const ctx = useContext(PatientTabsContext);
+  return (
+    <Button type="button" variant={variant} size="sm" onClick={() => ctx?.go({ tab, view, focus })}>
+      {children}
+    </Button>
   );
 }
