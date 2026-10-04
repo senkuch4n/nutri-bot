@@ -226,3 +226,5 @@ orquestador, para que las revise a la mañana:
 - HU-018a-2 done (extractor en seco: 320 borradores, 0 gramos inventados; 1619 tests). Recorrido: **Build Error en Turbopack** (export type re-export en actions.ts 'use server', bc034b7) → devuelto al implementer antes del reviewer.
 - HU-018a-2: arreglo Turbopack (cccfd78); recorrido OK. → `en_revision`.
 - HU-018a-2 **aprobada**. HU-018a → `aprobada`. PR a develop. Siguen: 018c (buscador) y la tarea directa del bug de auth.ts.
+- HU-017c → `afinando` (afinador Opus; rama feat/hu-017c-pacientes desde develop; sin observar a la nutricionista, con el diagnóstico del 2026-10-03).
+- HU-017c afinada y validada (D1–D18; D2/D3 confirmados por lectura: 5 @newsletter, 9 @lid). → `en_arquitectura` (architect Opus + ui). Tarea directa nueva: el bot no debe crear Patient desde @newsletter.
