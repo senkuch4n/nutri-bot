@@ -5,10 +5,11 @@ import { prisma } from "@nutri-bot/db";
 import {
   capitalizeFirst,
   computeAgeYears,
-  consultationChips,
+  appointmentHistoryText,
   consultationRecordedItems,
   dayKeyInTz,
   formatAppointmentWhen,
+  formatConsultationDay,
   formatDate,
   formatDateTime,
   formatInTimeZone,
@@ -41,14 +42,6 @@ import { PlansSection } from "./plans-section";
 import { SummarySection } from "./summary-section";
 
 export const dynamic = "force-dynamic";
-
-const statusMeta = {
-  CONFIRMED: { tone: "info", label: "Confirmado" },
-  AWAITING_PAYMENT: { tone: "warning", label: "Esperando pago" },
-  COMPLETED: { tone: "success", label: "Completado" },
-  CANCELLED: { tone: "neutral", label: "Cancelado" },
-  NO_SHOW: { tone: "danger", label: "Ausente" },
-} as const;
 
 export default async function PatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -100,16 +93,19 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
 
   const consultationRows = consultations.map((c) => ({
     id: c.id,
-    consultedAtISO: c.consultedAt.toISOString(),
-    dateLabel: formatInTimeZone(c.consultedAt, tz, "dd/MM/yyyy"),
-    timeLabel: c.appointment ? formatInTimeZone(c.consultedAt, tz, "HH:mm") : null,
-    originLabel: c.appointment ? c.appointment.service.name : null,
-    chips: consultationChips({
-      measurements: c.evolutionEntries.map((e) => toEvolutionRow(e, tz)),
-      hasPrescription: c.prescription !== null,
-      hasPlan: c.planId !== null,
-      notes: c.notes,
-    }),
+    dayLabel: formatConsultationDay(c.consultedAt, now, tz),
+    originLabel: c.appointment
+      ? `Con turno (${c.appointment.service.name}) · ${formatInTimeZone(c.consultedAt, tz, "H:mm")}`
+      : "Sin turno",
+    recordedText: recordedItemsText(
+      consultationRecordedItems({
+        measurements: c.evolutionEntries.map((e) => toEvolutionRow(e, tz)),
+        hasPrescription: c.prescription !== null,
+        hasPlan: c.planId !== null,
+        notes: c.notes,
+      }),
+      "sentence",
+    ),
   }));
 
   const diaryRows = diaryEntries.map((e) => ({
@@ -255,12 +251,13 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 medidas: <EvolutionSection patientId={patient.id} entries={evolutionRows} todayKey={todayKey} />,
                 turnos: (
                   <AppointmentsSection
+                    summary={appointmentHistoryText(appts, now)}
                     appointments={appts.map((a) => ({
                       id: a.id,
-                      startsAtLabel: `${formatInTimeZone(a.startsAt, tz, "dd/MM/yyyy · HH:mm")} hs`,
+                      whenLabel: formatAppointmentWhen(a.startsAt, now, tz),
                       serviceName: a.service.name,
                       priceLabel: formatPrice(a.priceSnapshot.toString(), pro.currency),
-                      status: statusMeta[a.status],
+                      status: a.status,
                       consultationHref: a.consultation ? `/pacientes/${patient.id}/consultas/${a.consultation.id}` : null,
                       reason: a.reason,
                     }))}
