@@ -346,13 +346,14 @@ export const REQUIREMENT_TEXT = {
   ): string =>
     `Proteínas ${formatDecimalEs(roundTo(gPerKg, 1), 1)} g/kg: fuera del rango de referencia (${formatDecimalEs(ref.min)}–${formatDecimalEs(ref.max)} g/kg)`,
   saved: "Prescripción guardada",
-  deleted: "Prescripción borrada",
+  deleted: "Cálculo borrado",
   invalid: "Datos inválidos",
   emptyInConsultation: "Todavía no hay un requerimiento indicado en esta consulta.",
   emptyInSummary: "Todavía no hay un requerimiento indicado. Se calcula en una consulta.",
   noBodyFat: "Sin % de grasa medido",
-  deleteConfirmTitle: "¿Borrar la prescripción de esta consulta?",
-  deleteConfirmDescription: "No se puede deshacer.",
+  deleteConfirmTitle: "¿Borrar el cálculo de calorías?",
+  deleteConfirmDescription:
+    "Se borra lo indicado en esta consulta. El Resumen va a mostrar el cálculo anterior, si hay.",
 } as const;
 
 function hasAtMostOneDecimal(value: number): boolean {

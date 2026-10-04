@@ -237,3 +237,5 @@ orquestador, para que las revise a la mañana:
 - HU-017c-2 reviewer: CHANGES_REQUESTED (replaceState con window.history.state: Next no sincroniza y la pestaña/Editar datos se pierde tras una server action). → `rechazada_reintentando` (intento 1/2). Relanzo implementer (Opus).
 - HU-017c-2 ronda 2 done (9da10e9); re-test: cambiar a Historial deja ?tab=historial. → `en_revision` (ronda 2).
 - HU-017c-2 **aprobada** (ronda 2). PR encadenado sobre #30. → 017c-3 `implementando` (rama feat/hu-017c3-consulta; Opus; con R3 y R4).
+- HU-017c-3 done (9 commits, R3 y R4 incluidos); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017c-3 **aprobada**. PR encadenado sobre #31. → 017c-4 `implementando` (rama feat/hu-017c4-informe; Opus; con R5–R7).

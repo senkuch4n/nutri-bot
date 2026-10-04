@@ -3,10 +3,13 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
-import { computeBmi, computeWaistHipRatio } from "@nutri-bot/core";
+import { ISAK_TEXT, computeBmi, computeWaistHipRatio } from "@nutri-bot/core";
+import { useConfirm } from "@/components/confirm";
+import { MoreActionsMenu } from "@/components/more-actions-menu";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { Button, Card, EmptyState, Quantity } from "@/components/ui";
-import { deleteEvolutionEntryAction } from "./clinical-actions";
+import { Card, EmptyState, Quantity } from "@/components/ui";
+import { UNDO_TEXT, useDeferredDelete } from "@/lib/deferred-delete";
+import { deleteEvolutionEntryByIdAction } from "./clinical-actions";
 import type { EvolutionRow } from "./evolution-types";
 
 /** El resto de las medidas que no tienen columna propia, con los mismos textos de siempre. */
@@ -25,6 +28,60 @@ function detailText(e: EvolutionRow): string {
   ]
     .filter((v): v is string => v !== null)
     .join(" · ");
+}
+
+const VALUE_LABELS = [
+  ["weightKg", "Peso"],
+  ["heightCm", "Talla"],
+  ["waistCm", "Cintura"],
+  ["hipCm", "Cadera"],
+  ["bodyFatPercent", "Grasa"],
+  ["muscleMassKg", "Masa muscular"],
+] as const satisfies readonly (readonly [keyof EvolutionRow, string])[];
+
+/** "…" de una fila de Historial → "Borrar medición", con confirmación y "Deshacer" (HU-017c-3). */
+function EvolutionRowMenu({ patientId, entry }: { patientId: string; entry: EvolutionRow }) {
+  const confirm = useConfirm();
+  const deferDelete = useDeferredDelete();
+  const day = entry.recordedAtShortLabel.slice(0, 5);
+  const isak = entry.study === "ISAK";
+
+  // Confirmación en el handler, fuera de toda transición (React 19: si no, deadlock).
+  async function handleDelete() {
+    const labels = VALUE_LABELS.filter(([key]) => entry[key] !== null).map(([, label]) => label);
+    const ok = await confirm(
+      isak
+        ? { title: ISAK_TEXT.deleteTitle, description: ISAK_TEXT.deleteDescription, confirmLabel: ISAK_TEXT.deleteLabel }
+        : {
+            title: UNDO_TEXT.measurement.confirmTitle,
+            description: UNDO_TEXT.measurement.confirmDescription(day, labels),
+            confirmLabel: UNDO_TEXT.measurement.confirmLabel,
+          },
+    );
+    if (!ok) return;
+    deferDelete({
+      // El estudio ISAK usa su propia key: así también se oculta en la tarjeta de la consulta.
+      key: isak ? `isak:${entry.id}` : `measurement:${entry.id}`,
+      message: isak ? ISAK_TEXT.deleted : UNDO_TEXT.measurement.deleted,
+      undoneMessage: isak ? UNDO_TEXT.study.undone : UNDO_TEXT.measurement.undone,
+      commit: () => deleteEvolutionEntryByIdAction(patientId, entry.id),
+    });
+  }
+
+  return (
+    <MoreActionsMenu
+      label={`Más opciones de la medición del ${entry.recordedAtShortLabel}`}
+      actions={[
+        {
+          key: "borrar",
+          label: isak ? ISAK_TEXT.deleteLabel : UNDO_TEXT.measurement.confirmLabel,
+          icon: <Trash2 />,
+          destructive: true,
+          onSelect: handleDelete,
+        },
+      ]}
+    />
+  );
 }
 
 export function EvolutionTable({
@@ -112,21 +169,9 @@ export function EvolutionTable({
       {
         id: "acciones",
         header: "",
-        className: "w-12",
+        className: "w-14",
         cell: (e) => (
-          <form action={deleteEvolutionEntryAction}>
-            <input type="hidden" name="id" value={e.id} />
-            <input type="hidden" name="patientId" value={patientId} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-              aria-label={`Borrar la medición del ${e.recordedAtShortLabel}`}
-            >
-              <Trash2 aria-hidden />
-            </Button>
-          </form>
+          <EvolutionRowMenu patientId={patientId} entry={e} />
         ),
       },
     ];

@@ -840,3 +840,14 @@ describe("HU-008: calculadora pediátrica", () => {
     expect(d2.adjustmentPercent).toBe(-20);
   });
 });
+
+describe("REQUIREMENT_TEXT: borrado con Deshacer (HU-017c-3, solo panel)", () => {
+  it("confirmación y toast del cálculo", () => {
+    expect(REQUIREMENT_TEXT.deleteConfirmTitle).toBe("¿Borrar el cálculo de calorías?");
+    expect(REQUIREMENT_TEXT.deleteConfirmDescription).toBe(
+      "Se borra lo indicado en esta consulta. El Resumen va a mostrar el cálculo anterior, si hay.",
+    );
+    expect(REQUIREMENT_TEXT.deleteConfirmDescription).not.toMatch(/deshacer/i);
+    expect(REQUIREMENT_TEXT.deleted).toBe("Cálculo borrado");
+  });
+});

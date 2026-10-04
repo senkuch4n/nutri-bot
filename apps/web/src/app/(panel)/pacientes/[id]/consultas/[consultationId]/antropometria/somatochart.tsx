@@ -1,5 +1,6 @@
 "use client";
 
+import { useReducedMotionConfig } from "motion/react";
 import { CartesianGrid, ReferenceDot, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis } from "recharts";
 import { SOMATOCHART_DOMAIN, SOMATOCHART_VERTICES, formatFixedEs } from "@nutri-bot/core";
 import {
@@ -19,6 +20,7 @@ const config = {
 } satisfies ChartConfig;
 
 const V = SOMATOCHART_VERTICES;
+const ENTRY_MS = 400;
 const ORIGIN = { x: 0, y: 0 };
 /** Ejes (origen → vértice) y contorno (vértice → vértice). El contorno curvo es de la HU-007. */
 const SEGMENTS = [
@@ -53,6 +55,8 @@ export function Somatochart({
   /** Por qué no se puede dibujar (p. ej. "Sin dato (falta mesomorfia)"). */
   missingNote?: string;
 }) {
+  // HU-017c-3: entrada de ≤ 400 ms; sin animación con movimiento reducido.
+  const reduced = useReducedMotionConfig();
   if (!current) {
     return <p className="text-sm text-muted-foreground">{missingNote ?? "Sin datos para la somatocarta."}</p>;
   }
@@ -104,9 +108,25 @@ export function Somatochart({
           />
           <ChartLegend verticalAlign="top" content={<ChartLegendContent />} />
           {previous ? (
-            <Scatter name="previous" data={[previous]} fill="var(--color-previous)" shape="diamond" legendType="diamond" />
+            <Scatter
+              name="previous"
+              data={[previous]}
+              fill="var(--color-previous)"
+              shape="diamond"
+              legendType="diamond"
+              isAnimationActive={!reduced}
+              animationDuration={ENTRY_MS}
+            />
           ) : null}
-          <Scatter name="current" data={[current]} fill="var(--color-current)" shape="circle" legendType="circle" />
+          <Scatter
+            name="current"
+            data={[current]}
+            fill="var(--color-current)"
+            shape="circle"
+            legendType="circle"
+            isAnimationActive={!reduced}
+            animationDuration={ENTRY_MS}
+          />
         </ScatterChart>
       </ChartContainer>
       <figcaption className="sr-only">

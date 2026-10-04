@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, CalendarSearch } from "lucide-react";
 import {
   CONSULTATION_TEXT,
   ISAK_REPORT_TEXT,
@@ -10,6 +10,7 @@ import {
   computeAgeMonths,
   computeAgeYears,
   dayKeyInTz,
+  formatConsultationDay,
   formatDateTime,
   formatInTimeZone,
   getRequirementBlockingMissing,
@@ -27,8 +28,7 @@ import {
   toIsakMeasures,
   toPrescriptionSnapshot,
 } from "@nutri-bot/db/domain";
-import { Separator } from "@/components/primitives/separator";
-import { Alert, Badge, Button, Card, PageHeader } from "@/components/ui";
+import { Alert, Button, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { getProfessional } from "@/lib/professional";
 import { ConsultationDateSheet } from "../../consultation-date-sheet";
@@ -36,10 +36,11 @@ import { AnthropometricDiagnosisCard, type DiagnosisSourceKey } from "./anthropo
 import { ConsultationMeasurements } from "./consultation-measurements";
 import { ConsultationNotes } from "./consultation-notes";
 import { ConsultationPlan, type PlanOption } from "./consultation-plan";
-import { DeleteConsultationButton } from "./delete-consultation-button";
+import { ConsultationMoreMenu } from "./delete-consultation-button";
 import { IsakCard } from "./isak-card";
 import type { CalculatorProps } from "./requirement-calculator";
 import { RequirementSection } from "./requirement-section";
+import { StickyAside } from "./sticky-aside";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,14 @@ export default async function ConsultationPage({
   const patientName = patient.name ?? patient.phone;
   const age = patient.birthDate ? computeAgeYears(patient.birthDate, consultation.consultedAt, tz) : null;
   const description = [patientName, age !== null ? `${age} años` : null].filter(Boolean).join(" · ");
-  const todayKey = dayKeyInTz(new Date(), tz);
+  const now = new Date();
+  const todayKey = dayKeyInTz(now, tz);
+  // "Consulta del miércoles 24/09": el día de la semana va en minúscula, en medio de la frase.
+  const dayText = formatConsultationDay(consultation.consultedAt, now, tz);
+  const title = `Consulta del ${dayText.charAt(0).toLowerCase()}${dayText.slice(1)}`;
+  const originText = appointment
+    ? `Con turno · ${appointment.service.name} · ${formatInTimeZone(appointment.startsAt, tz, "H:mm")}`
+    : "Sin turno";
 
   const entries = consultation.evolutionEntries.map((e) => toEvolutionRow(e, tz));
   const canDelete = canDeleteConsultation({
@@ -199,44 +207,48 @@ export default async function ConsultationPage({
   return (
     <div>
       <PageHeader
-        title={`Consulta del ${formatInTimeZone(consultation.consultedAt, tz, "dd/MM/yyyy")}`}
+        title={title}
         description={description}
         back={{ href: `/pacientes/${id}?tab=consultas`, label: `Volver a ${patientName}` }}
         action={
-          appointment ? null : (
-            <ConsultationDateSheet
-              mode="edit"
+          <>
+            {appointment ? null : (
+              <ConsultationDateSheet
+                mode="edit"
+                patientId={id}
+                consultationId={consultation.id}
+                todayKey={todayKey}
+                currentDayKey={dayKeyInTz(consultation.consultedAt, tz)}
+                trigger={
+                  <Button type="button" variant="secondary" size="lg">
+                    <CalendarDays aria-hidden />
+                    Cambiar fecha
+                  </Button>
+                }
+              />
+            )}
+            <ConsultationMoreMenu
               patientId={id}
               consultationId={consultation.id}
-              todayKey={todayKey}
-              currentDayKey={dayKeyInTz(consultation.consultedAt, tz)}
-              trigger={
-                <Button type="button" variant="secondary" size="sm">
-                  <CalendarDays aria-hidden />
-                  Cambiar fecha
-                </Button>
-              }
+              canDelete={canDelete}
+              dayLabel={formatInTimeZone(consultation.consultedAt, tz, "dd/MM")}
             />
-          )
+          </>
         }
       />
 
-      <div className="-mt-4 mb-6 flex flex-wrap items-center gap-2 text-sm">
-        {appointment ? (
-          <>
-            <span className="font-medium">
-              Turno · {appointment.service.name} · {formatInTimeZone(appointment.startsAt, tz, "HH:mm")} hs
-            </span>
-            <span className="text-muted-foreground">Fecha del turno</span>
-          </>
-        ) : (
-          <Badge tone="neutral">Sin turno</Badge>
-        )}
-      </div>
+      <p className="-mt-6 mb-6 text-callout tabular-nums text-muted-foreground">{originText}</p>
 
+      {/* Un solo aviso amarillo, con la acción para resolverlo (HU-017c-3). */}
       {appointment && appointment.status !== "COMPLETED" ? (
         <Alert tone="warning" className="mb-6">
-          {CONSULTATION_TEXT.appointmentNotCompleted}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <span>{CONSULTATION_TEXT.appointmentNotCompleted}</span>
+            <ButtonLink href={`/?fecha=${dayKeyInTz(appointment.startsAt, tz)}`} variant="secondary" size="sm">
+              <CalendarSearch aria-hidden />
+              Abrir el turno
+            </ButtonLink>
+          </div>
         </Alert>
       ) : null}
 
@@ -246,8 +258,8 @@ export default async function ConsultationPage({
         </Alert>
       ) : null}
 
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
-        <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start xl:gap-8">
+        <div className="min-w-0 space-y-6">
           <ConsultationMeasurements patientId={id} consultationId={consultation.id} entries={entries} />
           <IsakCard
             patientId={id}
@@ -285,7 +297,7 @@ export default async function ConsultationPage({
             />
           )}
         </div>
-        <div className="space-y-6">
+        <StickyAside label="Plan, motivo y notas">
           <ConsultationPlan
             patientId={id}
             consultationId={consultation.id}
@@ -294,16 +306,13 @@ export default async function ConsultationPage({
           />
           {/* HU-013 (D8): motivo del turno, de solo lectura (no se copia a las notas). */}
           {appointment?.reason ? (
-            <Card title="Motivo indicado al reservar" description="Se edita desde el turno en el calendario.">
-              <p className="whitespace-pre-wrap break-words text-sm">{appointment.reason}</p>
+            <Card title="Motivo de la reserva" description="Se edita desde el turno en el calendario.">
+              <p className="whitespace-pre-wrap break-words text-body">{appointment.reason}</p>
             </Card>
           ) : null}
           <ConsultationNotes patientId={id} consultationId={consultation.id} notes={consultation.notes} />
-        </div>
+        </StickyAside>
       </div>
-
-      <Separator className="my-8" />
-      <DeleteConsultationButton patientId={id} consultationId={consultation.id} canDelete={canDelete} />
     </div>
   );
 }

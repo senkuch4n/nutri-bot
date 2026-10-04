@@ -3,6 +3,7 @@
 import { Plus, Stethoscope } from "lucide-react";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { Button, EmptyState } from "@/components/ui";
+import { usePendingDeletions } from "@/lib/deferred-delete";
 import { NewConsultationButton } from "./consultation-date-sheet";
 
 export interface ConsultationRow {
@@ -26,6 +27,9 @@ export function ConsultationsSection({
   todayKey: string;
   consultations: ConsultationRow[];
 }) {
+  // HU-017c-3: la consulta con borrado pendiente ("Deshacer") no se lista.
+  const pending = usePendingDeletions();
+  const visible = consultations.filter((c) => !pending.has(`consultation:${c.id}`));
   const newButton = (
     <NewConsultationButton
       patientId={patientId}
@@ -45,9 +49,9 @@ export function ConsultationsSection({
         <h2 id="consultas-titulo" className="text-title-3">
           Consultas
         </h2>
-        {consultations.length > 0 ? newButton : null}
+        {visible.length > 0 ? newButton : null}
       </div>
-      {consultations.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="rounded-xl bg-card shadow-card more-contrast:border more-contrast:border-input">
           <EmptyState
             icon={Stethoscope}
@@ -58,7 +62,7 @@ export function ConsultationsSection({
         </div>
       ) : (
         <GroupedList>
-          {consultations.map((c) => (
+          {visible.map((c) => (
             <GroupedListRow
               key={c.id}
               size="lg"

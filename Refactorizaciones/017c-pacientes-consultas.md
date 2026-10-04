@@ -1404,3 +1404,11 @@ Revertir 017c-1 vuelve la tabla de pacientes; los helpers de core quedan sin uso
   en todas las páginas del panel. Encontrar la causa (render condicional que cambia el orden de hooks/ids, p. ej. un
   `useMediaQuery` que difiere en SSR) y arreglarlo; verificar con la consola limpia al recargar `/pacientes/<id>`.
 - R4. Placeholders numéricos con coma decimal ("70,5", no "70.5") en Historial → Nueva medición.
+
+## Agregados a 017c-4 (de la revisión de 017c-3)
+
+- R5. "Calcular requerimiento" se libera apenas llega la página revalidada (`prescription === null`), sin esperar
+  `releaseAfterMs`; si no, cambiar el texto del aviso.
+- R6. "Quitar plan" (`consultation-plan.tsx`) muestra estado de carga (usar el `isPending` de la transición).
+- R7. Borrar un estudio ISAK desde Historial dice "y su informe" cuando el estudio tiene informe (pasar `hasReport`
+  a la fila de `evolution-table.tsx`).
