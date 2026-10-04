@@ -265,3 +265,31 @@ de prueba ni migraciones (la `food_measures` aplicada no se tocó). No hay mensa
 - Recorrido 10-2 en Chrome (1366/768/390, alias de `?tab=`, "Volver a <paciente>" desde un plan, lo escrito en
   "Nueva medición" se conserva, "Editar datos" guardando solo en una paciente de prueba creada por id, movimiento
   reducido). Incluye R2 (pasos 9–12 de §10.3) y las tres tareas de D1 en `progress/recorrido_HU-017c-2.md`.
+
+## Arreglo en runtime: íconos que cruzaban a un componente cliente (`f5e6e2f`)
+
+- **Qué fallaba:** el recorrido encontró que `/pacientes/<id>` caía en "Algo salió mal". `summary-section.tsx`
+  (server) le pasaba a `SummaryCard` (cliente) el componente del ícono (`icon={Scale}`), que es una función.
+  Next lo rechaza en runtime y el build no lo detecta.
+- **Arreglo:** `SummaryCard.icon` pasa a ser `ReactNode` y recibe el ícono ya renderizado (`icon={<Scale />}`). El
+  tamaño y el trazo los pone la tarjeta (`[&_svg]:size-4`).
+- **Revisión del diff completo (017c-1 + 017c-2):** no hay otro caso.
+  - `consultations-section.tsx`, `plans-section.tsx`, `patient-directory.tsx` y `dev-diseno/_sections/lists.tsx` son
+    `"use client"`: el ícono no sale del cliente.
+  - `diary-section.tsx` y `appointments-section.tsx` son server y le pasan íconos a `EmptyState`, o los renderizan
+    ellos. `EmptyState` es server-safe y no es cliente.
+  - El resto de los server components (`page.tsx`, `patient-header.tsx`, `patient-data-section.tsx`, `clinical-alert.tsx`,
+    `pacientes/page.tsx`) solo le pasan a los componentes cliente datos serializables y elementos ya renderizados.
+- **Verificación nueva, en runtime:**
+  - Build en una copia del scratchpad, `next start -p 3197` y una cookie de sesión de Auth.js generada en local con el
+    `AUTH_SECRET` del `.env`. El script vivía en la copia y se borró con ella.
+  - Se pidieron con GET `/pacientes/cmtyq7tys0000xnwszq8d9maa` (también con `?tab=historial&vista=turnos`,
+    `?tab=datos&editar=datos` y `?tab=planes`), `/pacientes` y `/?fecha=2026-10-08`. Todas dieron 200, sin filas de
+    error en el payload RSC (`E{"digest"…}`) y sin "cannot be passed" en el log del servidor.
+  - "Algo salió mal" no aparece en el HTML aunque la página falle: lo dibuja el `error.tsx` en el cliente. Por eso el
+    criterio son las filas `E{"digest"}` del payload.
+  - Control negativo: el build con el código anterior daba 200, pero con 2 filas `E{"digest"}` y 4 "cannot be passed"
+    en el log. El chequeo detecta el problema.
+  - Solo lectura: GET, sin escribir en la base.
+- typecheck (4 workspaces), test (103 archivos, 1778 tests), lint (solo el warning previo de `logo-form`), `next build` y
+  `next build --turbopack` en verde. El dev server de :3100 no se tocó (responde 200).
