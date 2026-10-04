@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { HIDDEN_NUMBER_TEXT, PATIENT_DIRECTORY_TEXT, type PatientDirectoryRow } from "@nutri-bot/core";
 import {
   Sheet,
@@ -57,9 +57,15 @@ export function NameContactSheet({
 
 function NameContactForm({ id, onSaved }: { id: string; onSaved: (name: string) => void }) {
   const [state, formAction, pending] = useActionState(setPatientNameAction, initial);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Controlado: React 19 resetea los campos no controlados de un <form action> al terminar la action,
+  // y con un error ("No se pudo guardar") se perdería lo que se escribió.
+  const [name, setName] = useState("");
 
   useEffect(() => {
     if (state.ok && state.name) onSaved(state.name);
+    // Con error, el foco vuelve al campo (el error se anuncia con role="alert").
+    else if (state.error) inputRef.current?.focus();
     // Solo la identidad de `state`: cada respuesta de la action es un objeto nuevo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
@@ -69,7 +75,10 @@ function NameContactForm({ id, onSaved }: { id: string; onSaved: (name: string) 
       <input type="hidden" name="id" value={id} />
       <Field label={T.setNameField} error={state.ok ? undefined : state.error}>
         <Input
+          ref={inputRef}
           name="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           autoFocus
           maxLength={120}
           autoComplete="off"
