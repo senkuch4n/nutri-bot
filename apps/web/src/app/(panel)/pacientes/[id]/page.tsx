@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
 import {
   computeAgeYears,
@@ -30,6 +30,7 @@ import { ConsultationsSection } from "./consultations-section";
 import { DiarySection } from "./diary-section";
 import { EvolutionSection } from "./evolution-section";
 import { EvolutionSummary } from "./evolution-summary";
+import { HistorySection } from "./history-section";
 import { FormulaDataSection } from "./formula-data-section";
 import { RequirementSummaryCard } from "./requirement-summary-card";
 import { PatientForm } from "./patient-form";
@@ -79,17 +80,6 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
   const count = (s: keyof typeof statusMeta) => appts.filter((a) => a.status === s).length;
   const ageYears = patient.birthDate ? computeAgeYears(patient.birthDate, now, pro.timezone) : null;
 
-  // `appts` viene ordenado por startsAt desc: el próximo turno es el último de los futuros.
-  const next = appts
-    .filter((a) => (a.status === "CONFIRMED" || a.status === "AWAITING_PAYMENT") && a.startsAt >= now)
-    .at(-1);
-  const nextAppointment = next
-    ? {
-        label: formatDateTime(next.startsAt, pro.timezone),
-        serviceName: next.service.name,
-        awaitingPayment: next.status === "AWAITING_PAYMENT",
-      }
-    : null;
   const riskBackground =
     patient.clinicalRecord?.riskFlag && patient.clinicalRecord.background
       ? patient.clinicalRecord.background
@@ -136,30 +126,24 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
     <div>
       <Link
         href="/pacientes"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        className="-ml-1 inline-flex items-center gap-0.5 rounded-md text-callout text-primary press-none pressed:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
+        <ChevronLeft className="size-4" strokeWidth={2} aria-hidden />
         Pacientes
       </Link>
 
       <PatientTabs
         header={
           <PatientHeader
+            patientId={patient.id}
             name={patient.name}
             phone={patient.phone}
             whatsappJid={patient.whatsappJid}
             ageYears={ageYears}
-            nextAppointment={nextAppointment}
             riskBackground={riskBackground}
           />
         }
-        counts={{
-          consultas: consultationRows.length,
-          evolucion: evolutionRows.length,
-          planes: plans.length,
-          diario: diaryRows.length,
-          turnos: appts.length,
-        }}
+        consultationCount={consultationRows.length}
         diaryHasRecent={diaryRows.some((e) => e.isRecent)}
         panels={{
           resumen: (
@@ -211,13 +195,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                   <StatTile label="Ausencias" value={count("NO_SHOW")} />
                 </div>
               </section>
-            </div>
-          ),
-          consultas: (
-            <ConsultationsSection patientId={patient.id} todayKey={todayKey} consultations={consultationRows} />
-          ),
-          datos: (
-            <div>
+            <div id="datos-paciente">
               {riskBackground ? (
                 <div className="mb-6">
                   <ClinicalAlert background={riskBackground} />
@@ -250,8 +228,12 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 </Card>
               </div>
             </div>
+          
+            </div>
           ),
-          evolucion: <EvolutionSection patientId={patient.id} entries={evolutionRows} todayKey={todayKey} />,
+          consultas: (
+            <ConsultationsSection patientId={patient.id} todayKey={todayKey} consultations={consultationRows} />
+          ),
           planes: (
             <PlansSection
               patientId={patient.id}
@@ -267,8 +249,12 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
               templates={templates.map((t) => ({ id: t.id, title: t.title }))}
             />
           ),
-          diario: <DiarySection entries={diaryRows} />,
-          turnos: (
+          historial: (
+            <HistorySection
+              diaryHasRecent={diaryRows.some((e) => e.isRecent)}
+              panels={{
+                medidas: <EvolutionSection patientId={patient.id} entries={evolutionRows} todayKey={todayKey} />,
+                turnos: (
             <AppointmentsSection
               appointments={appts.map((a) => ({
                 id: a.id,
@@ -279,6 +265,10 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 consultationHref: a.consultation ? `/pacientes/${patient.id}/consultas/${a.consultation.id}` : null,
                 reason: a.reason,
               }))}
+            />
+          ),
+                diario: <DiarySection entries={diaryRows} />,
+              }}
             />
           ),
         }}

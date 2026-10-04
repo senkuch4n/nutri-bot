@@ -18,7 +18,7 @@ const KPIS = [
 
 /** Card "Evolución" de la pestaña Resumen: últimos valores con variación + barras de peso. */
 export function EvolutionSummary({ entries }: { entries: EvolutionRow[] }) {
-  const link = <PatientTabLink tab="evolucion">Ver evolución completa</PatientTabLink>;
+  const link = <PatientTabLink tab="historial" view="medidas">Ver evolución completa</PatientTabLink>;
 
   if (entries.length === 0) {
     return (
@@ -27,7 +27,7 @@ export function EvolutionSummary({ entries }: { entries: EvolutionRow[] }) {
           icon={ChartColumn}
           title="Todavía no hay mediciones"
           description="Cargá la primera en la pestaña Evolución."
-          action={<PatientTabLink tab="evolucion">Cargar medición</PatientTabLink>}
+          action={<PatientTabLink tab="historial" view="medidas">Cargar medición</PatientTabLink>}
         />
       </Card>
     );

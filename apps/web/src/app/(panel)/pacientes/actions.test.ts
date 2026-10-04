@@ -170,8 +170,7 @@ describe("updatePatientDataAction", () => {
   });
 
   it("sin id no escribe", async () => {
-    const { id: _id, ...rest } = full;
-    const result = await updatePatientDataAction({ ok: false }, form(rest));
+    const result = await updatePatientDataAction({ ok: false }, form({ ...full, id: "" }));
     expect(result.ok).toBe(false);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
