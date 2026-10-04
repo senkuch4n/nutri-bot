@@ -27,6 +27,8 @@ vi.mock("@nutri-bot/db", () => ({ prisma: {
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 // HU-018c: la página del plan monta el buscador de recetas; sus actions no se usan en este test.
 vi.mock("@/app/(panel)/recipe-picker-actions", () => ({}));
+// HU-018d: el editor monta el cuadro de medida casera; sus actions no se usan en este test.
+vi.mock("@/app/(panel)/food-measure-actions", () => ({}));
 vi.mock("server-only", () => ({})); // lib/revalidate-menu-owner (HU-018c)
 vi.mock("next/navigation", () => ({ notFound: vi.fn(), redirect: vi.fn() }));
 vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
@@ -83,8 +85,11 @@ describe("SARA2-only new food selections", () => {
     const page = await PlanPage({ params: Promise.resolve({ id: "patient", planId: "plan" }) });
     expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
     const editor = propsWith(page, "ownerField")[0]!;
-    expect(editor.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2" }]);
+    expect(editor.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);
     expect(editor.meals).toMatchObject([{ items: [{ foodId: "own", foodName: "Historical food", macros: { kcal: 100 } }] }]);
+    // HU-018d: las medidas de los SARA 2 llegan al editor.
+    expect(mocks.listMeasuresForPicker).toHaveBeenCalled();
+    expect(editor.measures).toEqual({});
   });
 
   it("passes only active SARA2 to the template picker", async () => {
@@ -93,7 +98,7 @@ describe("SARA2-only new food selections", () => {
     }] });
     const page = await TemplatePage({ params: Promise.resolve({ id: "template" }) });
     expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
-    expect(propsWith(page, "ownerField")[0]?.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2" }]);
+    expect(propsWith(page, "ownerField")[0]?.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);
     expect(propsWith(page, "ownerField")[0]?.meals).toMatchObject([{ items: [{ foodId: "own", foodName: "Historical food" }] }]);
   });
 
