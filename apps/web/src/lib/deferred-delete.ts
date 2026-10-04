@@ -28,7 +28,7 @@ export interface DeferredDeleteStoreOptions {
   /**
    * Después de un commit exitoso la key sigue oculta este tiempo y recién después se libera. Así el
    * dato no reaparece entre que la action responde y llega la página revalidada, y una key que se
-   * puede volver a usar (`prescription:<consultationId>`) no queda oculta para siempre.
+   * puede volver a usar no queda oculta para siempre.
    */
   releaseAfterMs?: number;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -169,8 +169,17 @@ export function measurementLabelsText(labels: readonly string[]): string {
   return ` (${shown.join(", ")}${labels.length > 2 ? "…" : ""})`;
 }
 
+/**
+ * Key del borrado diferido de un cálculo (ronda 2 de 017c-4): va por el id de la prescripción, no por
+ * la consulta. Así, durante `releaseAfterMs`, la key vieja oculta solo el cálculo borrado y nunca uno
+ * nuevo (que tiene otro id). Sin prescripción → una key que nunca se programa.
+ */
+export function prescriptionDeletionKey(prescriptionId: string | null): string {
+  return `prescription:${prescriptionId ?? ""}`;
+}
+
 export type DeferredDeleteOptions = {
-  /** `consultation:<id>`, `isak:<entryId>`, `prescription:<consultationId>`, `measurement:<entryId>`. */
+  /** `consultation:<id>`, `isak:<entryId>`, `prescriptionDeletionKey(<prescriptionId>)`, `measurement:<entryId>`. */
   key: string;
   /** "Estudio borrado". */
   message: string;

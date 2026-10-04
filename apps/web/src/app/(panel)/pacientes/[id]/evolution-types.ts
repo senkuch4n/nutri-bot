@@ -38,6 +38,8 @@ export interface EvolutionRow {
   note: string | null;
   /** HU-006: "ISAK" = la fila es el estudio antropométrico ISAK de la consulta. */
   study: "ISAK" | null;
+  /** R7 (017c-4): el estudio ISAK tiene informe. Solo viene en la ficha (Historial); undefined = no se sabe. */
+  hasReport?: boolean;
 }
 
 export const PERIMETER_MEASURES = [

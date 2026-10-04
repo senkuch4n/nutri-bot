@@ -438,3 +438,8 @@
 ## HU-017c-3 — Consulta, ISAK y Deshacer (aprobada 2026-10-04, senkuch4n)
 - Borrado diferido con "Deshacer" (consulta, estudio, cálculo, medición, quitar plan), destructivas en menú "…" con confirmaciones simples, botones grandes con ícono y texto, columna lateral sticky, ISAK con índice y barras z. Arregla el error de hidratación del sidebar en todo el panel (R3) y la coma decimal (R4).
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. R5–R7 pasan a 017c-4.
+
+## HU-017c-4 — Informe antropométrico y su PDF (aprobada 2026-10-04, senkuch4n) · HU-017c cerrada
+- Avisos agrupados en "Antes de enviar" con su acción, marca "Editado", jerarquía de acciones, confirmación de envío; PDF del informe con paleta fría y escala Inter (el PDF del plan no cambia). R5–R7 de la revisión de 017c-3.
+- Reviewer: CHANGES_REQUESTED en la 1ª (R5 ocultaba un cálculo nuevo) → APPROVED en la ronda 2. HU-017c completa (4 entregas, PR #30 → #31 → #32 → #33).
+- Pendiente del usuario: validar con la nutricionista las 3 tareas de D1.

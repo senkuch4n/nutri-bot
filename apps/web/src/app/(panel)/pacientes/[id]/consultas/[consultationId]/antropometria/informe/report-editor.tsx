@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition, type ReactNode } from "react";
-import { ArrowLeft, FileDown, Send } from "lucide-react";
+import { ArrowLeft, Download, FileText, RotateCcw, Save, Send } from "lucide-react";
 import {
   ISAK_REPORT_TEXT,
   ISAK_REPORT_TEXT_KEYS,
@@ -14,8 +14,9 @@ import {
 } from "@nutri-bot/core";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/primitives/table";
 import { useConfirm } from "@/components/confirm";
-import { Alert, Badge, Button, ButtonLink, Card, FormError, PageHeader, Textarea, cn } from "@/components/ui";
+import { Alert, Badge, Button, ButtonLink, Card, FormError, Textarea, cn } from "@/components/ui";
 import { notify } from "@/lib/notify";
+import { REPORT_EDITOR_TEXT as E, isEditedText, reportIssues, sendConfirmCopy } from "@/lib/report-editor-text";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import {
   generateIsakReportPdfAction,
@@ -25,6 +26,9 @@ import {
 } from "../../../../report-actions";
 
 type Running = "save" | "generate" | "send" | null;
+
+/** Secundarias: 44 px en el celular (grilla táctil), 36 px desde sm, como pide la HU para las secundarias. */
+const SECONDARY_SIZE = "sm:h-9 sm:rounded-md sm:px-4 sm:text-callout sm:font-medium";
 
 const T = ISAK_REPORT_TEXT;
 
@@ -107,7 +111,7 @@ function ReportTextField({
 }) {
   const id = `informe-${textKey}`;
   const errorId = `${id}-error`;
-  const isDraft = value === draft;
+  const edited = isEditedText(value, draft);
   return (
     <div className="mt-5">
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
@@ -122,21 +126,25 @@ function ReportTextField({
             </>
           ) : null}
         </label>
-        <div className="flex items-center gap-2">
-          {isDraft ? null : (
-            <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={onReset} disabled={disabled}>
-              {T.resetDraft}
+        {/* HU-017c-4: la marca aparece solo en los campos tocados, junto a "Restaurar el texto original". */}
+        {edited ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="whitespace-nowrap">
+              <Badge>{E.edited}</Badge>
+            </span>
+            <Button type="button" variant="plain" size="sm" className="h-8 px-0" onClick={onReset} disabled={disabled}>
+              <RotateCcw aria-hidden />
+              {E.restore}
             </Button>
-          )}
-          <span className="whitespace-nowrap">
-            <Badge>{isDraft ? T.draftBadge : T.editedBadge}</Badge>
-          </span>
-        </div>
+          </div>
+        ) : null}
       </div>
       <Textarea
         id={id}
         ref={textareaRef}
         rows={textKey === "conclusions" ? 8 : 4}
+        // En el celular la barra de acciones queda pegada abajo: que no tape el campo con foco.
+        className="max-sm:scroll-mb-48"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-invalid={error ? true : undefined}
@@ -160,11 +168,14 @@ export function ReportEditor({
   model,
   drafts,
   initialTexts,
+  patientName,
+  whatsappJid,
   phone,
   hasPdf,
   lastPdfLabel,
   stale,
-  professionalNotice,
+  licenseMissing,
+  signatureMissing,
   reportHref,
   studyHref,
   editStudyHref,
@@ -174,12 +185,15 @@ export function ReportEditor({
   model: IsakReportModel;
   drafts: IsakReportTexts;
   initialTexts: IsakReportTexts;
+  patientName: string | null;
+  whatsappJid: string;
   phone: string;
   hasPdf: boolean;
   lastPdfLabel: string | null;
   stale: boolean;
-  /** HU-016 (D8): aviso único por matrícula y/o firma faltante; null si no falta nada. */
-  professionalNotice: string | null;
+  /** HU-016 (D8): datos de la profesional que faltan en el PDF. */
+  licenseMissing: boolean;
+  signatureMissing: boolean;
   reportHref: string;
   studyHref: string;
   editStudyHref: string;
@@ -209,9 +223,9 @@ export function ReportEditor({
   // confirm siempre acá, en el handler, antes de cualquier transición.
   async function resetDraft(key: IsakReportTextKey) {
     const ok = await confirm({
-      title: T.resetDraftTitle,
+      title: E.restoreTitle,
       description: T.resetDraftDescription,
-      confirmLabel: T.resetDraft,
+      confirmLabel: E.restoreConfirm,
     });
     if (ok) setText(key, drafts[key]);
   }
@@ -244,16 +258,34 @@ export function ReportEditor({
 
   const save = () => run("save", saveIsakReportTextsAction, () => notify.saved(T.textsSaved));
   const generate = () => run("generate", generateIsakReportPdfAction, () => notify.saved(T.generated));
+  const sendCopy = sendConfirmCopy({ patientName, whatsappJid, phone });
   async function send() {
     const ok = await confirm({
-      title: T.sendConfirmTitle(phone),
-      description: T.sendConfirmDescription,
-      confirmLabel: T.sendConfirmLabel,
+      title: sendCopy.title,
+      description: sendCopy.description,
+      confirmLabel: E.sendConfirm,
       destructive: false,
     });
     if (!ok) return;
-    run("send", sendIsakReportWhatsAppAction, () => notify.info(T.queued(phone)));
+    run("send", sendIsakReportWhatsAppAction, () => notify.info(T.queued(sendCopy.recipient)));
   }
+
+  const issues = reportIssues({ stale, hasMissingData: model.hasMissingData, licenseMissing, signatureMissing });
+  const issueAction = (key: (typeof issues)[number]["key"]) => {
+    if (key === "stale") {
+      return (
+        <Button type="button" variant="secondary" size="sm" disabled={busy} loading={running === "generate"} onClick={generate}>
+          {E.regenerate}
+        </Button>
+      );
+    }
+    // Enlaces comunes: el guard de cambios sin guardar intercepta los clics en <a>.
+    return (
+      <ButtonLink href={key === "missingData" ? editStudyHref : "/ajustes?tab=pdf"} variant="secondary" size="sm">
+        {key === "missingData" ? E.completeStudy : E.goToSettings}
+      </ButtonLink>
+    );
+  };
 
   const field = (key: IsakReportTextKey) => (
     <ReportTextField
@@ -285,34 +317,34 @@ export function ReportEditor({
         <ArrowLeft className="h-4 w-4" aria-hidden />
         {T.backToStudy}
       </a>
-      <PageHeader title={T.pageTitle} description={model.subtitle} />
+      {/* Como PageHeader, con la ayuda como texto secundario bajo el subtítulo (HU §4.5). */}
+      <div className="mb-8">
+        <h1 className="text-balance text-title-1">{T.pageTitle}</h1>
+        <p className="mt-1.5 text-body text-muted-foreground">{model.subtitle}</p>
+        <p className="mt-1 text-footnote text-muted-foreground">{E.help}</p>
+      </div>
 
       <div className="space-y-6">
-        <div className="space-y-3">
-          <Alert tone="info">{T.reviewNotice}</Alert>
-          {stale ? <Alert tone="warning">{T.stalePdf}</Alert> : null}
-          {model.hasMissingData ? (
-            <Alert tone="warning">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span>{T.missingDataNotice}</span>
-                <ButtonLink href={editStudyHref} variant="secondary" size="sm">
-                  {T.editStudy}
-                </ButtonLink>
-              </div>
-            </Alert>
-          ) : null}
-          {professionalNotice ? (
-            <Alert tone="warning">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span>{professionalNotice}</span>
-                <ButtonLink href="/ajustes?tab=pdf" variant="secondary" size="sm">
-                  {T.goToSettings}
-                </ButtonLink>
-              </div>
-            </Alert>
-          ) : null}
-          {model.minor ? <Alert tone="info">{ISAK_TEXT.minorWarning}</Alert> : null}
-        </div>
+        {issues.length > 0 || model.minor ? (
+          <div className="space-y-3">
+            {issues.length > 0 ? (
+              <Alert tone="warning" title={E.issuesTitle}>
+                <ul className="divide-y divide-warning/20">
+                  {issues.map((issue) => (
+                    <li
+                      key={issue.key}
+                      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 first:pt-0 last:pb-0"
+                    >
+                      <span className="min-w-0 flex-1 basis-60">{issue.text}</span>
+                      {issueAction(issue.key)}
+                    </li>
+                  ))}
+                </ul>
+              </Alert>
+            ) : null}
+            {model.minor ? <Alert tone="info">{ISAK_TEXT.minorWarning}</Alert> : null}
+          </div>
+        ) : null}
 
         {/* 1. Datos personales */}
         <Card title={T.sections.personal}>
@@ -476,39 +508,71 @@ export function ReportEditor({
         {/* 9. Conclusiones */}
         <Card title={T.sections.conclusions}>{field("conclusions")}</Card>
 
-        {/* Acciones */}
-        <Card>
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" disabled={busy} loading={running === "save"} onClick={save}>
-                {running === "save" ? T.savingTexts : T.saveTexts}
-              </Button>
-              <Button type="button" disabled={busy} loading={running === "generate"} onClick={generate}>
-                {running === "generate" ? null : <FileDown aria-hidden />}
-                {running === "generate" ? T.generating : T.generate}
-              </Button>
-              {hasPdf ? (
-                <ButtonLink
-                  href={`${reportHref}/pdf`}
-                  target="_blank"
-                  rel="noopener"
-                  prefetch={false}
-                  variant="secondary"
-                >
-                  {T.download}
-                </ButtonLink>
-              ) : null}
-              <Button type="button" variant="secondary" disabled={busy} loading={running === "send"} onClick={() => void send()}>
-                {running === "send" ? null : <Send aria-hidden />}
-                {running === "send" ? T.sending : T.send}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              {hasPdf && lastPdfLabel ? T.lastPdf(lastPdfLabel) : T.noPdf}
-            </p>
-            <FormError message={error} />
+        {/* Acciones (HU §4.5): "Generar PDF" es la principal. En el celular, barra pegada abajo. */}
+        <div
+          role="group"
+          aria-label="Acciones del informe"
+          className={cn(
+            "max-sm:material-bar max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:-mx-6 max-sm:border-t max-sm:px-6 max-sm:pt-3",
+            "max-sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))]",
+            "sm:rounded-xl sm:bg-card sm:p-6 sm:shadow-card sm:more-contrast:border sm:more-contrast:border-input",
+          )}
+        >
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <Button type="button" size="lg" disabled={busy} loading={running === "generate"} onClick={generate}>
+              {running === "generate" ? null : <FileText aria-hidden />}
+              {running === "generate" ? T.generating : T.generate}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className={SECONDARY_SIZE}
+              disabled={busy}
+              loading={running === "save"}
+              onClick={save}
+            >
+              {running === "save" ? null : <Save aria-hidden />}
+              {running === "save" ? T.savingTexts : T.saveTexts}
+            </Button>
+            {hasPdf ? (
+              <ButtonLink
+                href={`${reportHref}/pdf`}
+                target="_blank"
+                rel="noopener"
+                prefetch={false}
+                variant="secondary"
+                size="lg"
+                className={SECONDARY_SIZE}
+              >
+                <Download aria-hidden />
+                {T.download}
+              </ButtonLink>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className={cn(SECONDARY_SIZE, !hasPdf && "max-sm:col-span-2")}
+              disabled={busy}
+              loading={running === "send"}
+              onClick={() => void send()}
+            >
+              {running === "send" ? null : <Send aria-hidden />}
+              {running === "send" ? (
+                T.sending
+              ) : (
+                <span>
+                  Enviar<span className="max-sm:sr-only"> por WhatsApp</span>
+                </span>
+              )}
+            </Button>
           </div>
-        </Card>
+          <p className="mt-2 text-footnote text-muted-foreground sm:mt-3" aria-live="polite">
+            {hasPdf && lastPdfLabel ? T.lastPdf(lastPdfLabel) : T.noPdf}
+          </p>
+          <FormError message={error} />
+        </div>
       </div>
     </div>
   );

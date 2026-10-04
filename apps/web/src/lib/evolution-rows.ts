@@ -7,7 +7,11 @@ import type { EvolutionRow } from "@/app/(panel)/pacientes/[id]/evolution-types"
 
 const num = (v: { toString(): string } | null): number | null => (v !== null ? Number(v) : null);
 
-export function toEvolutionRow(e: EvolutionEntry, tz: string): EvolutionRow {
+/** Si la consulta trajo `anthropometricReport` (ficha, R7 de 017c-4), la fila lleva `hasReport`. */
+export function toEvolutionRow(
+  e: EvolutionEntry & { anthropometricReport?: { id: string } | null },
+  tz: string,
+): EvolutionRow {
   return {
     id: e.id,
     consultationId: e.consultationId,
@@ -43,5 +47,6 @@ export function toEvolutionRow(e: EvolutionEntry, tz: string): EvolutionRow {
     basalMetabolicRateKcal: e.basalMetabolicRateKcal,
     note: e.note,
     study: e.study,
+    ...(e.anthropometricReport !== undefined ? { hasReport: e.anthropometricReport !== null } : {}),
   };
 }

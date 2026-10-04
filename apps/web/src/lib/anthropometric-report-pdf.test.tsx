@@ -1,9 +1,11 @@
-// HU-016: bloque de firma del informe antropométrico. Renderiza en memoria, sin base.
+// HU-016: bloque de firma del informe antropométrico. HU-017c-4: paleta y acento del informe.
+// Renderiza en memoria, sin base.
 // Con HU016_PDF_DIR definida escribe los PDF ahí para revisarlos a ojo (en CI no escribe nada).
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { isValidElement, type ReactNode } from "react";
 import { Document, Page, renderToBuffer } from "@react-pdf/renderer";
 import {
   buildIsakReportDrafts,
@@ -16,7 +18,13 @@ import {
 } from "@nutri-bot/core";
 import { CASE_A, CASE_B } from "../../../../packages/core/src/isak-fixtures.test-data";
 import { PdfSignatureBlock, type PdfSignatureInput } from "@/lib/pdf-common";
-import { renderAnthropometricReportPdf, type ReportPdfInput } from "@/lib/anthropometric-report-pdf";
+import {
+  AnthropometricReportDocument,
+  renderAnthropometricReportPdf,
+  type ReportPdfInput,
+} from "@/lib/anthropometric-report-pdf";
+import { pdfColors, reportPreviousColor, reportTissueColors, reportZoneColors } from "@/lib/pdf-theme";
+import { REPORT_DEFAULT_ACCENT, reportPdfColors, reportPdfTissueColors, reportPdfZoneColors } from "@/lib/report-pdf-theme";
 
 // ─── PNG de prueba generado acá (sin binarios en el repo) ───────────────────────
 
@@ -87,7 +95,9 @@ const DRAFTS = buildIsakReportDrafts(AB);
 
 const PRO = { title: "Lic.", name: "Daiana Ponce", licenseNumber: "M.P. 852" };
 
-function reportInput(over: { image?: Buffer | null; licenseNumber?: string | null; conclusions?: string } = {}): ReportPdfInput {
+function reportInput(
+  over: { image?: Buffer | null; licenseNumber?: string | null; conclusions?: string; accentColor?: string | null } = {},
+): ReportPdfInput {
   const pro = { ...PRO, licenseNumber: over.licenseNumber === undefined ? PRO.licenseNumber : over.licenseNumber };
   const lines = professionalSignatureLines(pro);
   const image = over.image === undefined ? PNG : over.image;
@@ -97,7 +107,7 @@ function reportInput(over: { image?: Buffer | null; licenseNumber?: string | nul
     professionalName: "Lic. Daiana Ponce",
     signature: professionalSignature(pro),
     logo: null,
-    accentColor: null,
+    accentColor: over.accentColor ?? null,
     signatureBlock: { image: image ? { data: image, mimeType: "image/png" } : null, ...lines },
   };
 }
@@ -175,4 +185,87 @@ describe("renderAnthropometricReportPdf con bloque de firma (HU-016)", () => {
     expect(hasImage(pdf)).toBe(true);
     maybeWrite("informe-conclusiones-largas.pdf", pdf);
   }, 30_000);
+});
+
+// ─── HU-017c-4: paleta del informe ──────────────────────────────────────────────
+
+type Node = { type: unknown; props: Record<string, unknown> };
+
+/** Recorre el árbol expandiendo los componentes función (los primitivos de react-pdf son strings). */
+function walk(node: ReactNode, visit: (el: Node) => void) {
+  if (node === null || node === undefined || typeof node === "boolean") return;
+  if (Array.isArray(node)) return node.forEach((n) => walk(n, visit));
+  if (!isValidElement(node)) return;
+  const el = node as unknown as Node;
+  if (typeof el.type === "function") return walk((el.type as (p: unknown) => ReactNode)(el.props), visit);
+  visit(el);
+  walk(el.props.children as ReactNode, visit);
+}
+
+/** Todos los colores del árbol: los de `style` (objeto o array) y los `fill`/`stroke` del SVG. */
+function colorsOf(input: ReportPdfInput): Set<string> {
+  const out = new Set<string>();
+  const add = (v: unknown) => {
+    if (typeof v === "string" && v.startsWith("#")) out.add(v.toUpperCase());
+  };
+  const addStyle = (style: unknown) => {
+    if (Array.isArray(style)) return style.forEach(addStyle);
+    if (style && typeof style === "object") Object.values(style).forEach(add);
+  };
+  walk(AnthropometricReportDocument({ input }), (el) => {
+    addStyle(el.props.style);
+    add(el.props.fill);
+    add(el.props.stroke);
+  });
+  return out;
+}
+
+/** El `style` del <Page>. */
+function pageStyle(input: ReportPdfInput): Record<string, unknown> {
+  let found: Record<string, unknown> = {};
+  walk(AnthropometricReportDocument({ input }), (el) => {
+    if (el.type === "PAGE") found = el.props.style as Record<string, unknown>;
+  });
+  return found;
+}
+
+describe("PDF del informe con la paleta propia (HU-017c-4)", () => {
+  it("el PDF se genera", async () => {
+    const pdf = await renderAnthropometricReportPdf(reportInput());
+    expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+    maybeWrite("informe-paleta-fria.pdf", pdf);
+  }, 30_000);
+
+  it("usa reportPdfColors.text y no pdfColors.text", () => {
+    expect(pageStyle(reportInput()).color).toBe(reportPdfColors.text);
+    const colors = colorsOf(reportInput());
+    expect(colors.has(reportPdfColors.text)).toBe(true);
+    expect(colors.has(reportPdfColors.muted)).toBe(true);
+    expect(colors.has(reportPdfColors.border)).toBe(true);
+    for (const old of Object.values(pdfColors)) expect(colors.has(old.toUpperCase())).toBe(false);
+  });
+
+  it("tejidos, zonas y serie anterior salen del tema nuevo", () => {
+    const colors = colorsOf(reportInput());
+    for (const c of [...Object.values(reportPdfTissueColors), ...Object.values(reportPdfZoneColors)]) {
+      expect(colors.has(c.toUpperCase())).toBe(true);
+    }
+    for (const old of [...Object.values(reportTissueColors), ...Object.values(reportZoneColors), reportPreviousColor]) {
+      expect(colors.has(old.toUpperCase())).toBe(false);
+    }
+  });
+
+  it("sin acento usa REPORT_DEFAULT_ACCENT; con acento, el de Ajustes", () => {
+    const accentRuleColor = (input: ReportPdfInput) => {
+      let color: unknown;
+      walk(AnthropometricReportDocument({ input }), (el) => {
+        const st = el.props.style as { height?: number; backgroundColor?: string; marginTop?: number } | undefined;
+        if (color === undefined && st && !Array.isArray(st) && st.height === 2 && st.marginTop === 14) color = st.backgroundColor;
+      });
+      return color;
+    };
+    expect(accentRuleColor(reportInput())).toBe(REPORT_DEFAULT_ACCENT);
+    expect(accentRuleColor(reportInput({ accentColor: "#0A84FF" }))).toBe("#0A84FF");
+    expect(colorsOf(reportInput({ accentColor: "#0A84FF" })).has("#0A84FF")).toBe(true);
+  });
 });

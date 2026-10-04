@@ -15,7 +15,7 @@ import { useConfirm } from "@/components/confirm";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { MoreActionsMenu } from "@/components/more-actions-menu";
 import { Alert, Button, ButtonLink, Card } from "@/components/ui";
-import { UNDO_TEXT, useDeferredDelete, usePendingDeletion } from "@/lib/deferred-delete";
+import { UNDO_TEXT, prescriptionDeletionKey, useDeferredDelete, usePendingDeletion } from "@/lib/deferred-delete";
 import { FormulaDataForm, type FormulaDataValues } from "../../formula-data-form";
 import { FormulaDataSheet } from "../../formula-data-sheet";
 import { deletePrescriptionAction } from "../../prescription-actions";
@@ -34,6 +34,7 @@ export function RequirementSection({
   formulaValues,
   calculator,
   prescription,
+  prescriptionId,
   bodyFatDateLabel,
 }: {
   patientId: string;
@@ -44,13 +45,19 @@ export function RequirementSection({
   formulaValues: FormulaDataValues;
   calculator: CalculatorProps | null;
   prescription: PrescriptionSnapshot | null;
+  /** Id de la fila (null si no hay): la key del borrado diferido va por este id. */
+  prescriptionId: string | null;
   bodyFatDateLabel: string | null;
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const confirm = useConfirm();
   const deferDelete = useDeferredDelete();
-  // HU-017c-3: mientras corre el plazo de "Deshacer", el cálculo se ve como borrado.
-  const deleting = usePendingDeletion(`prescription:${consultationId}`);
+  // HU-017c-3: mientras corre el plazo de "Deshacer", el cálculo se ve como borrado. La key va por el id
+  // de la prescripción (ronda 2 de 017c-4): un cálculo nuevo, guardado mientras la key vieja sigue
+  // oculta por `releaseAfterMs`, tiene otro id y se ve. Cuando la página trae `prescription === null`,
+  // la key es la vacía y "Calcular requerimiento" se libera (R5).
+  const deletionKey = prescriptionDeletionKey(prescriptionId);
+  const deleting = usePendingDeletion(deletionKey);
 
   // Confirmación en el handler, fuera de toda transición (React 19: si no, deadlock).
   async function handleDelete() {
@@ -61,7 +68,7 @@ export function RequirementSection({
     });
     if (!ok) return;
     deferDelete({
-      key: `prescription:${consultationId}`,
+      key: deletionKey,
       message: REQUIREMENT_TEXT.deleted,
       undoneMessage: UNDO_TEXT.calculation.undone,
       commit: () => deletePrescriptionAction(patientId, consultationId),
@@ -112,6 +119,8 @@ export function RequirementSection({
 
   if (prescription === null || deleting) {
     const waitId = `${consultationId}-calculo-espera`;
+    // Solo se espera mientras el cálculo borrado sigue en la página (plazo de "Deshacer" o commit en curso).
+    const waitingUndo = deleting && prescription !== null;
     return (
       <Card title={TITLE}>
         <div className="space-y-4">
@@ -121,14 +130,14 @@ export function RequirementSection({
           <Button
             type="button"
             size="lg"
-            disabled={calculator === null || deleting}
-            aria-describedby={deleting ? waitId : undefined}
+            disabled={calculator === null || waitingUndo}
+            aria-describedby={waitingUndo ? waitId : undefined}
             onClick={() => setMode("edit")}
           >
             <Calculator aria-hidden />
             Calcular requerimiento
           </Button>
-          {deleting ? (
+          {waitingUndo ? (
             <p id={waitId} className="text-footnote text-muted-foreground">
               Vas a poder calcular de nuevo cuando se cierre el aviso de “Deshacer”.
             </p>
