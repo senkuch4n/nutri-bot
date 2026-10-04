@@ -239,3 +239,4 @@ orquestador, para que las revise a la mañana:
 - HU-017c-2 **aprobada** (ronda 2). PR encadenado sobre #30. → 017c-3 `implementando` (rama feat/hu-017c3-consulta; Opus; con R3 y R4).
 - HU-017c-3 done (9 commits, R3 y R4 incluidos); recorrido OK. → `en_revision` (reviewer Opus).
 - HU-017c-3 **aprobada**. PR encadenado sobre #31. → 017c-4 `implementando` (rama feat/hu-017c4-informe; Opus; con R5–R7).
+- HU-017c-4 done; recorrido OK. → `en_revision` (reviewer Opus).

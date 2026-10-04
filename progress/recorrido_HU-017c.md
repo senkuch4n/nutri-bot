@@ -66,3 +66,18 @@ implementer).
   "Borrar consulta" deshabilitado y la explicación "Para eliminar la consulta primero borrá sus mediciones, la
   prescripción y quitá el plan indicado."; mediciones con su "…", columna lateral (Plan indicado, Notas), botones
   grandes con ícono ("Agregar medición", "Cargar antropometría ISAK", "Crear plan").
+
+# Recorrido HU-017c-4 (orquestador, 2026-10-04)
+
+Solo lectura sobre el informe existente de Brenda Yebara (no se regeneró el PDF: escribiría `pdfData` de un dato real).
+
+## OK
+- "Informe antropométrico · Consulta del 11/05/2026 · primer estudio, sin comparación", "Revisá los textos antes de
+  generar el PDF.".
+- Avisos agrupados en "Antes de enviar", cada uno con su acción: "El estudio cambió después del último PDF" → "Generar
+  de nuevo"; "Faltan tu matrícula y tu firma" → "Ir a Ajustes".
+- Datos personales y tabla de mediciones con la jerarquía nueva. Consola sin errores.
+
+## No recorrido
+- PDF real y confirmación de envío: cubiertos por el PDF generado por el implementer en el scratchpad y los tests
+  (`anthropometric-report-pdf.test.tsx`, `plan-pdf.test.tsx` sin cambios).
