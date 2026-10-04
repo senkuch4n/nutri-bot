@@ -248,3 +248,4 @@ orquestador, para que las revise a la mañana:
 - Bloqueo de macOS (EPERM en los archivos del arnés) resuelto por el usuario. Los subagentes del arnés dejaron de estar cargados en la sesión: se lanzan como general-purpose con las instrucciones de .claude/agents/<rol>.md. 018d-1a relanzada (Opus).
 - HU-018d-1a done (8 commits, migración food_measures aplicada); recorrido OK (progress/recorrido_HU-018d.md). → `en_revision` (reviewer Opus).
 - HU-018d-1a **aprobada** (1ª revisión). PR a develop (encadenado sobre #27). → 018d-1b `implementando` (Opus; apple-design, ui-ux-pro-max; suma R2–R4 de la revisión).
+- HU-018d-1b done (stepper, conversión de unitHint en seco: 77 a crear / 2 ilegibles, R2–R4, prellenado de 'Pasar a medida'); recorrido OK. → `en_revision` (reviewer Opus).

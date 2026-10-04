@@ -19,3 +19,15 @@ creó y se quitó desde la UI (FoodMeasure = 0 al final). Sin planes ni paciente
 ## No recorrido
 - Pasos 6–12 (editor de comidas, copias, plantilla, portal, PDF): cubiertos por `test-food-measures.ts` contra la base
   y por tests (progress/impl_HU-018d.md).
+
+# Recorrido HU-018d-1b (orquestador, 2026-10-04)
+
+Solo lectura ("Arroz blanco cocido", PROPIO, por URL directa; nada guardado).
+
+## OK
+- Paso 15: la tarjeta muestra "Tenías anotado: «1 taza ≈ 180 g». Pasalo a una medida para usarlo en los planes." con
+  "Pasar a medida".
+
+## Mejora pedida al implementer
+- "Pasar a medida" con un `unitHint` legible abría el cuadro con el texto entero en el nombre y los gramos vacíos.
+  Se pidió prellenar nombre y gramos con `parseUnitHint` cuando lo puede leer.

@@ -8,7 +8,7 @@
   "origen": "Partición de HU-018",
   "slug": "medidas-caseras",
   "titulo": "Medidas caseras de alimentos sueltos",
-  "estado": "implementando",
+  "estado": "en_revision",
   "notas": "Se afina después (D21). Rama encadenada sobre feat/hu-018c2-detalle-receta (toca el editor de comidas de 018c). Afinada en modo autónomo (2026-10-04).",
   "skills_architect": [
     "migracion-prisma",
@@ -16,7 +16,7 @@
   ],
   "entregas": {
     "018d-1a": "aprobada (2026-10-04, 1ª revisión)",
-    "018d-1b": "implementando",
+    "018d-1b": "en_revision (2026-10-04)",
     "018d-2": "opcional, solo si la nutricionista la pide (D11)"
   },
   "modelo": "opus",
