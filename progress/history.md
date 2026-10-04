@@ -426,3 +426,7 @@
 - **Recorrido:** 1ª pasada con Build Error de Turbopack (`export type … from` en un `"use server"`), arreglado antes
   de la revisión. Aprobada en la primera revisión.
 - **Modelos:** implementer Opus; reviewer Opus.
+
+## HU-017c-1 — Lista de pacientes simple (aprobada 2026-10-04, senkuch4n)
+- Buscador grande sin acentos, próximo turno en lenguaje común, teléfono con formato, canales @newsletter ocultos, "Por completar" para contactos sin nombre con "Poner nombre", helpers de contacto/teléfono/fechas en core.
+- Implementer Opus (ui-ux-pro-max, apple-design, web-design-guidelines), reviewer Opus: APPROVED en la 1ª revisión.

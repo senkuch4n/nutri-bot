@@ -35,3 +35,7 @@ export * from "./bot-ai-tools";
 export * from "./booking-reason";
 export * from "./service-reminders";
 export * from "./professional-identity";
+export * from "./whatsapp-contact";
+export * from "./phone-format";
+export * from "./relative-date";
+export * from "./patient-directory";

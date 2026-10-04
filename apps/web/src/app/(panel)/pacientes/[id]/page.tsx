@@ -147,6 +147,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
           <PatientHeader
             name={patient.name}
             phone={patient.phone}
+            whatsappJid={patient.whatsappJid}
             ageYears={ageYears}
             nextAppointment={nextAppointment}
             riskBackground={riskBackground}
