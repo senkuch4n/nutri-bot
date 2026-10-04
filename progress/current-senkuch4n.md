@@ -230,3 +230,4 @@ orquestador, para que las revise a la mañana:
 - HU-017c afinada y validada (D1–D18; D2/D3 confirmados por lectura: 5 @newsletter, 9 @lid). → `en_arquitectura` (architect Opus + ui). Tarea directa nueva: el bot no debe crear Patient desde @newsletter.
 - Tarea directa: el bot ignora @newsletter y @broadcast (isIgnoredJid + test) → PR #29 a develop.
 - HU-017c SDD lista (Refactorizaciones/017c-pacientes-consultas.md; Q1–Q16 aceptadas salvo Q6: ramas encadenadas). → `implementando` 017c-1 (Opus; ui-ux-pro-max, apple-design, web-design-guidelines).
+- HU-017c-1 done; recorrido OK (progress/recorrido_HU-017c.md; idea: guardar pushName para distinguir 'Por completar'). → `en_revision` (reviewer Opus).
