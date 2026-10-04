@@ -247,3 +247,4 @@ orquestador, para que las revise a la mañana:
 - HU-018d SDD lista (Refactorizaciones/medidas-caseras.md; T1–T17 aceptadas; corte 018d-1a/1b; hallazgo T1: los unitHint están en alimentos PROPIO, ya no usables). → `implementando` 018d-1a (Opus; migracion-prisma, apple-design, ui-ux-pro-max).
 - Bloqueo de macOS (EPERM en los archivos del arnés) resuelto por el usuario. Los subagentes del arnés dejaron de estar cargados en la sesión: se lanzan como general-purpose con las instrucciones de .claude/agents/<rol>.md. 018d-1a relanzada (Opus).
 - HU-018d-1a done (8 commits, migración food_measures aplicada); recorrido OK (progress/recorrido_HU-018d.md). → `en_revision` (reviewer Opus).
+- HU-018d-1a **aprobada** (1ª revisión). PR a develop (encadenado sobre #27). → 018d-1b `implementando` (Opus; apple-design, ui-ux-pro-max; suma R2–R4 de la revisión).

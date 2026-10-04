@@ -1134,3 +1134,14 @@ no agregar un tope combinado. Los dos límites individuales vienen de la HU.
   migraciones nuevas ni hay otra HU con schema activa (chequeado 2026-10-04).
 - T16: la conversión de `unitHint` en la base de dev **solo en seco**; aplicarla queda como pendiente del usuario.
 - Implementer: Opus; skills migracion-prisma, apple-design, ui-ux-pro-max. Reviewer: Opus.
+
+## Agregados a 018d-1b (de la revisión de 018d-1a, progress/review_HU-018d.md)
+
+- R2. `measurePlural` > 40 rompe "Deshacer": subir el tope del zod de la foto a 80 (y el del campo de plural) o
+  acotar el plural automático a 40. Recomendado: tope 80 en el zod y en la columna si hace falta (sin migración si
+  la columna es `text`).
+- R3. El plural automático no pluraliza las conjunciones "y", "o", "e", "u" ("taza o vaso" → "tazas o vasos").
+  Test incluido.
+- R4. `addPlanMealItemAction` / `addTemplateMealItemAction`: capturar `FoodMeasureNotFoundError` y el `RangeError`
+  de `resolveMeasureItem` y devolver un error amable ("Esa medida ya no existe. Elegí otra.") en vez del error
+  boundary. Test incluido.

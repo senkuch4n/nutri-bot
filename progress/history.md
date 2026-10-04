@@ -441,3 +441,7 @@
 ## HU-018c-2 — Detalle de la receta (aprobada 2026-10-04, senkuch4n)
 - Detalle de receta en el buscador (foto, ingredientes con medida casera y gramos, preparación, impacto, pie fijo para agregar) y "Ver receta" en el portal sin macros. Cierra los 4 pendientes de la revisión de 018c-1.
 - Implementer Opus (apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones menores en progress/review_HU-018c.md (test unitario de applyTemplateToPatient con receta, retry sin cancelación, macros de ítems que viajan al portal como ya pasaba con alimentos, mirar el PDF real antes del merge).
+
+## HU-018d-1a — Medidas caseras en el plan (aprobada 2026-10-04, senkuch4n)
+- Migración `food_measures` (modelo FoodMeasure + 4 columnas nullable en PlanMealItem/TemplateMealItem). Medidas por alimento en la ficha, alta en medida casera en planes y plantillas (y crear medida desde el editor), copias que conservan la medida, portal y PDF con "1½ tazas (270 g)".
+- Implementer Opus (migracion-prisma, apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones R2–R4 pasan a 018d-1b.
