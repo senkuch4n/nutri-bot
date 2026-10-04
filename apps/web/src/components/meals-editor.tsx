@@ -32,6 +32,7 @@ import { MealCardMenu } from "@/components/weekly-menu/meal-card-menu";
 import { useMenuUndo } from "@/components/weekly-menu/use-menu-undo";
 import { WeeklyOverview } from "@/components/weekly-menu/weekly-overview";
 import type { RecipeItemView } from "@/components/recipe-picker/types";
+import type { MeasureItemView } from "@/components/food-measures/types";
 import { RecipeMealItem } from "@/components/recipe-picker/recipe-meal-item";
 import { RecipePickerSheet } from "@/components/recipe-picker/recipe-picker-sheet";
 
@@ -51,6 +52,8 @@ export interface MealItemView {
   weekday: Weekday | null;
   /** HU-018c: ítem de receta (macros ya multiplicados por las porciones). Opcional: los fixtures de 018b no cambian. */
   recipe?: RecipeItemView | null;
+  /** HU-018d: ítem de alimento en medida casera. Opcional: los fixtures de 018b/018c no cambian. */
+  measure?: MeasureItemView | null;
 }
 
 export interface MealView {

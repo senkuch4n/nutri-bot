@@ -16,8 +16,10 @@ import {
   savePlanPdf,
   enqueuePlanPdfMessage,
   nextItemOrder,
+  resolveMeasureItem,
 } from "@nutri-bot/db/domain";
 import { isWeekday } from "@nutri-bot/core";
+import { readMeasureFields } from "@/lib/measure-form";
 import { getProfessional } from "@/lib/professional";
 import { toMealView } from "@/lib/meal-view";
 import { renderPlanPdf } from "@/lib/plan-pdf";
@@ -100,16 +102,24 @@ export async function addPlanMealItemAction(formData: FormData): Promise<void> {
     }
   }
 
+  // HU-018d (SDD 6.2): medida casera. Con medida, los gramos salen de la medida (el quantityGrams
+  // del formulario se ignora) y el ítem no lleva descripción libre.
+  const measureFields = readMeasureFields(formData, foodId);
+  if (measureFields === "invalid") return;
+  const measure = measureFields ? await resolveMeasureItem(foodId, measureFields.measureId, measureFields.qty) : null;
+
   const order = await nextItemOrder("plan", mealId, weekday);
 
-  await addMealItem(mealId, {
-    foodId: foodId || null,
-    customLabel: customLabel || null,
-    quantityGrams: quantityRaw ? Number(quantityRaw) : null,
-    notes: notes || null,
-    order,
-    weekday,
-  });
+  await addMealItem(mealId, measure
+    ? { foodId, customLabel: null, notes: notes || null, order, weekday, ...measure }
+    : {
+        foodId: foodId || null,
+        customLabel: customLabel || null,
+        quantityGrams: quantityRaw ? Number(quantityRaw) : null,
+        notes: notes || null,
+        order,
+        weekday,
+      });
   await revalidatePlanPaths(planId);
 }
 

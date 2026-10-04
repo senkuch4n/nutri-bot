@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   // HU-018b-2: la página del plan carga el objetivo (D7) y la consulta del aviso (D11).
   getPlanTarget: vi.fn().mockResolvedValue(null), getPlanConsultationId: vi.fn().mockResolvedValue(null),
   patient: vi.fn(), evolution: vi.fn(), clinical: vi.fn(),
+  // HU-018d: las páginas cargan las medidas de los SARA 2 y las actions resuelven la medida elegida.
+  listMeasuresForPicker: vi.fn().mockResolvedValue({}), resolveMeasureItem: vi.fn(),
 }));
 
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -145,5 +147,31 @@ describe("SARA2-only new food selections", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain("PROPIO históricos");
     expect(mocks.applyTemplateToPatient).not.toHaveBeenCalled();
+  });
+
+  it.each([addPlanMealItemAction, addTemplateMealItemAction])("HU-018d: alta en medida casera usa los gramos de la medida e ignora quantityGrams", async (action) => {
+    mocks.getFood.mockResolvedValue(sara);
+    mocks.resolveMeasureItem.mockResolvedValue({ measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270 });
+    await action(form({
+      planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", quantityGrams: "999",
+      customLabel: "ignorada", measureId: "m1", measureQty: "1,5", weekday: "TUE",
+    }));
+    expect(mocks.resolveMeasureItem).toHaveBeenCalledWith("sara", "m1", 1.5);
+    const write = action === addPlanMealItemAction ? mocks.addMealItem : mocks.addTemplateMealItem;
+    expect(write).toHaveBeenCalledWith("meal", {
+      foodId: "sara", customLabel: null, notes: null, order: 0, weekday: "TUE",
+      measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270,
+    });
+  });
+
+  it.each([addPlanMealItemAction, addTemplateMealItemAction])("HU-018d: cantidad inválida no escribe y un PROPIO con medida sigue rechazado", async (action) => {
+    mocks.getFood.mockResolvedValue(sara);
+    await action(form({ planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", measureId: "m1", measureQty: "1,3" }));
+    mocks.getFood.mockResolvedValue(own);
+    await expect(action(form({ planId: "plan", templateId: "template", mealId: "meal", foodId: "own", measureId: "m1", measureQty: "1" })))
+      .rejects.toThrow("Solo se pueden agregar alimentos activos de SARA 2.");
+    expect(mocks.resolveMeasureItem).not.toHaveBeenCalled();
+    expect(mocks.addMealItem).not.toHaveBeenCalled();
+    expect(mocks.addTemplateMealItem).not.toHaveBeenCalled();
   });
 });

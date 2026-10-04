@@ -14,8 +14,10 @@ import {
   getTemplate,
   getFood,
   nextItemOrder,
+  resolveMeasureItem,
 } from "@nutri-bot/db/domain";
 import { isWeekday } from "@nutri-bot/core";
+import { readMeasureFields } from "@/lib/measure-form";
 
 export type TemplateState = { ok: boolean; error?: string };
 
@@ -92,16 +94,24 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<voi
     }
   }
 
+  // HU-018d (SDD 6.2): medida casera. Con medida, los gramos salen de la medida (el quantityGrams
+  // del formulario se ignora) y el ítem no lleva descripción libre.
+  const measureFields = readMeasureFields(formData, foodId);
+  if (measureFields === "invalid") return;
+  const measure = measureFields ? await resolveMeasureItem(foodId, measureFields.measureId, measureFields.qty) : null;
+
   const order = await nextItemOrder("template", mealId, weekday);
 
-  await addTemplateMealItem(mealId, {
-    foodId: foodId || null,
-    customLabel: customLabel || null,
-    quantityGrams: quantityRaw ? Number(quantityRaw) : null,
-    notes: notes || null,
-    order,
-    weekday,
-  });
+  await addTemplateMealItem(mealId, measure
+    ? { foodId, customLabel: null, notes: notes || null, order, weekday, ...measure }
+    : {
+        foodId: foodId || null,
+        customLabel: customLabel || null,
+        quantityGrams: quantityRaw ? Number(quantityRaw) : null,
+        notes: notes || null,
+        order,
+        weekday,
+      });
   revalidatePath(`/plantillas/${templateId}`);
 }
 
