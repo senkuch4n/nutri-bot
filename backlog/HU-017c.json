@@ -4,7 +4,7 @@
   "slug": "rediseno-apple-pacientes-consultas",
   "titulo": "Rediseño Apple (2/5): pacientes y consultas (lista, ficha, consulta, ISAK, informe y su PDF)",
   "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
-  "estado": "en_revision",
+  "estado": "implementando",
   "intentos_revision": 0,
   "hu": "docs/hu-017c-pacientes-consultas.md",
   "sdd": "Refactorizaciones/017c-pacientes-consultas.md",
@@ -14,8 +14,8 @@
     "ui"
   ],
   "entregas": {
-    "017c-1": "en_revision (2026-10-04)",
-    "017c-2": "pendiente",
+    "017c-1": "aprobada (2026-10-04, 1ª revisión)",
+    "017c-2": "implementando",
     "017c-3": "pendiente",
     "017c-4": "pendiente"
   },
@@ -26,5 +26,5 @@
     "web-design-guidelines"
   ],
   "modelo_reviewer": "opus",
-  "entrega_actual": "017c-1"
+  "entrega_actual": "017c-2"
 }

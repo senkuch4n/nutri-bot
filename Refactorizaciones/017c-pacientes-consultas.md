@@ -1391,3 +1391,9 @@ Revertir 017c-1 vuelve la tabla de pacientes; los helpers de core quedan sin uso
 - Implementer: Opus; skills ui-ux-pro-max, apple-design, web-design-guidelines. Reviewer: Opus.
 - La migración `food_measures` aplicada en la base de dev (rama 018d) no está en esta rama: `migrate status` la marca;
   no se toca.
+
+## Agregados a 017c-2 (de la revisión y el recorrido de 017c-1)
+
+- R1. "Por completar": que el clic en el disclosure lo cierre aunque haya búsqueda con coincidencias (el usuario manda
+  sobre la apertura automática).
+- R2. El recorrido de 017c-2 cubre también teclado, 390 px táctil y movimiento reducido de la lista (pasos 9–12 de §10.3).

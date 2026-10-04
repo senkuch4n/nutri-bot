@@ -231,3 +231,4 @@ orquestador, para que las revise a la mañana:
 - Tarea directa: el bot ignora @newsletter y @broadcast (isIgnoredJid + test) → PR #29 a develop.
 - HU-017c SDD lista (Refactorizaciones/017c-pacientes-consultas.md; Q1–Q16 aceptadas salvo Q6: ramas encadenadas). → `implementando` 017c-1 (Opus; ui-ux-pro-max, apple-design, web-design-guidelines).
 - HU-017c-1 done; recorrido OK (progress/recorrido_HU-017c.md; idea: guardar pushName para distinguir 'Por completar'). → `en_revision` (reviewer Opus).
+- HU-017c-1 **aprobada**. PR a develop. → 017c-2 `implementando` (rama feat/hu-017c2-ficha encadenada; Opus).
