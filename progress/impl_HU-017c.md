@@ -592,3 +592,144 @@ La copia del scratchpad (con su `.env` y la cookie) se borró. El dev server de 
   - lector de pantalla con el toast;
   - cerrar el toast con swipe.
 - Capturas.
+
+---
+
+# 017c-4: informe antropométrico y su PDF (D15) + agregados R5–R7
+
+- **Estado:** done
+- **Rama:** `feat/hu-017c4-informe`, encadenada sobre `feat/hu-017c3-consulta` (decisión Q6). Sin push.
+- **SDD:** `Refactorizaciones/017c-pacientes-consultas.md`: entrega 017c-4, "Decisiones" y "Agregados a 017c-4" (R5–R7).
+- **Modelo:** Opus.
+- **Skills:** `ui-ux-pro-max` y `apple-design` antes del JSX; `web-design-guidelines` como autochequeo al final.
+
+## Commits (uno por fase)
+
+| Commit | Fase |
+|---|---|
+| `31036d2` | A: `report-pdf-theme.ts` + test; `palette` opcional en `pdf-common.tsx` + test |
+| `ec7be18` | B: PDF del informe y sus gráficos con la paleta fría y la escala en pt; test actualizado |
+| `9339828` | C: editor del informe (ayuda, "Antes de enviar", "Editado", jerarquía, confirmación de envío) |
+| `a72f7f8` | R5–R7 |
+| (este archivo) | D: verificación |
+
+## Archivos
+
+Todos en `apps/web`:
+
+- `lib/report-pdf-theme.ts` (nuevo) + `report-pdf-theme.test.ts`.
+- `lib/pdf-common.tsx` (parámetro/prop `palette` opcional) + `pdf-common.test.tsx` (nuevo).
+- `lib/anthropometric-report-pdf.tsx`, `lib/report-pdf-charts.tsx`, `lib/anthropometric-report-pdf.test.tsx`.
+- `lib/report-editor-text.ts` (nuevo, puro) + `report-editor-text.test.ts`: textos del editor que son solo del panel y las reglas (`reportIssues`, `isEditedText`, `sendConfirmCopy`, `professionalIssueText`).
+- `antropometria/informe/page.tsx` y `antropometria/informe/report-editor.tsx`.
+- R5: `consultas/[consultationId]/requirement-section.tsx`.
+- R6: `consultas/[consultationId]/consultation-plan.tsx`.
+- R7: `pacientes/[id]/page.tsx` (la consulta trae `anthropometricReport: { select: { id } }`), `evolution-types.ts` (`hasReport?`), `lib/evolution-rows.ts` + `evolution-rows.test.ts` (nuevo), `evolution-table.tsx`.
+
+Sin cambios en:
+- `lib/plan-pdf.tsx`, `lib/pdf-theme.ts`, `lib/plan-pdf.test.tsx` (sus aserciones no se tocaron y pasa en verde), `ajustes/**`;
+- `packages/core` (`ISAK_REPORT_TEXT` igual, D11b), `packages/db`, `apps/bot`, `schema.prisma`, migraciones, `backlog/`;
+- la zona de imleticio. El grep de 10-4 contra `77d3564` (la base de esta entrega) da vacío.
+
+## Contrato compartido (SDD §4-4)
+
+- `report-pdf-theme.ts` exporta lo de §4.1 con esos nombres: `REPORT_DEFAULT_ACCENT = "#1D1D1F"`, `reportPdfColors` (`#1D1D1F`, `#636366`, `#E5E5EA`, `#F5F5F7`), `reportPdfType` (title 20/600, heading 13/600, body 10/400, caption 8.5/400, metric 16/600, cada uno con `lineHeight` y `letterSpacing`), `reportPdfTissueColors`, `reportPdfTissueTextColors`, `reportPdfPreviousColor`, `reportPdfZoneColors`. Agregados: `ReportPdfTextStyle`, `reportPdfFigureNeutral` (la cabeza de la silueta, antes un hex suelto) y `reportPdfGridColor`.
+- `pdf-common.tsx`: `buildCommonStyles(accentColor, palette = pdfColors)`; `PdfHeader`, `PdfFooter` y `PdfSignatureBlock` reciben `palette?` opcional. Sin `palette` el resultado es idéntico (test: `buildCommonStyles(a)` es igual a `buildCommonStyles(a, pdfColors)`, y `PdfFooter` sin palette devuelve el mismo objeto de estilo). Nuevo tipo `PdfPalette`.
+- El informe usa `buildCommonStyles(accent, reportPdfColors)` y `PdfSignatureBlock palette={reportPdfColors}`. El acento: el de Ajustes o `REPORT_DEFAULT_ACCENT`.
+- `informe/page.tsx` le pasa al editor `patientName`, `whatsappJid` y `phone`. `professionalNotice` (string) se cambió por `licenseMissing` y `signatureMissing` (booleanos), para armar la fila específica. Todo lo que cruza a cliente son datos planos: ninguna función ni componente como prop.
+- No hay `replaceState` en el diff.
+
+## Verificación
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, bot y web en verde |
+| `npm run test` | 110 archivos, 1835 tests en verde. Nuevos: `report-pdf-theme` (8), `pdf-common` (6), `report-editor-text` (8), `evolution-rows` (3) y 4 en `anthropometric-report-pdf` |
+| `plan-pdf.test.tsx` | 4/4 en verde, archivo sin cambios |
+| `npm run lint --workspace apps/web` | solo el warning previo de `ajustes/logo-form.tsx` |
+| `./ops/harness/verify.sh` | "Arnés OK" |
+| `next build` (webpack, copia en el scratchpad) | exit 0. Único warning: el previo de `jose` en Edge |
+| `next build --turbopack` (misma copia) | exit 0, "Compiled successfully" |
+| Alcance (10-4) | `git diff 77d3564 --name-only \| grep -E 'lib/(plan-pdf\|pdf-theme)\.tsx?$\|ajustes/'` vacío |
+
+- Turbopack no acepta un `node_modules` symlinkeado fuera de la raíz ("Symlink node_modules is invalid"), así que la copia usa clones APFS (`cp -Rc`) de los `node_modules`. La copia (con su `.env`) y la cookie se borraron al terminar.
+- El dev server de :3100 no se tocó: responde 200.
+
+### Runtime, contra `next start -p 3198` (build de webpack de la copia)
+
+- **Cómo se hizo:** cookie de sesión de Auth.js generada en local con el `AUTH_SECRET` y Chromium headless con `playwright-core`, instalado en el scratchpad. Todo vivió en el scratchpad.
+- **Datos de prueba**, creados y borrados por id:
+  - la paciente "Prueba 017c-4" (JID `5493510017401@s.whatsapp.net`, verificado en 0 antes de crearla);
+  - una consulta de hoy;
+  - un estudio ISAK sin diámetro de fémur, para que aparezca "Faltan medidas…";
+  - un `AnthropometricReport` con un PDF "viejo" de huella distinta, para que aparezca "El estudio cambió…".
+  - Al final se borró la paciente **por su id**; consulta, estudio e informe se fueron por cascada (verificado por id: 0, 0, 0). Quedaron 0 pacientes con el JID.
+  - La profesional de la base no tiene matrícula ni firma, así que la tercera fila salió sola, sin tocar sus datos.
+- **Informe, 1366 px:**
+  - la página responde 200, **sin el error boundary** ("Algo salió mal"), y sin errores de consola al recargar;
+  - "Revisá los textos antes de generar el PDF." es un `<p>` de ayuda bajo el subtítulo, no un aviso;
+  - aparece un solo bloque "Antes de enviar" con 3 filas, cada una con su botón: "Generar de nuevo", "Completar estudio" e "Ir a Ajustes";
+  - al abrir no hay ninguna marca "Editado". Al escribir en Conclusiones aparece **una** (solo en ese campo), con "Restaurar el texto original". Restaurar pide confirmación y la marca se va;
+  - "Generar PDF" es el único botón relleno (`rgb(0,102,204)`); los demás son grises;
+  - **"Enviar por WhatsApp"** abre "¿Enviar el informe a Prueba 017c-4?" / "Le llega por WhatsApp al +54 9 351 001-7401.", con el foco en "Cancelar". Se **canceló**: el diálogo se cierra y el foco vuelve al botón. **Nunca se confirmó.**
+  - **`OutboundMessage`:** 0 filas con el JID de prueba y 0 con el id del informe de prueba. No hubo nada que borrar.
+  - "Generar PDF" (escribe solo en el informe de prueba): sale "Informe generado", desaparece la fila "El estudio cambió…" y aparece "Descargar".
+- **Informe, 390×844 táctil:**
+  - sin el error boundary, sin scroll horizontal y sin errores;
+  - la barra de acciones es `sticky` y queda pegada abajo: dos filas, con "Generar PDF" y "Guardar textos" arriba y "Descargar" y "Enviar" abajo. Los botones miden 44 px;
+  - en el celular "Enviar" muestra solo esa palabra, y " por WhatsApp" queda `sr-only`, así que el nombre accesible es "Enviar por WhatsApp";
+  - con el foco en Conclusiones, el campo queda por encima de la barra (`scroll-margin-bottom`).
+- **R5–R7:**
+  - la ficha (`?tab=historial`) y la consulta de la paciente de prueba cargan sin el error boundary ni errores;
+  - R7: en Historial, "…" → "Borrar estudio" dice "Se borran las medidas del estudio y su informe.". Se canceló.
+- **Capturas** (scratchpad): `shot-informe-1366.png`, `shot-informe-1366-full.png`, `shot-informe-390.png` y `shot-informe-390-foco.png`.
+
+### PDF del informe generado (scratchpad, no se mandó a nadie)
+
+- `informe-runtime.pdf` (30,5 KB) se bajó de la ruta `/informe/pdf` después del "Generar PDF" del recorrido. Contenido:
+  - A4, 4 páginas, con Inter 400/500/600 incrustadas;
+  - encabezado "Informe antropométrico" / "Consulta del 04/10/2026 · primer estudio, sin comparación" y, a la derecha, el nombre de la profesional y "NutriBot";
+  - la regla y las marcas de sección van con el acento de Ajustes (`#2563eb`);
+  - las secciones: datos personales, mediciones, pliegues, perímetros y su párrafo, distribución (barras en el acento y silueta en celestes fríos), indicadores de salud, composición (barra apilada fría), somatotipo ("Sin dato": falta el fémur) y conclusiones, con la línea de firma;
+  - en el pie, la firma y "Página n de 4".
+- `pdf/informe-*.pdf`, del test con `HU016_PDF_DIR`: el fixture de HU-007 (A contra B), con las mismas 4 páginas que antes del cambio.
+  - Rasterizado en gris (`pdftoppm -gray`), los 4 tejidos y las 3 zonas se distinguen.
+  - Es el mismo criterio del test: las luminancias se separan por ≥ 0,08.
+
+## Decisiones no obvias y desvíos
+
+1. **Tonos de tejidos y zonas:**
+   - adiposo `#9ED3E8`, muscular `#24506B`, óseo `#A1A1A6`, residual `#6E67AC`;
+   - zonas: `#DCEFF6`, `#99CFE3` y `#64AECB`;
+   - serie anterior: `#AEAEB2`.
+   - Mantienen el orden y la separación de luminancias de HU-007.
+   - El rótulo dentro de cada tejido tiene un contraste de 4,5:1 o más (antes el residual con blanco daba 4,73; ahora da 5,0).
+2. **`metric` (16/600) está en la escala pero el PDF no la usa.** Lo probé para la cifra de los indicadores de salud, pero el informe pasaba de 4 a 5 páginas (la composición, que es `wrap={false}`, saltaba de hoja). Volví al renglón compacto de HU-007. `title` y `heading` sí cambian (de 18 a 20 y de 11 a 13); `caption` se usa en introducciones, encabezados de columna y notas.
+3. **`palette` en `PdfHeader`/`PdfFooter`:** los colores ya llegan por `styles` (que se arma con la paleta). La prop opcional repinta los secundarios aunque `styles` venga con otra paleta. Sin ella, el estilo es el mismo objeto de antes.
+4. **La fila de la profesional es específica:** "Falta tu matrícula", "Falta tu firma" o "Faltan tu matrícula y tu firma", en lugar del genérico "Falta tu matrícula o tu firma" de la HU. Por eso la página pasa booleanos.
+5. **"Restaurar el texto original"** sigue pidiendo confirmación ("¿Restaurar el texto original?" / la descripción de core / "Restaurar"), porque se pierde lo escrito. Los textos nuevos del editor viven en `lib/report-editor-text.ts`, no en core (D11b).
+6. **Ya no existe la marca "Borrador automático"** en los campos sin tocar: la HU pide que esos campos no lleven marca.
+7. **Confirmación de envío para `@lid`** (o un JID sin número): "Le llega por WhatsApp.". Sin nombre, el título es "¿Enviar el informe por WhatsApp?". El aviso posterior (`T.queued`) usa el teléfono con formato, o el nombre si no hay número, en vez del número crudo.
+8. **Barra de acciones:** en escritorio es una tarjeta al final y en el celular, `material-bar` sticky, con `env(safe-area-inset-bottom)`. Es un solo elemento con clases responsivas, sin botones duplicados. En el celular mide unos 145 px con la línea "Último PDF…". Los toasts del panel salen abajo a la derecha y en el celular pueden tapar la barra un momento; el `Toaster` es del layout y no lo toqué.
+9. **R5:** "Calcular requerimiento" queda deshabilitado solo si `deleting && prescription !== null`. Cuando llega la página revalidada con `prescription === null`, se libera aunque la key siga oculta por `releaseAfterMs`. En ISAK no hacía falta: cuando el estudio se va, la key pasa a `"isak:"`.
+10. **R6:** mientras corre la transición, el título del plan baja a 60 % de opacidad, aparece "Quitando el plan de la consulta…" con spinner (región `aria-live`, sin espacio reservado gracias a `empty:mt-0`) y el ítem del menú queda deshabilitado con su motivo.
+11. **R7:** `hasReport` es opcional en `EvolutionRow`. Solo lo trae la ficha (Historial); en la consulta queda `undefined`, porque ahí la tarjeta ISAK ya sabe si hay informe.
+
+## Autochequeo web-design-guidelines
+
+- En regla:
+  - íconos con `aria-hidden`;
+  - "Enviar" con su nombre completo en el celular;
+  - foco en "Cancelar" en las confirmaciones;
+  - "Último PDF…" y "Quitando…" con `aria-live`;
+  - textos de carga con "…";
+  - spinner con `motion-reduce:animate-none`;
+  - la barra sticky no tapa el campo con foco;
+  - botones de 44 px;
+  - los enlaces del bloque son `<a>`, y el guard de cambios sin guardar los intercepta.
+- A propósito: mayúscula solo en la primera palabra (convención del español) y comillas «» en el texto de "Sin dato", como en core.
+
+## Pendiente para el orquestador
+
+- Recorrido en Chrome: 1920×1080, movimiento reducido, imprimir el PDF en gris desde el navegador y el PDF de un plan de prueba antes y después. El test de `pdf-common` prueba que sin `palette` los estilos son idénticos, y `plan-pdf.tsx` no cambió.
+- El toast sobre la barra del celular (decisión 8), si molesta: `mobileOffset` en el `Toaster` del layout, fuera de esta entrega.
