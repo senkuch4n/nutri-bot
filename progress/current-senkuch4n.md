@@ -242,3 +242,5 @@ orquestador, para que las revise a la mañana:
 - Orden siguiente: 018d → 017c → 017b → 017d → 017f. PR #26 sigue abierto (lo revisa imleticio).
 - HU-018c-2 done (4bcc6ea); recorrido OK (detalle en el buscador). → `en_revision` (reviewer Opus).
 - HU-018c-2 **aprobada** (1ª revisión). HU-018c → `aprobada`. PR a develop (encadenado sobre #26).
+- HU-018d → `afinando` (afinador Opus; rama feat/hu-018d-medidas-caseras encadenada sobre 018c-2).
+- HU-018d afinada (docs/hu-medidas-caseras.md); validada en modo autónomo con todas las recomendaciones (D2 pendiente de preguntarle a la nutricionista; 018d-2 opcional). → `en_arquitectura` (architect Opus; migracion-prisma + ui).
