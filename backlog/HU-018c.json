@@ -8,14 +8,14 @@
   "origen": "Partición de HU-018",
   "slug": "buscador-recetas",
   "titulo": "Buscador de recetas tipo Google Shopping dentro de cada comida, con impacto en los macros del día (uno o varios días)",
-  "estado": "implementando",
+  "estado": "aprobada",
   "notas": "Depende de 018a y 018b.",
   "skills_architect": [
     "ui"
   ],
   "entregas": {
     "018c-1": "aprobada (2026-10-03, PR a develop)",
-    "018c-2": "implementando (rama encadenada sobre 018c-1 / PR #26)"
+    "018c-2": "aprobada (2026-10-04, 1ª revisión)"
   },
   "modelo": "opus",
   "skills": [

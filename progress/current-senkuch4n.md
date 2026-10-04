@@ -235,3 +235,10 @@ orquestador, para que las revise a la mañana:
 - HU-018c-1 done; recorrido OK (progress/recorrido_HU-018c.md); datos de prueba borrados. → `en_revision` (reviewer Opus, recomendado; modo autónomo).
 - HU-018c-1 **aprobada**. PR a develop. Sigue 018c-2 en rama encadenada (feat/hu-018c2-detalle-receta desde 018c-1) para no esperar el merge.
 - HU-018c-2 → `implementando` (Opus; apple-design, ui-ux-pro-max — recomendados, modo autónomo). Rama feat/hu-018c2-detalle-receta encadenada sobre feat/hu-018c-buscador-recetas (PR #26).
+
+## 2026-10-04 — vuelta del viaje, modo autónomo (/goal: "realizá todas las HU pendientes")
+- Decisiones que normalmente se preguntan (modelo, skills, validaciones): se toma la recomendada y se anota acá.
+- HU-018c-2: implementer relanzado (Opus; apple-design, ui-ux-pro-max) sobre el WIP de feat/hu-018c2-detalle-receta.
+- Orden siguiente: 018d → 017c → 017b → 017d → 017f. PR #26 sigue abierto (lo revisa imleticio).
+- HU-018c-2 done (4bcc6ea); recorrido OK (detalle en el buscador). → `en_revision` (reviewer Opus).
+- HU-018c-2 **aprobada** (1ª revisión). HU-018c → `aprobada`. PR a develop (encadenado sobre #26).

@@ -437,3 +437,7 @@
 - **Verificación:** 1712 tests; `next build` y `next build --turbopack`; `test:recipe-picker`; recorrido en Chrome
   (`progress/recorrido_HU-018c.md`). Aprobada en la primera revisión. Pendientes menores para 018c-2 en la SDD.
 - **Modelos:** architect Opus; implementer Opus; reviewer Opus. Tramo hecho en modo autónomo (decisiones recomendadas).
+
+## HU-018c-2 — Detalle de la receta (aprobada 2026-10-04, senkuch4n)
+- Detalle de receta en el buscador (foto, ingredientes con medida casera y gramos, preparación, impacto, pie fijo para agregar) y "Ver receta" en el portal sin macros. Cierra los 4 pendientes de la revisión de 018c-1.
+- Implementer Opus (apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones menores en progress/review_HU-018c.md (test unitario de applyTemplateToPatient con receta, retry sin cancelación, macros de ítems que viajan al portal como ya pasaba con alimentos, mirar el PDF real antes del merge).
