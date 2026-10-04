@@ -406,7 +406,9 @@ function PickerCard({
       recipeName={card.name}
       impact={impactView}
       addLabel={addLabel}
-      addAriaLabel={addAriaLabel(card.name, meal.name, scope)}
+      // En el detalle el botón ya dice el destino: el nombre accesible empieza con el texto visible
+      // (WCAG 2.5.3, control por voz) y suma la receta.
+      addAriaLabel={variant === "dialog" ? `${addLabel}: ${card.name}` : addAriaLabel(card.name, meal.name, scope)}
       pending={pending}
       error={error}
       onAdd={onAdd}

@@ -76,7 +76,7 @@ export function RecipePreviewDialog({
 
   return (
     <Dialog open={card !== null} onOpenChange={(next) => (!next ? onClose() : undefined)}>
-      <DialogContent className="gap-0 p-0 sm:max-w-2xl" aria-busy={state.status === "loading"}>
+      <DialogContent className="gap-0 scroll-pb-48 p-0 sm:max-w-2xl" aria-busy={state.status === "loading"}>
         {shown ? (
           <>
             <DialogHeader className="px-6 pb-4 pr-14 pt-6 text-left">
