@@ -22,7 +22,7 @@ import {
   type IsakTissue,
   type IsakValue,
 } from "@nutri-bot/core";
-import { FileText } from "lucide-react";
+import { FileText, Pencil } from "lucide-react";
 import {
   getAnthropometricReportMeta,
   getConsultation,
@@ -36,6 +36,7 @@ import { getProfessional } from "@/lib/professional";
 import { FormulaDataForm } from "../../../formula-data-form";
 import { FormulaDataSheet } from "../../../formula-data-sheet";
 import { IsakStudyMoreMenu } from "../delete-isak-study-button";
+import { IsakSectionIndex, type IsakSection } from "./isak-section-index";
 import {
   BMI_FOR_AGE_TONES,
   BMI_TONES,
@@ -53,6 +54,9 @@ import { Somatochart } from "./somatochart";
 import { TissueStackedBar } from "./tissue-stacked-bar";
 
 export const dynamic = "force-dynamic";
+
+/** Cada sección deja lugar arriba para la barra móvil (56 px) y la fila de chips del índice. */
+const SECTION_CLASS = "scroll-mt-32 lg:scroll-mt-20 xl:scroll-mt-6";
 
 /** "Anterior 4,95 (−0,92)" para filas y tiles (null si no hay anterior ok). */
 function previousNote(current: IsakValue, previous: IsakValue | undefined, decimals: number): string | null {
@@ -203,6 +207,17 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
   const imo = current.compositionIndices.muscleBone;
   const prevImo = previous ? classifiedValue(previous.compositionIndices.muscleBone) : undefined;
 
+  const sections: IsakSection[] = [
+    { id: "isak-medidas", label: "Medidas" },
+    ...(minor ? [] : [{ id: "isak-composicion", label: "Composición" }]),
+    { id: "isak-distribucion", label: "Distribución" },
+    ...(minor ? [] : [{ id: "isak-indices-composicion", label: "Índices de composición" }]),
+    { id: "isak-adiposidad", label: "Adiposidad y muscularidad" },
+    { id: "isak-proporcionalidad", label: "Proporcionalidad" },
+    { id: "isak-somatotipo", label: "Somatotipo" },
+    { id: "isak-salud", label: "Índices de salud" },
+  ];
+
   return (
     <div>
       <PageHeader
@@ -211,11 +226,12 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
         back={{ href: consultationHref, label: "Volver a la consulta" }}
         action={
           <>
-            <ButtonLink href={`${consultationHref}/antropometria/informe`} variant="secondary" size="sm">
+            <ButtonLink href={`${consultationHref}/antropometria/informe`} size="lg">
               <FileText aria-hidden />
-              {ISAK_TEXT.reportButton}
+              Informe
             </ButtonLink>
-            <ButtonLink href={`${consultationHref}?isak=editar#antropometria-isak`} variant="secondary" size="sm">
+            <ButtonLink href={`${consultationHref}?isak=editar#antropometria-isak`} variant="secondary" size="lg">
+              <Pencil aria-hidden />
               Editar
             </ButtonLink>
             <IsakStudyMoreMenu
@@ -229,336 +245,362 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
         }
       />
 
-      <div className="space-y-6">
-        {minor || missingMessage || previousAt ? (
-          <div className="space-y-3">
-            {minor ? <Alert tone="info">{ISAK_TEXT.minorWarning}</Alert> : null}
-            {missingMessage ? (
-              <div className="space-y-3">
-                <Alert tone="warning">{missingMessage}</Alert>
-                <div className="flex flex-wrap gap-2">
-                  {patient.sex === null ? (
-                    <FormulaDataSheet
-                      trigger={
-                        <Button type="button" variant="secondary" size="sm">
-                          Completar datos para cálculos
-                        </Button>
-                      }
-                    >
-                      <FormulaDataForm
-                        patientId={id}
-                        values={{
-                          sex: patient.sex,
-                          activityLevel: patient.activityLevel,
-                          nutritionGoal: patient.nutritionGoal,
-                          bodyFrame: patient.bodyFrame,
-                        }}
-                      />
-                    </FormulaDataSheet>
-                  ) : null}
-                  {patient.birthDate === null ? (
-                    <ButtonLink href={`/pacientes/${id}?editar=datos`} variant="secondary" size="sm">
-                      Editar datos
-                    </ButtonLink>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            {previousAt ? (
-              <p className="text-sm text-muted-foreground">
-                {ISAK_TEXT.comparedWith(
-                  dateLabel(previousAt),
-                  daysBetweenDayKeys(dayKeyInTz(previousAt, tz), dayKeyInTz(consultation.consultedAt, tz)),
-                )}
-              </p>
-            ) : null}
+      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_13rem] xl:items-start xl:gap-8">
+        <div className="min-w-0">
+          <div className="material-chrome sticky top-14 z-20 -mx-6 mb-4 px-6 lg:top-0 lg:-mx-10 lg:px-10 xl:hidden">
+            <IsakSectionIndex sections={sections} variant="chips" />
           </div>
-        ) : null}
-
-        {/* 1. Medidas */}
-        <Card title="Medidas">
-          <IsakMeasuresTable current={current} previous={previous} />
-        </Card>
-
-        {/* 2. Composición corporal (no en menores, D13) */}
-        {minor ? null : (
-          <Card title="Composición corporal">
-            <div className="space-y-6">
-              {compositionTable(
-                "Fraccionamiento molecular",
-                <>
-                  {tissueRow(ISAK_METHOD_LABELS.fatMass, current.molecular.fatMass, previous?.molecular.fatMass)}
-                  {tissueRow(
-                    ISAK_METHOD_LABELS.fatFreeMass,
-                    { ...current.molecular.fatFreeMass, z: current.molecular.fatFreeMass.kg },
-                    previous ? { ...previous.molecular.fatFreeMass, z: previous.molecular.fatFreeMass.kg } : undefined,
-                    false,
-                  )}
-                </>,
-              )}
-              <div>
-                {compositionTable(
-                  "Fraccionamiento tisular",
-                  <>
-                    {tissueRow(ISAK_METHOD_LABELS.adipose, current.tissues.adipose, previous?.tissues.adipose)}
-                    {tissueRow(ISAK_METHOD_LABELS.muscle, current.tissues.muscle, previous?.tissues.muscle)}
-                    {tissueRow(ISAK_METHOD_LABELS.bone, current.tissues.bone, previous?.tissues.bone)}
-                    {tissueRow(ISAK_METHOD_LABELS.residual, current.tissues.residual, previous?.tissues.residual)}
-                  </>,
-                )}
-                {current.tissues.residual.negative ? (
-                  <Alert tone="warning" className="mt-4">
-                    {ISAK_TEXT.negativeResidual}
-                  </Alert>
+          <div className="space-y-6">
+            {minor || missingMessage || previousAt ? (
+              <div className="space-y-3">
+                {minor ? <Alert tone="info">{ISAK_TEXT.minorWarning}</Alert> : null}
+                {missingMessage ? (
+                  <div className="space-y-3">
+                    <Alert tone="warning">{missingMessage}</Alert>
+                    <div className="flex flex-wrap gap-2">
+                      {patient.sex === null ? (
+                        <FormulaDataSheet
+                          trigger={
+                            <Button type="button" variant="secondary" size="sm">
+                              Completar datos para cálculos
+                            </Button>
+                          }
+                        >
+                          <FormulaDataForm
+                            patientId={id}
+                            values={{
+                              sex: patient.sex,
+                              activityLevel: patient.activityLevel,
+                              nutritionGoal: patient.nutritionGoal,
+                              bodyFrame: patient.bodyFrame,
+                            }}
+                          />
+                        </FormulaDataSheet>
+                      ) : null}
+                      {patient.birthDate === null ? (
+                        <ButtonLink href={`/pacientes/${id}?editar=datos`} variant="secondary" size="sm">
+                          Editar datos
+                        </ButtonLink>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : null}
-                <TissueStackedBar tissues={current.tissues} />
+                {previousAt ? (
+                  <p className="text-sm text-muted-foreground">
+                    {ISAK_TEXT.comparedWith(
+                      dateLabel(previousAt),
+                      daysBetweenDayKeys(dayKeyInTz(previousAt, tz), dayKeyInTz(consultation.consultedAt, tz)),
+                    )}
+                  </p>
+                ) : null}
               </div>
-            </div>
-          </Card>
-        )}
+            ) : null}
 
-        {/* 3. Distribución adiposo-muscular */}
-        <Card title="Distribución adiposo-muscular">
-          <div className="grid gap-6 sm:grid-cols-2">
-            {(
-              [
-                {
-                  title: "Adiposa",
-                  items: [
-                    ["Superior", current.distribution.adipose.upper],
-                    ["Central", current.distribution.adipose.central],
-                    ["Inferior", current.distribution.adipose.lower],
-                  ],
-                },
-                {
-                  title: "Muscular",
-                  items: [
-                    ["Brazo", current.distribution.muscle.arm],
-                    ["Muslo", current.distribution.muscle.thigh],
-                    ["Pierna", current.distribution.muscle.calf],
-                  ],
-                },
-              ] as const
-            ).map((list) => (
-              <div key={list.title}>
-                <h3 className="mb-2 text-sm font-semibold">{list.title}</h3>
+            {/* 1. Medidas */}
+            <div id="isak-medidas" className={SECTION_CLASS}>
+              <Card title="Medidas">
+                <IsakMeasuresTable current={current} previous={previous} />
+              </Card>
+            </div>
+
+            {/* 2. Composición corporal (no en menores, D13) */}
+            {minor ? null : (
+              <div id="isak-composicion" className={SECTION_CLASS}>
+                <Card title="Composición corporal">
+                  <div className="space-y-6">
+                    {compositionTable(
+                      "Fraccionamiento molecular",
+                      <>
+                        {tissueRow(ISAK_METHOD_LABELS.fatMass, current.molecular.fatMass, previous?.molecular.fatMass)}
+                        {tissueRow(
+                          ISAK_METHOD_LABELS.fatFreeMass,
+                          { ...current.molecular.fatFreeMass, z: current.molecular.fatFreeMass.kg },
+                          previous ? { ...previous.molecular.fatFreeMass, z: previous.molecular.fatFreeMass.kg } : undefined,
+                          false,
+                        )}
+                      </>,
+                    )}
+                    <div>
+                      {compositionTable(
+                        "Fraccionamiento tisular",
+                        <>
+                          {tissueRow(ISAK_METHOD_LABELS.adipose, current.tissues.adipose, previous?.tissues.adipose)}
+                          {tissueRow(ISAK_METHOD_LABELS.muscle, current.tissues.muscle, previous?.tissues.muscle)}
+                          {tissueRow(ISAK_METHOD_LABELS.bone, current.tissues.bone, previous?.tissues.bone)}
+                          {tissueRow(ISAK_METHOD_LABELS.residual, current.tissues.residual, previous?.tissues.residual)}
+                        </>,
+                      )}
+                      {current.tissues.residual.negative ? (
+                        <Alert tone="warning" className="mt-4">
+                          {ISAK_TEXT.negativeResidual}
+                        </Alert>
+                      ) : null}
+                      <TissueStackedBar tissues={current.tissues} />
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {/* 3. Distribución adiposo-muscular */}
+            <div id="isak-distribucion" className={SECTION_CLASS}>
+              <Card title="Distribución adiposo-muscular">
+                <div className="grid gap-6 sm:grid-cols-2">
+                  {(
+                    [
+                      {
+                        title: "Adiposa",
+                        items: [
+                          ["Superior", current.distribution.adipose.upper],
+                          ["Central", current.distribution.adipose.central],
+                          ["Inferior", current.distribution.adipose.lower],
+                        ],
+                      },
+                      {
+                        title: "Muscular",
+                        items: [
+                          ["Brazo", current.distribution.muscle.arm],
+                          ["Muslo", current.distribution.muscle.thigh],
+                          ["Pierna", current.distribution.muscle.calf],
+                        ],
+                      },
+                    ] as const
+                  ).map((list) => (
+                    <div key={list.title}>
+                      <h3 className="mb-2 text-sm font-semibold">{list.title}</h3>
+                      <dl className="divide-y text-sm">
+                        {list.items.map(([label, value]) => (
+                          <Row key={label} label={label}>
+                            <IsakValueText value={value} decimals={2} unit="%" />
+                          </Row>
+                        ))}
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+
+            {/* 4. Índices de composición corporal (no en menores, D13) */}
+            {minor ? null : (
+              <div id="isak-indices-composicion" className={SECTION_CLASS}>
+                <Card title="Índices de composición corporal">
+                  <dl className="divide-y text-sm">
+                    <Row label="Índice adiposo muscular">
+                      <IsakValueText value={current.compositionIndices.adiposeMuscle} decimals={2} />
+                      <PrevNote
+                        current={current.compositionIndices.adiposeMuscle}
+                        previous={previous?.compositionIndices.adiposeMuscle}
+                        decimals={2}
+                      />
+                      <span className="basis-full text-xs text-muted-foreground">{ISAK_TEXT.adiposeMuscleHint}</span>
+                    </Row>
+                    <Row label="Índice músculo/óseo">
+                      <IsakValueText value={classifiedValue(imo)} decimals={2} />
+                      {imo.status === "ok" ? <Badge tone={MUSCLE_BONE_TONES[imo.classKey]}>{imo.classLabel}</Badge> : null}
+                      <PrevNote current={classifiedValue(imo)} previous={prevImo} decimals={2} />
+                    </Row>
+                  </dl>
+                  <details className="mt-4 text-sm">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver tabla de categorías</summary>
+                    <Table containerClassName="mt-2 max-w-xs">
+                      <TableHeader>
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead>Rango</TableHead>
+                          <TableHead>Categoría</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {MUSCLE_BONE_TABLE.map((r) => (
+                          <TableRow key={r.key}>
+                            <TableCell className="tabular-nums">{r.range}</TableCell>
+                            <TableCell>{MUSCLE_BONE_CLASS_LABELS[r.key]}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </details>
+                </Card>
+              </div>
+            )}
+
+            {/* 5. Adiposidad y muscularidad */}
+            <div id="isak-adiposidad" className={SECTION_CLASS}>
+              <Card title="Adiposidad y muscularidad">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead>Indicador</TableHead>
+                      <TableHead numeric>Valor</TableHead>
+                      <TableHead numeric>Z</TableHead>
+                      {withPrev ? (
+                        <>
+                          <TableHead numeric>Anterior</TableHead>
+                          <TableHead numeric>Dif.</TableHead>
+                        </>
+                      ) : null}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {indicatorRows.map((r) => (
+                      <TableRow key={r.label}>
+                        <TableCell>{r.label}</TableCell>
+                        <TableCell numeric>
+                          <IsakValueText value={r.value} decimals={r.decimals} unit={r.unit} />
+                        </TableCell>
+                        <TableCell numeric>
+                          {r.z ? <IsakValueText value={r.z} decimals={2} /> : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        {withPrev ? <PreviousCells current={r.value} previous={r.prev} decimals={r.decimals} unit={r.unit} /> : null}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Card>
+            </div>
+
+            {/* 6. Proporcionalidad */}
+            <div id="isak-proporcionalidad" className={SECTION_CLASS}>
+              <Card title="Proporcionalidad">
                 <dl className="divide-y text-sm">
-                  {list.items.map(([label, value]) => (
-                    <Row key={label} label={label}>
-                      <IsakValueText value={value} decimals={2} unit="%" />
+                  {proportionality.map((p) => (
+                    <Row key={p.label} label={p.label}>
+                      <IsakValueText value={classifiedValue(p.row)} decimals={p.decimals} />
+                      {p.row.status === "ok" ? <Muted>{p.row.classLabel}</Muted> : null}
+                      <PrevNote
+                        current={classifiedValue(p.row)}
+                        previous={p.prev ? classifiedValue(p.prev) : undefined}
+                        decimals={p.decimals}
+                      />
                     </Row>
                   ))}
                 </dl>
-              </div>
-            ))}
-          </div>
-        </Card>
+              </Card>
+            </div>
 
-        {/* 4. Índices de composición corporal (no en menores, D13) */}
-        {minor ? null : (
-          <Card title="Índices de composición corporal">
-            <dl className="divide-y text-sm">
-              <Row label="Índice adiposo muscular">
-                <IsakValueText value={current.compositionIndices.adiposeMuscle} decimals={2} />
-                <PrevNote
-                  current={current.compositionIndices.adiposeMuscle}
-                  previous={previous?.compositionIndices.adiposeMuscle}
-                  decimals={2}
-                />
-                <span className="basis-full text-xs text-muted-foreground">{ISAK_TEXT.adiposeMuscleHint}</span>
-              </Row>
-              <Row label="Índice músculo/óseo">
-                <IsakValueText value={classifiedValue(imo)} decimals={2} />
-                {imo.status === "ok" ? <Badge tone={MUSCLE_BONE_TONES[imo.classKey]}>{imo.classLabel}</Badge> : null}
-                <PrevNote current={classifiedValue(imo)} previous={prevImo} decimals={2} />
-              </Row>
-            </dl>
-            <details className="mt-4 text-sm">
-              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Ver tabla de categorías</summary>
-              <Table containerClassName="mt-2 max-w-xs">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Rango</TableHead>
-                    <TableHead>Categoría</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {MUSCLE_BONE_TABLE.map((r) => (
-                    <TableRow key={r.key}>
-                      <TableCell className="tabular-nums">{r.range}</TableCell>
-                      <TableCell>{MUSCLE_BONE_CLASS_LABELS[r.key]}</TableCell>
-                    </TableRow>
+            {/* 7. Somatotipo */}
+            <div id="isak-somatotipo" className={SECTION_CLASS}>
+              <Card title="Somatotipo">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {(
+                    [
+                      ["Endomorfia", somato.endo, prevSomato?.endo],
+                      ["Mesomorfia", somato.meso, prevSomato?.meso],
+                      ["Ectomorfia", somato.ecto, prevSomato?.ecto],
+                    ] as const
+                  ).map(([label, value, prev]) => (
+                    <StatTile key={label} label={label} value={value.status === "ok" ? formatFixedEs(value.value, 2) : undefined}>
+                      {value.status === "missing" ? <p className="mt-1 text-xs text-muted-foreground">{value.note}</p> : null}
+                      {prev && previousNote(value, prev, 2) ? (
+                        <p className="mt-1 text-xs tabular-nums text-muted-foreground">{previousNote(value, prev, 2)}</p>
+                      ) : null}
+                    </StatTile>
                   ))}
-                </TableBody>
-              </Table>
-            </details>
-          </Card>
-        )}
+                </div>
+                <p className="mt-4 font-medium">
+                  {somato.category.status === "ok" ? (
+                    somato.category.label
+                  ) : (
+                    <span className="text-sm font-normal text-muted-foreground">{somato.category.note}</span>
+                  )}
+                </p>
+                <div className="mt-4">
+                  <Somatochart
+                    current={somato.chart.status === "ok" ? { x: somato.chart.x, y: somato.chart.y, label: somatoLabel(somato) } : null}
+                    previous={
+                      prevSomato && prevSomato.chart.status === "ok"
+                        ? { x: prevSomato.chart.x, y: prevSomato.chart.y, label: somatoLabel(prevSomato) }
+                        : null
+                    }
+                    missingNote={somato.chart.status === "missing" ? somato.chart.note : undefined}
+                  />
+                </div>
+              </Card>
+            </div>
 
-        {/* 5. Adiposidad y muscularidad */}
-        <Card title="Adiposidad y muscularidad">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Indicador</TableHead>
-                <TableHead numeric>Valor</TableHead>
-                <TableHead numeric>Z</TableHead>
-                {withPrev ? (
-                  <>
-                    <TableHead numeric>Anterior</TableHead>
-                    <TableHead numeric>Dif.</TableHead>
-                  </>
-                ) : null}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {indicatorRows.map((r) => (
-                <TableRow key={r.label}>
-                  <TableCell>{r.label}</TableCell>
-                  <TableCell numeric>
-                    <IsakValueText value={r.value} decimals={r.decimals} unit={r.unit} />
-                  </TableCell>
-                  <TableCell numeric>
-                    {r.z ? <IsakValueText value={r.z} decimals={2} /> : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  {withPrev ? <PreviousCells current={r.value} previous={r.prev} decimals={r.decimals} unit={r.unit} /> : null}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+            {/* 8. Índices de salud (reusa las filas del diagnóstico de la HU-004) */}
+            <div id="isak-salud" className={SECTION_CLASS}>
+              <Card title="Índices de salud">
+                <dl className="divide-y text-sm">
+                  {health.ageGroup === "PEDIATRIC" && health.pediatric ? (
+                    <>
+                      <GrowthIndicatorRow
+                        label={PEDIATRIC_TEXT.bmiForAgeLabel}
+                        row={health.pediatric.bmiForAge}
+                        tones={BMI_FOR_AGE_TONES}
+                        decimals={1}
+                        reference={PEDIATRIC_TEXT.bmiForAgeReference}
+                        source={null}
+                      />
+                      <GrowthIndicatorRow
+                        label={PEDIATRIC_TEXT.heightForAgeLabel}
+                        row={health.pediatric.heightForAge}
+                        tones={HEIGHT_FOR_AGE_TONES}
+                        unit="cm"
+                        decimals={1}
+                        reference={PEDIATRIC_TEXT.heightForAgeReference}
+                        source={null}
+                      />
+                    </>
+                  ) : (
+                    <IndicatorRow
+                      label="IMC"
+                      row={health.bmi}
+                      tones={BMI_TONES}
+                      decimals={1}
+                      reference={minor ? null : BMI_HEALTHY_RANGE_TEXT}
+                      source={null}
+                    />
+                  )}
+                  {health.waistHipRatio ? (
+                    <IndicatorRow
+                      label="Índice cintura/cadera"
+                      row={health.waistHipRatio}
+                      tones={WAIST_HIP_TONES}
+                      decimals={2}
+                      reference={health.waistHipRatio.thresholdText}
+                      source={null}
+                    />
+                  ) : null}
+                  {health.waistToHeight ? (
+                    <IndicatorRow
+                      label="Cintura/talla"
+                      row={health.waistToHeight}
+                      tones={HEALTHY_TONES}
+                      decimals={2}
+                      reference="<0,50"
+                      source={null}
+                    />
+                  ) : null}
+                  {health.conicity ? (
+                    <IndicatorRow
+                      label="Índice de conicidad"
+                      row={health.conicity}
+                      tones={HEALTHY_TONES}
+                      decimals={2}
+                      reference="<1,4"
+                      source={null}
+                    />
+                  ) : null}
+                  <Row label="Índice de distribución grasa">
+                    <IsakValueText value={current.health.fatDistributionIndex} decimals={2} />
+                    <PrevNote
+                      current={current.health.fatDistributionIndex}
+                      previous={previous?.health.fatDistributionIndex}
+                      decimals={2}
+                    />
+                    <span className="basis-full text-xs text-muted-foreground">{ISAK_TEXT.fatDistributionHint}</span>
+                  </Row>
+                </dl>
+              </Card>
+            </div>
 
-        {/* 6. Proporcionalidad */}
-        <Card title="Proporcionalidad">
-          <dl className="divide-y text-sm">
-            {proportionality.map((p) => (
-              <Row key={p.label} label={p.label}>
-                <IsakValueText value={classifiedValue(p.row)} decimals={p.decimals} />
-                {p.row.status === "ok" ? <Muted>{p.row.classLabel}</Muted> : null}
-                <PrevNote
-                  current={classifiedValue(p.row)}
-                  previous={p.prev ? classifiedValue(p.prev) : undefined}
-                  decimals={p.decimals}
-                />
-              </Row>
-            ))}
-          </dl>
-        </Card>
-
-        {/* 7. Somatotipo */}
-        <Card title="Somatotipo">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {(
-              [
-                ["Endomorfia", somato.endo, prevSomato?.endo],
-                ["Mesomorfia", somato.meso, prevSomato?.meso],
-                ["Ectomorfia", somato.ecto, prevSomato?.ecto],
-              ] as const
-            ).map(([label, value, prev]) => (
-              <StatTile key={label} label={label} value={value.status === "ok" ? formatFixedEs(value.value, 2) : undefined}>
-                {value.status === "missing" ? <p className="mt-1 text-xs text-muted-foreground">{value.note}</p> : null}
-                {prev && previousNote(value, prev, 2) ? (
-                  <p className="mt-1 text-xs tabular-nums text-muted-foreground">{previousNote(value, prev, 2)}</p>
-                ) : null}
-              </StatTile>
-            ))}
+            <p className="text-xs text-muted-foreground">{ISAK_TEXT.methods}</p>
           </div>
-          <p className="mt-4 font-medium">
-            {somato.category.status === "ok" ? (
-              somato.category.label
-            ) : (
-              <span className="text-sm font-normal text-muted-foreground">{somato.category.note}</span>
-            )}
-          </p>
-          <div className="mt-4">
-            <Somatochart
-              current={somato.chart.status === "ok" ? { x: somato.chart.x, y: somato.chart.y, label: somatoLabel(somato) } : null}
-              previous={
-                prevSomato && prevSomato.chart.status === "ok"
-                  ? { x: prevSomato.chart.x, y: prevSomato.chart.y, label: somatoLabel(prevSomato) }
-                  : null
-              }
-              missingNote={somato.chart.status === "missing" ? somato.chart.note : undefined}
-            />
-          </div>
-        </Card>
-
-        {/* 8. Índices de salud (reusa las filas del diagnóstico de la HU-004) */}
-        <Card title="Índices de salud">
-          <dl className="divide-y text-sm">
-            {health.ageGroup === "PEDIATRIC" && health.pediatric ? (
-              <>
-                <GrowthIndicatorRow
-                  label={PEDIATRIC_TEXT.bmiForAgeLabel}
-                  row={health.pediatric.bmiForAge}
-                  tones={BMI_FOR_AGE_TONES}
-                  decimals={1}
-                  reference={PEDIATRIC_TEXT.bmiForAgeReference}
-                  source={null}
-                />
-                <GrowthIndicatorRow
-                  label={PEDIATRIC_TEXT.heightForAgeLabel}
-                  row={health.pediatric.heightForAge}
-                  tones={HEIGHT_FOR_AGE_TONES}
-                  unit="cm"
-                  decimals={1}
-                  reference={PEDIATRIC_TEXT.heightForAgeReference}
-                  source={null}
-                />
-              </>
-            ) : (
-              <IndicatorRow
-                label="IMC"
-                row={health.bmi}
-                tones={BMI_TONES}
-                decimals={1}
-                reference={minor ? null : BMI_HEALTHY_RANGE_TEXT}
-                source={null}
-              />
-            )}
-            {health.waistHipRatio ? (
-              <IndicatorRow
-                label="Índice cintura/cadera"
-                row={health.waistHipRatio}
-                tones={WAIST_HIP_TONES}
-                decimals={2}
-                reference={health.waistHipRatio.thresholdText}
-                source={null}
-              />
-            ) : null}
-            {health.waistToHeight ? (
-              <IndicatorRow
-                label="Cintura/talla"
-                row={health.waistToHeight}
-                tones={HEALTHY_TONES}
-                decimals={2}
-                reference="<0,50"
-                source={null}
-              />
-            ) : null}
-            {health.conicity ? (
-              <IndicatorRow
-                label="Índice de conicidad"
-                row={health.conicity}
-                tones={HEALTHY_TONES}
-                decimals={2}
-                reference="<1,4"
-                source={null}
-              />
-            ) : null}
-            <Row label="Índice de distribución grasa">
-              <IsakValueText value={current.health.fatDistributionIndex} decimals={2} />
-              <PrevNote
-                current={current.health.fatDistributionIndex}
-                previous={previous?.health.fatDistributionIndex}
-                decimals={2}
-              />
-              <span className="basis-full text-xs text-muted-foreground">{ISAK_TEXT.fatDistributionHint}</span>
-            </Row>
-          </dl>
-        </Card>
-
-        <p className="text-xs text-muted-foreground">{ISAK_TEXT.methods}</p>
+        </div>
+        <div className="sticky top-6 hidden xl:block">
+          <IsakSectionIndex sections={sections} variant="list" />
+        </div>
       </div>
     </div>
   );
