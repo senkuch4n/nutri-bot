@@ -70,7 +70,7 @@ export function SummarySection({
         <div className="grid gap-8 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
           <div className="grid gap-4 sm:grid-cols-2">
             {nextAppointment ? (
-              <SummaryCard title="Próximo turno" icon={CalendarClock} href={`/?fecha=${nextAppointment.dayKey}`}>
+              <SummaryCard title="Próximo turno" icon={<CalendarClock />} href={`/?fecha=${nextAppointment.dayKey}`}>
                 <SummaryCardText
                   primary={nextAppointment.whenLabel}
                   secondary={
@@ -84,7 +84,7 @@ export function SummarySection({
                 />
               </SummaryCard>
             ) : (
-              <SummaryCard title="Próximo turno" icon={CalendarClock}>
+              <SummaryCard title="Próximo turno" icon={<CalendarClock />}>
                 <SummaryCardText primary={<span className="text-muted-foreground">{T.noAppointment}</span>} />
               </SummaryCard>
             )}
@@ -92,25 +92,25 @@ export function SummarySection({
             {lastConsultation ? (
               <SummaryCard
                 title="Última consulta"
-                icon={Stethoscope}
+                icon={<Stethoscope />}
                 href={`/pacientes/${patientId}/consultas/${lastConsultation.id}`}
               >
                 <SummaryCardText primary={lastConsultation.whenLabel} secondary={lastConsultation.recordedText} />
               </SummaryCard>
             ) : (
-              <SummaryCard title="Última consulta" icon={Stethoscope}>
+              <SummaryCard title="Última consulta" icon={<Stethoscope />}>
                 <SummaryCardText primary={<span className="text-muted-foreground">Todavía no hay consultas</span>} />
               </SummaryCard>
             )}
 
             {activePlan ? (
-              <SummaryCard title="Plan" icon={ClipboardList} href={`/pacientes/${patientId}/planes/${activePlan.id}`}>
+              <SummaryCard title="Plan" icon={<ClipboardList />} href={`/pacientes/${patientId}/planes/${activePlan.id}`}>
                 <SummaryCardText primary={activePlan.title} secondary={activePlan.sinceLabel} />
               </SummaryCard>
             ) : (
               <SummaryCard
                 title="Plan"
-                icon={ClipboardList}
+                icon={<ClipboardList />}
                 footer={
                   <PatientTabButton tab="planes">
                     <ClipboardList aria-hidden />
@@ -123,7 +123,7 @@ export function SummarySection({
             )}
 
             {weight ? (
-              <SummaryCard title="Peso" icon={Scale} tab={{ tab: "historial", view: "medidas" }}>
+              <SummaryCard title="Peso" icon={<Scale />} tab={{ tab: "historial", view: "medidas" }}>
                 <div className="flex items-end justify-between gap-3">
                   <Metric
                     label={`Medido el ${weight.latestDateLabel}`}
@@ -142,7 +142,7 @@ export function SummarySection({
             ) : (
               <SummaryCard
                 title="Peso"
-                icon={Scale}
+                icon={<Scale />}
                 footer={
                   <PatientTabButton tab="historial" view="medidas">
                     <Scale aria-hidden />

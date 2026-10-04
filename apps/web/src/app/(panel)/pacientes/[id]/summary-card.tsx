@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ChevronRight, type LucideIcon } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { patientTabQuery } from "@/lib/patient-tab-route";
 import { cn } from "@/lib/utils";
 import { usePatientTabs, type PatientTabTarget } from "./patient-tabs";
@@ -12,11 +12,13 @@ const surface =
 const interactive =
   "press-sm transition-colors duration-hover hover:bg-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
-function CardBody({ title, icon: Icon, children, chevron }: { title: string; icon: LucideIcon; children: ReactNode; chevron: boolean }) {
+function CardBody({ title, icon, children, chevron }: { title: string; icon: ReactNode; children: ReactNode; chevron: boolean }) {
   return (
     <>
       <span className="flex items-center gap-2 text-subheadline font-medium text-muted-foreground">
-        <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+        <span aria-hidden className="inline-flex shrink-0 [&_svg]:size-4 [&_svg]:stroke-[1.75]">
+          {icon}
+        </span>
         <span className="min-w-0 flex-1">{title}</span>
         {chevron ? <ChevronRight className="size-4 shrink-0 text-tertiary" strokeWidth={2} aria-hidden /> : null}
       </span>
@@ -39,7 +41,9 @@ export function SummaryCard({
   children,
 }: {
   title: string;
-  icon: LucideIcon;
+  /** Ícono ya renderizado (`<Scale />`): esta tarjeta es cliente y la arma un server component, y una
+   *  función (el componente del ícono) no cruza esa frontera. */
+  icon: ReactNode;
   href?: string;
   tab?: PatientTabTarget;
   /** Acción propia de una tarjeta sin destino ("Ver planes", "Cargar peso"). */
