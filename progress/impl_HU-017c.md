@@ -355,3 +355,240 @@ con `playwright-core`; todo en el scratchpad, ya borrado):
   El chequeo detecta la regresión.
 
 El dev server de :3100 no se tocó (responde 200).
+
+---
+
+# 017c-3: consulta, ISAK y borrados con "Deshacer"
+
+- **Estado:** done
+- **Rama:** `feat/hu-017c3-consulta`, encadenada sobre `feat/hu-017c2-ficha` (decisión Q6). Sin push.
+- **SDD:** `Refactorizaciones/017c-pacientes-consultas.md`: entrega 017c-3, "Decisiones" y "Agregados a 017c-3" (R3 y R4).
+- **Modelo:** Opus.
+- **Skills:**
+  - antes del JSX: `apple-design`, `ui-ux-pro-max` y `mblode-agent-skills-ui-animation` (toast y transiciones);
+  - al final, como autochequeo: `web-design-guidelines`.
+
+## Commits (uno por fase)
+
+| Commit | Fase |
+|---|---|
+| `6903313` | A: borrado diferido con Deshacer (mecanismo) |
+| `8226056` | B: actions de borrado listas para diferir + textos de core |
+| `bf5a182` | C: `MoreActionsMenu` y consulta (encabezado, lateral sticky, aviso, notas) |
+| `2eefc8f` | D: los borrados con confirmación y "Deshacer", y el filtrado de pendientes |
+| `09484bb` | E: estudio ISAK (índice, barras z, gráficos) y formulario |
+| `70205eb` | R3: error de hidratación de `useId` en el panel |
+| `817e604` | R4: placeholders con coma decimal |
+| `15adff2` | Autochequeo: comillas tipográficas y la barra z sin dato |
+| (este archivo) | F: verificación |
+
+## Archivos
+
+**packages/core** (solo textos que se ven en el panel, D11b; con sus tests):
+- `isak-study.ts`: los textos de `ISAK_TEXT` quedan así:
+  - `deleteTitle`: "¿Borrar el estudio ISAK?";
+  - `deleteDescription`: "Se borran las medidas del estudio.";
+  - `deleteWithReportDescription`: "Se borran las medidas del estudio y su informe.";
+  - `deleted`: "Estudio borrado";
+  - `saved`: "Estudio guardado" (HU §2.3, "al guardar ve 'Estudio guardado'").
+- `energy-requirement.ts`: los textos de `REQUIREMENT_TEXT` quedan así:
+  - `deleteConfirmTitle`: "¿Borrar el cálculo de calorías?";
+  - `deleteConfirmDescription`: el texto de la tabla de la HU §4.3;
+  - `deleted`: "Cálculo borrado".
+- Tests nuevos en `isak-study.test.ts` y `energy-requirement.test.ts`.
+
+**apps/web:**
+- `lib/deferred-delete.ts` + test (nuevo). Exporta:
+  - `CommitResult`, `DeferredDeleteStore`, `createDeferredDeleteStore`, `deferredDeletes`;
+  - `usePendingDeletion`, `usePendingDeletions`, `useDeferredDelete`;
+  - `UNDO_TEXT` y `measurementLabelsText`.
+- `lib/notify.ts`:
+  - `notify.undo(message, onUndo, { onExpire? })`;
+  - `notify.saved(message?, { action? })` (las dos opciones son opcionales; los usos de hoy no cambian).
+- `components/more-actions-menu.tsx` (nuevo): `MoreActionsMenu` y `MoreAction`.
+- Consulta (`consultas/[consultationId]/`):
+  - `page.tsx`;
+  - `sticky-aside.tsx` (nuevo);
+  - `delete-consultation-button.tsx`, que ahora exporta `ConsultationMoreMenu`;
+  - `delete-isak-study-button.tsx`, que ahora exporta `IsakStudyMoreMenu`;
+  - `isak-card.tsx`, `isak-form.tsx`, `requirement-section.tsx`, `consultation-measurements.tsx`, `consultation-plan.tsx` y `consultation-notes.tsx`.
+- Estudio ISAK (`antropometria/`):
+  - `page.tsx`;
+  - `isak-section-index.tsx` (nuevo);
+  - `z-score-bar.tsx`, `somatochart.tsx` y `tissue-stacked-bar.tsx`.
+- Ficha:
+  - `consultation-actions.ts` + `consultation-actions.test.ts` (nuevo);
+  - `clinical-actions.ts` + `clinical-actions.test.ts` (nuevo);
+  - `evolution-table.tsx`, `evolution-section.tsx` y `consultations-section.tsx`;
+  - `measurement-fields.tsx` (R4).
+- `next.config.mjs` (R3).
+
+Sin cambios en:
+- `packages/db`, `apps/bot`, `schema.prisma` ni las migraciones;
+- `backlog/`;
+- la zona de imleticio. El grep de 10.2 contra `14c9efd` (la base de esta entrega) da vacío.
+
+## Contrato compartido (SDD §4-3)
+
+- `deferred-delete.ts` coincide con §4.1: los nombres y las firmas son los de la SDD. Hay dos agregados compatibles:
+  - `createDeferredDeleteStore(options?)`, con `releaseAfterMs` y `setTimer` opcionales (ver la decisión 1);
+  - `DeferredDeleteOptions`, el tipo del parámetro de `useDeferredDelete`, que tiene los mismos campos que la SDD.
+- Las keys son las de la SDD: `consultation:<id>`, `isak:<entryId>`, `prescription:<consultationId>` y `measurement:<entryId>`.
+- `notify.undo` coincide con §4.2.
+- Actions (§4.3):
+  - `deleteConsultationAction(patientId, consultationId)` ya no hace `redirect()` y devuelve `{ ok: true }`;
+  - `deleteEvolutionEntryByIdAction(patientId, entryId): Promise<ActionState>` reemplaza a `deleteEvolutionEntryAction`, que se borró y no tenía otro consumidor. Si falla, devuelve `{ ok: false, error: "No se pudo borrar la medición." }`;
+  - las demás actions no cambian de firma.
+- "Deshacer" de "Quitar plan" llama a `setConsultationPlanAction` con un `FormData` que lleva `patientId`, `consultationId` y `planId`. Si falla, muestra "No se pudo deshacer.".
+- Los archivos `"use server"` siguen exportando solo funciones async y `export type`. `next build --turbopack` compila.
+
+## Verificación
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, bot y web en verde |
+| `npm run test` | 106 archivos, 1806 tests en verde. Nuevos: `deferred-delete` (11), `consultation-actions` (3), `clinical-actions` (4), los textos de ISAK (2) y del cálculo (1) |
+| `npm run lint --workspace apps/web` | solo el warning previo de `ajustes/logo-form.tsx` |
+| `./ops/harness/verify.sh` | "Arnés OK" |
+| `next build` (webpack, copia en el scratchpad) | exit 0, con el código final |
+| `next build --turbopack` (misma copia) | exit 0, "Compiled successfully". Sin el error de exports en `"use server"` |
+| Alcance (10.2) | ningún archivo de imleticio, ni de `apps/bot`, `packages/db`, `schema.prisma`, migraciones o `backlog/` |
+
+La copia del scratchpad (con su `.env` y la cookie) se borró. El dev server de :3100 no se tocó: responde 200.
+
+### Runtime, contra `next start -p 3197` (build de webpack de la copia)
+
+- **Cómo se hizo:** con una cookie de sesión de Auth.js generada en local con el `AUTH_SECRET` y Chromium headless con `playwright-core`. Todo vivió en el scratchpad.
+- **Páginas pedidas** (cada una con recarga), todas con 200 y sin el error boundary:
+  - la ficha de la paciente de prueba, también con `?tab=consultas` y `?tab=historial`;
+  - su consulta y su estudio ISAK;
+  - la ficha de María González;
+  - `/pacientes`.
+- **Errores en el log del servidor:** ninguno, y nada de "cannot be passed".
+- **Errores de JS:** ninguno.
+- **Consola:** quedan los warnings de Recharts "width(0) and height(0)" en la ficha. Son de 017c-2: los gráficos de Historial están en una pestaña oculta con `forceMount`, y esta entrega no los cambió.
+- **Borrado diferido, con datos de prueba creados y borrados por id:**
+  - Un seed creó la paciente "Prueba 017c-3" (JID `5493510017301@s.whatsapp.net`) con: una consulta sin turno de ayer, una medición, un estudio ISAK y un plan indicado. El cálculo lo creó el recorrido por la UI.
+  - Sin turnos, sin `OutboundMessage` y sin WhatsApp.
+  - Se corrió dos veces, y una tercera solo para capturas. Al final de cada corrida se borró la paciente **por su id**; los hijos se van por cascada.
+  - Después de la última limpieza: 0 pacientes con ese JID o ese nombre, y 0 planes "Plan prueba 017c-3".
+  - No se tocaron datos de la usuaria. Las páginas de María solo se pidieron con GET.
+- **Resultados** (la base se verificó con `select` por id):
+  - Cálculo:
+    - la confirmación abre con el foco en "Cancelar" y aparece el toast "Cálculo borrado" con "Deshacer";
+    - mientras corre el plazo, la tarjeta se ve vacía y "Calcular requerimiento" queda deshabilitado con su motivo;
+    - con la red cortada (`context.setOffline`) antes de que venza, sale "No se pudo borrar. Probá de nuevo.", el cálculo vuelve a verse y sigue en la base;
+    - al repetir sin cortar la red, se borra cuando vence el plazo.
+  - Medición: la confirmación dice "Se borra la medición del 03/10 (peso, talla…)." y la medición se oculta al instante. "Deshacer" la trae de vuelta con "Listo, la medición volvió", y la fila sigue en la base 9,5 s después. Al repetir, se borra cuando vence el plazo.
+  - Estudio ISAK:
+    - desde su página, "Borrar estudio" vuelve a la consulta y la tarjeta se ve vacía;
+    - si se recarga antes de los 8 s, el estudio **no** se borra y vuelve a verse;
+    - al repetir, se borra cuando vence el plazo.
+  - Quitar plan:
+    - por teclado: foco en "…", Enter abre el menú y ArrowDown lleva al ítem "Quitar plan de esta consulta";
+    - Enter quita el plan sin confirmación;
+    - "Deshacer" lo vuelve a indicar ("Listo, el plan volvió"; en la base, `planId` vuelve al mismo plan);
+    - si se quita y no se deshace, queda quitado.
+  - Consulta:
+    - "Borrar consulta" navega a la ficha en Consultas, que queda vacía;
+    - "Deshacer" muestra "Listo, la consulta volvió" con "Abrir", y "Abrir" vuelve a la consulta;
+    - al repetir y navegar a otra pantalla (`/pacientes`), la consulta se borra a los 8 s.
+- **Fallos en las corridas:** en la corrida 1 fallaron tres chequeos y en la corrida 2 uno: "el cálculo se ve como borrado" y "toast con Deshacer" en el cálculo, y la vista después de navegar en el estudio y en la consulta. Las dos corridas no fallaron en los mismos chequeos, y los que fallaron en una pasaron en la otra.
+  - El guion contaba los elementos con `count()` justo después de la acción, antes de que la página terminara de mostrarse. No hubo fallo de la app.
+  - Esos chequeos pasaron a esperar al elemento, y la captura `calc-pending` confirma el estado (tarjeta vacía, botón deshabilitado con su motivo y toast "Cálculo borrado" con "Deshacer").
+- **Anchos:**
+  - A 1366×768 la columna lateral queda sticky (`aside[data-sticky]`).
+  - A 390×844 (táctil) se ve en una columna, sin scroll horizontal de página, en la consulta y en el estudio ISAK.
+  - En el estudio, los chips del índice quedan pegados debajo de la barra móvil.
+- **Lo que no se probó:**
+  - el cierre del toast con la X: el `Toaster` del panel no tiene botón de cerrar. `onDismiss` queda cableado (swipe o `toast.dismiss`), pero no se probó;
+  - los 1920×1080 y el movimiento reducido: quedan para el recorrido del orquestador.
+
+### R3: el error de hidratación del `AppSidebar`
+
+- **Causa:**
+  - No es un `useMediaQuery` ni algo de la app, sino el "Segment Explorer" de las devtools de Next 15.5, que viene prendido por defecto en `next dev` (`experimental.devtoolSegmentExplorer`).
+  - En una parte de las cargas, el árbol del cliente queda distinto del del servidor por encima de `PanelLayout`. Por eso cambian todos los `useId` del panel: el `aside id` y el `aria-controls` del sidebar, las pestañas de Radix de la ficha y de ajustes, y el disclosure de `/pacientes`.
+- **Diagnóstico:**
+  - Se pusieron sondas `useId` en una copia: en el layout raíz y en `MotionProvider` daban estables; desde el primer hijo de `PanelLayout` daban distintas.
+  - Se compararon, con Playwright, el `id` del DOM contra el `id` de las props de React (`__reactProps$`) en cada elemento.
+  - Antes del arreglo, en dev fallaba alrededor de la mitad de las recargas (`/ajustes` en 3 de 6, `/pacientes` en 1 de 3). En producción (`next start`), 0 de 10.
+- **Arreglo:**
+  - `experimental.devtoolSegmentExplorer: false` en `next.config.mjs`, con un comentario.
+  - Con eso, en dev hubo 0 diferencias en 18 de 18 cargas (ficha, `/pacientes` y `/ajustes`, 6 cada una) y 0 avisos de hidratación.
+  - Con el código final: la ficha de María (4 recargas), una consulta (3+1) y el estudio ISAK (1) quedaron sin "A tree hydrated…".
+  - No afecta producción. Lo único que se pierde es el panel "Segment Explorer" de las devtools de Next en desarrollo.
+- **Para el orquestador:** el dev server de :3100 lee `next.config.mjs` solo al arrancar. Hay que reiniciarlo para ver la consola limpia.
+
+## Decisiones no obvias y desvíos
+
+1. **La key sigue oculta 10 s después de un commit exitoso.**
+   - Así el dato no reaparece entre que la action responde y llega la página revalidada.
+   - Después se libera, para que `prescription:<consultationId>` no quede oculta para siempre si se calcula de nuevo.
+   - Es una opción del store (`releaseAfterMs`), con test y timers manuales.
+   - No es un timer de respaldo del borrado: el commit sigue disparándose solo por `onAutoClose`/`onDismiss`.
+2. **Se atiende solo la primera resolución:** `useDeferredDelete` tiene un `settled` local, porque `onAutoClose` y `onDismiss` pueden llegar los dos. El store, además, ejecuta `commit` una sola vez.
+3. **Si el commit falla, el mensaje es el genérico de la SDD** ("No se pudo borrar. Probá de nuevo."), no el `error` de la action.
+4. **Mientras corre el "Deshacer" de un cálculo o un estudio, "Calcular requerimiento" y "Cargar antropometría ISAK" quedan deshabilitados.** Debajo dicen "Vas a poder … cuando se cierre el aviso de “Deshacer”."
+   - Sin esto, un cálculo nuevo guardado durante el plazo se borraría cuando venciera, porque la prescripción es única por consulta.
+   - Un ISAK nuevo chocaría con `IsakStudyExistsError`.
+   - No lo pide la SDD.
+5. **Historial:** borrar desde la tabla una fila que es un estudio ISAK usa la key `isak:<id>` y los textos de ISAK. Así también se oculta en la tarjeta de la consulta.
+   - `EvolutionSection` filtra los pendientes para la tabla y también para los gráficos.
+6. **`MoreActionsMenu`:**
+   - Recibe acciones con `onSelect`. Solo lo usan componentes cliente; el server nunca le pasa funciones (lección de 017c-2).
+   - Si `onSelect` devuelve una promesa (por la confirmación) y al terminar el foco quedó en `body`, el foco vuelve al "…".
+   - Un ítem deshabilitado muestra su motivo debajo, con `aria-describedby`. "Borrar consulta" se deshabilita con `CONSULTATION_TEXT.notDeletable`.
+   - En las listas, el nombre accesible es más específico ("Más opciones de la medición del 24/09").
+7. **Encabezado de la consulta:**
+   - "Consulta del sábado 03/10" sale de `formatConsultationDay` con la primera letra en minúscula. Si la consulta es de otro año, el título lleva el año.
+   - La línea "Con turno · Control · 10:00" o "Sin turno" va debajo, en gris.
+   - El aviso amarillo trae "Abrir el turno", que lleva a `/?fecha=<día>`.
+   - "Motivo indicado al reservar" pasa a llamarse "Motivo de la reserva" (HU §4.3).
+8. **Lateral sticky:** `StickyAside` usa `top-6`, porque desde `xl` no hay barra móvil. No existe una variable `--chrome-h`; la SDD la nombraba como referencia.
+9. **"Informe" en lugar de `ISAK_TEXT.reportButton` ("Informe PDF")**, en la tarjeta y en la página del estudio. Es el texto de la HU §2.3 y §4.4. No cambié el texto de core, porque no está en la lista 0.1.
+10. **Índice del estudio ISAK:** tiene las 8 secciones que muestra la página (6 en menores), con rótulos cortos.
+    - Por debajo de `xl`, los chips quedan pegados debajo de la barra móvil (`top-14`, o `top-0` desde `lg`).
+    - Desde `xl`, la lista va a la derecha.
+    - `IntersectionObserver` marca la sección activa con `aria-current="location"`.
+    - Las anclas son comunes y cada sección tiene su `scroll-margin-top`.
+    - La fila de chips se acomoda sin animación, porque también cambia con el teclado.
+11. **Barras z:**
+    - El relleno es suave, `primary/35` hasta ±2 y `warning/45` más allá. Lleva los rótulos "bajo" y "alto", y el valor queda en texto en la columna Z.
+    - Sin dato no se dibuja la barra (antes había una barra vacía).
+    - Los gráficos ya tomaban sus colores de `chartPalette`.
+    - Las entradas: la somatocarta usa Recharts con 400 ms, desactivada con movimiento reducido; la barra de tejidos usa un fundido de 300 ms con `motion-safe:`.
+12. **Formulario ISAK:**
+    - Las medidas ya estaban en `fieldset` por grupo, según `ISAK_MEASURE_GROUPS`. Ahora la `legend` es el título del grupo.
+    - Los inputs miden `h-11` con `text-base` (16 px), con la unidad visible de `NumberInput`.
+    - Los botones son `lg`.
+13. **R4:** "70,5", "22,5" y "2,8" en `measurement-fields.tsx` (Nueva medición de Historial y de la consulta). No había otros placeholders con punto decimal en `apps/web`.
+
+## Autochequeo web-design-guidelines
+
+- Arreglado:
+  - las comillas tipográficas en los textos de espera;
+  - la barra z sin dato.
+- Revisado y en regla:
+  - los botones de solo ícono ("…", cerrar) tienen `aria-label` y tooltip;
+  - los íconos llevan `aria-hidden`;
+  - el foco va a "Cancelar" en cada confirmación;
+  - los toasts de sonner están en una región `aria-live`;
+  - "Guardado a las 10:42" va con `aria-live="polite"`;
+  - se usa `tabular-nums` en los números;
+  - con movimiento reducido no hay animaciones de entrada;
+  - en el borrado, una sola animación de toast (la de sonner);
+  - los enlaces del índice son `<a href>`.
+- Se dejó como está, a propósito:
+  - Mayúscula solo en la primera palabra: es la convención del español.
+  - La fila de chips pegada en el estudio ISAK puede tapar un elemento enfocado con Tab cerca del borde de arriba. Las secciones tienen `scroll-margin-top`, pero los elementos de adentro no. Queda para revisar en el recorrido.
+
+## Pendiente para el orquestador
+
+- Reiniciar el dev server de :3100 para que tome R3, y confirmar la consola en Chrome.
+- Recorrido 10-3:
+  - 1920×1080;
+  - movimiento reducido;
+  - lector de pantalla con el toast;
+  - cerrar el toast con swipe.
+- Capturas.
