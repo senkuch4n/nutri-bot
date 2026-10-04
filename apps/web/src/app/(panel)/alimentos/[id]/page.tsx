@@ -98,7 +98,12 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
       </div>
 
       {/* HU-018d: medidas caseras, arriba de Energía (editable también en SARA 2). */}
-      <FoodMeasuresCard food={{ id: food.id, name: food.name, kcalPer100 }} measures={measures} isSara={isSara} />
+      <FoodMeasuresCard
+        food={{ id: food.id, name: food.name, kcalPer100 }}
+        measures={measures}
+        isSara={isSara}
+        unitHint={food.unitHint}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <FoodEnergyCard
@@ -146,7 +151,6 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
               addedSugarPer100: str(food.addedSugarPer100),
               saturatedFatPer100: str(food.saturatedFatPer100),
               cholesterolMgPer100: str(food.cholesterolMgPer100),
-              unitHint: food.unitHint ?? "",
             }}
           />
         </Card>

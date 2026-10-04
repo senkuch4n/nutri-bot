@@ -9,6 +9,9 @@
  * SOLO por los ids que insertó: los planes (comidas e ítems en cascada), la plantilla, el paciente y
  * los dos alimentos (sus FoodMeasure en cascada).
  *
+ * Pasos 10 a 12 (018d-1b): stepper del ítem y conversión de unitHint, limitada a los dos alimentos
+ * de la prueba (`foodIds`): nunca convierte alimentos ajenos.
+ *
  * Imprime los conteos de control antes y después; tienen que dar iguales.
  *
  * Uso: npm run test:food-measures --workspace packages/db
@@ -27,7 +30,14 @@ import {
 } from "../domain/foodMeasures";
 import { addMealItem, createPlan, getPlan } from "../domain/nutritionPlans";
 import { addTemplateMealItem, applyTemplateToPatient, createTemplate, getTemplate } from "../domain/planTemplates";
-import { copyDay, repeatMealInAllDays, restoreMealSnapshots } from "../domain/weeklyMenu";
+import { convertUnitHints } from "../domain/unitHintConversion";
+import {
+  MealOwnershipError,
+  copyDay,
+  repeatMealInAllDays,
+  restoreMealSnapshots,
+  setMeasureItemQuantity,
+} from "../domain/weeklyMenu";
 
 const TEST_JID = "5490000018004@s.whatsapp.net";
 const TEST_PHONE = "5490000018004";
@@ -94,7 +104,7 @@ async function main() {
   assert.equal(existing, null, "Ya existe un paciente con el teléfono de prueba: no se toca. Revisalo a mano.");
 
   const arroz = await testFood("Prueba HU-018d arroz", "1 taza ≈ 180 g");
-  await testFood("Prueba HU-018d ilegible", "porción chica");
+  const ilegible = await testFood("Prueba HU-018d ilegible", "porción chica");
 
   const patient = await prisma.patient.create({ data: { whatsappJid: TEST_JID, phone: TEST_PHONE, name: "Prueba HU-018d" } });
   created.patientId = patient.id;
@@ -181,6 +191,40 @@ async function main() {
   assert.deepEqual(measureOf(afterDelete), [1.5, "taza", "tazas", 180, 270]);
   assert.deepEqual((await listFoodMeasures(arroz.id)).map((m) => m.name), ["cda"]);
   step(9, "deleteFoodMeasure taza → el ítem sigue igual; al alimento le queda «cda»");
+
+  // 10. (1b) Stepper: usa los gramos COPIADOS en el ítem (180), no los de la medida (160, ya borrada).
+  assert.deepEqual(await setMeasureItemQuantity("plan", plan.id, lunchItemId, 2), { quantityGrams: 360 });
+  const stepped = await prisma.planMealItem.findUniqueOrThrow({ where: { id: lunchItemId } });
+  assert.deepEqual(measureOf(stepped), [2, "taza", "tazas", 180, 360]);
+  await assert.rejects(setMeasureItemQuantity("plan", applied.id, lunchItemId, 1), (err) => err instanceof MealOwnershipError);
+  await assert.rejects(setMeasureItemQuantity("plan", plan.id, lunchItemId, 1.3), (err) => err instanceof RangeError);
+  assert.equal(n((await prisma.planMealItem.findUniqueOrThrow({ where: { id: lunchItemId } })).quantityGrams), 360);
+  step(10, "setMeasureItemQuantity a 2 → 360 g (180 copiados); otro plan → MealOwnershipError; 1,3 → RangeError");
+
+  // 11. (1b) Conversión de unitHint EN SECO, limitada a los dos alimentos de la prueba: no escribe.
+  const ids = [arroz.id, ilegible.id];
+  const measuresBefore = await prisma.foodMeasure.count();
+  const dry = await convertUnitHints({ apply: false, foodIds: ids });
+  const byId = (rows: typeof dry, id: string) => rows.find((r) => r.foodId === id)!.result;
+  assert.equal(dry.length, 2);
+  assert.deepEqual(byId(dry, arroz.id), { kind: "WOULD_CREATE", name: "taza", grams: 180 });
+  assert.deepEqual(byId(dry, ilegible.id), { kind: "UNREADABLE" });
+  assert.equal(await prisma.foodMeasure.count(), measuresBefore, "en seco no escribe");
+  step(11, "convertUnitHints en seco → arroz WOULD_CREATE taza = 180 g, ilegible UNREADABLE, sin escrituras");
+
+  // 12. (1b) Con escritura: crea 1; la segunda vez, ALREADY_HAD (idempotente). unitHint no cambia.
+  const applyRows = await convertUnitHints({ apply: true, foodIds: ids });
+  assert.deepEqual(byId(applyRows, arroz.id), { kind: "CREATED", name: "taza", grams: 180 });
+  assert.deepEqual(byId(applyRows, ilegible.id), { kind: "UNREADABLE" });
+  assert.equal(await prisma.foodMeasure.count(), measuresBefore + 1);
+  // La nueva va al final (order = máx + 1; a «cda» le quedó el order 1 después de borrar «taza»).
+  assert.deepEqual((await listFoodMeasures(arroz.id)).map((m) => [m.name, m.grams, m.order]), [["cda", 15, 1], ["taza", 180, 2]]);
+  const again = await convertUnitHints({ apply: true, foodIds: ids });
+  assert.deepEqual(byId(again, arroz.id), { kind: "ALREADY_HAD", name: "taza" });
+  assert.equal(await prisma.foodMeasure.count(), measuresBefore + 1, "la segunda corrida no crea nada");
+  const hints = await prisma.food.findMany({ where: { id: { in: ids } }, select: { unitHint: true }, orderBy: { name: "asc" } });
+  assert.deepEqual(hints.map((h) => h.unitHint), ["1 taza ≈ 180 g", "porción chica"]);
+  step(12, "convertUnitHints con escritura → 1 CREATED; segunda vez ALREADY_HAD; unitHint intacto");
 }
 
 const before = await controlCounts();
@@ -188,7 +232,7 @@ console.log("Conteos de control (antes):", before);
 let failed = false;
 try {
   await main();
-  console.log("OK: flujo de medidas caseras (018d-1a)");
+  console.log("OK: flujo de medidas caseras (018d-1a y 1b)");
 } catch (err) {
   failed = true;
   console.error("FALLÓ:", err);

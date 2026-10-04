@@ -27,6 +27,7 @@ import {
   restoreMealSnapshots,
   setMealMode,
   setMealOptions,
+  setMeasureItemQuantity,
   setRecipeItemPortions,
 } from "./weeklyMenu";
 import { addMeal, addMealItem, getPlanTarget } from "./nutritionPlans";
@@ -557,5 +558,39 @@ describe("HU-018d: medida casera en copias e invariantes", () => {
   it("tolera 0,01 g de diferencia por redondeo", async () => {
     p().planMeal.count.mockResolvedValue(1);
     await expect(restore({ ...base, quantityGrams: 270.01 })).resolves.toBeUndefined();
+  });
+});
+
+describe("HU-018d (1b): setMeasureItemQuantity", () => {
+  const dec = (v: number) => ({ toString: () => String(v) });
+
+  it("usa los gramos COPIADOS en el ítem, filtra por medida y dueño", async () => {
+    p().planMealItem.findFirst.mockResolvedValueOnce({ id: "it1", measureGrams: dec(180) });
+    const out = await setMeasureItemQuantity("plan", "plan1", "it1", 2);
+    expect(out).toEqual({ quantityGrams: 360 });
+    expect(p().planMealItem.findFirst.mock.calls[0][0].where).toEqual({
+      id: "it1", measureName: { not: null }, meal: { planId: "plan1" },
+    });
+    expect(p().planMealItem.update).toHaveBeenCalledWith({ where: { id: "it1" }, data: { measureQty: 2, quantityGrams: 360 } });
+  });
+
+  it("¼ de 0,1 g redondea a 2 decimales; plantilla usa templateId", async () => {
+    p().templateMealItem.findFirst.mockResolvedValueOnce({ id: "it2", measureGrams: dec(0.1) });
+    expect(await setMeasureItemQuantity("template", "t1", "it2", 0.25)).toEqual({ quantityGrams: 0.03 });
+    expect(p().templateMealItem.findFirst.mock.calls[0][0].where.meal).toEqual({ templateId: "t1" });
+  });
+
+  it("cantidad fuera de la grilla → RangeError sin tocar la base", async () => {
+    for (const bad of [0, 1.3, 20.25, Number.NaN]) {
+      await expect(setMeasureItemQuantity("plan", "plan1", "it1", bad)).rejects.toBeInstanceOf(RangeError);
+    }
+    expect(p().planMealItem.findFirst).not.toHaveBeenCalled();
+    expect(p().planMealItem.update).not.toHaveBeenCalled();
+  });
+
+  it("ítem sin medida o de otro dueño → MealOwnershipError", async () => {
+    p().planMealItem.findFirst.mockResolvedValueOnce(null);
+    await expect(setMeasureItemQuantity("plan", "otro", "it1", 1)).rejects.toBeInstanceOf(MealOwnershipError);
+    expect(p().planMealItem.update).not.toHaveBeenCalled();
   });
 });

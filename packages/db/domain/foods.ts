@@ -66,7 +66,11 @@ export interface OwnFoodInput {
   addedSugarPer100: number | null;
   saturatedFatPer100: number | null;
   cholesterolMgPer100: number | null;
-  unitHint: string | null;
+  /**
+   * HU-018d (D9): opcional. El formulario ya no lo manda; sin la clave, guardar NO toca el unitHint
+   * guardado (se conserva para el aviso "Tenías anotado" y la conversión a medidas).
+   */
+  unitHint?: string | null;
 }
 
 export class InvalidOwnFoodError extends Error {
@@ -142,7 +146,7 @@ function ownFoodData(input: OwnFoodInput) {
     addedSugarPer100: input.addedSugarPer100,
     saturatedFatPer100: input.saturatedFatPer100,
     cholesterolMgPer100: input.cholesterolMgPer100,
-    unitHint: input.unitHint?.trim() || null,
+    ...(input.unitHint !== undefined ? { unitHint: input.unitHint?.trim() || null } : {}),
     groupAutoAssigned: false,
   };
 }

@@ -539,6 +539,31 @@ export async function setRecipeItemPortions(
   await item.update({ where: { id: itemId }, data: { portions: value } });
 }
 
+/**
+ * HU-018d (D10): stepper. Cambia la cantidad de UN ítem en medida casera del dueño y recalcula
+ * quantityGrams con los gramos COPIADOS en el ítem (no los de la medida actual, D4).
+ */
+export async function setMeasureItemQuantity(
+  kind: MealOwnerKind,
+  ownerId: string,
+  itemId: string,
+  qty: number,
+): Promise<{ quantityGrams: number }> {
+  const value = normalizeMeasureQty(qty);
+  if (value === null) throw new RangeError("La cantidad va de ¼ a 20, de a ¼.");
+  const { item, ownerKey } = delegates(kind, prisma);
+  const found = (await item.findFirst({
+    where: { id: itemId, measureName: { not: null }, meal: { [ownerKey]: ownerId } },
+    select: { id: true, measureGrams: true },
+  })) as { id: string; measureGrams: { toString(): string } | null } | null;
+  if (!found || found.measureGrams === null) {
+    throw new MealOwnershipError("El ítem en medida casera no pertenece a este plan o plantilla.");
+  }
+  const quantityGrams = measureItemGrams(value, Number(found.measureGrams.toString()));
+  await item.update({ where: { id: itemId }, data: { measureQty: value, quantityGrams } });
+  return { quantityGrams };
+}
+
 /** "Deshacer" de "Agregar" y "Quitar" de la tarjeta: borra SOLO esos ids y solo si son del dueño. */
 export async function removeMenuItems(kind: MealOwnerKind, ownerId: string, itemIds: string[]): Promise<number> {
   if (itemIds.length < 1 || itemIds.length > 50) throw new RangeError("Entre 1 y 50 ítems.");

@@ -422,6 +422,7 @@ function MealCard({
                     key={item.id}
                     item={item}
                     measure={item.measure}
+                    kind={kind}
                     ownerId={ownerId}
                     ownerField={ownerField}
                     deleteItemAction={deleteItemAction}

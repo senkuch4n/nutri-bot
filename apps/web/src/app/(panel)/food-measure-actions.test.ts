@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => {
     updateFoodMeasure: vi.fn(),
     deleteFoodMeasure: vi.fn(),
     moveFoodMeasure: vi.fn(),
+    setMeasureItemQuantity: vi.fn(),
+    revalidateMenuOwner: vi.fn(),
     hasPanelSession: vi.fn(),
     revalidatePath: vi.fn(),
   };
@@ -34,7 +36,9 @@ vi.mock("@nutri-bot/db/domain", () => ({
   updateFoodMeasure: mocks.updateFoodMeasure,
   deleteFoodMeasure: mocks.deleteFoodMeasure,
   moveFoodMeasure: mocks.moveFoodMeasure,
+  setMeasureItemQuantity: mocks.setMeasureItemQuantity,
 }));
+vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.revalidateMenuOwner }));
 vi.mock("./recetas/recipe-save", () => ({ hasPanelSession: mocks.hasPanelSession }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
@@ -43,6 +47,7 @@ import {
   createFoodMeasureAction,
   deleteFoodMeasureAction,
   moveFoodMeasureAction,
+  setMeasureItemQtyAction,
   updateFoodMeasureAction,
 } from "./food-measure-actions";
 
@@ -132,5 +137,35 @@ describe("food-measure-actions", () => {
     expect(await moveFoodMeasureAction({ measureId: "m1", direction: "down" })).toEqual({ ok: true });
     expect(mocks.moveFoodMeasure).toHaveBeenCalledWith("m1", "down");
     expect(mocks.revalidatePath.mock.calls).toEqual([["/alimentos/food1"], ["/alimentos/food1"]]);
+  });
+
+  it("stepper: ok cambia la cantidad y revalida el dueño (no la ficha)", async () => {
+    mocks.setMeasureItemQuantity.mockResolvedValue({ quantityGrams: 360 });
+    expect(await setMeasureItemQtyAction({ kind: "plan", ownerId: "plan1", itemId: "it1", qty: 2 })).toEqual({ ok: true });
+    expect(mocks.setMeasureItemQuantity).toHaveBeenCalledWith("plan", "plan1", "it1", 2);
+    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "plan1");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("stepper: qty inválida, kind inválido o sin sesión no llaman al dominio", async () => {
+    const qtyError = { ok: false, error: "No se pudo cambiar la cantidad. Probá de nuevo." };
+    for (const qty of [0, 1.3, 20.25, Number.NaN]) {
+      expect(await setMeasureItemQtyAction({ kind: "plan", ownerId: "plan1", itemId: "it1", qty })).toEqual(qtyError);
+    }
+    expect(await setMeasureItemQtyAction({ kind: "otro" as never, ownerId: "plan1", itemId: "it1", qty: 1 })).toEqual(qtyError);
+    mocks.hasPanelSession.mockResolvedValue(false);
+    expect(await setMeasureItemQtyAction({ kind: "template", ownerId: "t1", itemId: "it1", qty: 1 })).toEqual({
+      ok: false, error: "Tu sesión venció. Volvé a entrar.",
+    });
+    expect(mocks.setMeasureItemQuantity).not.toHaveBeenCalled();
+    expect(mocks.revalidateMenuOwner).not.toHaveBeenCalled();
+  });
+
+  it("stepper: error del dominio → qtyError, sin revalidar", async () => {
+    mocks.setMeasureItemQuantity.mockRejectedValue(new Error("MealOwnershipError"));
+    expect(await setMeasureItemQtyAction({ kind: "template", ownerId: "t1", itemId: "it1", qty: 1.5 })).toEqual({
+      ok: false, error: "No se pudo cambiar la cantidad. Probá de nuevo.",
+    });
+    expect(mocks.revalidateMenuOwner).not.toHaveBeenCalled();
   });
 });

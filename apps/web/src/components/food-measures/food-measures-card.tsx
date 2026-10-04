@@ -2,10 +2,16 @@
 
 import { useState, useTransition } from "react";
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
-import { MEASURE_TEXT, measureListLine, removeMeasureTitle } from "@nutri-bot/core";
+import {
+  MEASURE_TEXT,
+  legacyUnitHintText,
+  measureListLine,
+  removeMeasureTitle,
+  unitHintPrefillName,
+} from "@nutri-bot/core";
 import { deleteFoodMeasureAction, moveFoodMeasureAction } from "@/app/(panel)/food-measure-actions";
 import { useConfirm } from "@/components/confirm";
-import { Button, Card } from "@/components/ui";
+import { Alert, Button, Card } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { MeasureFormDialog, type MeasureDialogFood } from "./measure-form-dialog";
 import type { FoodMeasureView } from "./types";
@@ -17,16 +23,23 @@ type DialogState = { open: boolean; initial?: FoodMeasureView | { name: string }
  * HU-018d (SDD 7.2): tarjeta "Medidas caseras" de la ficha del alimento, arriba de Energía. Lista
  * con flechas, Editar y Quitar; vacía, un botón grande. En los SARA 2 es editable igual: las medidas
  * son de ella, la composición no cambia. Se refresca con la revalidación de las actions.
+ * 018d-1b (D9, T5): si el alimento no tiene ninguna medida y tenía un `unitHint` anotado, se muestra
+ * "Tenías anotado: «…»" con "Pasar a medida" (abre el cuadro con el nombre prellenado). Al guardar la
+ * primera medida, el aviso desaparece solo.
  */
 export function FoodMeasuresCard({
   food,
   measures,
   isSara,
+  unitHint = null,
 }: {
   food: MeasureDialogFood;
   measures: FoodMeasureView[];
   isSara: boolean;
+  /** Referencia de texto libre anterior a la HU (columna `Food.unitHint`, que queda). */
+  unitHint?: string | null;
 }) {
+  const legacyHint = measures.length === 0 && unitHint?.trim() ? unitHint.trim() : null;
   const [dialog, setDialog] = useState<DialogState>({ open: false });
   const [pending, startTransition] = useTransition();
   const confirm = useConfirm();
@@ -58,8 +71,21 @@ export function FoodMeasuresCard({
 
       {measures.length === 0 ? (
         <div className="space-y-4">
-          <p className="text-subheadline text-muted-foreground">{MEASURE_TEXT.empty}</p>
-          <Button size="lg" onClick={() => setDialog({ open: true })}>
+          {legacyHint ? (
+            <Alert tone="info">
+              <p className="text-pretty">{legacyUnitHintText(legacyHint)}</p>
+              <Button
+                variant="secondary"
+                className="mt-3 h-11"
+                onClick={() => setDialog({ open: true, initial: { name: unitHintPrefillName(legacyHint) } })}
+              >
+                {MEASURE_TEXT.legacyButton}
+              </Button>
+            </Alert>
+          ) : (
+            <p className="text-subheadline text-muted-foreground">{MEASURE_TEXT.empty}</p>
+          )}
+          <Button size="lg" variant={legacyHint ? "secondary" : undefined} onClick={() => setDialog({ open: true })}>
             <Plus aria-hidden />
             {MEASURE_TEXT.addButton}
           </Button>

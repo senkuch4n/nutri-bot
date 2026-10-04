@@ -10,8 +10,10 @@ import {
   createFoodMeasure,
   deleteFoodMeasure,
   moveFoodMeasure,
+  setMeasureItemQuantity,
   updateFoodMeasure,
   type FoodMeasureRow,
+  type MealOwnerKind,
 } from "@nutri-bot/db/domain";
 import type {
   FoodMeasureResult,
@@ -20,6 +22,7 @@ import type {
   MeasureMutationResult,
 } from "@/components/food-measures/types";
 import { errorCode } from "@/lib/error-code";
+import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
 import { hasPanelSession } from "./recetas/recipe-save";
 
 // HU-018d (SDD 6.1): actions de las medidas caseras de un alimento (ficha y editor del plan). Este
@@ -39,6 +42,12 @@ const createSchema = fieldsSchema.extend({ foodId: idSchema });
 const updateSchema = fieldsSchema.extend({ measureId: idSchema });
 const deleteSchema = z.object({ measureId: idSchema });
 const moveSchema = z.object({ measureId: idSchema, direction: z.enum(["up", "down"]) });
+const itemQtySchema = z.object({
+  kind: z.enum(["plan", "template"]),
+  ownerId: idSchema,
+  itemId: idSchema,
+  qty: z.number().min(0.25).max(20).multipleOf(0.25),
+});
 
 function logError(err: unknown): void {
   console.error("[food-measures]", errorCode(err));
@@ -137,5 +146,29 @@ export async function moveFoodMeasureAction(input: {
     return { ok: true };
   } catch (err) {
     return toMutationError(err);
+  }
+}
+
+/**
+ * Stepper del ítem en medida casera (D10): cambia la cantidad y recalcula los gramos con los gramos
+ * copiados en el ítem. Revalida el plan o la plantilla (franja del día, promedios).
+ */
+export async function setMeasureItemQtyAction(input: {
+  kind: MealOwnerKind;
+  ownerId: string;
+  itemId: string;
+  qty: number;
+}): Promise<MeasureMutationResult> {
+  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const parsed = itemQtySchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: MEASURE_TEXT.qtyError };
+  const d = parsed.data;
+  try {
+    await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty);
+    await revalidateMenuOwner(d.kind, d.ownerId);
+    return { ok: true };
+  } catch (err) {
+    logError(err);
+    return { ok: false, error: MEASURE_TEXT.qtyError };
   }
 }
