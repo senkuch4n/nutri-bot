@@ -109,6 +109,28 @@ describe("plural y singular (D6)", () => {
     expect(resolvedMeasurePlural({ name: "taza", plural: "  " })).toBe("tazas");
     expect(resolvedMeasurePlural({ name: "pan", plural: "panes chicos" })).toBe("panes chicos");
   });
+
+  it("018d-1b (R3): las conjunciones y/o/e/u no se pluralizan y el plural sigue después", () => {
+    const cases: [string, string][] = [
+      ["taza o vaso", "tazas o vasos"],
+      ["feta fina y larga", "fetas finas y largas"],
+      ["Rodaja U Gajo", "Rodajas U Gajos"],
+      ["pan e higo", "panes e higos"],
+      ["taza o vaso de leche", "tazas o vasos de leche"],
+    ];
+    for (const [s, p] of cases) expect(pluralizeMeasureName(s)).toBe(p);
+    expect(singularizeMeasureName("tazas o vasos")).toBe("taza o vaso");
+  });
+
+  it("018d-1b (R2): con un nombre de hasta 40 caracteres, el plural automático entra en 80", () => {
+    // Peor caso: muchas palabras cortas terminadas en consonante (cada una suma "es").
+    const worst = Array.from({ length: 20 }, () => "b").join(" ");
+    expect(worst.length).toBeLessThanOrEqual(40);
+    expect(resolvedMeasurePlural({ name: worst, plural: null }).length).toBeLessThanOrEqual(80);
+    const long = "unidad mediana grande fresca entera pel".slice(0, 40);
+    expect(resolvedMeasurePlural({ name: long, plural: null }).length).toBeGreaterThan(40);
+    expect(resolvedMeasurePlural({ name: long, plural: null }).length).toBeLessThanOrEqual(80);
+  });
 });
 
 describe("validación y normalización", () => {

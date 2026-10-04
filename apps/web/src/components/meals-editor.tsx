@@ -30,7 +30,7 @@ import { MealCardMenu } from "@/components/weekly-menu/meal-card-menu";
 import { useMenuUndo } from "@/components/weekly-menu/use-menu-undo";
 import { WeeklyOverview } from "@/components/weekly-menu/weekly-overview";
 import type { RecipeItemView } from "@/components/recipe-picker/types";
-import type { FoodMeasureView, MeasureItemView } from "@/components/food-measures/types";
+import type { AddMealItemResult, FoodMeasureView, MeasureItemView } from "@/components/food-measures/types";
 import { AddFoodForm } from "@/components/food-measures/add-food-form";
 import { MeasureMealItem } from "@/components/food-measures/measure-meal-item";
 import { RecipeMealItem } from "@/components/recipe-picker/recipe-meal-item";
@@ -73,7 +73,7 @@ export interface MealsEditorProps {
   foods: FoodOption[];
   addMealAction: (formData: FormData) => Promise<void>;
   deleteMealAction: (formData: FormData) => Promise<void>;
-  addItemAction: (formData: FormData) => Promise<void>;
+  addItemAction: (formData: FormData) => Promise<AddMealItemResult | void>;
   deleteItemAction: (formData: FormData) => Promise<void>;
   showMacros?: boolean;
   /** HU-018b: dueño de las comidas, para las actions del menú semanal. */
@@ -344,7 +344,7 @@ function MealCard({
   kind: "plan" | "template";
   ownerId: string;
   ownerField: "planId" | "templateId";
-  addItemAction: (formData: FormData) => Promise<void>;
+  addItemAction: (formData: FormData) => Promise<AddMealItemResult | void>;
   deleteItemAction: (formData: FormData) => Promise<void>;
   deleteMealAction: (formData: FormData) => Promise<void>;
   showMacros: boolean;

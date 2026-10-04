@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   patient: vi.fn(), evolution: vi.fn(), clinical: vi.fn(),
   // HU-018d: las páginas cargan las medidas de los SARA 2 y las actions resuelven la medida elegida.
   listMeasuresForPicker: vi.fn().mockResolvedValue({}), resolveMeasureItem: vi.fn(),
+  // 018d-1b (R4): la action traduce este error a un mensaje amable.
+  FoodMeasureNotFoundError: class FoodMeasureNotFoundError extends Error {},
 }));
 
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -176,6 +178,19 @@ describe("SARA2-only new food selections", () => {
     await expect(action(form({ planId: "plan", templateId: "template", mealId: "meal", foodId: "own", measureId: "m1", measureQty: "1" })))
       .rejects.toThrow("Solo se pueden agregar alimentos activos de SARA 2.");
     expect(mocks.resolveMeasureItem).not.toHaveBeenCalled();
+    expect(mocks.addMealItem).not.toHaveBeenCalled();
+    expect(mocks.addTemplateMealItem).not.toHaveBeenCalled();
+  });
+
+  it.each([addPlanMealItemAction, addTemplateMealItemAction])("018d-1b (R4): medida borrada con el editor abierto → error amable, sin escribir", async (action) => {
+    mocks.getFood.mockResolvedValue(sara);
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new mocks.FoodMeasureNotFoundError());
+    const values = { planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", measureId: "m1", measureQty: "1" };
+    expect(await action(form(values))).toEqual({ ok: false, error: "Esa medida ya no existe. Elegí otra." });
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new RangeError("qty"));
+    expect(await action(form(values))).toEqual({ ok: false, error: "Esa medida ya no existe. Elegí otra." });
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new Error("boom"));
+    await expect(action(form(values))).rejects.toThrow("boom");
     expect(mocks.addMealItem).not.toHaveBeenCalled();
     expect(mocks.addTemplateMealItem).not.toHaveBeenCalled();
   });

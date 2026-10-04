@@ -14,10 +14,11 @@ import { FoodPicker } from "@/components/food-picker";
 import { NumberInput } from "@/components/number-input";
 import { SegmentedControl } from "@/components/segmented-control";
 import { SubmitButton } from "@/components/submit-button";
+import { notify } from "@/lib/notify";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { MeasureFormDialog } from "./measure-form-dialog";
 import { MeasureQtyStepper } from "./measure-qty-stepper";
-import type { FoodMeasureView } from "./types";
+import type { AddMealItemResult, FoodMeasureView } from "./types";
 
 export type QuantityMode = "household" | "grams";
 
@@ -137,7 +138,7 @@ export function AddFoodForm({
   /** "" = todos los días. */
   weekday: string;
   submitLabel: string;
-  addItemAction: (formData: FormData) => Promise<void>;
+  addItemAction: (formData: FormData) => Promise<AddMealItemResult | void>;
 }) {
   const { foods, measuresFor, addMeasure } = useFoodCatalog();
   const formRef = useRef<HTMLFormElement>(null);
@@ -174,6 +175,13 @@ export function AddFoodForm({
     return () => form.removeEventListener("reset", onReset);
   }, []);
 
+  // 018d-1b (R4): si la action contesta un error (p. ej. la medida se borró con el editor abierto),
+  // se avisa con un toast; la página se revalida y trae las medidas actuales.
+  async function submit(formData: FormData) {
+    const result = await addItemAction(formData);
+    if (result && !result.ok) notify.error(result.error);
+  }
+
   function onMeasureSaved(measure: FoodMeasureView) {
     addMeasure(measure.foodId, measure);
     setMode("household");
@@ -183,7 +191,7 @@ export function AddFoodForm({
 
   return (
     <>
-      <form ref={formRef} action={addItemAction} className="mt-4 space-y-4">
+      <form ref={formRef} action={submit} className="mt-4 space-y-4">
         <h3 className="text-sm font-semibold">Agregar alimento</h3>
         <input type="hidden" name="mealId" value={mealId} />
         <input type="hidden" name={ownerField} value={ownerId} />

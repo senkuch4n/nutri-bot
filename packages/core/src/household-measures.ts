@@ -113,6 +113,8 @@ export function normalizeMeasureInput(input: MeasureInput): {
 // ── Plural y singular (D6) ───────────────────────────────────────────────────────────────────
 
 const PREPOSITIONS = new Set(["de", "del", "con", "sin", "para", "a", "al", "en", "por"]);
+/** HU-018d-1b (R3): las conjunciones no se pluralizan, pero el plural sigue después ("taza o vaso" → "tazas o vasos"). */
+const CONJUNCTIONS = new Set(["y", "o", "e", "u"]);
 
 const PLURAL_ABBREVIATIONS: Record<string, string> = { cda: "cdas", cdita: "cditas", cdta: "cdtas", cc: "cc" };
 const SINGULAR_ABBREVIATIONS: Record<string, string> = { cdas: "cda", cditas: "cdita", cdtas: "cdta", cc: "cc" };
@@ -160,17 +162,22 @@ function singularizeWord(word: string): string {
   return word;
 }
 
-/** Aplica `fn` a cada palabra hasta la primera preposición; el resto queda igual. */
+/**
+ * Aplica `fn` a cada palabra hasta la primera preposición; el resto queda igual. Las conjunciones
+ * (y, o, e, u) quedan como están y no cortan.
+ */
 function mapHeadWords(name: string, fn: (word: string) => string): string {
   const words = cleanMeasureName(name).split(" ");
   let stopped = false;
   return words
     .map((w) => {
       if (stopped || w === "") return w;
-      if (PREPOSITIONS.has(w.toLocaleLowerCase("es"))) {
+      const lower = w.toLocaleLowerCase("es");
+      if (PREPOSITIONS.has(lower)) {
         stopped = true;
         return w;
       }
+      if (CONJUNCTIONS.has(lower)) return w;
       return fn(w);
     })
     .join(" ");
@@ -179,6 +186,7 @@ function mapHeadWords(name: string, fn: (word: string) => string): string {
 /**
  * Plural en español, palabra por palabra hasta la primera preposición (de, del, con, sin, para, a,
  * al, en, por): "taza de té" → "tazas de té"; "unidad mediana" → "unidades medianas".
+ * Las conjunciones (y, o, e, u) no cambian: "taza o vaso" → "tazas o vasos".
  * Abreviaturas: cda → cdas, cdita → cditas, cdta → cdtas, cc → cc (sin cambio).
  * Por palabra: termina en vocal (con o sin tilde, salvo í/ú) → +s; en "ión" → "iones" (porción →
  * porciones); en "z" → "ces"; en "s" o "x" → sin cambio; en í/ú → +es; otra consonante (incluida y) → +es.
@@ -373,6 +381,8 @@ export const MEASURE_TEXT = {
   saved: "Medida guardada",
   saveError: "No se pudo guardar la medida. Probá de nuevo.",
   notFound: "Esa medida ya no existe. Recargá la página.",
+  /** 018d-1b (R4): al agregar al plan con una medida que se borró mientras el editor estaba abierto. */
+  measureGone: "Esa medida ya no existe. Elegí otra.",
   sessionExpired: RECIPE_TEXT.sessionExpired,
   legacyButton: "Pasar a medida",
   modeAria: "Cómo cargar la cantidad",

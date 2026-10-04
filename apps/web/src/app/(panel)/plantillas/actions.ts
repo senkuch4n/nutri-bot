@@ -14,10 +14,10 @@ import {
   getTemplate,
   getFood,
   nextItemOrder,
-  resolveMeasureItem,
 } from "@nutri-bot/db/domain";
-import { isWeekday } from "@nutri-bot/core";
-import { readMeasureFields } from "@/lib/measure-form";
+import { MEASURE_TEXT, isWeekday } from "@nutri-bot/core";
+import { readMeasureFields, resolveFormMeasure } from "@/lib/measure-form";
+import type { AddMealItemResult } from "@/components/food-measures/types";
 
 export type TemplateState = { ok: boolean; error?: string };
 
@@ -74,7 +74,7 @@ export async function deleteTemplateMealAction(formData: FormData): Promise<void
   revalidatePath(`/plantillas/${templateId}`);
 }
 
-export async function addTemplateMealItemAction(formData: FormData): Promise<void> {
+export async function addTemplateMealItemAction(formData: FormData): Promise<AddMealItemResult | void> {
   const templateId = String(formData.get("templateId") ?? "");
   const mealId = String(formData.get("mealId") ?? "");
   if (!mealId) return;
@@ -98,7 +98,13 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<voi
   // del formulario se ignora) y el ítem no lleva descripción libre.
   const measureFields = readMeasureFields(formData, foodId);
   if (measureFields === "invalid") return;
-  const measure = measureFields ? await resolveMeasureItem(foodId, measureFields.measureId, measureFields.qty) : null;
+  const measure = measureFields ? await resolveFormMeasure(foodId, measureFields) : null;
+  if (measure === "gone") {
+    // 018d-1b (R4): la medida se borró con el editor abierto. Se revalida para que el editor traiga
+    // las medidas actuales y se avisa, sin pasar por el error boundary.
+    revalidatePath(`/plantillas/${templateId}`);
+    return { ok: false, error: MEASURE_TEXT.measureGone };
+  }
 
   const order = await nextItemOrder("template", mealId, weekday);
 

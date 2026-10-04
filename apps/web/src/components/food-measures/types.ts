@@ -26,3 +26,9 @@ export interface MeasureItemView {
   plural: string;
   gramsPerUnit: number;
 }
+
+/**
+ * 018d-1b (R4): lo que puede devolver la action "Agregar alimento" (planes y plantillas). Sin valor =
+ * listo (o dato inválido ignorado, como siempre); con error, el formulario lo muestra en un toast.
+ */
+export type AddMealItemResult = { ok: false; error: string };

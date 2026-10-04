@@ -98,7 +98,9 @@ const snapshotItemSchema = z.object({
   // HU-018d (SDD 8.4): medida casera. Mismo default para las fotos de antes del deploy.
   measureQty: z.number().min(0.25).max(20).multipleOf(0.25).nullable().default(null),
   measureName: z.string().min(1).max(40).nullable().default(null),
-  measurePlural: z.string().min(1).max(40).nullable().default(null),
+  // 018d-1b (R2): el plural automático de un nombre de 40 caracteres puede pasar de 40 (cada palabra
+  // suma "es"); con 80 entra siempre. La columna es TEXT: no hace falta migración.
+  measurePlural: z.string().min(1).max(80).nullable().default(null),
   measureGrams: z.number().min(0.1).max(2000).nullable().default(null),
 }).strict().superRefine((item, ctx) => {
   const ok = item.recipeId !== null

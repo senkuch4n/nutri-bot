@@ -12,6 +12,7 @@ vi.mock("@nutri-bot/db", () => ({ prisma: { nutritionPlan: { findUnique: mocks.f
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("server-only", () => ({}));
 
+import { resolvedMeasurePlural } from "@nutri-bot/core";
 import {
   copyDayAction,
   renameMealAction,
@@ -140,5 +141,18 @@ describe("weekly-menu-actions", () => {
     for (const key of ["measureQty", "measureName", "measurePlural", "measureGrams"]) delete legacyItem[key];
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [{ ...snapshot, items: [legacyItem] }] as never })).toEqual({ ok: true });
     expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot]);
+  });
+
+  it("018d-1b (R2): el Deshacer acepta el plural automático de un nombre largo (> 40, hasta 80)", async () => {
+    mocks.restoreMealSnapshots.mockResolvedValue(undefined);
+    const name = "unidad mediana grande fresca entera pel".slice(0, 40);
+    const plural = resolvedMeasurePlural({ name, plural: null });
+    expect(plural.length).toBeGreaterThan(40);
+    const item = {
+      ...snapshot.items[0]!, quantityGrams: 120, measureQty: 1, measureName: name, measurePlural: plural, measureGrams: 120,
+    };
+    expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [{ ...snapshot, items: [item] }] })).toEqual({ ok: true });
+    const tooLong = { ...item, measurePlural: "x".repeat(81) };
+    expect((await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [{ ...snapshot, items: [tooLong] }] })).ok).toBe(false);
   });
 });

@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("server-only", () => ({}));
+const mocks = vi.hoisted(() => {
+  class FoodMeasureNotFoundError extends Error {}
+  return { FoodMeasureNotFoundError, resolveMeasureItem: vi.fn() };
+});
 
-import { readMeasureFields } from "./measure-form";
+vi.mock("server-only", () => ({}));
+vi.mock("@nutri-bot/db/domain", () => mocks);
+
+import { readMeasureFields, resolveFormMeasure } from "./measure-form";
 
 const form = (entries: Record<string, string>) => {
   const fd = new FormData();
@@ -26,5 +32,27 @@ describe("readMeasureFields (HU-018d)", () => {
     for (const q of ["1,3", "0", "20,25", "", "abc", "-1"]) {
       expect(readMeasureFields(form({ measureId: "m1", measureQty: q }), "f1"), q).toBe("invalid");
     }
+  });
+});
+
+describe("resolveFormMeasure (018d-1b, R4)", () => {
+  const fields = { foodId: "f1", measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270 };
+
+  it("ok → los campos de la medida", async () => {
+    mocks.resolveMeasureItem.mockResolvedValueOnce(fields);
+    expect(await resolveFormMeasure("f1", { measureId: "m1", qty: 1.5 })).toEqual(fields);
+    expect(mocks.resolveMeasureItem).toHaveBeenCalledWith("f1", "m1", 1.5);
+  });
+
+  it("medida borrada (not found) o cantidad inválida (RangeError) → gone", async () => {
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new mocks.FoodMeasureNotFoundError());
+    expect(await resolveFormMeasure("f1", { measureId: "m1", qty: 1 })).toBe("gone");
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new RangeError("qty"));
+    expect(await resolveFormMeasure("f1", { measureId: "m1", qty: 1 })).toBe("gone");
+  });
+
+  it("cualquier otro error sigue de largo", async () => {
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new Error("db caída"));
+    await expect(resolveFormMeasure("f1", { measureId: "m1", qty: 1 })).rejects.toThrow("db caída");
   });
 });
