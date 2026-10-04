@@ -242,3 +242,4 @@ orquestador, para que las revise a la mañana:
 - HU-017c-4 done; recorrido OK. → `en_revision` (reviewer Opus).
 - HU-017c-4 reviewer: CHANGES_REQUESTED (R5: un cálculo nuevo dentro de releaseAfterMs queda oculto). → `rechazada_reintentando` (intento 1/2).
 - HU-017c-4 ronda 2 done (46b2b0c). → `en_revision` (ronda 2).
+- HU-017c-4 **aprobada** (ronda 2). HU-017c → `aprobada`. PR encadenado sobre #32. Sigue HU-017b.

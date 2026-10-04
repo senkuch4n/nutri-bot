@@ -551,3 +551,49 @@ archivos del arnés. Typecheck, tests, `verify.sh`, la compilación de Tailwind 
 - **Recorrido incompleto del orquestador.** No cubrió la confirmación de envío (abrir y cancelar), los 390 px ni el antes/después del PDF de un plan. Lo hizo el implementer con Chromium headless y yo regeneré el PDF del informe, pero la SDD 10-4 lo pide en el recorrido.
 - **Escala `metric`.** `reportPdfType.metric` está definida pero el PDF no la usa: se volvía a 5 páginas. Está justificado, pero queda un export sin uso.
 - **Fuente en los tests.** `npm run test` desde la raíz genera los PDF de prueba con Helvetica: `FONT_DIR` depende de `process.cwd()`. No es de esta entrega, pero los tests de paleta no prueban la tipografía real.
+
+# 017c-4 — ronda 2
+
+# Review — HU-017c (entrega 017c-4, ronda 2 / intento 1 de 2)
+
+**Veredicto:** APPROVED
+
+Diff revisado: `git diff 512134e..HEAD -- apps packages` en `feat/hu-017c4-informe` (commit de código `46b2b0c`),
+sin los archivos del arnés. Typecheck, tests y `verify.sh` los corrí yo.
+
+## Checkpoints
+- C1 backlog válido, 1 HU activa por responsable: [x] `backlog/HU-017c.json` en revisión, entrega 017c-4.
+- C1 bitácora refleja la HU: [x] `progress/current-senkuch4n.md` tiene la línea de la ronda 2.
+- C1 no toca HU de la otra persona: [x] el diff toca solo `requirement-section.tsx`, `consultas/[consultationId]/page.tsx`, `report-editor.tsx`, `lib/deferred-delete.ts`, `lib/report-editor-text.ts` y sus tests.
+- C1 `verify.sh` exit 0: [x] "Arnés OK". El WARN del bot viene de las entregas anteriores de la cadena: este diff no toca `apps/bot`.
+- C2 HU/SDD completas: [x] sin cambios.
+- C2 firmas = contrato: [x] Solo cambia la key del borrado diferido del cálculo: antes `prescription:<consultationId>` (017c-3), ahora `prescription:<prescriptionId>` vía `prescriptionDeletionKey` (`deferred-delete.ts:177-179`). El desvío está declarado. Un grep confirma que el único que la arma es `requirement-section.tsx:59,71`. `prescriptionId` es un string serializable (`page.tsx:292`).
+- C3 arquitectura: [x] core, db y bot sin cambios.
+- C3 schema/domain/migraciones: [x] n/a.
+- C3 auth/portal: [x] no hay rutas nuevas.
+- C3 bot silencioso y textos: [x] n/a.
+- C3 sin console.log/TODO: [x] grep limpio sobre el diff.
+- C4 typecheck: [x] `npm run typecheck` en verde (core, db, bot, web).
+- C4 tests: [x] `npm run test` da 110 archivos y 1838 tests en verde (son 3 más que en la ronda 1).
+- C4 bot simulado: [x] n/a.
+- C5 impl existe: [x] sección "Ronda 2 (017c-4)" de `progress/impl_HU-017c.md`.
+- C5 review con veredicto: [x] esta sección.
+- C5 sin scripts ni datos sueltos: [x] El diff no agrega scripts. El implementer declara que borró sus datos de prueba por id. No lo verifiqué contra la base porque no escribo ahí.
+
+## Hallazgo 1 de la ronda anterior (R5): resuelto
+- La key del borrado diferido va por el id de la prescripción: `requirement-section.tsx:59-60` y `:71`, con `deferred-delete.ts:177-179`.
+- Después del commit, la key vieja sigue oculta durante `releaseAfterMs`, pero solo alcanza a la fila borrada. El upsert crea una fila nueva con otro cuid y su key nunca se programó, así que el cálculo nuevo se ve y `deleting` es `false`.
+- Con `prescription === null`, la key es `prescription:`. Nunca se programa, así que "Calcular requerimiento" queda libre en cuanto llega la página revalidada. Se conserva R5 y deja de depender de la ventana.
+- Durante el plazo de "Deshacer" el id es el mismo: el cálculo sigue oculto y el botón, deshabilitado con su motivo (`:123`).
+- Deshacer y un commit fallido no cambian: la key es la misma en todo el ciclo.
+- Tests: `deferred-delete.test.ts:147-174` usan el store real con timers manuales y prueban la key vieja, la nueva y la de `null` dentro de la ventana, y la liberación al vencer.
+
+## Cambios por las dudas de la ronda anterior (verificados)
+- **Texto de la profesional:** vuelve al texto de la HU §4.5 (`docs/hu-017c-pacientes-consultas.md:723`), "Falta tu matrícula o tu firma" (`report-editor-text.ts:23-25`). El único consumidor es `reportIssues`. Los tests están actualizados.
+- **Botones secundarios:** quedan en 36 px desde `sm` (`report-editor.tsx:31` y `:530`, `:546`, `:556`). `h-11` y `sm:h-9` son variantes distintas, así que tailwind-merge no las pisa: en el celular siguen en 44 px y desde `sm` miden 36 px. "Generar PDF" sigue en `lg`.
+
+## Cambios requeridos
+Ninguno.
+
+## Dudas (no bloqueantes)
+- Siguen abiertas las dudas de la ronda 1 que el implementer dejó con motivo: los toasts sobre la barra sticky, `reportPdfType.metric` sin uso y la fuente de los tests (`FONT_DIR` depende de `process.cwd()`). También el recorrido del orquestador incompleto según la SDD 10-4, que conviene cerrar antes del PR.
