@@ -733,3 +733,57 @@ Sin cambios en:
 
 - Recorrido en Chrome: 1920×1080, movimiento reducido, imprimir el PDF en gris desde el navegador y el PDF de un plan de prueba antes y después. El test de `pdf-common` prueba que sin `palette` los estilos son idénticos, y `plan-pdf.tsx` no cambió.
 - El toast sobre la barra del celular (decisión 8), si molesta: `mobileOffset` en el `Toaster` del layout, fuera de esta entrega.
+
+## Ronda 2 (017c-4): el cálculo nuevo no se oculta (`46b2b0c`)
+
+Alcance: la sección "017c-4" de `progress/review_HU-017c.md` (CHANGES_REQUESTED, hallazgo 1) y las dudas baratas.
+
+### Hallazgo 1 (R5): un cálculo nuevo quedaba oculto por la key vieja
+
+- **Causa:** la key era `prescription:<consultationId>`. Después del commit sigue oculta durante `releaseAfterMs` (10 s), así que un cálculo nuevo de la misma consulta quedaba tapado por ella.
+- **Arreglo:** la key va por el **id de la prescripción**. Se arma con `prescriptionDeletionKey(prescriptionId)`, que es nuevo y está en `lib/deferred-delete.ts`.
+  - `consultas/[consultationId]/page.tsx` pasa `prescriptionId={consultation.prescription?.id ?? null}` (un string).
+  - `saveConsultationPrescription` hace upsert por `consultationId`. Después del borrado, el upsert crea una fila con otro cuid, y la key vieja ya no la alcanza.
+  - Sin prescripción, la key es `prescription:` y nunca se programa. Por eso, en cuanto la página revalidada trae `prescription === null`, "Calcular requerimiento" queda libre (R5) sin depender de la ventana.
+  - Mientras corre el plazo de "Deshacer" no cambia nada: el cálculo borrado tiene el mismo id y sigue oculto, con el botón deshabilitado y su motivo.
+- **Desvío del contrato de 017c-3:** la key era `prescription:<consultationId>` y ahora es `prescription:<prescriptionId>`. La usaba solo `requirement-section.tsx`; el comentario de `DeferredDeleteOptions.key` se actualizó.
+- **Test** (`deferred-delete.test.ts`, 3 nuevos): después de un commit exitoso y dentro de la ventana de release:
+  - la key del id viejo sigue oculta;
+  - la de `null` y la del id nuevo no;
+  - al vencer la ventana, se libera la vieja;
+  - durante el plazo, el mismo id queda oculto.
+
+### Dudas no bloqueantes resueltas
+
+- **Texto de la fila de la profesional:** vuelve al texto validado de la HU §4.5, "Falta tu matrícula o tu firma", para matrícula, firma o ambas. Así se elimina el desvío en vez de pedir confirmación; los tests se actualizaron. La página sigue pasando booleanos.
+- **Tamaño de los botones:** los secundarios del informe ("Guardar textos", "Descargar", "Enviar por WhatsApp") miden 36 px desde `sm` (`SECONDARY_SIZE`), como recomienda la HU, y la fila se alinea al centro. En el celular siguen en 44 px, en la grilla táctil. "Generar PDF" queda `lg` (44 px).
+- **Sin cambios, con motivo:**
+  - `reportPdfType.metric`: es parte del contrato §4.1. Se queda exportado aunque el PDF no lo use (decisión 2).
+  - Fuente de los tests: `FONT_DIR` depende de `process.cwd()` en `pdf-common.tsx`, que comparte con el plan. Cambiar cómo se resuelve está fuera del alcance de `palette`.
+  - Toasts sobre la barra sticky: siguen fuera de esta entrega.
+
+### Verificación
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, bot y web en verde |
+| `npm run test` | 110 archivos, 1838 tests en verde (+3) |
+| `npm run lint --workspace apps/web` | solo el warning previo de `ajustes/logo-form.tsx` |
+| `./ops/harness/verify.sh` | "Arnés OK" |
+| `next build --turbopack` (copia en el scratchpad, `node_modules` clonados) | exit 0, "Compiled successfully" |
+| `next build` (webpack, misma copia) | exit 0; solo el warning previo de `jose` en Edge |
+
+**Runtime contra `next start -p 3197`** (build de webpack de la copia), con Chromium headless y una cookie de Auth.js local:
+
+- **Datos de prueba**, creados y borrados por id:
+  - la paciente "Prueba 017c-4 R2" (JID `5493510017402@s.whatsapp.net`), con sexo, nacimiento, actividad y objetivo;
+  - una consulta de hoy con una medición de peso y talla.
+- La **página de la consulta** responde sin el error boundary, también al recargar, y sin errores de consola. La ficha, igual.
+- **El escenario del hallazgo**, de punta a punta en la UI:
+  1. Calcular y guardar un cálculo.
+  2. "…" → borrar → confirmar.
+  3. Durante el plazo, "Calcular requerimiento" queda deshabilitado con "Vas a poder calcular de nuevo…".
+  4. El toast vence, se hace el commit y el botón se libera enseguida (R5).
+  5. Calcular y guardar de nuevo: **el cálculo nuevo se ve a los 4,4 s del commit**, dentro de la ventana de 10 s, sin el aviso de "Deshacer". 1,5 s después sigue visible y al recargar también está.
+- **Limpieza:** la paciente se borró **por su id** y la consulta, la medición y la prescripción se fueron por cascada (verificado por id: 0, 0, 0). 0 filas de `OutboundMessage` con el JID y nada de WhatsApp.
+- La copia, la cookie y `playwright-core` se borraron del scratchpad. El dev server de :3100 no se tocó: responde 200.
