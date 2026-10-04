@@ -58,22 +58,26 @@ export async function addEvolutionEntryAction(
   }
 }
 
-const deleteEntrySchema = z.object({
-  id: z.string().min(1),
-  patientId: z.string().min(1),
-});
+const idSchema = z.string().min(1);
 
-export async function deleteEvolutionEntryAction(formData: FormData): Promise<void> {
-  const parsed = deleteEntrySchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return;
-  const entry = await prisma.evolutionEntry.findUnique({
-    where: { id: parsed.data.id },
-    select: { patientId: true, consultationId: true },
-  });
-  if (!entry || entry.patientId !== parsed.data.patientId) return;
-  await deleteEvolutionEntry(parsed.data.id);
-  revalidatePath(`/pacientes/${parsed.data.patientId}`);
-  if (entry.consultationId) {
-    revalidatePath(`/pacientes/${parsed.data.patientId}/consultas/${entry.consultationId}`);
+/**
+ * Borra una medición desde Historial (HU-017c-3). Reemplaza a `deleteEvolutionEntryAction(formData)`:
+ * devuelve el resultado para el borrado diferido con "Deshacer". La medición tiene que ser del paciente.
+ */
+export async function deleteEvolutionEntryByIdAction(patientId: string, entryId: string): Promise<ActionState> {
+  const failed = { ok: false, error: "No se pudo borrar la medición." } as const;
+  if (!idSchema.safeParse(patientId).success || !idSchema.safeParse(entryId).success) return failed;
+  try {
+    const entry = await prisma.evolutionEntry.findUnique({
+      where: { id: entryId },
+      select: { patientId: true, consultationId: true },
+    });
+    if (!entry || entry.patientId !== patientId) return failed;
+    await deleteEvolutionEntry(entryId);
+    revalidatePath(`/pacientes/${patientId}`);
+    if (entry.consultationId) revalidatePath(`/pacientes/${patientId}/consultas/${entry.consultationId}`);
+    return { ok: true };
+  } catch {
+    return failed;
   }
 }

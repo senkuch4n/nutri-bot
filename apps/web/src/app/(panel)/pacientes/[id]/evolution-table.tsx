@@ -6,7 +6,7 @@ import { Trash2 } from "lucide-react";
 import { computeBmi, computeWaistHipRatio } from "@nutri-bot/core";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { Button, Card, EmptyState, Quantity } from "@/components/ui";
-import { deleteEvolutionEntryAction } from "./clinical-actions";
+import { deleteEvolutionEntryByIdAction } from "./clinical-actions";
 import type { EvolutionRow } from "./evolution-types";
 
 /** El resto de las medidas que no tienen columna propia, con los mismos textos de siempre. */
@@ -114,19 +114,16 @@ export function EvolutionTable({
         header: "",
         className: "w-12",
         cell: (e) => (
-          <form action={deleteEvolutionEntryAction}>
-            <input type="hidden" name="id" value={e.id} />
-            <input type="hidden" name="patientId" value={patientId} />
-            <Button
-              type="submit"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-              aria-label={`Borrar la medición del ${e.recordedAtShortLabel}`}
-            >
-              <Trash2 aria-hidden />
-            </Button>
-          </form>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            aria-label={`Borrar la medición del ${e.recordedAtShortLabel}`}
+            onClick={() => void deleteEvolutionEntryByIdAction(patientId, e.id)}
+          >
+            <Trash2 aria-hidden />
+          </Button>
         ),
       },
     ];
