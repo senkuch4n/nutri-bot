@@ -244,3 +244,4 @@ orquestador, para que las revise a la mañana:
 - HU-017c-4 ronda 2 done (46b2b0c). → `en_revision` (ronda 2).
 - HU-017c-4 **aprobada** (ronda 2). HU-017c → `aprobada`. PR encadenado sobre #32. Sigue HU-017b.
 - HU-017b → `afinando` (afinador Opus; rama feat/hu-017b-agenda encadenada sobre 017c-4).
+- HU-017b afinada y validada (D1–D24; D17 vacaciones por rango queda como idea aparte). → `en_arquitectura` (architect Opus + ui).
