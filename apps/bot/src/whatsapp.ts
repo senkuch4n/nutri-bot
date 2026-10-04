@@ -12,6 +12,7 @@ import QRCode from "qrcode";
 import { prisma } from "@nutri-bot/db";
 import { env } from "./env";
 import { logger } from "./logger";
+import { isIgnoredJid } from "./jid-filter";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -117,7 +118,7 @@ export async function startWhatsApp(
     for (const m of messages) {
       if (m.key.fromMe) continue;
       const jid = m.key.remoteJid ?? "";
-      if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") continue;
+      if (isIgnoredJid(jid)) continue;
       if (!m.message) {
         // Suele ser un mensaje que no se pudo descifrar (ver "Failed to decrypt" arriba).
         logger.warn({ jid, stubType: m.messageStubType ?? null }, "Mensaje entrante sin contenido: se ignora");
