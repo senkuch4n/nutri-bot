@@ -226,3 +226,125 @@ planes…").
 "El ítem de receta se dibuja en `components/recipe-picker/recipe-meal-item.tsx`, fuera de tu zona. En `meals-editor.tsx`
 solo hay un botón, una rama del `map` y el montaje del Sheet. En el PDF hay una línea por receta (`RecipeRow`). Lo que
 queda para la HU-015 está en la §14 de la SDD."
+
+## 018c-2: detalle de la receta + pendientes de la revisión de 018c-1
+
+**Estado: done.** Rama `feat/hu-018c2-detalle-receta`. Sin migración, sin `schema.prisma`, sin `apps/bot`. Implementer: Opus,
+con los skills `apple-design` y `ui-ux-pro-max`, y `web-design-guidelines` como autochequeo.
+
+### Punto de partida
+
+Los commits `2f44c77` y `bbb7a68` eran trabajo WIP sin verificar de una corrida que se cortó. Los revisé archivo por archivo
+contra la SDD (§5.2, §6.1, §7.1, §7.4, §7.6, §10 G–H, §11 y §17). Estaba casi completo y compilaba. Corregí dos detalles
+de accesibilidad (abajo) y corrí toda la verificación, que la corrida anterior no había llegado a hacer.
+
+### Lo que hay (checklist G y pendientes de §17)
+
+| Ítem | Dónde |
+|---|---|
+| G1 `RecipePreview`, `getRecipePreview` (PUBLISHED/ARCHIVED; DRAFT → null) y `listPlanRecipePreviews` (recetas distintas del plan, sin DRAFT, por nombre), con tests | `packages/db/domain/recipes.ts`, `recipes.test.ts` (+3) |
+| G2 `getRecipePreviewAction` (sesión, zod del id, null → `notPublished`, error → `loadError` con log solo del código) | `(panel)/recipe-picker-actions.ts` (+ test, 4 casos). El archivo sigue exportando solo funciones async (el test de 018c-1 lo sigue chequeando) |
+| G3 `RecipeDetailBody` (+ test, 4 casos) y `RecipePreviewDialog`; `onOpen` en el sheet | `components/recipes/recipe-detail-body.tsx`, `components/recipe-picker/recipe-preview-dialog.tsx`, `recipe-picker-sheet.tsx` |
+| G4 Portal: `listPlanRecipePreviews` en `page.tsx`, `PortalRecipeView` sin macros, `portal-recipe-sheet.tsx`, "Ver receta" | `(portal)/portal/plan/*`, `lib/portal-recipe.ts` (+ test) |
+| §17.1 Test con mocks de `applyTemplateToPatient` con un ítem de receta | `packages/db/domain/planTemplates.test.ts` (nuevo, 2 casos) |
+| §17.2 Impacto y botón miden los mismos días | `scopeForDaysToAdd` en `packages/core/src/recipe-picker.ts` (+ 4 tests, uno reproduce el caso de la revisión: el jueves ya la tiene → deja de decir "Se pasa … el jueves" y el botón dice "Agregar en 2 días"). `PickerCard` recalcula el contexto solo si el alcance se achica |
+| §17.3 "Quitar" del ítem de receta a 44 px | `recipe-meal-item.tsx` (`className="h-11 px-4"` sobre el `SubmitButton`) |
+| §17.4 Los macros de los ítems de receta no viajan al portal | `portalMealsForClient` (ítems de receta con `macros: null`, `kcalBreakdown: null`, `macrosIncomplete: false`; los totales se calculan en el server antes) y `toPortalRecipeView` (arma el objeto campo por campo: nada nuevo de `RecipePreview` se filtra solo) |
+| §17.5 Recorrido del portal con un plan de prueba | Hecho por HTTP contra un build de producción (ver "Portal contra la base"). El PDF, ver "Pendiente" |
+
+### Correcciones sobre el WIP
+
+- **Nombre accesible del botón del detalle** (`recipe-picker-sheet.tsx`): en el diálogo el texto visible es "Agregar a
+  Desayuno · Martes" pero el `aria-label` era "Agregar {receta} a desayuno del martes", que no contiene el texto visible
+  (WCAG 2.5.3, control por voz). Ahora, en `variant="dialog"`, es `"{texto visible}: {receta}"`. La tarjeta no cambia.
+- **El pie fijo del diálogo tapaba el foco** (`recipe-preview-dialog.tsx`): se sumó `scroll-pb-48` al contenedor que
+  scrollea, así el `<summary>` de "Preparación" (o lo que tenga foco) no queda debajo del pie al navegar con Tab.
+
+### Contrato compartido: confirmación
+
+`RecipePreview`, `getRecipePreview`, `listPlanRecipePreviews`, `RecipePreviewResult`, `getRecipePreviewAction`,
+`RecipeDetailBody` (props `recipe`, `photoScope`, `showMacros`, `preparationOpen`) y `PortalRecipeView =
+Omit<RecipePreview, "perPortion" | "macrosIncomplete" | "status">` coinciden con la SDD. Agregados y desvíos menores:
+- Core suma `scopeForDaysToAdd`, `recipeYieldText` ("Rinde 4 porciones"), `recipeSourceText`, `recipePhotoCreditText` y
+  en `RECIPE_PICKER_TEXT` `ingredientsTitle`, `preparationTitle`, `tipsTitle`, `previewLoadError`,
+  `portalSheetDescription` y `previewDescription`. Todos con test.
+- `RecipeDetailBody` acepta además `className`, y su `recipe` es `PortalRecipeView & { perPortion?: Macros | null }`, así
+  el mismo componente recibe la vista del portal (que no tiene macros) y el `RecipePreview` del panel.
+- El diálogo, si la carga falla, dice "No se pudo cargar la receta." (singular) en vez de `loadError` ("No se pudieron
+  cargar las recetas."), que habla de la grilla. Si la receta dejó de estar publicada, dice `notPublished` y no ofrece
+  "Reintentar".
+- El diálogo guarda el detalle por id mientras el sheet esté montado (reabrir la misma receta no vuelve a pedirla).
+- La X del primitivo `Dialog` está en el contenedor que scrollea, así que se va al bajar. Escape, el scrim y "Listo"
+  del pie siguen. No toqué `primitives/*` (fuera de alcance).
+
+### Verificación (SDD 12.1)
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, bot y web: 0 errores (después de los últimos cambios, de nuevo web: 0) |
+| `npm run test` | 103 archivos, **1737 tests** OK |
+| `npm run lint --workspace apps/web` | solo el warning previo (`ajustes/logo-form.tsx:36`, alt) |
+| `prisma migrate status` | "Database schema is up to date!" (23 migraciones). No hay migración |
+| `npm run test:recipe-picker --workspace packages/db` ×2 | OK las dos veces, 10 pasos (el 10 es nuevo: `getRecipePreview` de una archivada, `listPlanRecipePreviews` sin repetir en el plan y en el aplicado, sin datos de importación, y borrador → null). Conteos iguales antes y después |
+| `npm run test:recipes --workspace packages/db` (018a) | OK |
+| `tsx scripts/test-weekly-menu.ts` (018b) | OK |
+| `next build` (webpack, copia en el scratchpad) | exit 0. Compila `/pacientes/[id]/planes/[planId]`, `/plantillas/[id]` y `/portal/plan` |
+| `next build --turbopack` (copia en el scratchpad) | "Compiled successfully", exit 0, sin "Only async functions are allowed to be exported in a "use server" file" |
+| `./ops/harness/verify.sh` | "Arnés OK". El WARN "se tocó el bot" sale de las carpetas `apps/bot/.whatsapp-auth.vieja*` sin trackear (ajenas); no toqué el bot |
+
+Los dos últimos ajustes (el `aria-label` del diálogo y el `scroll-pb-48`) son una expresión de texto y una clase de
+Tailwind, hechos después de las builds. Después de ellos pasaron `typecheck` de web, lint y los tests del buscador. No
+cambian imports ni exports, así que no afectan la regla de Turbopack.
+
+No había `next dev` de NutriBot corriendo (el :3000 es de otro proyecto, Evidentia), igual las builds se hicieron en una
+copia que después se borró.
+
+### Portal contra la base (build de producción, sin WhatsApp)
+
+Sobre el build de Turbopack de la copia, `next start -p 3107`. Un script del scratchpad (no queda en el repo) creó: receta
+"Prueba 018c2 Panqueques" (fuente, preparación y tips con marcas únicas, un ingrediente c.n.), paciente "Prueba HU-018c2"
+(teléfono ficticio 5490000018005), plan ACTIVE con la receta en el Desayuno de los 7 días. Token con
+`createPatientToken` (HMAC, no escribe nada) → `/portal/login?token=…` → `/portal/plan` (200):
+- Se ve el nombre, "1 porción (2 panqueques)", "Fuente: FuentePrueba" y el botón "Ver receta".
+- El payload RSC trae el detalle para el sheet (preparación, tips, el ingrediente c.n.).
+- `perPortion`: 0 apariciones. Los ítems de receta llegan con `"macros":null,"kcalBreakdown":null` y
+  `"macrosIncomplete":false`.
+
+Limpieza por id (plan, paciente, receta). **Incidente menor, resuelto:** la primera corrida de ese script falló después de
+crear la receta (`publishRecipe` sobre una receta que `createRecipe` ya deja publicada) y la segunda creó otra antes de
+fallar igual. Las dos (`cmuu27it80001tqouf9prxh50` y `cmuu27ojz000111uq83mw0dfg`, ambas "Prueba 018c2 Panqueques") se
+borraron por id. Después no quedó ninguna receta "Prueba%".
+
+**Conteos de control** (`Recipe | NutritionPlan | PlanMealItem | ítems de receta | ítems de receta en plantillas | Patient |
+OutboundMessage | PlanTemplate`):
+- Antes: `9 | 11 | 132 | 1 | 0 | 21 | 12 | 0`. Después de todo: `9 | 11 | 132 | 1 | 0 | 21 | 12 | 0`.
+- Desde 018c-1 la base cambió por uso del usuario (un plan más con 1 ítem de receta). No es mío y no lo toqué.
+- No se corrió `db:seed`, no se encoló nada en `OutboundMessage`, no hubo WhatsApp ni IA.
+
+### Pendiente para el orquestador (SDD 12.2, pasos 16 a 18 en Chrome)
+
+- Mirar el diálogo del buscador (tocar la foto de una tarjeta → detalle, impacto, "Agregar a Desayuno · Martes", Escape
+  vuelve a la grilla en el mismo lugar) y el sheet "Ver receta" del portal a 390 px. No hice el recorrido visual en el
+  navegador.
+- **PDF:** no lo generé (la generación del panel pide sesión de Google). La línea de receta la cubre
+  `plan-pdf.test.tsx`, que no cambió en 018c-2. Si se quiere ver el PDF real, hay que hacerlo en el recorrido con un plan
+  de prueba.
+- D10 (paso 18) no cambió en 018c-2.
+
+### Archivos de 018c-2
+
+Nuevos: `packages/db/domain/planTemplates.test.ts`, `apps/web/src/components/recipes/recipe-detail-body.tsx` (+ test),
+`apps/web/src/components/recipe-picker/recipe-preview-dialog.tsx`, `apps/web/src/app/(portal)/portal/plan/portal-recipe-sheet.tsx`,
+`apps/web/src/lib/portal-recipe.ts` (+ test).
+
+Modificados: `packages/core/src/recipe-picker.ts` (+ test), `packages/db/domain/recipes.ts` (+ test),
+`packages/db/scripts/test-recipe-picker.ts` (paso 10), `apps/web/src/app/(panel)/recipe-picker-actions.ts` (+ test),
+`apps/web/src/components/recipe-picker/{types.ts,recipe-picker-sheet.tsx,recipe-meal-item.tsx}`,
+`apps/web/src/app/(portal)/portal/plan/{page.tsx,plan-view.tsx,portal-day-view.tsx}`.
+
+Commits (locales, sin push): los dos WIP (`2f44c77`, `bbb7a68`), "HU-018c: detalle de la receta en el buscador y en el
+portal" (las dos correcciones de accesibilidad) y "HU-018c: verificación de 018c-2" (este reporte).
+
+Para el PR (aviso a Leo): en su zona, 018c-2 solo toca el portal (`page.tsx`, `plan-view.tsx` y `portal-day-view.tsx`:
+la prop `recipes` y "Ver receta"). `meals-editor.tsx`, `plan-pdf.tsx`, `nutritionPlans.ts` y `planTemplates.ts` no
+cambian. Hay un test nuevo, `planTemplates.test.ts`.
