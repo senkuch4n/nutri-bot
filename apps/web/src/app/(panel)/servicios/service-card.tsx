@@ -74,7 +74,10 @@ export function ServiceSections({ services, currency }: { services: readonly Ser
       notify.error(result.error);
       return;
     }
+    // R6 (017b-3): un solo toast con "Deshacer" vivo por servicio.
+    const toastId = `service-paused:${id}`;
     if (next) {
+      notify.dismiss(toastId);
       notify.saved(T.resumed);
       return;
     }
@@ -87,7 +90,7 @@ export function ServiceSections({ services, currency }: { services: readonly Ser
         return;
       }
       notify.saved(T.pausedUndone);
-    });
+    }, { id: toastId });
   }
 
   const active = services.filter((v) => isActive(v.service));

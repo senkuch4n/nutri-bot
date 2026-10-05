@@ -68,7 +68,12 @@ export async function addRuleAction(_prev: FormState, fd: FormData): Promise<For
   if (!parsed.ok) return parsed.state;
   const overlap = await overlapState(parsed.data);
   if (overlap) return overlap;
-  await prisma.availabilityRule.create({ data: parsed.data });
+  // HU-017b-3 (R4): un error de base queda inline en el panel, no en el error boundary.
+  try {
+    await prisma.availabilityRule.create({ data: parsed.data });
+  } catch {
+    return { ok: false, error: SAVE_ERROR };
+  }
   revalidatePath("/disponibilidad");
   return { ok: true };
 }

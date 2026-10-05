@@ -319,3 +319,246 @@ imleticio, `pdf-theme`, `apps/bot`, `packages/db`, `backlog`, `schema.prisma` ni
 - La transición de la tarjeta entre secciones y el arrastre del sheet inferior con cambios sin guardar no se miraron cuadro a
   cuadro. Si al arrastrar hacia abajo un formulario con cambios el panel no vuelve a su lugar después de "Seguir editando",
   es un detalle del primitivo `Sheet`.
+
+---
+
+## 017b-3: mensajes, pagos y avisos (con los agregados R4–R6)
+
+- **Estado:** done
+- **Rama:** `feat/hu-017b3-bandejas` (sale de `feat/hu-017b2-disponibilidad`, contiene `c0bfca7`). No se pusheó.
+- **Modelo:** Opus. **Skills:** `ui-ux-pro-max` y `apple-design` antes del JSX. `web-design-guidelines` como autochequeo
+  manual: no hubo red para bajar la guía, así que se revisó contra sus reglas conocidas. De ahí salió un cambio: el
+  placeholder del buscador volvió a terminar en "…" y se le agregó `spellCheck={false}`.
+- **Sin migración ni cambios en `schema.prisma`, `packages/db/**`, `apps/bot/**`, `backlog/**` ni en la zona de imleticio.**
+  `messages.ts` no cambió (T4). El bot estuvo apagado todo el tiempo (`pgrep` vacío, `BotStatus.connected = f`) y no se levantó.
+
+### Commits (uno por fase, con el trailer `Co-Authored-By: Claude Opus 5.5`)
+
+| Commit | Fase |
+|---|---|
+| `1a626da` | A. core: `month-range.ts`, `outbox-text.ts`, `payment-text.ts` + tests, `index.ts` |
+| `28c86fb` | B. `broadcastMessageAction` con `broadcastRecipients` + `avisos/actions.test.ts`; `onUndone` en `deferred-delete` + tests |
+| `4bf67ce` | C. Mensajes: tarjetas, "Pendientes (N) \| Respondidas", "Ya respondí" diferido, `loading.tsx` |
+| `9c5bdab` | D. Pagos: `?mes=`, `Metric`, lista agrupada con glosario, buscador + segmentado, registrar pago con turnos `COMPLETED`, `loading.tsx` |
+| `d0e7631` | E. Avisos: comunicado diferido con vista previa, la cola en palabras, `loading.tsx`, demo de `/dev-diseno` (Q18) |
+| `dde7851` | R4, R5 y R6 |
+
+El commit de la fase F lleva este archivo y el placeholder del buscador de Pagos.
+
+### Archivos tocados
+
+Son los de la tabla 7-3: `packages/core/src/{month-range,outbox-text,payment-text}.ts` (+ tests) e `index.ts`;
+`mensajes/{page,mensajes-view,loading}`; `pagos/{page,payments-table,manual-payment-dialog,manual-payment-form,loading}`;
+`avisos/{page,avisos-view,broadcast-form,actions,actions.test,loading}`; `lib/deferred-delete.ts` (+ test);
+`dev-diseno/broadcast-demo.tsx` (nuevo, cliente) y `dev-diseno/page.tsx` (agrega la sección).
+
+Además:
+- `components/ui.tsx`: `Metric` suma dos props opcionales, `valueText?` y `caption?`.
+- R4: `disponibilidad/actions.ts` y su test.
+- R5: `disponibilidad/exception-sheet.tsx`.
+- R6: `lib/notify.ts` (suma `undo(..., { id? })` y `dismiss(id)`) y `servicios/service-card.tsx`.
+
+`mensajes/actions.ts` no cambió.
+
+### Contrato compartido
+
+Las firmas coinciden con la sección 4.1 de 017b-3:
+- `isValidMonthKey`, `monthKeyInTz`, `monthRangeInTz` (intervalo `[from, to)`), `shiftMonthKey`, `monthTitle` y `monthName`.
+- `MessageKindLike` y `MESSAGE_KIND_TEXT` con la tabla exacta de la HU §4.6.
+- `OUTBOX_STATUS_TEXT`, `outboxRecipientLabel({ toJid, patientName, professionalJid })` y `broadcastRecipients(jids)`.
+- `OUTBOX_TEXT`: las claves del contrato, más otras de la cola (filtros, "Se actualiza sola", vacíos, `retryAllTitle`, etc.).
+  Los textos con número usan el singular cuando n = 1 ("1 paciente").
+- `PAYMENT_TEXT` con los textos exactos.
+
+En web:
+- `MESSAGE_KIND_TEXT satisfies Record<MessageKind, string>` (en `avisos/page.tsx`).
+- `DeferredDeleteOptions.onUndone?` es opcional.
+- `BroadcastForm({ patientCount, sendAction? })` conserva su firma. El `sendAction` de la demo se define del lado cliente.
+- Las keys diferidas son `inquiry-answered:<id>` (sin `guardUnload`) y `broadcast:<uuid>` (con `guardUnload: true`).
+
+### Decisiones no obvias
+
+- **`useDeferredDelete` ahora delega en `runDeferredDelete(opts, { store, notify, router })`.** Es un export nuevo y puro,
+  con las dependencias inyectadas. El comportamiento es el mismo y así se puede testear `onUndone` en node, sin React ni
+  sonner. `onUndone` solo corre si el "Deshacer" llegó a tiempo: si el toast ya había vencido, o si `store.undo` devuelve
+  false, no corre.
+- **El comunicado** vacía el campo al programar. "Deshacer" lo devuelve, y si el envío falla también vuelve. En los dos
+  casos solo se repone si el campo sigue vacío, para no pisar algo nuevo que haya escrito. La vista previa es un
+  `AlertDialog` propio: `useConfirm` acepta solo texto y la burbuja no entra ahí. El foco va a "Volver a editar".
+  `broadcastMessageAction` ahora envuelve el `createMany` en try/catch y devuelve `OUTBOX_TEXT.error`. Sin destinatarios
+  responde "Todavía no hay pacientes con WhatsApp para mandarles el aviso.".
+- **Mensajes:** durante los 8 s, la consulta se muestra en "Respondidas" con "Respondida recién", aunque en la base sigue
+  `PENDING` ("se ve salir hacia Respondidas"). La tarjeta sale hacia la derecha con `springs.quick`; con movimiento
+  reducido, solo un fundido. La página lee además `Patient.whatsappJid` con una consulta propia de la web, porque
+  `listInquiries` no lo trae y domain no se toca (T3). Con eso sabe si el contacto es `@lid`: sin botón y con el texto de
+  la HU. "Recibida": "Hoy, 22:40", "Ayer, 9:15" o "Hace 2 días". Se sacaron "Todas" y la prop `counts`.
+- **Pagos:**
+  - `listApprovedPaymentsInRange` filtra con `lte`, así que la página le pasa `to − 1 ms` para que el rango quede
+    `[1°, 1° del siguiente)`.
+  - La flecha "‹" es un `Link` a `?mes=`. La flecha "›" del mes en curso es un `<button disabled>`, y volver al mes en
+    curso lleva a `/pagos` limpio.
+  - `Metric` necesitaba mostrar montos con moneda y el renglón gris, de ahí `valueText?` y `caption?`.
+  - En "Registrar pago" el tipo se elige con un segmentado (hidden `kind`). Al elegir "Seña", se precarga la seña del
+    servicio (`computeDepositAmount`) si está configurada; si no, el precio.
+  - Las opciones dicen "Brenda · Control · jueves 9 de octubre, 10:00 · Vino" (`appointmentDayTime` +
+    `APPOINTMENT_STATUS_TEXT`).
+  - Los nombres sin `name` usan `patientDisplayName`.
+- **Avisos, cola:**
+  - En el celular, el filtro es un `Select` nativo de 44 px: "Todos | Por enviar | Enviados | No se enviaron (1)" no
+    entra legible en un segmentado de 390 px. Desde 640 px es `SegmentedControl`.
+  - "Ver detalle" reutiliza `DetailDisclosure` de 017c-2.
+  - "Reintentar" por fila sigue sin confirmación, como hoy. "Reintentar los N" pide confirmación con "Se vuelven a
+    mandar por WhatsApp.".
+  - `outboxRecipientLabel` compara el JID sin el sufijo de dispositivo (`:7`).
+- **R6:** el toast de "pausado" usa el id `service-paused:<id>`. Si se vuelve a pausar, sonner reemplaza el toast
+  anterior, y al reanudar con el switch se cierra. **R5:** el bloque Desde/Hasta lleva `key={kind}`. **R4:**
+  `addRuleAction` envuelve el `create` y devuelve `SAVE_ERROR` sin revalidar.
+
+### Verificación
+
+**Comandos (desde la raíz):**
+- `npm run typecheck`: core, db, bot y web en verde.
+- `npm run test`: 124 archivos y 2029 tests, todos en verde. Los nuevos son `month-range` (17), `outbox-text` (10),
+  `payment-text` (2), `avisos/actions` (6), `deferred-delete` (+5, por `onUndone`) y `disponibilidad/actions` (+1, R4).
+- `npm run lint --workspace apps/web`: solo el warning previo de `ajustes/logo-form.tsx`.
+- `./ops/harness/verify.sh`: "Arnés OK". El aviso "Se tocó el bot" sale porque cambió core; el bot no se tocó.
+
+**Builds en una copia del scratchpad** (el dev server de :3100 no se tocó y sigue respondiendo 200):
+- `next build` (webpack) terminó con exit 0.
+- `next build --turbopack` dio "Compiled successfully" y exit 0.
+- Ninguno de los dos mostró "Only async functions…", "cannot be passed" ni "useSearchParams() should be wrapped…".
+
+**Runtime:** `next start -p 3197` sobre el build de webpack, con una cookie de Auth.js generada en local y Chromium headless
+(`playwright-core` del caché de npx, sin instalar nada).
+- **Pedidos con `curl`:** `/mensajes`, `/pagos`, `/pagos?mes=2026-09`, `/pagos?mes=2027-05` (futuro, cae al mes en curso),
+  `/pagos?mes=xx`, `/avisos`, `/disponibilidad`, `/servicios` y `/` respondieron 200. En el HTML no aparece "Algo salió
+  mal" ni "cannot be passed", y el log del servidor quedó sin errores.
+- **Anchos:** `/mensajes`, `/pagos`, `/avisos` y `/disponibilidad` no tienen scroll horizontal a 1366, 768 ni 390 px. La
+  consola no mostró errores ni avisos de hidratación.
+- **Controles chicos:** mi chequeo marcó los segmentos de `SegmentedControl` (36 px visibles) y los "Agregar horario" de
+  017b-2. En los dos casos el área táctil la amplía la utilidad `touch-target` (`::after`), igual que en las entregas
+  aprobadas.
+- **Mensajes**, con una paciente y una `@lid` de prueba y dos `PatientInquiry` creadas por id (con `digestedAt=now()`
+  para que el resumen nocturno del bot no las tome):
+  - "Pendientes (2) | Respondidas"; la más vieja va primero.
+  - La tarjeta muestra "Hace 2 días", "Fuera de horario" y "+54 9 351 001-7301". "Responder por WhatsApp" tiene
+    `href=https://wa.me/5493510017301`; no se apretó.
+  - La `@lid` dice "Sin nombre", "WhatsApp no muestra el número" y "Respondé desde tu WhatsApp: este contacto no muestra
+    el número", sin enlace.
+  - **"Ya respondí":** la tarjeta sale, queda "Pendientes (1)" y en la base sigue `PENDING`. Con "Deshacer" vuelve y sale
+    "Listo, sigue pendiente"; 10 s después sigue `PENDING`.
+  - **Dejarlo vencer:** pasa a `ANSWERED` y el contador de la barra lateral baja de 2 a 1. En "Respondidas" se lee
+    "Respondida hoy" con "Abrir WhatsApp" y sin "Ya respondí".
+- **Pagos**, con un turno de prueba `COMPLETED` de ayer:
+  - "›" está deshabilitado en octubre. "‹" lleva a `?mes=2026-09`, con "Septiembre 2026" y "Cobrado en septiembre", y
+    "›" vuelve a `/pagos`.
+  - "Registrar pago" lista "Prueba Brenda 017b3 · Antropometría · domingo 4 de octubre, 10:00 · Vino", con el monto
+    precargado en 40000. "Seña" precarga 19999.73, que es la seña FIXED real del servicio.
+  - El toast dice "Pago registrado: $ 40.000 de Prueba Brenda 017b3". La fila dice "Turno: domingo 4 de octubre, 10:00 ·
+    Cobrado · Pago completo · Efectivo o transferencia" con "$ 40.000". El filtro "Esperando pago" la oculta.
+- **Avisos.** Solo se probó el camino "Deshacer" sobre la action real. Como red de seguridad, Playwright abortaba todo
+  POST con `next-action` en `/avisos`. Se abortaron 0: la action nunca llegó a correr.
+  - El alcance decía "Le llega a 18 pacientes por WhatsApp." (16 reales + las 2 de prueba). Los 5 `@newsletter` no
+    cuentan.
+  - Sin texto aparece "Escribí el aviso antes de revisarlo." y no se abre la vista previa.
+  - La vista previa muestra la burbuja con el texto, "Le llega a 18 pacientes por WhatsApp" y "Enviar a 18 pacientes",
+    con el foco en "Volver a editar". "Volver a editar" conserva el texto.
+  - Al enviar, el campo se vacía y sale "Comunicado listo para enviar a 18 pacientes". Durante el plazo, el conteo de
+    `AD_HOC` posteriores a t0 da 0.
+  - Con "Deshacer" sale "Listo, no se mandó" y el texto vuelve. 10 s después, el conteo sigue en 0.
+  - **Recargar durante el plazo:** Playwright vio el diálogo `beforeunload`. Al aceptarlo, la página recargó y 10 s
+    después el conteo seguía en 0.
+- **Camino "vencer" (Q18):** se probó en `/dev-diseno#comunicado` del dev server de :3100, solo lectura, con el
+  `sendAction` falso del lado cliente y los POST de actions abortados (0). Salió "Comunicado en camino a 12 pacientes", el
+  campo quedó vacío y corrió 1 envío falso. También lo cubre `avisos/actions.test.ts`: no encola `@newsletter`, `@g.us` ni
+  `@broadcast`, `sent` es correcto y sin destinatarios da error.
+- **Cola:** la fila real `ANTHROPOMETRIC_REPORT_PDF` `FAILED` se lee "No se envió · Informe antropométrico (PDF) ·
+  Brenda Yebara" con "No se pudo enviar.". "Ver detalle" muestra el `lastError`. Ningún nombre interno de tipo queda a la
+  vista. "Reintentar el mensaje" pide confirmación con "Se vuelven a mandar por WhatsApp."; se apretó "Volver" y la fila
+  siguió `FAILED`.
+- **R5 en runtime:** "No atiendo un rato" pone 14:00 y "Atiendo en otro horario" pasa a 09:00. R4 y R6 se cubren con
+  test y con el código: R6 no se probó en runtime para no tocar el `Service.active` real.
+- **Conteos** `Patient|Appointment|OutboundMessage|Consultation|Payment|PatientInquiry`: **21|22|12|20|6|0** antes y
+  después. `OutboundMessage` se mantuvo en 12 filas todo el tiempo, sin ninguna fila `AD_HOC` nueva. Ninguna prueba
+  encoló nada.
+- **Limpieza, solo por id:**
+  - Pacientes `hu017b3-pac` y `hu017b3-lid`, consultas `hu017b3-inq-a` y `hu017b3-inq-b`, turno `hu017b3-turno` y turno
+    auxiliar `hu017b3-turno2` (abajo).
+  - Los pagos de prueba, cada uno por su id: `cmuukfz5f…`, `cmuukhqb7…`, `cmuukivxy…`, `cmuukj694…`, `cmuukj8x5…`,
+    `cmuukk4rw…`, `cmuukkuz2…`, `cmuuklqr1…`, `cmuukmmox…`, `cmuukngzt…`, `cmuukntr2…`, `cmuuknuy6…`, `cmuuko7pl…`, y los
+    `cmuukqs6s…`–`cmuuksx12…` de la comparación con la línea base.
+  - Se mató el `next start` y se borraron la copia, la cookie y los scripts del scratchpad.
+
+**Alcance del diff** (contra `c0bfca7`): son 31 archivos, todos los de arriba. El grep de 10.2 no encuentra nada de la zona
+de imleticio, `pdf-theme`, `apps/bot`, `packages/db`, `backlog`, `schema.prisma` ni migraciones.
+
+### Hallazgo preexistente (no es de esta entrega)
+
+- **"Registrar pago" a veces queda en "Guardando…".** Con `next start` y Chromium headless pasa más o menos 1 de cada 2
+  veces: el pago se crea en la base, pero la UI nunca recibe el resultado. No sale el toast y el diálogo no se cierra. Lo
+  reproduje igual sobre un build de la línea base `c0bfca7` (017b-2), con un turno `CONFIRMED` de prueba
+  (`hu017b3-turno2`, borrado). No lo introduce 017b-3. Puede ser algo del modo `output: standalone` con `next start` (el
+  log avisa que no es compatible) o de la action que revalida `/pagos` y `/`. Conviene una tarea aparte para mirarlo con el
+  servidor standalone real. Por eso el runtime creó más pagos de prueba de los necesarios; todos se borraron por id.
+
+### Pendiente / no hecho
+
+- No hay capturas antes/después en `docs/auditoria-apple/017b/`: quedan para el recorrido del orquestador.
+- R6 (un toast vivo por servicio) no se recorrió en runtime, para no cambiar `Service.active` de un servicio real.
+
+---
+
+## Ronda 2 (017b-3)
+
+- **Estado:** done. Responde al `CHANGES_REQUESTED` de `progress/review_HU-017b.md` (sección 017b-3, cambio 1) y a las
+  dudas que se podían resolver con poco.
+- **Bloqueante, el doble clic en "Ya respondí":** el arreglo va en el hook compartido, así cubre todos los diferidos.
+  - `DeferredDeleteStore` suma `isScheduled(key)`: da true si la key tiene una entrada "pending" o "committing". Una
+    entrada "done" no cuenta.
+  - `runDeferredDelete` ahora devuelve `boolean`. Si la key ya está programada, no hace nada y devuelve `false`: no hay
+    segunda entrada ni segundo toast.
+  - Con eso, "Deshacer" cancela lo único que hay pendiente para esa consulta.
+  - La key de un ítem ya borrado ("done", oculta hasta que se libera) se puede volver a programar, como necesita
+    `prescriptionDeletionKey` de 017c-4. Los consumidores de 017c no cambian: la firma solo pasa de `void` a `boolean`.
+- **Mismo patrón en los otros diferidos:**
+  - Cancelar turno, horarios y excepciones: quedan cubiertos por el hook.
+  - Comunicado: la key lleva un uuid, así que el hook no alcanza. `send()` tiene un `scheduledRef` (uno por vista previa,
+    se rearma al volver a abrirla) y ahora valida de nuevo que el texto tenga 3 caracteres o más y que haya destinatarios
+    (era una duda no bloqueante).
+  - Pausar un servicio: ya usaba un toast único por servicio (R6). Un segundo clic en el switch reanuda, que es lo
+    esperado.
+- **Dudas baratas resueltas:**
+  - `retryMessageAction` ahora usa `updateMany({ where: { id, status: "FAILED" } })`: una fila que ya se envió no se
+    vuelve a mandar. Tiene test.
+  - Guarda en `send()` del comunicado (arriba).
+- **Dudas que quedan anotadas, sin cambio:**
+  - Si navega a otra pantalla durante el plazo y después toca "Deshacer", el texto del comunicado se pierde. No se manda
+    nada, como corresponde.
+  - Los pagos `PENDING` aparecen en cualquier mes ("Señas esperando pago" es lo pendiente ahora). Queda para que lo
+    confirme el recorrido.
+  - El "Guardando…" de "Registrar pago" ya existía antes de esta entrega: es una tarea aparte.
+- **Tests:** se agregaron 4 en `deferred-delete.test.ts`:
+  - El segundo pedido no hace nada y sale un solo toast.
+  - "Deshacer" después de un doble clic deja la key libre y nunca hace commit.
+  - Con el commit en curso también bloquea; cuando termina, se puede volver a programar.
+  - Keys distintas no se bloquean entre sí.
+
+  Y 1 en `avisos/actions.test.ts` (`retryMessageAction`).
+- **Verificación:**
+  - `npm run typecheck`: los 4 workspaces en verde.
+  - `npm run test`: 124 archivos y 2034 tests en verde.
+  - Lint de web: solo el warning previo de `logo-form.tsx`.
+  - `verify.sh`: "Arnés OK".
+  - Builds en una copia del scratchpad: `next build --turbopack` dio "Compiled successfully" (exit 0) y `next build`
+    exit 0, sin "cannot be passed" ni "Only async".
+  - El dev server de :3100 no se tocó.
+- **Runtime:** `next start -p 3197` con Chromium headless. El bot siguió apagado (`pgrep` vacío, `connected = f`).
+  - Usé una paciente y una `PatientInquiry` de prueba, creadas y borradas por id.
+  - `/mensajes`, `/pagos` y `/avisos` cargaron sin el error boundary.
+  - **Doble clic con movimiento normal y con movimiento reducido:** salió un solo toast "Marcada como respondida". Con
+    "Deshacer" la tarjeta volvió y 10 s después seguía `PENDING`. La consola quedó limpia.
+  - **A 390 px táctil:** sin scroll horizontal. Después de un doble clic y dejarlo vencer, la consulta quedó `ANSWERED`.
+  - No se probó el comunicado contra la base: en `/avisos` las actions se abortaban por red.
+  - Los conteos `Patient|Appointment|OutboundMessage|Payment|PatientInquiry|AD_HOC` quedaron en **21|22|12|6|0|0**,
+    antes y después.
+  - Se borraron la copia, la cookie y el script.

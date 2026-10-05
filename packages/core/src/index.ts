@@ -44,3 +44,6 @@ export * from "./phone-input";
 export * from "./agenda";
 export * from "./availability-text";
 export * from "./service-summary";
+export * from "./month-range";
+export * from "./outbox-text";
+export * from "./payment-text";

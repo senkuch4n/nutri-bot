@@ -14,6 +14,7 @@ import { SelectionSection } from "./_sections/selection";
 import { ShapeSection } from "./_sections/shape";
 import { StatesSection } from "./_sections/states";
 import { TypographySection } from "./_sections/typography";
+import { BroadcastDemoSection } from "./broadcast-demo";
 
 
 const anchors: DemoAnchor[] = [
@@ -31,6 +32,7 @@ const anchors: DemoAnchor[] = [
   { id: "estados", label: "Estados" },
   { id: "calendario", label: "Calendario" },
   { id: "graficos", label: "Gráficos" },
+  { id: "comunicado", label: "Comunicado" },
 ];
 
 /** Demo interna del lenguaje Apple (HU-017a, D12). Solo en desarrollo; no aparece en ninguna navegación. */
@@ -55,6 +57,7 @@ export default function DevDisenoPage() {
       <StatesSection />
       <CalendarSection />
       <ChartSection />
+      <BroadcastDemoSection index={15} />
     </DemoFrame>
   );
 }

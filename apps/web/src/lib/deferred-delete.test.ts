@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { UNDO_TEXT, createDeferredDeleteStore, measurementLabelsText, prescriptionDeletionKey } from "./deferred-delete";
+import {
+  UNDO_TEXT,
+  createDeferredDeleteStore,
+  measurementLabelsText,
+  prescriptionDeletionKey,
+  runDeferredDelete,
+  type DeferredDeleteOptions,
+} from "./deferred-delete";
 
 /** Timers manuales: el release de las keys se dispara a mano. */
 function manualTimers() {
@@ -231,5 +238,145 @@ describe("hasGuardedPending", () => {
     const c = store.schedule({ key: "appointment-cancel:a2", commit: async () => ({ ok: false }), guardUnload: true });
     await store.commit(c);
     expect(seen).toEqual([true, false, true, false, true, false]);
+  });
+});
+
+// HU-017b-3: onUndone (el comunicado devuelve el texto al campo después de "Deshacer").
+describe("runDeferredDelete · onUndone", () => {
+  function harness(overrides: Partial<DeferredDeleteOptions> = {}) {
+    const store = createDeferredDeleteStore({ setTimer: manualTimers().setTimer });
+    let onUndo: () => void = () => {};
+    let onExpire: () => void = () => {};
+    const notify = {
+      undo: vi.fn((_m: string, undo: () => void | Promise<void>, o?: { onExpire?: () => void }) => {
+        onUndo = () => void undo();
+        onExpire = o?.onExpire ?? (() => {});
+      }),
+      saved: vi.fn(),
+      error: vi.fn(),
+    };
+    const router = { push: vi.fn(), refresh: vi.fn() };
+    const commit = vi.fn(async () => ({ ok: true }));
+    const onUndone = vi.fn();
+    const onCommitted = vi.fn();
+    runDeferredDelete(
+      { key: "broadcast:1", message: "listo", undoneMessage: "Listo, no se mandó", commit, onUndone, onCommitted, ...overrides },
+      { store, notify, router },
+    );
+    return { store, notify, router, commit, onUndone, onCommitted, undo: () => onUndo(), expire: () => onExpire() };
+  }
+
+  it("Deshacer a tiempo: corre onUndone, avisa y no hace commit", async () => {
+    const h = harness();
+    h.undo();
+    expect(h.onUndone).toHaveBeenCalledTimes(1);
+    expect(h.notify.saved).toHaveBeenCalledWith("Listo, no se mandó", undefined);
+    h.expire(); // onDismiss tardío después de Deshacer: no-op
+    await Promise.resolve();
+    expect(h.commit).not.toHaveBeenCalled();
+    expect(h.onCommitted).not.toHaveBeenCalled();
+  });
+
+  it("Deshacer tarde (ya venció): no corre onUndone y el commit sigue", async () => {
+    const h = harness();
+    h.expire();
+    h.undo();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.onUndone).not.toHaveBeenCalled();
+    expect(h.commit).toHaveBeenCalledTimes(1);
+    expect(h.onCommitted).toHaveBeenCalledTimes(1);
+    expect(h.router.refresh).toHaveBeenCalled();
+  });
+
+  it("undo del store que ya no está pendiente (commit en curso) → sin onUndone", () => {
+    const h = harness();
+    // El commit empezó por otro camino (p. ej. otro toast): el undo del store devuelve false.
+    vi.spyOn(h.store, "undo").mockReturnValue(false);
+    h.undo();
+    expect(h.onUndone).not.toHaveBeenCalled();
+    expect(h.notify.saved).not.toHaveBeenCalled();
+  });
+
+  it("commit fallido: toast de error, sin onCommitted ni onUndone", async () => {
+    const h = harness({ commit: vi.fn(async () => ({ ok: false, error: "x" })), errorMessage: "No se pudo mandar" });
+    h.expire();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notify.error).toHaveBeenCalledWith("No se pudo mandar");
+    expect(h.onCommitted).not.toHaveBeenCalled();
+    expect(h.onUndone).not.toHaveBeenCalled();
+  });
+
+  it("sin onUndone (consumidores de 017c) sigue funcionando igual", () => {
+    const h = harness({ onUndone: undefined });
+    h.undo();
+    expect(h.notify.saved).toHaveBeenCalledTimes(1);
+  });
+});
+
+// HU-017b-3 ronda 2: doble clic en "Ya respondí" (misma key dos veces mientras está pendiente).
+describe("runDeferredDelete · doble pedido con la misma key", () => {
+  function setup() {
+    const store = createDeferredDeleteStore({ setTimer: manualTimers().setTimer });
+    const toasts: Array<{ undo: () => void; expire: () => void }> = [];
+    const notify = {
+      undo: vi.fn((_m: string, undo: () => void | Promise<void>, o?: { onExpire?: () => void }) => {
+        toasts.push({ undo: () => void undo(), expire: o?.onExpire ?? (() => {}) });
+      }),
+      saved: vi.fn(),
+      error: vi.fn(),
+    };
+    const router = { push: vi.fn(), refresh: vi.fn() };
+    const commit = vi.fn(async () => ({ ok: true }));
+    const opts: DeferredDeleteOptions = {
+      key: "inquiry-answered:q1",
+      message: "Marcada como respondida",
+      undoneMessage: "Listo, sigue pendiente",
+      commit,
+    };
+    return { store, notify, router, commit, toasts, opts, run: () => runDeferredDelete(opts, { store, notify, router }) };
+  }
+
+  it("el segundo pedido es un no-op: un solo toast y una sola entrada", () => {
+    const h = setup();
+    expect(h.run()).toBe(true);
+    expect(h.run()).toBe(false);
+    expect(h.notify.undo).toHaveBeenCalledTimes(1);
+    expect(h.toasts).toHaveLength(1);
+  });
+
+  it("Deshacer después de un doble clic deja la key libre y nunca hace commit", async () => {
+    const h = setup();
+    h.run();
+    h.run();
+    h.toasts[0]!.undo();
+    expect(h.store.isPending("inquiry-answered:q1")).toBe(false);
+    expect(h.store.isScheduled("inquiry-answered:q1")).toBe(false);
+    for (const t of h.toasts) t.expire(); // onDismiss tardío
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.commit).not.toHaveBeenCalled();
+    expect(h.notify.saved).toHaveBeenCalledWith("Listo, sigue pendiente", undefined);
+  });
+
+  it("también mientras el commit está en curso; después de terminar se puede volver a programar", async () => {
+    const h = setup();
+    let resolve: (r: { ok: boolean }) => void = () => {};
+    h.commit.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    h.run();
+    h.toasts[0]!.expire();
+    expect(h.store.isScheduled(h.opts.key)).toBe(true);
+    expect(h.run()).toBe(false);
+    resolve({ ok: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.store.isScheduled(h.opts.key)).toBe(false);
+    // "done" (key oculta hasta el release) no bloquea un pedido nuevo (p. ej. cálculo nuevo, 017c-4).
+    expect(h.run()).toBe(true);
+    expect(h.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("keys distintas no se bloquean entre sí", () => {
+    const h = setup();
+    h.run();
+    expect(runDeferredDelete({ ...h.opts, key: "inquiry-answered:q2" }, { store: h.store, notify: h.notify, router: h.router })).toBe(true);
+    expect(h.notify.undo).toHaveBeenCalledTimes(2);
   });
 });
