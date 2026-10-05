@@ -447,3 +447,7 @@
 ## HU-017b-1 — Calendario y turno (aprobada 2026-10-04, senkuch4n)
 - Barra propia con resumen en palabras, vista Día en el celular, `?fecha=` que abre el día (cierra Q7 de 017c), panel del turno en palabras ("Vino a la consulta"), cancelar con confirmación + Deshacer diferido (no encola durante el plazo) y aviso al cerrar, "Nuevo turno" eligiendo a la paciente y teléfono normalizado en core, "Registrar pago" desde el turno.
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. Bot apagado durante toda la entrega.
+
+## HU-017b-2 — Disponibilidad y servicios (aprobada 2026-10-04, senkuch4n)
+- Disponibilidad como lista por día con solo las reglas activas, editar horario, superposición bloqueada, excepciones en palabras con Deshacer; servicios con precio destacado, Activos/Pausados, "Lo ofrece el bot" con Deshacer, formulario por grupos y arreglo de z.coerce.boolean (no reactiva servicios pausados).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. El reviewer encontró un bug del MVP (excepciones aplicadas el día anterior en el bot) → tarea directa, PR #35.

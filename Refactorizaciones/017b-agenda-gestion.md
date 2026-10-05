@@ -1640,3 +1640,11 @@ módulos nuevos de core quedan sin uso si se revierte la UI y no molestan.
 - R2. `/dev-diseno` (`_sections/calendar.tsx`): la demo del calendario usa la barra propia en lugar de `headerToolbar`
   (los estilos `.fc-button-primary` ya no existen).
 - R3. `parsePhoneInput` acepta "54 9 351 15 555 2345" (con 9 y con 15, sin "+") como el mismo número; test incluido.
+
+## Agregados a 017b-3 (de la revisión de 017b-2)
+
+- R4. `addRuleAction`: envolver el `create` en try/catch y devolver el error inline (no al error boundary).
+- R5. `exception-sheet.tsx`: al cambiar el tipo de excepción, Desde/Hasta toman los valores por defecto del tipo nuevo
+  (inputs controlados o `key` por tipo).
+- R6. Servicios: al pausar de nuevo, el toast anterior con "Deshacer" se cierra (un solo toast vivo por servicio).
+- Nota: el bug de excepciones corridas un día (`availability.ts`) se arregló aparte en el PR #35 (fix/excepciones-dia-utc).
