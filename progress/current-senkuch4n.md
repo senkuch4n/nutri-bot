@@ -246,3 +246,4 @@ orquestador, para que las revise a la mañana:
 - HU-017b → `afinando` (afinador Opus; rama feat/hu-017b-agenda encadenada sobre 017c-4).
 - HU-017b afinada y validada (D1–D24; D17 vacaciones por rango queda como idea aparte). → `en_arquitectura` (architect Opus + ui).
 - HU-017b SDD lista (Refactorizaciones/017b-agenda-gestion.md; Q1–Q24 aceptadas; hallazgos: botPaused no frena la cola, 9 reglas inactivas listadas, z.coerce.boolean en servicios). Bot apagado confirmado. → `implementando` 017b-1 (Opus).
+- HU-017b-1 done (8 commits); recorrido OK (progress/recorrido_HU-017b.md). → `en_revision` (reviewer Opus).

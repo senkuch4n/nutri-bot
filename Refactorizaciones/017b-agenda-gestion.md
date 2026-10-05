@@ -1633,3 +1633,7 @@ módulos nuevos de core quedan sin uso si se revierte la UI y no molestan.
 - Precondición dura confirmada el 2026-10-04: el proceso del bot **no** está corriendo (`BotStatus.connected = false`
   desde el 2026-10-03). Nadie lo levanta durante esta HU.
 - Implementer: Opus; skills ui-ux-pro-max, apple-design, web-design-guidelines. Reviewer: Opus.
+
+## Agregados a 017b-2 (del recorrido de 017b-1)
+
+- R1. Panel del turno: el foco inicial va al título del panel (o al botón cerrar), no a "Editar motivo".
