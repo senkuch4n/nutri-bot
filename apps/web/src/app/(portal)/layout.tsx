@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ConfirmProvider } from "@/components/confirm";
 import { PortalAccessGate, PortalAccessScreen } from "@/components/portal/portal-access";
@@ -5,7 +6,15 @@ import { Toaster } from "@/components/primitives/sonner";
 import { PortalHeader } from "@/components/shell/portal-header";
 import { PortalNav } from "@/components/shell/portal-nav";
 import { getPortalPatient } from "@/lib/patient-session";
-import { getProfessionalPortalContact } from "@/lib/shell";
+import { getPortalDocumentTitle, getProfessionalPortalContact } from "@/lib/shell";
+
+// HU-017d-1: la pestaña del portal no dice "NutriBot — Panel" (el título del layout raíz).
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: await getPortalDocumentTitle(),
+    description: "Tu plan, tu evolución y tu diario, con tu nutricionista.",
+  };
+}
 
 // HU-017a §10.3. `theme-portal` = fondo agrupado cálido (D2); el resto de la paleta es la del panel.
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {

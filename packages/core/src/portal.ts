@@ -4,7 +4,7 @@
 import { es as esLocale } from "date-fns/locale";
 import { firstName } from "./agenda";
 import type { WeightPoint } from "./patient-summary";
-import { professionalSignature, type ProfessionalIdentity } from "./professional-identity";
+import { professionalDisplayName, professionalSignature, type ProfessionalIdentity } from "./professional-identity";
 import { formatTimeAgo } from "./relative-date";
 import { dayKeyInTz, formatInTimeZone, wallTimeToUtc } from "./time";
 import { classifyWhatsappJid } from "./whatsapp-contact";
@@ -77,6 +77,13 @@ function isMissingProfessionalName(p: ProfessionalIdentity): boolean {
 export function portalProfessionalLine(p: ProfessionalIdentity): string {
   if (isMissingProfessionalName(p)) return "Tu espacio con tu nutricionista";
   return `Tu espacio con ${professionalSignature(p)}`;
+}
+
+/** Título de la pestaña del portal: "Tu espacio — Lic. Daiana Ponce". Sin nombre (misma regla que
+ *  portalProfessionalLine, Q1) → "Tu espacio". */
+export function portalDocumentTitle(p: { title: string | null; name: string }): string {
+  if (isMissingProfessionalName({ ...p, licenseNumber: null })) return "Tu espacio";
+  return `Tu espacio — ${professionalDisplayName(p)}`;
 }
 
 /** "https://wa.me/5493515552345" solo si phoneJid es de tipo "phone" (classifyWhatsappJid) y tiene

@@ -7,6 +7,7 @@ import {
   formatWeightKg,
   isMinorOn,
   portalEvolutionRows,
+  portalDocumentTitle,
   portalGreeting,
   portalHeightSummary,
   portalProfessionalLine,
@@ -54,6 +55,16 @@ describe("portalProfessionalLine", () => {
     expect(portalProfessionalLine({ title: "Lic.", name: "Nutricionista", licenseNumber: null })).toBe(
       "Tu espacio con Lic. Nutricionista",
     );
+  });
+});
+
+describe("portalDocumentTitle", () => {
+  it("con el nombre de la profesional", () => {
+    expect(portalDocumentTitle({ title: "Lic.", name: "Daiana Ponce" })).toBe("Tu espacio — Lic. Daiana Ponce");
+  });
+  it("sin nombre o con el del seed (Q1)", () => {
+    expect(portalDocumentTitle({ title: null, name: "" })).toBe("Tu espacio");
+    expect(portalDocumentTitle({ title: null, name: "Nutricionista" })).toBe("Tu espacio");
   });
 });
 

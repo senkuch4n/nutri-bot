@@ -1,5 +1,5 @@
 import "server-only";
-import { professionalDisplayName, professionalWhatsappUrl } from "@nutri-bot/core";
+import { portalDocumentTitle, professionalDisplayName, professionalWhatsappUrl } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { countPendingInquiries } from "@nutri-bot/db/domain";
 
@@ -43,6 +43,16 @@ export async function getProfessionalPortalContact(): Promise<{ name: string | n
     };
   } catch {
     return { name: null, whatsappUrl: null };
+  }
+}
+
+/** HU-017d-1: título de la pestaña del portal ("Tu espacio — Lic. Daiana Ponce"). Nunca tira. */
+export async function getPortalDocumentTitle(): Promise<string> {
+  try {
+    const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: { name: true, title: true } });
+    return portalDocumentTitle(pro ?? { title: null, name: "" });
+  } catch {
+    return portalDocumentTitle({ title: null, name: "" });
   }
 }
 
