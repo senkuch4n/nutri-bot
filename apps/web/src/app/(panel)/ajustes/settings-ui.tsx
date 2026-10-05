@@ -42,6 +42,19 @@ export function SettingsDirtyProvider({ children }: { children: ReactNode }) {
   }, []);
   const api = useMemo(() => ({ report }), [report]);
   const sections = useMemo(() => new Set(dirtyKeys.values()), [dirtyKeys]);
+  const anyDirty = dirtyKeys.size > 0;
+
+  // Cerrar o recargar con algo a medio guardar: el navegador pregunta (el texto lo pone él). Cambiar de
+  // sección no avisa: las secciones quedan montadas y lo escrito no se pierde.
+  useEffect(() => {
+    if (!anyDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [anyDirty]);
   return (
     <DirtyContext.Provider value={api}>
       <DirtySectionsContext.Provider value={sections}>{children}</DirtySectionsContext.Provider>

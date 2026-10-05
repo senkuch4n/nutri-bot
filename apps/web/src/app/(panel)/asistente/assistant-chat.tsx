@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { m, useReducedMotionConfig } from "motion/react";
 import { Send, Sparkles } from "lucide-react";
 import { Alert, Button, EmptyState, FormError, PageHeader, Textarea, cn } from "@/components/ui";
@@ -51,7 +51,8 @@ export function AssistantChat({ available, keyEnvName }: { available: boolean; k
   // Cambia con "Nueva conversación": una respuesta que llega después se descarta.
   const conversation = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
   // Índice de la respuesta recién llegada: es la única que entra con movimiento.
   const [freshIndex, setFreshIndex] = useState(-1);
 
@@ -76,10 +77,20 @@ export function AssistantChat({ available, keyEnvName }: { available: boolean; k
 
   useLayoutEffect(resize, [question, resize]);
 
+  // Alto del composer para el espaciador del celular (crece con el campo y con el error).
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setComposerHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // La conversación baja sola al último mensaje (y al "Pensando…").
   useLayoutEffect(() => {
     if (!hasConversation) return;
-    endRef.current?.scrollIntoView({ block: "end", behavior: reduced ? "auto" : "smooth" });
+    // Al final de la página: el composer (fijo o sticky) queda debajo del último mensaje, sin taparlo.
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: reduced ? "auto" : "smooth" });
   }, [messages.length, asking, hasConversation, reduced]);
 
   function ask(text: string) {
@@ -143,7 +154,10 @@ export function AssistantChat({ available, keyEnvName }: { available: boolean; k
     : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: springs.standard };
 
   return (
-    <div className="flex min-h-[calc(100dvh-12rem)] flex-col">
+    // Desde 1024 px la columna llega al borde de abajo (sin el padding inferior del main) y el composer
+    // queda pegado ahí con `sticky`; en el celular el composer es `fixed` y un espaciador del mismo alto
+    // evita que tape el último mensaje.
+    <div className="flex flex-col lg:-mb-8 lg:min-h-[calc(100dvh-2rem)]">
       <PageHeader
         title={TEXT.title}
         description={TEXT.description}
@@ -223,11 +237,14 @@ export function AssistantChat({ available, keyEnvName }: { available: boolean; k
             </m.div>
           </>
         ) : null}
-        <div ref={endRef} className="scroll-mb-48" />
       </div>
 
       {/* Composer: fijo abajo (material de barra) en el celular y en la compu. */}
-      <div className="material-bar sticky bottom-0 -mx-6 border-t border-border px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:-mx-2 lg:rounded-t-xl lg:px-2">
+      <div aria-hidden className="lg:hidden" style={{ height: composerHeight }} />
+      <div
+        ref={composerRef}
+        className="material-bar fixed inset-x-0 bottom-0 z-20 border-t border-border px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:sticky lg:inset-x-auto lg:-mx-2 lg:px-2"
+      >
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -256,7 +273,7 @@ export function AssistantChat({ available, keyEnvName }: { available: boolean; k
               }
             }}
           />
-          <Button type="submit" size="lg" loading={busy} disabled={!available || question.trim() === ""}>
+          <Button type="submit" size="lg" loading={busy} disabled={!available}>
             {busy ? null : <Send aria-hidden />}
             {TEXT.ask}
           </Button>

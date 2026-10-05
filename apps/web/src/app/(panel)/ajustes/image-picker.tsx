@@ -86,7 +86,7 @@ export const ImagePicker = forwardRef<
       {preview ? (
         <figure className="space-y-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt={T.newPreview} className={previewClassName ?? "h-20 w-auto max-w-60 rounded-md border bg-white object-contain p-2"} />
+          <img src={preview} alt={T.newPreview} width={240} height={96} className={previewClassName ?? "h-20 w-auto max-w-60 rounded-md border bg-white object-contain p-2"} />
           <figcaption className="text-footnote text-muted-foreground">{T.newPreview}</figcaption>
         </figure>
       ) : null}
