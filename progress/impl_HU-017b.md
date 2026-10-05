@@ -562,3 +562,204 @@ de imleticio, `pdf-theme`, `apps/bot`, `packages/db`, `backlog`, `schema.prisma`
   - Los conteos `Patient|Appointment|OutboundMessage|Payment|PatientInquiry|AD_HOC` quedaron en **21|22|12|6|0|0**,
     antes y después.
   - Se borraron la copia, la cookie y el script.
+
+---
+
+## 017b-4: asistente y ajustes
+
+- **Estado:** done
+- **Rama:** `feat/hu-017b4-ajustes` (encadenada sobre `feat/hu-017b3-bandejas`, sale de `a3c6278`). No se pusheó.
+- **Modelo:** Opus. **Skills:** `ui-ux-pro-max` y `apple-design` antes del JSX; `web-design-guidelines` como autochequeo
+  (la guía se bajó y se revisó contra ella; los arreglos que salieron van en el commit de la fase E, abajo).
+- **Sin migración ni cambios en `schema.prisma`, `packages/db/**`, `apps/bot/**`, `backlog/**`, `messages.ts` (T4),
+  `lib/pdf-theme.ts` ni en la zona de imleticio.** El bot estuvo apagado todo el tiempo (sin proceso, `BotStatus.connected = f`)
+  y no se levantó. No se tocó la vinculación de WhatsApp ni la de Google: no se desvinculó nada y no se pidió un QR.
+
+### Commits (uno por fase, con el trailer `Co-Authored-By: Claude Opus 5.5`)
+
+| Commit | Fase |
+|---|---|
+| `a5bb68d` | A. core: `settings-options.ts` + test, `index.ts` |
+| `91e26cc` | B. las 3 actions por grupo + `actions.test.ts`; `settings-form.tsx` se parte en `general-form`, `pdf-style-form` y `signature-identity-form`; `settings-ui.tsx` (form por grupo, "Cambios sin guardar"); índice/lista en `ajustes-tabs.tsx`; `page.tsx`; selector de archivo propio (`image-picker.tsx`) en el logo; Google con confirmación |
+| `6aac260` | C. Ajustes sin jerga: bot (fila de conexión, bot activo, horario "Atendés consultas de X a Y", IA sin clave), firma con selector propio, vinculación, `loading.tsx` |
+| `c8bc4ed` | D. Asistente |
+| (este) | E. arreglos del autochequeo y del runtime (composer fijo, `beforeunload`, comillas y "…" en placeholders) y este archivo |
+
+B no es "solo actions": partir el form oculto obliga a cambiar `page.tsx` en el mismo commit, si no B no compila. Cada
+commit compila por sí solo.
+
+### Archivos tocados
+
+Los de 7-4, más tres archivos nuevos chicos dentro de `ajustes/`:
+- core: `settings-options.ts` (+ test) e `index.ts`.
+- `asistente/assistant-chat.tsx`, `asistente/page.tsx`.
+- `ajustes/`: `page.tsx`, `ajustes-tabs.tsx`, `actions.ts` (+ `actions.test.ts` nuevo), `general-form.tsx`,
+  `pdf-style-form.tsx`, `signature-identity-form.tsx` (nuevos; `settings-form.tsx` se borró), `after-hours-form.tsx`,
+  `bot-ai-form.tsx`, `bot-toggle.tsx`, `google-calendar-form.tsx`, `logo-form.tsx`, `signature-form.tsx`, `loading.tsx`,
+  `whatsapp/page.tsx`.
+- Nuevos fuera de la tabla: `ajustes/settings-ui.tsx` (hook `useSettingsForm`, contexto de "sucio", `SettingRow`,
+  `SwitchRow`, `GroupFooter`) e `ajustes/image-picker.tsx` (selector propio, lo usan logo y firma).
+- `whatsapp/loading.tsx` no cambió (ya tenía "‹" + título + tarjeta).
+
+### Contrato compartido
+
+- core coincide con 4.1: `Option`, `TIMEZONE_OPTIONS` (las 12 zonas de Argentina primero, con provincias; después
+  Uruguay, Chile, Paraguay, España), `CURRENCY_OPTIONS` (las 5 del contrato, con esos textos), `timezoneLabel`,
+  `currencyLabel` (la de la lista o el valor tal cual) y `SETTINGS_TEXT`. Exports extra: `otherTimezoneLabel`
+  ("Bogota (America)", para la lista completa de "Otra…"), `isCurrencyCode` y `OTHER_OPTION_VALUE`.
+- web coincide con 4.2: `saveGeneralSettingsAction`, `savePdfStyleAction` y `saveSignatureIdentityAction`, las tres
+  `(_prev: SettingsState, fd: FormData) => Promise<SettingsState>`. `saveSettingsAction` ya no existe (su único consumidor
+  era `settings-form`). Las demás actions no cambiaron de firma. `askAssistantAction` no cambió.
+- `?tab=` sigue con `general | whatsapp | google | pdf`; la etiqueta de `pdf` es "Informes en PDF". Se escribe con
+  `replaceUrlInRouter` (`replaceState(null, …)`).
+- `DEFAULT_PDF_ACCENT` se sigue importando de `lib/pdf-theme.ts`, sin cambios ahí.
+
+### Decisiones no obvias
+
+- **Lo que guarda cada action (fijado con tests):** General → `{ timezone, currency, phoneJid, acceptedInsurances }`;
+  PDF → `{ pdfAccentColor, pdfFooterText }`; firma → `{ title, licenseNumber }`. Aunque el FormData traiga campos de otros
+  grupos, no se guardan. "Tu WhatsApp" pasa por `parsePhoneInput`: vacío → `phoneJid null`, inválido →
+  `PHONE_INPUT_TEXT.invalid`. La zona se valida con `Intl` y la moneda con 3 letras. Las tres envuelven el `update` en
+  try/catch y devuelven `SETTINGS_TEXT.saveError` inline, sin revalidar.
+- **El teléfono guardado se muestra con formato** (`formatPhone`, "+54 9 351 555-2345"). Al empezar con "+",
+  `parsePhoneInput` lo devuelve igual para cualquier país, así que guardar General sin tocar el teléfono no lo cambia.
+  Única excepción: un fijo argentino guardado sin el 9 ganaría el 9 (regla D4/Q9). Hoy el campo está vacío en la base.
+- **Form por grupo (`useSettingsForm`):** campos controlados, envío a mano con `startTransition` (React 19 no resetea el
+  form; con un error, lo tipeado queda) y `if (pending) return` contra el doble envío. "Sucio" = valores distintos de lo
+  guardado. Al guardar bien, lo enviado pasa a ser la base; cuando la página se revalida, también. Cada grupo avisa al
+  contexto y el índice pone un punto + "Cambios sin guardar" (`sr-only` en el índice de escritorio, visible en la lista
+  del celular). También se marcan "Horario de consultas", "Preguntas con IA" y el ID del calendario de Google.
+- **Las cuatro secciones quedan montadas** y se elige cuál se ve **con CSS por ancho**: la lista del celular con
+  `lg:hidden` y el índice con `hidden lg:block`. Así no hay desajuste de hidratación y no se pierde lo tipeado al cambiar de
+  sección (el escenario "Cada grupo guarda lo suyo"). `/ajustes` sin `?tab=` muestra General desde 1024 px y la lista en el
+  celular. En el celular, entrar a una sección escribe `?tab=` sin sumar al historial (como pide la SDD). El foco va al
+  título de la sección y, al volver con "‹ Ajustes", a la fila de donde vino.
+- **`beforeunload` con algo a medio guardar:** cambiar de sección no avisa (lo escrito no se pierde); cerrar o recargar sí.
+  No intercepta links, para no pelear con la navegación entre secciones.
+- **"Otra…"** (zona y moneda): aparece un segundo `<select>` con `Intl.supportedValuesOf` (418 zonas; las monedas con
+  `Intl.DisplayNames` en español: "Real brasileño (BRL)"). Esa lista se arma recién después de hidratar, porque Node y el
+  navegador pueden tener listas distintas. Un valor guardado que no está en la lista corta arranca directo en "Otra…".
+  Lo que viaja en el form es un hidden con el valor real.
+- **El aviso rojo "WhatsApp desconectado"** con "Conectar WhatsApp" (link a `/ajustes/whatsapp`) va arriba de todas las
+  secciones (la HU dice "abre Ajustes o Bot de WhatsApp"). En la sección del bot, la fila "Conexión ›" lleva a la
+  vinculación.
+- **Google:** "Estado" y "Calendario: Tu calendario principal" (vacío o `primary`) / "Otro calendario". El identificador va
+  detrás de "Opciones avanzadas" (`DetailDisclosure`). "Desconectar" pide confirmación con los textos de la HU; no se apretó.
+  El error de sincronización muestra la frase simple y el error real detrás de "Ver detalle técnico". Conectar o
+  reconectar vuelve a `/ajustes?tab=google`.
+- **IA sin clave:** "Esta opción todavía no está disponible. Avisale a quien te instaló el sistema." y el nombre de la
+  variable detrás de "Ver detalle técnico".
+- **Selector de archivo propio:** el `<input type="file">` real queda oculto dentro del form, así viaja en el FormData.
+  "Elegir imagen" lo abre, se ve el nombre y la vista previa (`URL.createObjectURL`, que se revoca después), y
+  "Subir logo"/"Subir firma" aparece recién con un archivo elegido. "Cancelar" lo limpia. "Quitar" el logo pide
+  confirmación ("¿Quitar el logo?" / "Los próximos PDF salen sin logo."); la firma ya la pedía. La URL del logo usa
+  `updatedAt` como versión (antes usaba `Date.now()` en el render). De paso se fue el warning previo de lint de
+  `logo-form.tsx`: el ícono `Image` de lucide pasó a `ImageIcon`.
+- **Vinculación:** estado grande con ícono, pasos con círculos de 28 px, QR de 280 px y "Se actualiza sola.". Conectado:
+  "Listo, tu WhatsApp está conectado." + "Volver a Ajustes". Sin QR: la frase de la HU, y `npm run dev:bot` detrás de "Ver
+  detalle técnico". La página solo lee `BotStatus`.
+- **Asistente:**
+  - La página pasa solo `available` (hay `API_KEY_IA_DEEPSEEK`) y el nombre de la variable; nunca la clave. Pasó a
+    `force-dynamic` para que esto no quede fijo del build.
+  - El mensaje de la usuaria aparece al toque, con "Pensando…" (tres puntos con `motion-safe:animate-pulse`). La respuesta
+    entra con `springs.standard` (fundido + 8 px); con movimiento reducido, solo `fades.fast`. Anima solo la respuesta
+    recién llegada (`freshIndex`).
+  - Si falla: "No pude responder. Probá de nuevo." inline, y la pregunta vuelve al campo si sigue vacío. No se muestra el
+    error crudo de la IA.
+  - Doble clic: un `ref` `inFlight` hace que salga una sola llamada.
+  - "Nueva conversación" (plain, solo con mensajes) borra sin confirmar. Si llega una respuesta vieja después de borrar, se
+    descarta (contador de conversación).
+  - El composer crece de 1 a 5 líneas (medición de `scrollHeight`; después, scroll interno). En el celular es `fixed`
+    abajo, con material de barra y safe area, y un espaciador con su alto (`ResizeObserver`). Desde 1024 px es `sticky`
+    y la columna llega al borde inferior del panel. Al llegar un mensaje se baja al final de la página.
+  - Enter manda (respeta la composición IME). La ayuda de Enter se oculta en el celular. El aviso de IA queda siempre
+    visible.
+
+### Verificación
+
+**Comandos (desde la raíz):**
+- `npm run typecheck`: core, db, bot y web en verde.
+- `npm run test`: 126 archivos y 2061 tests, todos en verde. Los nuevos son `settings-options` (11) y `ajustes/actions`
+  (16). Los de logo y firma siguen verdes sin cambios.
+- `npm run lint --workspace apps/web`: sin warnings (se fue el previo de `logo-form.tsx`).
+- `./ops/harness/verify.sh`: "Arnés OK". El aviso "Se tocó el bot" sale porque cambió core; el bot no se tocó.
+- Alcance del diff contra `a3c6278`: 23 archivos, todos de arriba. Vacío para `apps/bot`, `packages/db`, `backlog`,
+  `schema.prisma`, migraciones, zona de imleticio y `messages.ts`. `git diff origin/develop -- apps/web/src/lib/pdf-theme.ts`
+  también vacío.
+
+**Builds en una copia del scratchpad** (el dev server de :3100 no se tocó y sigue respondiendo 200):
+- `next build` (webpack): exit 0.
+- `next build --turbopack`: "Compiled successfully", exit 0.
+- Ninguno mostró "cannot be passed", "Only async…" ni "useSearchParams() should be wrapped…".
+
+**Runtime:** `next start -p 3197` sobre el build de webpack, con una cookie de Auth.js generada en local y Chromium headless
+(`playwright-core` del caché de npx). Como red de seguridad, Playwright abortaba todo POST con `next-action`, salvo en el
+único paso que guardó (abajo).
+- **`curl`:** `/ajustes`, `?tab=general|whatsapp|google|pdf|xx`, `/ajustes/whatsapp` y `/asistente` respondieron 200. Sin
+  "Algo salió mal" ni "cannot be passed" en el HTML, y sin errores en el log del servidor.
+- **Playwright, 87/87 chequeos (tres corridas seguidas en verde):**
+  - Ajustes a 1366: las cuatro `?tab=` sin error boundary, sin scroll horizontal y sin "IANA", "ISO", "DEEPSEEK",
+    "npm run" ni "primary" en el texto visible.
+  - El índice marca la sección activa. La zona se lee "Argentina (Buenos Aires, Córdoba, Rosario…)" y la moneda "Pesos
+    argentinos (ARS)". "Otra…" abre la lista de 418 zonas.
+  - "351 555 2345" → "Te avisamos al +54 9 351 555-2345" (y se borró sin guardar).
+  - **Cada grupo guarda lo suyo:** cambié la moneda a USD y el pie del PDF, y las dos secciones mostraron "Cambios sin
+    guardar". Volví la moneda a ARS (el punto de General se fue) y apreté "Guardar" de General **con los mismos valores
+    que ya tenía**: salió "Guardado". PDF siguió con "Cambios sin guardar" y con el pie tipeado en el campo. Al devolver el
+    pie al original, el punto se fue. El pie nunca se guardó.
+  - Logo: con un PNG de prueba se ven el nombre, la vista previa y "Subir logo"; se apretó "Cancelar" y no se subió nada.
+  - Bot de WhatsApp: el aviso rojo, "Conectar WhatsApp" → `/ajustes/whatsapp` y "Atendés consultas de".
+  - Google: "Tu calendario principal" y el identificador oculto.
+  - Vinculación sin bot: la frase simple, y el comando solo después de "Ver detalle técnico".
+  - A 390: la lista de secciones. Tocar "Informes en PDF" → `?tab=pdf`, `history.length` igual, con "‹ Ajustes"; volver
+    deja `/ajustes` con la lista. Ninguna sección ni la vinculación tienen scroll horizontal.
+  - **Asistente**, a 1366 y a 390 con movimiento reducido. **Ninguna llamada real a la IA:** las actions se abortaban o se
+    respondían con un mock (una respuesta de server action armada en Playwright).
+    - Tres sugerencias y el aviso de IA. "Contame de una paciente" deja "Contame de " con el cursor al final y no manda
+      nada.
+    - El campo crece de 44 a 88 y a 132 px, con tope en 5 líneas. El composer queda pegado abajo: 0 px en el celular; en
+      escritorio, 8 px, que es el margen del panel inset del shell.
+    - Con la action abortada: "Pensando…", después "No pude responder. Probá de nuevo." y la pregunta de vuelta en el
+      campo.
+    - Con el mock: un doble clic en "Preguntar" hizo una sola llamada y apareció la respuesta. "Nueva conversación" borró
+      sin confirmar.
+    - Sin scroll horizontal. En la consola solo aparece el `net::ERR_FAILED` del aborto a propósito.
+  - **Estado "no disponible":** con un segundo `next start` en :3198 y `API_KEY_IA_DEEPSEEK=` vacía, `/asistente` muestra
+    "todavía no está disponible". Se apagó enseguida.
+- **Datos:** antes de probar respaldé la fila `Professional` completa (`row_to_json`) en el scratchpad.
+  - El único guardado (General con los mismos valores, una vez por corrida) dejó todas las columnas iguales salvo
+    `updatedAt`: el md5 sin `updatedAt` dio `208ec3f4…` antes y después.
+  - Al terminar devolví `updatedAt` a su valor original (`2026-10-03 15:16:06.375`). Con un `update` condicionado a ese md5,
+    la fila quedó **idéntica byte a byte al respaldo** (`cmp` OK, md5 de la fila completa `1014cb1e…` antes y después).
+  - `OutboundMessage`: 12 filas antes y después. No se creó ni se borró ningún otro dato.
+- Se mataron los `next start` y se borraron la copia, la cookie, los scripts y el respaldo del scratchpad.
+
+### Hallazgo preexistente (no es de esta entrega)
+
+- **React #418 (desajuste de hidratación de texto) intermitente con `next start`.** Recargando en bucle sale más o menos 1
+  de cada 15–35 cargas, y también en páginas que esta entrega no toca: `/mensajes`, `/servicios`, `/disponibilidad` y
+  `/pacientes` (5 de 72), además de `/ajustes?tab=pdf` y `/asistente` (2 de 72). Parece venir del shell o del layout, no de
+  las páginas. Conviene una tarea aparte con el build sin minificar para ver qué texto difiere.
+
+### Pendiente / no hecho
+
+- Subir o quitar el logo o la firma reales, desconectar Google y pausar el bot no se probaron en runtime, a propósito
+  (regla de la entrega). Los cubren los tests existentes y el código. El selector se probó hasta la vista previa.
+- No hay capturas antes/después en `docs/auditoria-apple/017b/`: quedan para el recorrido del orquestador.
+
+### Arreglo pedido después del recorrido: error de hidratación del sidebar en `next dev`
+
+- **Causa:** en `next dev`, Next pone antes de `<PanelLayout>` una cantidad variable de `<link>`/`<script>` del segmento.
+  En una parte de las recargas, el cliente no tiene la misma cantidad que el servidor. Eso corre la posición del layout en
+  el árbol, y todo `useId` que cuelga de él sale distinto ("_R_15etb_" en el servidor, "_R_4petb_" en el cliente). No
+  depende de la página: también pasaba en `/`.
+- **Arreglo** (commit "HU-017b-4: sin error de hidratación del sidebar en Ajustes"):
+  - El `<aside>` de `AppSidebar` y el `aria-controls` de su botón usan un id fijo, `panel-sidebar`. Es único porque la
+    sidebar se monta una sola vez, en el layout del panel.
+  - El mismo problema apareció una vez en los ids de `AjustesTabs`, así que también pasaron a un prefijo fijo: `ajustes-…`.
+- **Verificación:** levanté un `next dev --turbopack` aparte en :3198, sobre una copia del repo en el scratchpad. Recargué
+  `/ajustes`, cada `?tab=`, `/asistente`, `/pacientes/<id>` y `/` a 1366 y 390 px: **0 errores en 144 cargas**. Antes del
+  arreglo salían 1 de cada 16 a 64 cargas. Typecheck, lint y los 2061 tests siguen en verde.
+- **Hay que reiniciar el dev server de :3100 (no lo paré).** Su render del servidor quedó con el módulo viejo: el servidor
+  sigue mandando `_R_4petb_` y el cliente ya manda `panel-sidebar`, así que hasta que se reinicie va a mostrar este mismo
+  aviso.

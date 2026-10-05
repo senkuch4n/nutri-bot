@@ -455,3 +455,7 @@
 ## HU-017b-3 — Mensajes, pagos y avisos (aprobada 2026-10-04, senkuch4n)
 - Mensajes en tarjetas con "Ya respondí" + Deshacer; pagos por mes en la zona de la profesional con glosario y pago manual con monto precargado y turnos que vinieron; comunicado solo a personas (16), con vista previa + Deshacer diferido; cola en palabras con error simple. R4–R6 de 017b-2.
 - Reviewer: CHANGES_REQUESTED en la 1ª (doble clic en "Ya respondí" se escapaba al Deshacer) → APPROVED en la ronda 2. Ningún mensaje real; OutboundMessage 12 antes y después.
+
+## HU-017b-4 — Asistente y ajustes (aprobada 2026-10-05, senkuch4n) · HU-017b cerrada
+- Ajustes en listas agrupadas con guardado por grupo y "Cambios sin guardar", zona horaria y moneda en listas, textos sin jerga con detalle técnico aparte; Asistente con sugerencias, composer y aviso de IA. Arregla del todo el error de hidratación del sidebar (id estable).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. Ajustes de la profesional intactos byte a byte. HU-017b completa (PR #34 → #36 → #37 → #38).

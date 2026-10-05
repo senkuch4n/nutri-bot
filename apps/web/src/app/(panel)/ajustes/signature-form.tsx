@@ -8,12 +8,14 @@ import { Separator } from "@/components/primitives/separator";
 import { Button, FormError } from "@/components/ui";
 import { useActionToast } from "@/lib/notify";
 import type { SettingsState } from "./actions";
+import { ImagePicker, type ImagePickerHandle } from "./image-picker";
 import { removeSignatureAction, uploadSignatureAction } from "./signature-actions";
 
 const initial: SettingsState = { ok: false };
 
 /**
- * HU-016 (D1–D4): imagen de la firma manuscrita. Form propio (no usa SettingsFormProvider).
+ * HU-016 (D1–D4): imagen de la firma manuscrita. Form propio. HU-017b-4: selector de archivo propio
+ * con vista previa antes de subir.
  * La vista previa sale de /api/professional/signature (solo con sesión del panel, sin caché).
  * El bloque de abajo usa los valores GUARDADOS de título y matrícula, no lo que se está tipeando.
  */
@@ -29,9 +31,14 @@ export function SignatureForm({
 }) {
   const confirm = useConfirm();
   const formRef = useRef<HTMLFormElement>(null);
+  const pickerRef = useRef<ImagePickerHandle>(null);
+  const [chosen, setChosen] = useState(false);
   const [uploadState, uploadAction, uploading] = useActionState(async (prev: SettingsState, fd: FormData) => {
     const result = await uploadSignatureAction(prev, fd);
-    if (result.ok) formRef.current?.reset();
+    if (result.ok) {
+      formRef.current?.reset();
+      pickerRef.current?.clear();
+    }
     return result;
   }, initial);
   const [removeState, removeAction, removing] = useActionState(removeSignatureAction, initial);
@@ -48,6 +55,7 @@ export function SignatureForm({
   // un archivo de más de 3 MB lo corta Next antes de llegar a la action.
   function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (uploading) return;
     const formData = new FormData(e.currentTarget);
     const file = formData.get("signature");
     const error = signatureImageSizeError(file instanceof File ? file.size : 0);
@@ -74,12 +82,11 @@ export function SignatureForm({
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-sm font-medium">{T.uploadTitle}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{T.uploadHelp}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{T.uploadLimits}</p>
+        <p className="text-callout text-muted-foreground">{T.uploadHelp}</p>
+        <p className="mt-1 text-footnote text-muted-foreground">{T.uploadLimits}</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-6">
+      <div className="flex flex-wrap items-center gap-4">
         {showImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -91,33 +98,17 @@ export function SignatureForm({
             onError={() => setFailedVersion(version)}
           />
         ) : (
-          <div className="flex h-20 w-60 flex-col items-center justify-center gap-1 rounded-md border border-dashed px-2 text-center text-xs text-muted-foreground">
+          <div className="flex h-20 w-60 flex-col items-center justify-center gap-1 rounded-md border border-dashed px-2 text-center text-footnote text-muted-foreground">
             <Signature className="h-5 w-5" aria-hidden />
             {hasSignature ? T.previewError : T.emptyBox}
           </div>
         )}
 
-        <form ref={formRef} onSubmit={handleUpload} className="flex flex-wrap items-center gap-3">
-          <input
-            type="file"
-            name="signature"
-            accept="image/png,image/jpeg"
-            required
-            aria-label="Archivo de la firma"
-            aria-describedby={error ? "signature-error" : undefined}
-            onChange={() => setLocalError(null)}
-            className="text-sm text-muted-foreground file:mr-3 file:h-8 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-background file:px-3 file:text-sm file:font-medium file:text-foreground hover:file:bg-accent"
-          />
-          <Button type="submit" size="sm" loading={uploading} disabled={removing}>
-            {uploading ? T.uploading : T.uploadButton}
-          </Button>
-        </form>
-
         {hasSignature ? (
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant="danger"
             loading={removing}
             disabled={uploading}
             onClick={handleRemove}
@@ -126,6 +117,26 @@ export function SignatureForm({
           </Button>
         ) : null}
       </div>
+      <form ref={formRef} onSubmit={handleUpload} className="space-y-3">
+        <ImagePicker
+          ref={pickerRef}
+          name="signature"
+          accept="image/png,image/jpeg"
+          inputLabel="Archivo de la firma"
+          disabled={uploading}
+          describedBy={error ? "signature-error" : undefined}
+          onChange={(file) => {
+            setChosen(file !== null);
+            setLocalError(null);
+          }}
+          previewClassName="h-20 w-60 rounded-md border bg-white object-contain p-2"
+        />
+        {chosen ? (
+          <Button type="submit" loading={uploading} disabled={removing}>
+            {uploading ? T.uploading : T.uploadButton}
+          </Button>
+        ) : null}
+      </form>
       <div id="signature-error">
         <FormError message={error} />
       </div>

@@ -47,3 +47,4 @@ export * from "./service-summary";
 export * from "./month-range";
 export * from "./outbox-text";
 export * from "./payment-text";
+export * from "./settings-options";

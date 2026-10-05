@@ -329,3 +329,109 @@ Ninguno.
   y lo deshaga.
 - Siguen abiertas las dudas que la ronda anterior dejó anotadas: el texto del comunicado se pierde si navega durante
   el plazo, los pagos `PENDING` aparecen en cualquier mes y "Guardando…" se queda colgado en "Registrar pago".
+
+---
+
+# Review — HU-017b (017b-4: asistente y ajustes, con el arreglo de hidratación del sidebar)
+
+**Veredicto:** APPROVED
+
+Diff revisado: `git diff feat/hu-017b3-bandejas...HEAD` (rama `feat/hu-017b4-ajustes`, HEAD `f32b1a8`), sin los
+archivos del arnés. Corrí todo yo (2026-10-05):
+- `npm run typecheck`: core, db, bot y web limpios (exit 0).
+- `npm run test`: 126 archivos, 2061 tests, todos en verde (exit 0).
+- `./ops/harness/verify.sh`: "Arnés OK". El WARN "Se tocó el bot" sale porque cambió core; `apps/bot` no está en el diff.
+- Alcance: el diff no toca `apps/bot`, `packages/db`, `messages.ts`, `lib/pdf-theme.ts` ni la zona de imleticio
+  (`alimentos/**`, `pacientes/[id]/planes/**`, `plantillas/**`, `food-picker`, `meals-editor`, `plan-pdf`): `--stat` vacío.
+  `git diff origin/develop -- apps/web/src/lib/pdf-theme.ts`: vacío. No quedan usos de `saveSettingsAction`,
+  `settings-form`, `SettingsFormProvider` ni del form oculto `ajustes-generales`.
+- No levanté el bot ni ningún servidor. No escribí en la base.
+
+## Checkpoints
+- C1 backlog válido, 1 HU activa por responsable: [x] (`backlog/HU-017b.json` en `en_revision`; verify.sh OK).
+- C1 bitácora refleja la HU: [x] (`progress/current-senkuch4n.md`).
+- C1 sin archivos de la otra persona: [x].
+- C1 verify.sh exit 0: [x].
+- C2 HU con sus secciones y dudas validadas: [x] (`docs/hu-017b-agenda-gestion.md`, D19–D22 en "Resoluciones").
+- C2 SDD con workspaces, checklist y contrato: [x] (sección "Entrega 017b-4").
+- C2 firmas = contrato: [x]. `TIMEZONE_OPTIONS`, `CURRENCY_OPTIONS`, `timezoneLabel`, `currencyLabel`, `SETTINGS_TEXT`, `Option`
+  en `packages/core/src/settings-options.ts`; exports extra (`otherTimezoneLabel`, `isCurrencyCode`, `OTHER_OPTION_VALUE`) solo
+  agregan. Las 3 actions `(_prev: SettingsState, fd: FormData) => Promise<SettingsState>` en `ajustes/actions.ts:44,80,106`.
+  `?tab=` sigue con `general | whatsapp | google | pdf` (`ajustes-tabs.tsx:14-19`); `report-editor.tsx:284` enlaza `?tab=pdf`.
+- C3 lógica pura en core: [x] (listas, etiquetas y textos en core con test; `parsePhoneInput` reutilizado).
+- C3 schema/domain: [x] no cambian (T1/T3); bot compila.
+- C3 migraciones: [x] no hay.
+- C3 rutas protegidas / portal: [x] no hay rutas nuevas; `/ajustes`, `/ajustes/whatsapp` y `/asistente` siguen bajo `(panel)`.
+- C3 bot en silencio y textos: [x] ningún texto del bot cambia (T4).
+- C3 sin console.log/TODO: [x].
+- C4 typecheck: [x].
+- C4 tests de core y `npm run test`: [x] (`settings-options.test.ts`, `ajustes/actions.test.ts`).
+- C4 flujo del bot simulado: [x] no aplica (no se tocó el bot).
+- C4 PDF real: [x] no aplica (solo cambian los formularios que guardan color/pie/firma; el PDF no cambia).
+- C5 impl con lo tocado: [x] (sección 017b-4 de `progress/impl_HU-017b.md`).
+- C5 review con veredicto: [x] (esta sección).
+- C5 sin scripts ni datos sueltos: [x] (`git status` sin archivos nuevos de la entrega; los untracked son previos y ajenos).
+
+## Puntos pedidos por el orquestador
+
+1. **Cada grupo guarda solo lo suyo (3 actions).** OK. `saveGeneralSettingsAction` escribe
+   `{ timezone, currency, phoneJid, acceptedInsurances }` (`actions.ts:56-60`); `savePdfStyleAction`
+   `{ pdfAccentColor, pdfFooterText }` (`actions.ts:84-91`); `saveSignatureIdentityAction` `{ title, licenseNumber }`
+   (`actions.ts:110-114`). Los schemas zod no declaran campos ajenos, y los tests meten campos de otros grupos en el
+   FormData y fijan la `data` exacta con `toEqual` (`actions.test.ts:44-58, 116-123, 146-153`). Además, cada grupo es
+   su propio `<form>` en el cliente (`general-form.tsx:145`, `pdf-style-form.tsx:23`, `signature-identity-form.tsx:26`),
+   así que el FormData de uno ni siquiera trae los campos del otro. Los tres envuelven el `update` en try/catch y
+   devuelven el error inline sin revalidar (test `actions.test.ts:108-112`).
+2. **Zona horaria y moneda guardan el mismo dato.** OK. El `<select>` tiene como `value` el IANA/código y viaja un
+   hidden `name="timezone"`/`"currency"` con el valor real (`general-form.tsx:126`); `OTHER_OPTION_VALUE` nunca llega
+   al form (es el valor del select visible, sin `name`). La action valida la zona con `Intl.DateTimeFormat` como antes
+   y pasa la moneda a mayúsculas como antes (`actions.ts:24-34, 49`). El bot sigue leyendo `Professional.timezone` /
+   `currency` sin cambios.
+3. **Hidratación del sidebar (0aec47b).** OK. `SIDEBAR_ID = "panel-sidebar"` (`app-sidebar.tsx:22`) se usa en el
+   `<aside id>` y en el `aria-controls` del botón (`app-sidebar.tsx:76, 99`), así que siguen apuntando al mismo
+   elemento. Es único: `AppSidebar` se monta una sola vez, en `(panel)/layout.tsx:40`, y no hay otro `id="panel-sidebar"`
+   en `apps/web/src`. No choca con la clase CSS `.panel-sidebar` (los estilos usan clases, no `#`). El colapso usa
+   `ref` y estado, no el id: no cambia. Los ids de `AjustesTabs` pasaron a `ajustes-<tab>` / `ajustes-list`
+   (`ajustes-tabs.tsx:28, 170, 192, 207`), únicos porque hay una sola pantalla de Ajustes por página y ningún otro
+   `id="ajustes-…"` en el código.
+4. **"Cambios sin guardar" y aviso al cerrar.** OK. `useSettingsForm` compara valores contra lo guardado
+   (`settings-ui.tsx:112`), toma lo enviado como base al guardar bien (`:108-110`) y lo que trae la revalidación
+   (`:103-106`); con error, lo tipeado queda. Cada grupo reporta con una clave propia y se desreporta al desmontarse
+   (`:71-78`). El índice muestra punto + texto `sr-only` (`ajustes-tabs.tsx:156-161`) y la lista del celular el texto
+   visible (`:240-247`). `beforeunload` solo mientras haya algún grupo sucio, y se saca al limpiar (`settings-ui.tsx:49-57`).
+   Las cuatro secciones quedan montadas, así que cambiar de sección no pierde lo tipeado.
+5. **IA real en los tests.** OK. No hay tests nuevos del asistente; `ajustes/actions.test.ts:10-12` mockea
+   `next/cache`, `@nutri-bot/db` y `@/lib/bot-ai`. Ningún test del diff importa `lib/deepseek.ts`.
+6. **Props no serializables servidor → cliente.** OK. `page.tsx` pasa a los componentes cliente solo strings, booleanos,
+   números (`version = updatedAt.getTime()`), objetos planos (`defaults`, `keyStatus`, `lines`, `summaries`) y elementos
+   React ya renderizados (`panels`, `banner`). Los íconos de `AjustesTabs` se definen del lado cliente (`ajustes-tabs.tsx:31-36`);
+   `StatusValue` es un componente de servidor que se renderiza en el servidor. `asistente/page.tsx` pasa `available` y el
+   nombre de la variable, nunca la clave. El form de Google con `"use server"` inline ya existía.
+7. **Zona de imleticio intacta.** OK (ver alcance arriba); `DEFAULT_PDF_ACCENT` se sigue importando de `lib/pdf-theme.ts`
+   (`pdf-style-form.tsx:7`).
+
+## Cambios requeridos
+Ninguno.
+
+## Dudas (no bloqueantes)
+- **Diagnóstico de la hidratación incompleto.** El comentario de `app-sidebar.tsx:16-20` dice que la posición del layout
+  cambia entre servidor y cliente en `next dev`. Si eso fuera así, también cambiarían los `useId` que se renderizan en el
+  DOM dentro de la página: los formularios de Ajustes (`general-form.tsx:135`, `pdf-style-form.tsx:18-19`,
+  `after-hours-form.tsx:28-29`, `bot-ai-form.tsx:34-36`, `image-picker.tsx:30`) y `DetailDisclosure` siguen usando `useId`.
+  El implementer midió 0 errores en 144 recargas y el orquestador vio la consola limpia, así que lo doy por bueno. Si el
+  aviso vuelve en otra pantalla, conviene buscar la causa en el shell, no seguir cambiando ids uno por uno (va con el
+  React #418 intermitente que anotó el implementer).
+- **Teléfono guardado que no vuelve a parsear.** `page.tsx:50,66` muestra `formatPhone(dígitos del phoneJid)`. Si en la
+  base quedara un `phoneJid` de antes que `parsePhoneInput` rechaza (menos de 8 dígitos, o un "54…" de largo raro, cosas
+  que la action vieja aceptaba porque guardaba cualquier dígito), "Guardar" de General falla con "Revisá el número" hasta
+  que se corrija o se borre el teléfono. La ayuda en vivo ya lo muestra en rojo, y hoy el campo está vacío en la base.
+  Caso borde, sin acción ahora.
+- **El efecto de "lo guardado" depende del orden.** Después de guardar, el campo queda limpio porque el efecto de `state.ok`
+  (`settings-ui.tsx:108`) corre después del de `savedKey` (`:104`) en el mismo commit (el teléfono "351 555 2345" queda
+  tipeado así y la base vuelve como "+54 9 351 555-2345"). Next hoy aplica el resultado de la action y la revalidación juntos,
+  así que anda. Si eso cambiara, el teléfono quedaría marcado "Cambios sin guardar" después de guardar bien.
+- **Navegar a otra página del panel con cambios a medias no avisa** (solo cerrar o recargar). Es lo que eligió el implementer
+  y la SDD no lo pide. El ID del calendario de Google está dentro de un `DetailDisclosure` que desmonta su contenido: si
+  ella lo edita y cierra "Opciones avanzadas", lo tipeado se pierde sin aviso.
+- No corrí `next build` (webpack/Turbopack) ni el runtime para no pisar el `.next` del dev server de :3100. Los resultados
+  son los que reportó el implementer (exit 0, sin "cannot be passed").

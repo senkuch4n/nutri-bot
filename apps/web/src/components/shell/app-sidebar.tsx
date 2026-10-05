@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { LayoutGroup, m, useReducedMotionConfig } from "motion/react";
 import { Wordmark } from "@/components/brand";
@@ -11,6 +11,15 @@ import type { BotShellStatus } from "@/lib/shell";
 import { SIDEBAR_COOKIE, SIDEBAR_WIDTH, type NavBadges } from "./nav-config";
 import { SidebarContent } from "./sidebar-content";
 import "./sidebar-layout.css";
+
+/**
+ * Id fijo del `<aside>` (lo usa `aria-controls` del botón de colapsar). No es `useId`: en `next dev`, Next
+ * inserta antes del layout del panel una cantidad variable de `<link>`/`<script>` del segmento, y eso
+ * corre la posición del árbol entre el servidor y el cliente; un `useId` acá salía distinto en una parte de
+ * las recargas ("_R_15etb_" vs "_R_4petb_", HU-017b-4). La sidebar se monta una sola vez, en el layout del
+ * panel, así que un id fijo es único.
+ */
+const SIDEBAR_ID = "panel-sidebar";
 
 /** Sidebar de escritorio (≥ 1024 px), colapsable a íconos. El estado persiste en una cookie. */
 export function AppSidebar({
@@ -32,7 +41,6 @@ export function AppSidebar({
   children: ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
-  const sidebarId = useId();
   const sidebar = useRef<HTMLElement>(null);
   const toggleButton = useRef<HTMLButtonElement>(null);
   const reduced = useReducedMotionConfig();
@@ -65,7 +73,7 @@ export function AppSidebar({
       >
         <aside
           ref={sidebar}
-          id={sidebarId}
+          id={SIDEBAR_ID}
           aria-label="Navegación principal"
           className="panel-sidebar group/sidebar flex flex-col bg-sidebar"
           data-collapsed={collapsed}
@@ -88,7 +96,7 @@ export function AppSidebar({
                   onClick={toggle}
                   aria-label={toggleLabel}
                   aria-expanded={!collapsed}
-                  aria-controls={sidebarId}
+                  aria-controls={SIDEBAR_ID}
                   className="panel-sidebar-toggle group/toggle absolute size-10 shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
                 >
                   <span className="panel-sidebar-toggle-logo pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden>

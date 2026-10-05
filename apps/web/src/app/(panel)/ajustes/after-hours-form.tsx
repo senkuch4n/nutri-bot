@@ -1,89 +1,82 @@
 "use client";
 
-import { startTransition, useActionState, useState } from "react";
-import { Label } from "@/components/primitives/label";
+import { useId } from "react";
+import { SETTINGS_TEXT as T } from "@nutri-bot/core";
+import { GroupedList } from "@/components/grouped-list";
 import { Switch } from "@/components/primitives/switch";
-import { Button, Field, FormError, Input } from "@/components/ui";
-import { useActionToast } from "@/lib/notify";
-import { saveAfterHoursAction, type SettingsState } from "./actions";
-
-const initial: SettingsState = { ok: false };
+import { Input } from "@/components/ui";
+import { saveAfterHoursAction } from "./actions";
+import { GroupFooter, SwitchRow, useSettingsForm } from "./settings-ui";
 
 /**
- * HU-011 (D1): horario de atención de la opción 0. Fuera de él, el bot toma la consulta y la
- * resume al terminar la franja. "Desde las" = fin de la franja; "Hasta las" = inicio.
- * Form propio (no usa SettingsFormProvider).
+ * HU-011 (D1): horario de atención de la opción 0. Fuera de él, el bot toma la consulta y la resume al
+ * terminar la franja. HU-017b-4: "Atendés consultas de X a Y" (X = `attendFrom` = fin de la franja fuera
+ * de horario, Y = `attendTo` = inicio). Mismos campos y misma action.
  */
 export function AfterHoursForm({
   defaults,
 }: {
   defaults: { enabled: boolean; attendFrom: string; attendTo: string };
 }) {
-  const [state, action, pending] = useActionState(saveAfterHoursAction, initial);
-  useActionToast(state, { success: "Horario de consultas guardado" });
-  const [enabled, setEnabled] = useState(defaults.enabled);
-  const [attendFrom, setAttendFrom] = useState(defaults.attendFrom);
-
-  // Se despacha a mano (no `<form action>`) para que React 19 no resetee el form después de
-  // enviar: con un error de validación, lo tipeado tiene que quedar en los inputs.
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    startTransition(() => action(formData));
-  }
+  const form = useSettingsForm(
+    "whatsapp",
+    { afterHoursEnabled: defaults.enabled ? "1" : "0", attendFrom: defaults.attendFrom, attendTo: defaults.attendTo },
+    saveAfterHoursAction,
+  );
+  const { values, set } = form;
+  const enabled = values.afterHoursEnabled === "1";
+  const fromId = useId();
+  const toId = useId();
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <p className="text-sm font-medium">Horario de consultas</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Fuera de este horario, cuando un paciente elige <em>Hablar con la nutricionista</em>, el bot le
-          toma la consulta y te la deja para la mañana en vez de avisarte en el momento.
-        </p>
-      </div>
-
-      <div className="flex items-start justify-between gap-6">
-        <div>
-          <Label htmlFor="after-hours-activo" className="text-sm font-medium">
-            Activado
-          </Label>
-          <p id="after-hours-activo-desc" className="mt-1 text-sm text-muted-foreground">
-            {enabled
-              ? `El bot toma las consultas fuera de horario y te manda un resumen a las ${attendFrom || "—"}.`
-              : "La opción 0 te avisa en el momento, a cualquier hora."}
-          </p>
-        </div>
-        <Switch
-          id="after-hours-activo"
-          checked={enabled}
-          onCheckedChange={setEnabled}
-          aria-describedby="after-hours-activo-desc"
+    <form onSubmit={form.onSubmit}>
+      <GroupedList
+        header={T.afterHoursTitle}
+        footer={enabled ? T.afterHoursOn(values.attendFrom || "—") : T.afterHoursOff}
+      >
+        <SwitchRow
+          label={T.afterHoursToggle}
+          labelFor="after-hours-activo"
+          control={
+            <Switch
+              id="after-hours-activo"
+              checked={enabled}
+              onCheckedChange={(checked) => set("afterHoursEnabled", checked ? "1" : "0")}
+            />
+          }
         />
-        <input type="hidden" name="afterHoursEnabled" value={enabled ? "1" : "0"} />
-      </div>
-
-      {/* Los horarios siguen editables con el switch apagado, así no se pierden. */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Desde las">
+        {/* Los horarios siguen editables con el switch apagado, así no se pierden. */}
+        <li className="relative flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <label htmlFor={fromId} className="text-callout text-foreground">
+            {T.attendFrom}
+          </label>
           <Input
+            id={fromId}
             type="time"
             name="attendFrom"
             required
             autoComplete="off"
-            defaultValue={defaults.attendFrom}
-            onChange={(e) => setAttendFrom(e.currentTarget.value)}
+            className="w-32"
+            value={values.attendFrom}
+            onChange={(e) => set("attendFrom", e.currentTarget.value)}
           />
-        </Field>
-        <Field label="Hasta las">
-          <Input type="time" name="attendTo" required autoComplete="off" defaultValue={defaults.attendTo} />
-        </Field>
-      </div>
-
-      <FormError message={state.error} />
-
-      <Button type="submit" variant="secondary" size="sm" loading={pending}>
-        {pending ? "Guardando…" : "Guardar horario"}
-      </Button>
+          <label htmlFor={toId} className="text-callout text-foreground">
+            {T.attendTo}
+          </label>
+          <Input
+            id={toId}
+            type="time"
+            name="attendTo"
+            required
+            autoComplete="off"
+            className="w-32"
+            value={values.attendTo}
+            onChange={(e) => set("attendTo", e.currentTarget.value)}
+          />
+        </li>
+      </GroupedList>
+      <input type="hidden" name="afterHoursEnabled" value={values.afterHoursEnabled} />
+      <GroupFooter dirty={form.dirty} pending={form.pending} error={form.error} />
     </form>
   );
 }
