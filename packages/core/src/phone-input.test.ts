@@ -31,6 +31,9 @@ describe("parsePhoneInput", () => {
     "543515552345",
     "0054 9 351 555 2345",
     "+54 0351 15 555 2345",
+    // HU-017b-2 (R3): sin "+", con el 9 y con el 15.
+    "54 9 351 15 555 2345",
+    "54 351 15 555 2345",
   ])("con código de país: %s", (raw) => {
     expect(parsePhoneInput(raw)).toEqual(ok("5493515552345"));
   });
