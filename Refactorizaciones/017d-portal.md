@@ -1498,3 +1498,8 @@ recomendación.
   lanzar el implementer de 017d-3; después, `db:generate` y reinicio del dev server.
 - Implementer: Opus; skills ui-ux-pro-max, apple-design, web-design-guidelines, mblode-agent-skills-ui-animation.
   Reviewer: Opus.
+
+## Agregados a 017d-2 (del recorrido de 017d-1)
+
+- R1. Sacar la animación de crecimiento también de los otros gráficos del panel (Perímetros y comparación de estudios),
+  como se hizo con Peso en 9831216: en una pestaña de fondo quedan en 0 hasta verse.
