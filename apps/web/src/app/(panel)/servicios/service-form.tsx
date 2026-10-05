@@ -106,7 +106,16 @@ export function ServiceSheet({
 
   return (
     <Sheet open={open} onOpenChange={(next) => void requestOpenChange(next)}>
-      <SheetContent side={compact ? "bottom" : "right"} className={compact ? undefined : "w-full sm:max-w-xl"}>
+      <SheetContent
+        side={compact ? "bottom" : "right"}
+        className={compact ? undefined : "w-full sm:max-w-xl"}
+        onOpenAutoFocus={(e) => {
+          // En el celular el foco va al panel, no al primer campo: que no se abra el teclado solo.
+          if (!compact) return;
+          e.preventDefault();
+          (e.currentTarget as HTMLElement | null)?.focus();
+        }}
+      >
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>

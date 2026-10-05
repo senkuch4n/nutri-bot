@@ -144,7 +144,7 @@ function ServiceCard({
   const id = switchId(service.id);
 
   return (
-    <m.div layoutId={`servicio-${service.id}`} layout transition={springs.standard} className="h-full">
+    <m.div layoutId={`servicio-${service.id}`} layout transition={springs.standard} className="h-full min-w-0">
       <Card className={cn("flex h-full flex-col", !active && "bg-muted/40")}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="size-2.5 shrink-0 rounded-full" style={{ background: service.color }} aria-hidden />
