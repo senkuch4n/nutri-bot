@@ -213,47 +213,63 @@ export type DeferredDeleteOptions = {
   errorMessage?: string;
   /** HU-017b-1: corre después de un commit exitoso (además de router.refresh()). P. ej. refetch del calendario. */
   onCommitted?: () => void;
+  /** HU-017b-3: corre después de un "Deshacer" que llegó a tiempo (p. ej. devolver el texto del
+   *  comunicado al campo). No corre si el undo llegó tarde. */
+  onUndone?: () => void;
+};
+
+/** Lo que `runDeferredDelete` necesita del entorno (inyectable para testear sin React ni sonner). */
+export type DeferredDeleteDeps = {
+  store: DeferredDeleteStore;
+  notify: Pick<typeof notify, "undo" | "saved" | "error">;
+  router: { push: (href: string) => void; refresh: () => void };
 };
 
 /**
  * Orquesta confirmación ya hecha → schedule → toast con "Deshacer" (8 s). Vence o se cierra el
- * toast → commit. "Deshacer" → undo + "Listo, … volvió". Si commit falla → toast de error y el dato
- * vuelve a verse; si sale bien → router.refresh().
+ * toast → commit. "Deshacer" → undo + "Listo, … volvió" (+ `onUndone`). Si commit falla → toast de
+ * error y el dato vuelve a verse; si sale bien → router.refresh() (+ `onCommitted`).
  */
+export function runDeferredDelete(opts: DeferredDeleteOptions, deps: DeferredDeleteDeps): void {
+  const { store, router } = deps;
+  const toast = deps.notify;
+  const id = store.schedule({ key: opts.key, commit: opts.commit, guardUnload: opts.guardUnload });
+  // onAutoClose y onDismiss pueden llegar los dos: se atiende solo la primera resolución.
+  let settled = false;
+  toast.undo(
+    opts.message,
+    () => {
+      if (settled) return;
+      settled = true;
+      if (!store.undo(id)) return;
+      const action = opts.undoneAction;
+      toast.saved(
+        opts.undoneMessage,
+        action ? { action: { label: action.label, onClick: () => router.push(action.href) } } : undefined,
+      );
+      opts.onUndone?.();
+    },
+    {
+      onExpire: () => {
+        if (settled) return;
+        settled = true;
+        void store.commit(id).then((result) => {
+          if (result.ok) {
+            router.refresh();
+            opts.onCommitted?.();
+          } else toast.error(opts.errorMessage ?? UNDO_TEXT.deleteError);
+        });
+      },
+    },
+  );
+  opts.afterSchedule?.();
+}
+
+/** Hook sobre `runDeferredDelete` con el store único del panel, sonner y el router de Next. */
 export function useDeferredDelete(): (opts: DeferredDeleteOptions) => void {
   const router = useRouter();
   return useCallback(
-    (opts: DeferredDeleteOptions) => {
-      const id = deferredDeletes.schedule({ key: opts.key, commit: opts.commit, guardUnload: opts.guardUnload });
-      // onAutoClose y onDismiss pueden llegar los dos: se atiende solo la primera resolución.
-      let settled = false;
-      notify.undo(
-        opts.message,
-        () => {
-          if (settled) return;
-          settled = true;
-          if (!deferredDeletes.undo(id)) return;
-          const action = opts.undoneAction;
-          notify.saved(
-            opts.undoneMessage,
-            action ? { action: { label: action.label, onClick: () => router.push(action.href) } } : undefined,
-          );
-        },
-        {
-          onExpire: () => {
-            if (settled) return;
-            settled = true;
-            void deferredDeletes.commit(id).then((result) => {
-              if (result.ok) {
-                router.refresh();
-                opts.onCommitted?.();
-              } else notify.error(opts.errorMessage ?? UNDO_TEXT.deleteError);
-            });
-          },
-        },
-      );
-      opts.afterSchedule?.();
-    },
+    (opts: DeferredDeleteOptions) => runDeferredDelete(opts, { store: deferredDeletes, notify, router }),
     [router],
   );
 }

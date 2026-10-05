@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { UNDO_TEXT, createDeferredDeleteStore, measurementLabelsText, prescriptionDeletionKey } from "./deferred-delete";
+import {
+  UNDO_TEXT,
+  createDeferredDeleteStore,
+  measurementLabelsText,
+  prescriptionDeletionKey,
+  runDeferredDelete,
+  type DeferredDeleteOptions,
+} from "./deferred-delete";
 
 /** Timers manuales: el release de las keys se dispara a mano. */
 function manualTimers() {
@@ -231,5 +238,77 @@ describe("hasGuardedPending", () => {
     const c = store.schedule({ key: "appointment-cancel:a2", commit: async () => ({ ok: false }), guardUnload: true });
     await store.commit(c);
     expect(seen).toEqual([true, false, true, false, true, false]);
+  });
+});
+
+// HU-017b-3: onUndone (el comunicado devuelve el texto al campo después de "Deshacer").
+describe("runDeferredDelete · onUndone", () => {
+  function harness(overrides: Partial<DeferredDeleteOptions> = {}) {
+    const store = createDeferredDeleteStore({ setTimer: manualTimers().setTimer });
+    let onUndo: () => void = () => {};
+    let onExpire: () => void = () => {};
+    const notify = {
+      undo: vi.fn((_m: string, undo: () => void | Promise<void>, o?: { onExpire?: () => void }) => {
+        onUndo = () => void undo();
+        onExpire = o?.onExpire ?? (() => {});
+      }),
+      saved: vi.fn(),
+      error: vi.fn(),
+    };
+    const router = { push: vi.fn(), refresh: vi.fn() };
+    const commit = vi.fn(async () => ({ ok: true }));
+    const onUndone = vi.fn();
+    const onCommitted = vi.fn();
+    runDeferredDelete(
+      { key: "broadcast:1", message: "listo", undoneMessage: "Listo, no se mandó", commit, onUndone, onCommitted, ...overrides },
+      { store, notify, router },
+    );
+    return { store, notify, router, commit, onUndone, onCommitted, undo: () => onUndo(), expire: () => onExpire() };
+  }
+
+  it("Deshacer a tiempo: corre onUndone, avisa y no hace commit", async () => {
+    const h = harness();
+    h.undo();
+    expect(h.onUndone).toHaveBeenCalledTimes(1);
+    expect(h.notify.saved).toHaveBeenCalledWith("Listo, no se mandó", undefined);
+    h.expire(); // onDismiss tardío después de Deshacer: no-op
+    await Promise.resolve();
+    expect(h.commit).not.toHaveBeenCalled();
+    expect(h.onCommitted).not.toHaveBeenCalled();
+  });
+
+  it("Deshacer tarde (ya venció): no corre onUndone y el commit sigue", async () => {
+    const h = harness();
+    h.expire();
+    h.undo();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.onUndone).not.toHaveBeenCalled();
+    expect(h.commit).toHaveBeenCalledTimes(1);
+    expect(h.onCommitted).toHaveBeenCalledTimes(1);
+    expect(h.router.refresh).toHaveBeenCalled();
+  });
+
+  it("undo del store que ya no está pendiente (commit en curso) → sin onUndone", () => {
+    const h = harness();
+    // El commit empezó por otro camino (p. ej. otro toast): el undo del store devuelve false.
+    vi.spyOn(h.store, "undo").mockReturnValue(false);
+    h.undo();
+    expect(h.onUndone).not.toHaveBeenCalled();
+    expect(h.notify.saved).not.toHaveBeenCalled();
+  });
+
+  it("commit fallido: toast de error, sin onCommitted ni onUndone", async () => {
+    const h = harness({ commit: vi.fn(async () => ({ ok: false, error: "x" })), errorMessage: "No se pudo mandar" });
+    h.expire();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notify.error).toHaveBeenCalledWith("No se pudo mandar");
+    expect(h.onCommitted).not.toHaveBeenCalled();
+    expect(h.onUndone).not.toHaveBeenCalled();
+  });
+
+  it("sin onUndone (consumidores de 017c) sigue funcionando igual", () => {
+    const h = harness({ onUndone: undefined });
+    h.undo();
+    expect(h.notify.saved).toHaveBeenCalledTimes(1);
   });
 });
