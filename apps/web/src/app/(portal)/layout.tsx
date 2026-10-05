@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ConfirmProvider } from "@/components/confirm";
+import { PendingUnloadGuard } from "@/components/pending-unload-guard";
 import { PortalAccessGate, PortalAccessScreen } from "@/components/portal/portal-access";
 import { Toaster } from "@/components/primitives/sonner";
 import { PortalHeader } from "@/components/shell/portal-header";
@@ -36,6 +37,8 @@ export default async function PortalLayout({ children }: { children: React.React
 
   return (
     <ConfirmProvider>
+      {/* HU-017d-2: con un borrado del diario pendiente, recargar o cerrar la pestaña pregunta. */}
+      <PendingUnloadGuard />
       <div className="theme-portal relative min-h-[100dvh] bg-grouped text-foreground">
         <PortalHeader professionalName={contact.name} />
         {/* El contenido pasa por debajo del header y de la tab bar (materiales translúcidos). */}

@@ -1,77 +1,37 @@
-import { NotebookPen, Trash2 } from "lucide-react";
-import { listDiaryEntries } from "@nutri-bot/db/domain";
-import { formatDateTime } from "@nutri-bot/core";
-import { Card, EmptyState } from "@/components/ui";
-import { SubmitButton } from "@/components/submit-button";
+import { prisma } from "@nutri-bot/db";
+import { groupDiaryByDay } from "@nutri-bot/core";
+import { DiaryScreen, type DiaryGroupRow } from "@/components/portal/diary-screen";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
-import { DiaryForm } from "./diary-form";
-import { deleteDiaryEntryAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function PortalDiaryPage() {
+// HU-017d-2 (SDD 4.2): la lista va sin los bytes de las fotos (Q6); "Hoy", "Ayer" y la hora se calculan
+// acá con la zona de la profesional (T9f). Al cliente le llegan solo datos planos (T9a).
+export default async function PortalDiaryPage({ searchParams }: { searchParams: Promise<{ anotar?: string }> }) {
   const patient = await getPortalPatient();
   if (!patient) return null;
 
-  const [pro, entries] = await Promise.all([getProfessional(), listDiaryEntries(patient.id)]);
+  const [pro, rows, params] = await Promise.all([
+    getProfessional(),
+    prisma.diaryEntry.findMany({
+      where: { patientId: patient.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, note: true, createdAt: true, photoMimeType: true },
+    }),
+    searchParams,
+  ]);
 
-  return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-balance text-2xl font-semibold tracking-tight">Diario alimentario</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Anotá lo que comiste, con foto si querés.</p>
-      </header>
+  const groups: DiaryGroupRow[] = groupDiaryByDay(rows, new Date(), pro.timezone).map((g) => ({
+    dayKey: g.dayKey,
+    label: g.label,
+    entries: g.entries.map((e) => ({
+      id: e.id,
+      note: e.note,
+      hasPhoto: e.photoMimeType !== null,
+      timeLabel: e.timeLabel,
+    })),
+  }));
 
-      <Card title="Nuevo registro">
-        <DiaryForm />
-      </Card>
-
-      {entries.length === 0 ? (
-        <Card>
-          <EmptyState icon={NotebookPen} title="Todavía no cargaste ningún registro." />
-        </Card>
-      ) : (
-        <section aria-labelledby="diario-registros" className="space-y-4">
-          <h2 id="diario-registros" className="text-base font-semibold">
-            Tus registros
-          </h2>
-          {entries.map((e) => {
-            const fecha = formatDateTime(e.createdAt, pro.timezone);
-            return (
-              <Card key={e.id}>
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm text-muted-foreground first-letter:uppercase">
-                    <time dateTime={e.createdAt.toISOString()}>{fecha} hs</time>
-                  </p>
-                  <form action={deleteDiaryEntryAction}>
-                    <input type="hidden" name="id" value={e.id} />
-                    <SubmitButton
-                      variant="ghost"
-                      size="lg"
-                      pendingLabel="Borrando…"
-                      aria-label={`Borrar registro del ${fecha}`}
-                      className="-mr-3 -mt-3 text-destructive hover:bg-destructive-muted hover:text-destructive"
-                    >
-                      <Trash2 aria-hidden />
-                      Borrar
-                    </SubmitButton>
-                  </form>
-                </div>
-                {e.note ? <p className="mt-2 text-sm">{e.note}</p> : null}
-                {e.photoData ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`/portal/diario/photo/${e.id}`}
-                    alt="Foto de la comida"
-                    className="mt-3 max-h-64 w-auto max-w-full rounded-md border object-cover"
-                  />
-                ) : null}
-              </Card>
-            );
-          })}
-        </section>
-      )}
-    </div>
-  );
+  return <DiaryScreen groups={groups} openOnMount={params.anotar === "1"} />;
 }
