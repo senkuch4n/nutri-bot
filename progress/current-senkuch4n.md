@@ -291,3 +291,20 @@ orquestador, para que las revise a la mañana:
 - 017d-3: merge de feat/hu-018d-medidas-caseras en feat/hu-017d3-plan (conflicto solo en esta bitácora; se conservaron las dos partes).
 - HU-017d-3 done; recorrido OK. → `en_revision` (reviewer Opus).
 - HU-017d-3 **aprobada**. HU-017d → `aprobada`. PR encadenado sobre #40 (y después de #28).
+- HU-017f → `bloqueada`: depende de HU-017e (imleticio, sin arrancar). Se destraba cuando 017e esté en develop.
+
+## Cierre 2026-10-05 (modo autónomo) — estado
+- **Aprobadas en esta tanda:** 018c-2, 018d (1a+1b), 017c (1–4), 017b (1–4), 017d (1–3). Tareas directas: bot ignora
+  @newsletter (#29), excepciones de disponibilidad corridas un día (#35).
+- **PR abiertos, en orden de merge:** #26 → #27 → #28 (018c/018d, migración food_measures) · #29 · #35 ·
+  #30 → #31 → #32 → #33 (017c) → #34 → #36 → #37 → #38 (017b) → #39 → #40 → #41 (017d; #41 después de #28).
+- **Sin HU propias pendientes:** 017f bloqueada por 017e (imleticio); 018d-2 opcional (solo si la nutricionista la pide).
+- **Pendientes del usuario:** revisar/mergear los PR (o pasárselos a imleticio); `npm run measures:convert-hints
+  --workspace packages/db -- --apply` si quiere convertir los unitHint; preguntarle a la nutricionista por una tabla de
+  medidas caseras (D2 de 018d) y validar con ella las tareas de usabilidad (D1 de 017c/017b, D19 de 017d); seña de
+  Antropometría guardada como $ 19.999,73; `GOOGLE_CALENDAR_OWNER_EMAIL` en producción; número de WhatsApp de la
+  profesional en Ajustes (el portal no muestra "Escribile" sin él).
+- **Ideas anotadas (no abiertas como HU):** guardar el pushName de WhatsApp para distinguir "Por completar"; vacaciones
+  por rango (D17 de 017b).
+- **Entorno:** `lsof` se cuelga en esta máquina (usar `ps`/`curl --max-time`); el :3000 lo usa otro proyecto, el panel
+  de dev corrió en :3100.

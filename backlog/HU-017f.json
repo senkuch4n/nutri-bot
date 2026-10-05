@@ -4,10 +4,10 @@
   "slug": "rediseno-apple-modo-oscuro",
   "titulo": "Rediseño Apple (opcional): modo oscuro según el sistema",
   "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
-  "estado": "no_afinada",
+  "estado": "bloqueada",
   "intentos_revision": 0,
   "hu": "docs/hu-rediseno-apple.md",
   "sdd": null,
   "rama": null,
-  "notas": "Depende de HU-017a–e."
+  "notas": "Depende de HU-017a–e. Bloqueada (2026-10-05): depende de HU-017e (zona de planes/alimentos, responsable imleticio, no_afinada). Activar los valores dark de los tokens antes de rediseñar esa zona la dejaría rota en oscuro. Se destraba cuando 017e esté en develop."
 }
