@@ -21,7 +21,13 @@ export function PortalRecipeSheet({ recipe, trigger }: { recipe: PortalRecipeVie
       <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent
         side={compact ? "bottom" : "right"}
-        className={cn("theme-portal p-0", compact ? "pt-0" : "w-full sm:max-w-lg")}
+        // La X (el único botón hijo directo del panel) y el agarre (el único hijo directo aria-hidden)
+        // quedan arriba del encabezado sticky (z-10): si no, el encabezado los tapa, la X no se puede
+        // tocar y el agarre no se ve.
+        className={cn(
+          "theme-portal p-0 [&>[aria-hidden=true]]:z-20 [&>button]:z-20",
+          compact ? "pt-0" : "w-full sm:max-w-lg",
+        )}
       >
         <SheetHeader
           className={cn(
