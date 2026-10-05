@@ -38,3 +38,19 @@ conteo errado), `Service` 9, `OutboundMessage` 12; el implementer comparó un ha
 ## Observación (dato, no defecto)
 - El servicio "Antropometría" tiene la seña fija guardada como **$ 19.999,73** (editado el 2026-10-03). Se muestra
   bien; avisarle al usuario por si fue un error de carga.
+
+# Recorrido HU-017b-3 (orquestador, 2026-10-04)
+
+Solo lectura; no se envió ningún comunicado ni se marcó nada. Bot apagado; `OutboundMessage` 12, `Payment` 6,
+`PatientInquiry` 0 (iguales antes y después).
+
+## OK
+- `/pagos`: "Lo que cobraste por mes…", "‹ Octubre 2026", tarjetas "Cobrado en octubre $ 31.999,73 · Señas esperando
+  pago $ 0 · Cantidad de pagos 2 (2 Mercado Pago · 0 efectivo o transferencia)", buscador + segmentado Todos/Esperando
+  pago/Cobrados, filas "Maria López · Antropometría · Turno: martes 6 de octubre, 17:00 · Cobrado · Seña · Mercado Pago
+  · $ 19.999,73".
+- `/avisos`: "Mandar un aviso a todas tus pacientes", "Le llega a 16 pacientes por WhatsApp" (= 11 + 5 por completar de
+  Pacientes, sin los 5 canales: D13 OK), "Revisar y enviar"; cola "Mensajes que mandó el bot" con tipos en castellano
+  ("Enviado · Confirmación de turno · Maria López"), segmentado Todos/Por enviar/Enviados/No se enviaron (1).
+- `/mensajes`: "Pendientes (0) | Respondidas", vacío claro "No tenés mensajes pendientes.".
+- Consola sin errores en las tres.

@@ -4,7 +4,7 @@
   "slug": "rediseno-apple-agenda-gestion",
   "titulo": "Rediseño Apple (3/5): agenda y gestión (calendario, disponibilidad, servicios, mensajes, pagos, avisos, asistente, ajustes)",
   "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
-  "estado": "implementando",
+  "estado": "en_revision",
   "intentos_revision": 0,
   "hu": "docs/hu-017b-agenda-gestion.md",
   "sdd": "Refactorizaciones/017b-agenda-gestion.md",
@@ -16,7 +16,7 @@
   "entregas": {
     "017b-1": "aprobada (2026-10-04, 1ª revisión)",
     "017b-2": "aprobada (2026-10-04, 1ª revisión)",
-    "017b-3": "implementando",
+    "017b-3": "en_revision (2026-10-04)",
     "017b-4": "pendiente"
   },
   "modelo": "opus",
