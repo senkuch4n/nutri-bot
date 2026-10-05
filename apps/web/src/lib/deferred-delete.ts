@@ -25,6 +25,9 @@ export interface DeferredDeleteStore {
   getSnapshot(): ReadonlySet<string>;
   /** HU-017b-1: true si hay alguna entrada con guardUnload en estado "pending" o "committing". */
   hasGuardedPending(): boolean;
+  /** HU-017b-3 (ronda 2): true si `key` tiene una entrada "pending" o "committing" (no cuenta "done":
+   *  una key ya borrada se puede volver a programar). */
+  isScheduled(key: string): boolean;
 }
 
 export interface DeferredDeleteStoreOptions {
@@ -131,6 +134,12 @@ export function createDeferredDeleteStore(options: DeferredDeleteStoreOptions = 
       }
       return false;
     },
+    isScheduled(key) {
+      for (const e of entries.values()) {
+        if (e.key === key && (e.state === "pending" || e.state === "committing")) return true;
+      }
+      return false;
+    },
   };
 }
 
@@ -230,9 +239,13 @@ export type DeferredDeleteDeps = {
  * toast → commit. "Deshacer" → undo + "Listo, … volvió" (+ `onUndone`). Si commit falla → toast de
  * error y el dato vuelve a verse; si sale bien → router.refresh() (+ `onCommitted`).
  */
-export function runDeferredDelete(opts: DeferredDeleteOptions, deps: DeferredDeleteDeps): void {
+export function runDeferredDelete(opts: DeferredDeleteOptions, deps: DeferredDeleteDeps): boolean {
   const { store, router } = deps;
   const toast = deps.notify;
+  // HU-017b-3 (ronda 2): un segundo pedido para una key que ya está pendiente (doble clic, una tarjeta
+  // que todavía está saliendo) es un no-op. Si no, quedan dos entradas y "Deshacer" cancela solo una:
+  // la otra vence igual y la pantalla mentiría. Devuelve false para que quien llama lo sepa.
+  if (store.isScheduled(opts.key)) return false;
   const id = store.schedule({ key: opts.key, commit: opts.commit, guardUnload: opts.guardUnload });
   // onAutoClose y onDismiss pueden llegar los dos: se atiende solo la primera resolución.
   let settled = false;
@@ -263,10 +276,11 @@ export function runDeferredDelete(opts: DeferredDeleteOptions, deps: DeferredDel
     },
   );
   opts.afterSchedule?.();
+  return true;
 }
 
 /** Hook sobre `runDeferredDelete` con el store único del panel, sonner y el router de Next. */
-export function useDeferredDelete(): (opts: DeferredDeleteOptions) => void {
+export function useDeferredDelete(): (opts: DeferredDeleteOptions) => boolean {
   const router = useRouter();
   return useCallback(
     (opts: DeferredDeleteOptions) => runDeferredDelete(opts, { store: deferredDeletes, notify, router }),

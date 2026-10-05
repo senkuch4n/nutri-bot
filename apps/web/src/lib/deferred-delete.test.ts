@@ -312,3 +312,71 @@ describe("runDeferredDelete · onUndone", () => {
     expect(h.notify.saved).toHaveBeenCalledTimes(1);
   });
 });
+
+// HU-017b-3 ronda 2: doble clic en "Ya respondí" (misma key dos veces mientras está pendiente).
+describe("runDeferredDelete · doble pedido con la misma key", () => {
+  function setup() {
+    const store = createDeferredDeleteStore({ setTimer: manualTimers().setTimer });
+    const toasts: Array<{ undo: () => void; expire: () => void }> = [];
+    const notify = {
+      undo: vi.fn((_m: string, undo: () => void | Promise<void>, o?: { onExpire?: () => void }) => {
+        toasts.push({ undo: () => void undo(), expire: o?.onExpire ?? (() => {}) });
+      }),
+      saved: vi.fn(),
+      error: vi.fn(),
+    };
+    const router = { push: vi.fn(), refresh: vi.fn() };
+    const commit = vi.fn(async () => ({ ok: true }));
+    const opts: DeferredDeleteOptions = {
+      key: "inquiry-answered:q1",
+      message: "Marcada como respondida",
+      undoneMessage: "Listo, sigue pendiente",
+      commit,
+    };
+    return { store, notify, router, commit, toasts, opts, run: () => runDeferredDelete(opts, { store, notify, router }) };
+  }
+
+  it("el segundo pedido es un no-op: un solo toast y una sola entrada", () => {
+    const h = setup();
+    expect(h.run()).toBe(true);
+    expect(h.run()).toBe(false);
+    expect(h.notify.undo).toHaveBeenCalledTimes(1);
+    expect(h.toasts).toHaveLength(1);
+  });
+
+  it("Deshacer después de un doble clic deja la key libre y nunca hace commit", async () => {
+    const h = setup();
+    h.run();
+    h.run();
+    h.toasts[0]!.undo();
+    expect(h.store.isPending("inquiry-answered:q1")).toBe(false);
+    expect(h.store.isScheduled("inquiry-answered:q1")).toBe(false);
+    for (const t of h.toasts) t.expire(); // onDismiss tardío
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.commit).not.toHaveBeenCalled();
+    expect(h.notify.saved).toHaveBeenCalledWith("Listo, sigue pendiente", undefined);
+  });
+
+  it("también mientras el commit está en curso; después de terminar se puede volver a programar", async () => {
+    const h = setup();
+    let resolve: (r: { ok: boolean }) => void = () => {};
+    h.commit.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    h.run();
+    h.toasts[0]!.expire();
+    expect(h.store.isScheduled(h.opts.key)).toBe(true);
+    expect(h.run()).toBe(false);
+    resolve({ ok: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.store.isScheduled(h.opts.key)).toBe(false);
+    // "done" (key oculta hasta el release) no bloquea un pedido nuevo (p. ej. cálculo nuevo, 017c-4).
+    expect(h.run()).toBe(true);
+    expect(h.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("keys distintas no se bloquean entre sí", () => {
+    const h = setup();
+    h.run();
+    expect(runDeferredDelete({ ...h.opts, key: "inquiry-answered:q2" }, { store: h.store, notify: h.notify, router: h.router })).toBe(true);
+    expect(h.notify.undo).toHaveBeenCalledTimes(2);
+  });
+});

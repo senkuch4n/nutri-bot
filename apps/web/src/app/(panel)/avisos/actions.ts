@@ -37,8 +37,9 @@ export async function broadcastMessageAction(
 }
 
 export async function retryMessageAction(id: string) {
-  await prisma.outboundMessage.update({
-    where: { id },
+  // Ronda 2 (017b-3): solo si sigue FAILED; una fila que ya se envió (o ya se reintentó) no se vuelve a mandar.
+  await prisma.outboundMessage.updateMany({
+    where: { id, status: "FAILED" },
     data: { status: "PENDING", lastError: null },
   });
   revalidatePath("/avisos");

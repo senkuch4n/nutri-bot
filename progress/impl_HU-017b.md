@@ -505,3 +505,60 @@ de imleticio, `pdf-theme`, `apps/bot`, `packages/db`, `backlog`, `schema.prisma`
 
 - No hay capturas antes/después en `docs/auditoria-apple/017b/`: quedan para el recorrido del orquestador.
 - R6 (un toast vivo por servicio) no se recorrió en runtime, para no cambiar `Service.active` de un servicio real.
+
+---
+
+## Ronda 2 (017b-3)
+
+- **Estado:** done. Responde al `CHANGES_REQUESTED` de `progress/review_HU-017b.md` (sección 017b-3, cambio 1) y a las
+  dudas que se podían resolver con poco.
+- **Bloqueante, el doble clic en "Ya respondí":** el arreglo va en el hook compartido, así cubre todos los diferidos.
+  - `DeferredDeleteStore` suma `isScheduled(key)`: da true si la key tiene una entrada "pending" o "committing". Una
+    entrada "done" no cuenta.
+  - `runDeferredDelete` ahora devuelve `boolean`. Si la key ya está programada, no hace nada y devuelve `false`: no hay
+    segunda entrada ni segundo toast.
+  - Con eso, "Deshacer" cancela lo único que hay pendiente para esa consulta.
+  - La key de un ítem ya borrado ("done", oculta hasta que se libera) se puede volver a programar, como necesita
+    `prescriptionDeletionKey` de 017c-4. Los consumidores de 017c no cambian: la firma solo pasa de `void` a `boolean`.
+- **Mismo patrón en los otros diferidos:**
+  - Cancelar turno, horarios y excepciones: quedan cubiertos por el hook.
+  - Comunicado: la key lleva un uuid, así que el hook no alcanza. `send()` tiene un `scheduledRef` (uno por vista previa,
+    se rearma al volver a abrirla) y ahora valida de nuevo que el texto tenga 3 caracteres o más y que haya destinatarios
+    (era una duda no bloqueante).
+  - Pausar un servicio: ya usaba un toast único por servicio (R6). Un segundo clic en el switch reanuda, que es lo
+    esperado.
+- **Dudas baratas resueltas:**
+  - `retryMessageAction` ahora usa `updateMany({ where: { id, status: "FAILED" } })`: una fila que ya se envió no se
+    vuelve a mandar. Tiene test.
+  - Guarda en `send()` del comunicado (arriba).
+- **Dudas que quedan anotadas, sin cambio:**
+  - Si navega a otra pantalla durante el plazo y después toca "Deshacer", el texto del comunicado se pierde. No se manda
+    nada, como corresponde.
+  - Los pagos `PENDING` aparecen en cualquier mes ("Señas esperando pago" es lo pendiente ahora). Queda para que lo
+    confirme el recorrido.
+  - El "Guardando…" de "Registrar pago" ya existía antes de esta entrega: es una tarea aparte.
+- **Tests:** se agregaron 4 en `deferred-delete.test.ts`:
+  - El segundo pedido no hace nada y sale un solo toast.
+  - "Deshacer" después de un doble clic deja la key libre y nunca hace commit.
+  - Con el commit en curso también bloquea; cuando termina, se puede volver a programar.
+  - Keys distintas no se bloquean entre sí.
+
+  Y 1 en `avisos/actions.test.ts` (`retryMessageAction`).
+- **Verificación:**
+  - `npm run typecheck`: los 4 workspaces en verde.
+  - `npm run test`: 124 archivos y 2034 tests en verde.
+  - Lint de web: solo el warning previo de `logo-form.tsx`.
+  - `verify.sh`: "Arnés OK".
+  - Builds en una copia del scratchpad: `next build --turbopack` dio "Compiled successfully" (exit 0) y `next build`
+    exit 0, sin "cannot be passed" ni "Only async".
+  - El dev server de :3100 no se tocó.
+- **Runtime:** `next start -p 3197` con Chromium headless. El bot siguió apagado (`pgrep` vacío, `connected = f`).
+  - Usé una paciente y una `PatientInquiry` de prueba, creadas y borradas por id.
+  - `/mensajes`, `/pagos` y `/avisos` cargaron sin el error boundary.
+  - **Doble clic con movimiento normal y con movimiento reducido:** salió un solo toast "Marcada como respondida". Con
+    "Deshacer" la tarjeta volvió y 10 s después seguía `PENDING`. La consola quedó limpia.
+  - **A 390 px táctil:** sin scroll horizontal. Después de un doble clic y dejarlo vencer, la consulta quedó `ANSWERED`.
+  - No se probó el comunicado contra la base: en `/avisos` las actions se abortaban por red.
+  - Los conteos `Patient|Appointment|OutboundMessage|Payment|PatientInquiry|AD_HOC` quedaron en **21|22|12|6|0|0**,
+    antes y después.
+  - Se borraron la copia, la cookie y el script.

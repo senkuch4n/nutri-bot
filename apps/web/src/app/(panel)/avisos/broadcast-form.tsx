@@ -42,6 +42,9 @@ export function BroadcastForm({
   const [previewOpen, setPreviewOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
+  // Ronda 2: un comunicado por vista previa. Un segundo "Enviar" (doble clic, el diálogo cerrándose)
+  // no programa otro; se rearma al volver a abrir la vista previa.
+  const scheduledRef = useRef(false);
   const deferred = useDeferredDelete();
   const disabled = patientCount === 0;
 
@@ -53,12 +56,16 @@ export function BroadcastForm({
       return;
     }
     setError(null);
+    scheduledRef.current = false;
     setPreviewOpen(true);
   }
 
   function send() {
     const text = body.trim();
     const n = patientCount;
+    // Defensa en profundidad: nunca se programa un comunicado vacío ni dos veces el mismo.
+    if (scheduledRef.current || text.length < 3 || n === 0) return;
+    scheduledRef.current = true;
     setPreviewOpen(false);
     setBody(""); // el campo se vacía al programar; "Deshacer" lo devuelve
     const fd = new FormData();

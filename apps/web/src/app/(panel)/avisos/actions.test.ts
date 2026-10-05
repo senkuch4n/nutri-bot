@@ -5,16 +5,17 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   findMany: vi.fn(),
   createMany: vi.fn(),
+  updateMany: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
   prisma: {
     patient: { findMany: mocks.findMany },
-    outboundMessage: { createMany: mocks.createMany },
+    outboundMessage: { createMany: mocks.createMany, updateMany: mocks.updateMany },
   },
 }));
 
-import { broadcastMessageAction } from "./actions";
+import { broadcastMessageAction, retryMessageAction } from "./actions";
 
 function form(body: string): FormData {
   const fd = new FormData();
@@ -88,5 +89,16 @@ describe("broadcastMessageAction", () => {
     const res = await broadcastMessageAction({ ok: false }, form("Hola a todas"));
     expect(res).toEqual({ ok: false, error: "No se pudo mandar el comunicado. Probá de nuevo." });
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("retryMessageAction", () => {
+  it("solo vuelve a PENDING una fila que sigue FAILED, por id", async () => {
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+    await retryMessageAction("m1");
+    expect(mocks.updateMany).toHaveBeenCalledWith({
+      where: { id: "m1", status: "FAILED" },
+      data: { status: "PENDING", lastError: null },
+    });
   });
 });
