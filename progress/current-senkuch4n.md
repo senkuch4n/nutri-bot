@@ -251,3 +251,4 @@ orquestador, para que las revise a la mañana:
 - HU-017b-2 done (8 commits); recorrido OK (seña de Antropometría guardada como 19.999,73: avisar al usuario). → `en_revision` (reviewer Opus).
 - HU-017b-2 **aprobada**. PR encadenado sobre #34. Tarea directa: excepciones de disponibilidad corridas un día (dayKeyInTz sobre @db.Date) → PR #35 a develop. → 017b-3 `implementando` (rama feat/hu-017b3-bandejas; Opus; con R4–R6).
 - HU-017b-3 done (7 commits); recorrido OK (comunicado solo a 16 personas). → `en_revision` (reviewer Opus).
+- HU-017b-3 reviewer: CHANGES_REQUESTED (doble clic en 'Ya respondí': el Deshacer no evita el commit). → `rechazada_reintentando` (intento 1/2).

@@ -180,3 +180,88 @@ base.
   "otro horario" los inputs ya montados conservan 14:00–16:00. Es cosmético.
 - Pausar, reanudar con el switch y volver a pausar deja dos toasts con "Deshacer" vivos; el primero reactivaría el
   servicio. Es un caso raro e inofensivo (reactivar es idempotente).
+
+---
+
+# Review — HU-017b (entrega 017b-3: mensajes, pagos y avisos, con R4–R6)
+
+**Veredicto:** CHANGES_REQUESTED
+
+Diff revisado: `git diff feat/hu-017b2-disponibilidad...HEAD` (8 commits, `1a626da`..`d45a06c`). Sin contar los
+archivos del arnés son 31 archivos, todos de la tabla 7-3 más los que pedían R4–R6 (`ui.tsx` `Metric`, `notify.ts`).
+Corrí los comandos yo: `npm run typecheck` da exit 0 (core, db, bot, web), `npm run test` da 124 archivos y 2029 tests
+en verde, y `./ops/harness/verify.sh` da "Arnés OK". Consulté la base de desarrollo en solo lectura: hay 0 pacientes y
+0 turnos `hu017b3*`, `PatientInquiry` en 0, `Payment` en 6, `OutboundMessage` en 12 y 0 filas `AD_HOC`.
+
+## Checkpoints
+- C1 backlog válido, una sola HU activa por responsable: [x] (`HU-017b` `en_revision`, senkuch4n).
+- C1 bitácora: [x]. C1 nada de la otra persona: [x]. C1 verify.sh: [x] (exit 0).
+- C2 HU: [x]. C2 SDD: [x]. C2 firmas iguales al contrato: [x]. Coinciden `month-range`, `outbox-text`,
+  `payment-text`, `onUndone?` y `MESSAGE_KIND_TEXT satisfies Record<MessageKind, string>` (`avisos/page.tsx:19`).
+- C3 lógica pura en core: [x]. C3 schema/domain: [x] (no cambian; bot y web compilan).
+- C3 migraciones: [x] (no hay ninguna). C3 rutas nuevas: [x] (no hay; las páginas siguen dentro de `(panel)`).
+- C3 bot en silencio: [x] (`messages.ts` y `apps/bot` no cambian). C3 sin `console.log` ni TODO: [x].
+- C4 typecheck: [x]. C4 tests de core y `npm run test`: [x]. C4 simulación del bot: [x] (no aplica). C4 PDF: [x] (no aplica).
+- C5 `impl` describe lo tocado: [x]. C5 veredicto: [x] (esta sección).
+- C5 sin datos ni scripts de prueba: [x] (verificado en la base, en solo lectura).
+
+## Puntos pedidos por el orquestador
+- **D14, comunicado diferido:** [x]
+  - Nada se encola durante el plazo. `send()` solo programa la entrada (`broadcast-form.tsx:59-86`) y la action corre
+    dentro de `commit`, recién en `onExpire` (`deferred-delete.ts:253-262`).
+  - Al vencer encola una sola vez por destinatario. El store resuelve cada entrada una vez (`entry.result`,
+    `deferred-delete.ts:89`), `settled` evita el doble `onAutoClose`/`onDismiss` y `broadcastRecipients` deduplica.
+  - Doble clic en "Enviar a N": el contenido del AlertDialog tiene `data-[state=closed]:pointer-events-none`
+    (`primitives/alert-dialog.tsx:86`), así que el segundo clic no llega mientras se cierra.
+  - Remount: la key lleva `randomUUID` y solo se programa con el clic. Si el formulario se desmonta, el commit sale
+    igual y una sola vez.
+  - "Deshacer" devuelve el texto (`onUndone`, líneas 81-84, sin pisar algo nuevo) y hay test de que no corre si el
+    undo llegó tarde.
+  - El aviso al cerrar usa `guardUnload: true` y `PendingUnloadGuard` sigue en `(panel)/layout.tsx:64`.
+- **D13, solo personas en el envío real:** [x]. `actions.ts:24` filtra con `broadcastRecipients` antes del
+  `createMany`, y la página cuenta con la misma función (`page.tsx:40`). El test verifica que no se encolan
+  `@newsletter`, `@g.us` ni `@broadcast` y que `@lid` sí.
+- **D16, "Ya respondí" diferido:** [ ]. Ver hallazgo 1. Lo demás está bien: sin action nueva, la key es
+  `inquiry-answered:<id>`, "Todas" ya no está, las pendientes van de la más vieja a la más nueva y no se escribe nada
+  durante 8 s.
+- **D12, mes en la zona de la profesional:** [x]. `monthKeyInTz`/`monthRangeInTz` con `fromZonedTime`. Un `?mes=`
+  inválido o futuro cae al mes en curso (`pagos/page.tsx:32-36`), "›" está deshabilitado en el mes en curso y se usa
+  `to − 1 ms` porque domain filtra con `lte`. Los tests cubren el 31/10 a las 23:30 en Argentina y el cruce de año.
+- **D9, pago manual:** [x]. Toma los estados `CONFIRMED` y `COMPLETED` en ±7 días (`page.tsx:60`), precarga el precio
+  al elegir el turno, carga la seña configurada al elegir "Seña" y el form se monta solo con el modal abierto, así
+  que el precargado arranca fresco. La action no filtra por estado, así que acepta los `COMPLETED`.
+- **"Reintentar" de la cola:** [x]. El botón por fila sigue sin confirmación, como antes. "Reintentar los N" pide
+  confirmación con "Se vuelven a mandar por WhatsApp.".
+- **Props de servidor a cliente:** [x]. `BroadcastForm` recibe solo `patientCount`, y el `sendAction` falso se define
+  en `dev-diseno/broadcast-demo.tsx` ("use client"). `MessageRow`, `InquiryRow`, `PaymentRow` y `AppointmentOption`
+  son planos (strings, números, booleanos).
+- **R4:** [x] (`disponibilidad/actions.ts:72-76` + test). **R5:** [x] (`key={kind}` en `exception-sheet.tsx:135`, con
+  `defaultValue` por tipo). **R6:** [x] (`id: service-paused:<id>` y `dismiss` al reanudar, `service-card.tsx:78-93`).
+
+## Cambios requeridos
+1. **"Ya respondí" con doble clic: "Deshacer" no deshace.**
+   - Dónde: `apps/web/src/app/(panel)/mensajes/mensajes-view.tsx:92-100` (`markAnswered`) y `226-229` (el botón).
+   - Qué pasa: la tarjeta sale con `AnimatePresence mode="popLayout"` (`:154-163`). Mientras dura el `exit`, el
+     `m.li` sigue en el DOM y se puede clicar, porque Motion no le pone `pointer-events: none`. Un doble clic sobre
+     "Ya respondí", algo habitual en este público, llama dos veces a `deferred(...)` con la misma key: quedan dos
+     entradas en el store y aparecen dos toasts "Marcada como respondida".
+   - Por qué importa: si ella toca "Deshacer" en el toast de arriba, ve "Listo, sigue pendiente", pero la otra entrada
+     sigue pendiente. La tarjeta no vuelve (la key sigue en `pendingKeys`) y a los 8 s la consulta queda `ANSWERED`.
+     La pantalla le dice algo que no pasa (D16).
+   - Qué se espera: que un segundo pedido para una key que ya está pendiente sea un no-op, o que la tarjeta que está
+     saliendo no reciba clics. Y un test que lo fije.
+   - Aclaración: en el comunicado esto no pasa gracias al `pointer-events-none` del diálogo.
+
+## Dudas (no bloqueantes)
+- `broadcast-form.tsx:59-86`: `send()` no vuelve a validar que `text` tenga al menos 3 caracteres. Hoy lo cubre el
+  `pointer-events-none` del diálogo. Si el diálogo cambia, una segunda llamada programaría un comunicado vacío que
+  falla a los 8 s con "No se pudo mandar el comunicado.". Una guarda local daría defensa en profundidad.
+- Si navega a otra pantalla del panel durante el plazo y toca "Deshacer", no se manda nada, como corresponde. Pero
+  el texto se pierde, porque el formulario ya se desmontó. Es un caso borde y alcanza con anotarlo.
+- `pagos/page.tsx:107-110`: los pagos `PENDING` (pendientes "ahora") aparecen en la lista de cualquier mes, también al
+  mirar septiembre. Coincide con "Señas esperando pago no depende del mes", pero conviene que el recorrido confirme
+  que no confunde.
+- `retryMessageAction` (`avisos/actions.ts:39-45`, de antes, no cambió): pasa la fila a `PENDING` sin chequear que
+  siga `FAILED`. No es de esta entrega.
+- El "Guardando…" colgado de "Registrar pago" con `next start` que reporta el implementer es anterior a esta entrega
+  (lo reprodujo sobre `c0bfca7`). Conviene una tarea aparte.
