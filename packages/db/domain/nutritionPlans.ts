@@ -1,3 +1,4 @@
+import { RECIPE_ITEM_SELECT } from "./recipes";
 import { prisma, type MealMode, type PlanStatus, type Weekday } from "../index";
 import { assertWeekdayMatchesMeal, createDefaultWeeklyMeals, resolveNewMealMode } from "./weeklyMenu";
 
@@ -6,7 +7,8 @@ const mealInclude = {
   include: {
     items: {
       orderBy: { order: "asc" as const },
-      include: { food: true },
+      // HU-018c: el ítem de receta trae su receta (macros, micronutrientes, porción, fuente y foto).
+      include: { food: true, recipe: { select: RECIPE_ITEM_SELECT } },
     },
   },
 };
@@ -77,6 +79,11 @@ type MealItemData = {
   order: number;
   /** HU-018b. Default null (todos los días). Se valida con assertWeekdayMatchesMeal. */
   weekday?: Weekday | null;
+  /** HU-018d: medida casera (copias de resolveMeasureItem). Las 4 juntas o ninguna. */
+  measureQty?: number | string | null;
+  measureName?: string | null;
+  measurePlural?: string | null;
+  measureGrams?: number | string | null;
 };
 
 export async function addMealItem(mealId: string, data: MealItemData) {

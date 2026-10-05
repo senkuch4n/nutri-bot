@@ -2,9 +2,13 @@
 // días. Puro, sin React.
 import { WEEKDAY_LABELS, joinWeekdaysEs, type Weekday } from "@nutri-bot/core";
 
-/** Nombre visible de un ítem (alimento, descripción libre o un marcador). */
-export function itemLabel(item: { foodName: string | null; customLabel: string | null }): string {
-  return item.foodName ?? item.customLabel ?? "(sin descripción)";
+/** Nombre visible de un ítem (receta, alimento, descripción libre o un marcador). */
+export function itemLabel(item: {
+  foodName: string | null;
+  customLabel: string | null;
+  recipe?: { name: string } | null;
+}): string {
+  return item.recipe?.name ?? item.foodName ?? item.customLabel ?? "(sin descripción)";
 }
 
 /** "Desayuno" → "desayuno" (en medio de una frase). */

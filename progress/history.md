@@ -467,3 +467,25 @@
 ## HU-017d-2 — Portal: diario (aprobada 2026-10-05, senkuch4n)
 - "Anotar comida" en un sheet arrastrable con foto achicada en el celular, lista por día, foto grande, borrar con Deshacer idempotente; los otros gráficos del panel tampoco animan (R1).
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión.
+## HU-018c-1 · Buscador de recetas en la comida (aprobada 2026-10-03, senkuch4n)
+- **Qué:** "Agregar receta" en cada comida abre un panel lateral (pantalla completa en el celular) con buscador por
+  ingrediente o nombre, chips (tipo, momento inferido del nombre de la comida, etiquetas), grilla de tarjetas con foto
+  y el impacto en el día contra el objetivo (±5 %, peor día con varios marcados, promedio semanal en "Todos los días",
+  promedio en opciones). Agregar en uno o varios días, porciones de a ½ y "Deshacer". Ítem de receta en el editor,
+  plantillas, micronutrientes, PDF y portal (línea con nombre, porción y fuente). Copiar día, repetir, deshacer y
+  aplicar plantilla conservan la receta. Sin migración.
+- **Verificación:** 1712 tests; `next build` y `next build --turbopack`; `test:recipe-picker`; recorrido en Chrome
+  (`progress/recorrido_HU-018c.md`). Aprobada en la primera revisión. Pendientes menores para 018c-2 en la SDD.
+- **Modelos:** architect Opus; implementer Opus; reviewer Opus. Tramo hecho en modo autónomo (decisiones recomendadas).
+
+## HU-018c-2 — Detalle de la receta (aprobada 2026-10-04, senkuch4n)
+- Detalle de receta en el buscador (foto, ingredientes con medida casera y gramos, preparación, impacto, pie fijo para agregar) y "Ver receta" en el portal sin macros. Cierra los 4 pendientes de la revisión de 018c-1.
+- Implementer Opus (apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones menores en progress/review_HU-018c.md (test unitario de applyTemplateToPatient con receta, retry sin cancelación, macros de ítems que viajan al portal como ya pasaba con alimentos, mirar el PDF real antes del merge).
+
+## HU-018d-1a — Medidas caseras en el plan (aprobada 2026-10-04, senkuch4n)
+- Migración `food_measures` (modelo FoodMeasure + 4 columnas nullable en PlanMealItem/TemplateMealItem). Medidas por alimento en la ficha, alta en medida casera en planes y plantillas (y crear medida desde el editor), copias que conservan la medida, portal y PDF con "1½ tazas (270 g)".
+- Implementer Opus (migracion-prisma, apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones R2–R4 pasan a 018d-1b.
+
+## HU-018d-1b — Stepper y conversión de unitHint (aprobada 2026-10-04, senkuch4n)
+- Stepper de cantidad para ítems en medida casera, aviso "Tenías anotado" + "Pasar a medida" (prellena si el texto es legible), `unitHint` fuera del formulario, script `measures:convert-hints` (en seco en dev: 77 a crear, 2 ilegibles; aplicarlo queda para el usuario), R2–R4 de la revisión de 1a.
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. HU-018d cerrada (018d-2 opcional, solo si la nutricionista la pide).

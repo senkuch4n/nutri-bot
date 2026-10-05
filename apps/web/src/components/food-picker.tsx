@@ -19,7 +19,14 @@ type Option = { kind: "free" } | { kind: "food"; food: CatalogFood };
  * "combobox con listbox"). Manda el id elegido en `<input type="hidden" name={name}>`
  * ("" = alimento libre). Filtra en el cliente con `searchFoods` (sin round-trips).
  */
-export function FoodPicker({ name = "foodId" }: { name?: string }) {
+export function FoodPicker({
+  name = "foodId",
+  onValueChange,
+}: {
+  name?: string;
+  /** HU-018d: avisa el id elegido ("" = alimento libre) al elegir, al escribir y al resetear. */
+  onValueChange?: (foodId: string) => void;
+}) {
   const { foods } = useFoodCatalog();
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -29,6 +36,12 @@ export function FoodPicker({ name = "foodId" }: { name?: string }) {
   const [selectedId, setSelectedId] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+
+  const onValueChangeRef = useRef(onValueChange);
+  onValueChangeRef.current = onValueChange;
+  useEffect(() => {
+    onValueChangeRef.current?.(selectedId);
+  }, [selectedId]);
 
   const results = useMemo(() => (query.trim() ? searchFoods(foods, query, MAX_RESULTS) : []), [foods, query]);
   const options: Option[] = useMemo(

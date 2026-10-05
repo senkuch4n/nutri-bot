@@ -4,6 +4,7 @@ import type { MealView } from "@/components/meals-editor";
 import { MacroTotals } from "@/components/macro-totals";
 import { buttonVariants } from "@/components/primitives/button";
 import { Card } from "@/components/ui";
+import type { PortalRecipeView } from "@/lib/portal-recipe";
 import { cn } from "@/lib/utils";
 import { PortalDayView, PortalMealItems } from "./portal-day-view";
 
@@ -18,6 +19,7 @@ export function PortalPlanView({
   totals,
   hasPdf,
   weekly,
+  recipes,
 }: {
   title: string;
   notes: string | null;
@@ -26,6 +28,8 @@ export function PortalPlanView({
   hasPdf: boolean;
   /** HU-018b: datos del menú semanal; null o ausente = plan no semanal. */
   weekly?: { today: Weekday; dayTotals: Record<Weekday, Macros>; loadedDays: Weekday[] } | null;
+  /** HU-018c-2: detalle de las recetas del plan para "Ver receta" (sin macros). */
+  recipes?: Record<string, PortalRecipeView>;
 }) {
   return (
     <div className="space-y-6">
@@ -51,6 +55,7 @@ export function PortalPlanView({
           today={weekly.today}
           dayTotals={weekly.dayTotals}
           loadedDays={weekly.loadedDays}
+          recipes={recipes}
         />
       ) : (
         <>
@@ -58,7 +63,7 @@ export function PortalPlanView({
 
           {meals.map((meal) => (
             <Card key={meal.id} title={meal.name}>
-              <PortalMealItems items={meal.items} />
+              <PortalMealItems items={meal.items} recipes={recipes} />
             </Card>
           ))}
         </>

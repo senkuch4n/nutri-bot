@@ -1,5 +1,6 @@
 import {
   computeRecipeMacros,
+  ingredientDisplayName,
   recipeSearchText,
   validateRecipeForPublish,
   type FoodGroupKey,
@@ -345,6 +346,129 @@ export async function getRecipeUsage(recipeId: string): Promise<{ plans: number;
     prisma.planTemplate.count({ where: { meals: { some: { items: { some: { recipeId } } } } } }),
   ]);
   return { plans, templates };
+}
+
+/**
+ * HU-018c: lo que necesita un ítem de receta en el plan (getPlan, getTemplate y el portal): macros
+ * (con los ingredientes), micronutrientes (nutrients y sodio), nombre, porción, fuente y foto. NO filtra
+ * por estado: una receta archivada sigue en el plan con sus macros (D10).
+ */
+export const RECIPE_ITEM_SELECT = {
+  id: true,
+  name: true,
+  status: true,
+  type: true,
+  portionHousehold: true,
+  yieldPortions: true,
+  sourceName: true,
+  photo: { select: { id: true } },
+  ingredients: {
+    orderBy: { order: "asc" },
+    select: {
+      label: true,
+      grams: true,
+      noQuantity: true,
+      food: {
+        select: {
+          id: true,
+          name: true,
+          group: true,
+          kcalPer100: true,
+          proteinPer100: true,
+          carbsPer100: true,
+          fatPer100: true,
+          fiberPer100: true,
+          nutrients: true,
+          sodiumMgPer100: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.RecipeSelect;
+
+// ── Detalle de lectura (HU-018c-2) ────────────────────────────────────────────────────────────
+
+/**
+ * Detalle para el buscador (diálogo) y el portal. Serializable. Sin bytes ni datos de importación
+ * (`importRawText`, `rawText`, `importHints` y `published*` son de revisión, no para el paciente).
+ */
+export interface RecipePreview {
+  id: string;
+  name: string;
+  status: RecipeStatusKey;
+  type: RecipeTypeKey | null;
+  portionHousehold: string | null;
+  yieldPortions: number | null;
+  perPortion: Macros | null;
+  macrosIncomplete: boolean;
+  photo: { id: string; credit: string | null } | null;
+  sourceName: string | null;
+  preparation: string | null;
+  tips: string | null;
+  /** name = ingredientDisplayName(label, food) */
+  ingredients: { name: string; household: string | null; grams: number | null; noQuantity: boolean }[];
+}
+
+const RECIPE_PREVIEW_SELECT = {
+  id: true,
+  name: true,
+  status: true,
+  type: true,
+  portionHousehold: true,
+  yieldPortions: true,
+  sourceName: true,
+  preparation: true,
+  tips: true,
+  photo: { select: { id: true, credit: true } },
+  ingredients: {
+    orderBy: { order: "asc" },
+    select: { label: true, grams: true, noQuantity: true, household: true, food: { select: MACRO_FOOD_SELECT } },
+  },
+} satisfies Prisma.RecipeSelect;
+
+type RecipePreviewRow = Prisma.RecipeGetPayload<{ select: typeof RECIPE_PREVIEW_SELECT }>;
+
+function toRecipePreview(r: RecipePreviewRow): RecipePreview {
+  const macros = computeRecipeMacros(r.ingredients.map(toMacroIngredient), num(r.yieldPortions));
+  return {
+    id: r.id,
+    name: r.name,
+    status: r.status,
+    type: r.type,
+    portionHousehold: r.portionHousehold,
+    yieldPortions: num(r.yieldPortions),
+    perPortion: macros.perPortion,
+    macrosIncomplete: macros.freeText.names.length > 0 || macros.missingGrams.names.length > 0,
+    photo: r.photo ? { id: r.photo.id, credit: r.photo.credit } : null,
+    sourceName: r.sourceName,
+    preparation: r.preparation,
+    tips: r.tips,
+    ingredients: r.ingredients.map((i) => ({
+      name: ingredientDisplayName(i),
+      household: i.household,
+      grams: num(i.grams),
+      noQuantity: i.noQuantity,
+    })),
+  };
+}
+
+/** PUBLISHED o ARCHIVED. Un borrador (o una receta que no existe) da null: no se muestra. */
+export async function getRecipePreview(recipeId: string): Promise<RecipePreview | null> {
+  const r = await prisma.recipe.findFirst({
+    where: { id: recipeId, status: { not: "DRAFT" } },
+    select: RECIPE_PREVIEW_SELECT,
+  });
+  return r ? toRecipePreview(r) : null;
+}
+
+/** Las recetas DISTINTAS usadas en ítems del plan (cualquier estado salvo DRAFT), en orden de nombre. */
+export async function listPlanRecipePreviews(planId: string): Promise<RecipePreview[]> {
+  const rows = await prisma.recipe.findMany({
+    where: { status: { not: "DRAFT" }, planItems: { some: { meal: { planId } } } },
+    select: RECIPE_PREVIEW_SELECT,
+    orderBy: { name: "asc" },
+  });
+  return rows.map(toRecipePreview);
 }
 
 // ── Escritura ─────────────────────────────────────────────────────────────────────────────────

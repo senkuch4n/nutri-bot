@@ -1,7 +1,16 @@
 import "server-only";
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
-import { WEEKDAYS, WEEKDAY_LABELS, computeWeeklyTotals, formatMacrosLine, itemsForDay } from "@nutri-bot/core";
+import {
+  WEEKDAYS,
+  WEEKDAY_LABELS,
+  computeWeeklyTotals,
+  formatMacrosLine,
+  itemsForDay,
+  measureWithGramsText,
+  recipePortionText,
+} from "@nutri-bot/core";
 import type { MealItemView, MealView } from "@/components/meals-editor";
+import type { RecipeItemView } from "@/components/recipe-picker/types";
 import { PdfFooter, PdfHeader, buildCommonStyles, pdfLogoSrc } from "@/lib/pdf-common";
 import { DEFAULT_PDF_ACCENT, pdfColors } from "@/lib/pdf-theme";
 
@@ -31,6 +40,8 @@ function buildStyles(accentColor: string) {
       itemName: { flex: 1, paddingRight: 8 },
       itemNote: { fontSize: 8.5, color: pdfColors.muted, marginTop: 1 },
       itemQty: { width: 64, textAlign: "right", color: pdfColors.muted },
+      // HU-018d: "1½ tazas (270 g)" necesita más ancho que "270 g".
+      itemQtyMeasure: { width: 132, textAlign: "right", color: pdfColors.muted },
       totals: {
         marginTop: 22,
         padding: 10,
@@ -64,18 +75,48 @@ export interface PlanPdfInput {
 
 type PlanStyles = ReturnType<typeof buildStyles>;
 
+/**
+ * HU-018c: una receta es una línea con su nombre y, debajo, la porción casera y "Fuente: …". La
+ * columna de cantidad va vacía. Provisional: el anexo de recetas, las fotos y el diseño definitivo
+ * son de la HU-015.
+ */
+function RecipeRow({ item, recipe, styles }: { item: MealItemView; recipe: RecipeItemView; styles: PlanStyles }) {
+  const detail = [recipePortionText(recipe.portions, recipe.portionHousehold), recipe.sourceName ? `Fuente: ${recipe.sourceName}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <View style={styles.itemRow}>
+      <View style={styles.itemName}>
+        <Text>{recipe.name}</Text>
+        <Text style={styles.itemNote}>{detail}</Text>
+        {item.notes ? <Text style={styles.itemNote}>{item.notes}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 function ItemRows({ items, styles }: { items: MealItemView[]; styles: PlanStyles }) {
   return (
     <>
-      {items.map((item) => (
-        <View key={item.id} style={styles.itemRow}>
-          <View style={styles.itemName}>
-            <Text>{item.foodName ?? item.customLabel ?? "—"}</Text>
-            {item.notes ? <Text style={styles.itemNote}>{item.notes}</Text> : null}
+      {items.map((item) =>
+        item.recipe ? (
+          <RecipeRow key={item.id} item={item} recipe={item.recipe} styles={styles} />
+        ) : (
+          <View key={item.id} style={styles.itemRow}>
+            <View style={styles.itemName}>
+              <Text>{item.foodName ?? item.customLabel ?? "—"}</Text>
+              {item.notes ? <Text style={styles.itemNote}>{item.notes}</Text> : null}
+            </View>
+            {item.measure ? (
+              <Text style={styles.itemQtyMeasure}>
+                {measureWithGramsText(item.measure.qty, item.measure, Number(item.quantityGrams))}
+              </Text>
+            ) : (
+              <Text style={styles.itemQty}>{item.quantityGrams ? `${item.quantityGrams} g` : ""}</Text>
+            )}
           </View>
-          <Text style={styles.itemQty}>{item.quantityGrams ? `${item.quantityGrams} g` : ""}</Text>
-        </View>
-      ))}
+        ),
+      )}
     </>
   );
 }

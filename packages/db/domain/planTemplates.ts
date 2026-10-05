@@ -1,3 +1,4 @@
+import { RECIPE_ITEM_SELECT } from "./recipes";
 import { prisma, type MealMode, type Weekday } from "../index";
 import { getPlan } from "./nutritionPlans";
 import { assertWeekdayMatchesMeal, createDefaultWeeklyMeals, resolveNewMealMode } from "./weeklyMenu";
@@ -7,7 +8,8 @@ const templateMealInclude = {
   include: {
     items: {
       orderBy: { order: "asc" as const },
-      include: { food: true },
+      // HU-018c: el ítem de receta trae su receta (macros, micronutrientes, porción, fuente y foto).
+      include: { food: true, recipe: { select: RECIPE_ITEM_SELECT } },
     },
   },
 };
@@ -62,6 +64,11 @@ type TemplateItemData = {
   order: number;
   /** HU-018b. Default null (todos los días). Se valida con assertWeekdayMatchesMeal. */
   weekday?: Weekday | null;
+  /** HU-018d: medida casera (copias de resolveMeasureItem). Las 4 juntas o ninguna. */
+  measureQty?: number | string | null;
+  measureName?: string | null;
+  measurePlural?: string | null;
+  measureGrams?: number | string | null;
 };
 
 export async function addTemplateMealItem(mealId: string, data: TemplateItemData) {
@@ -103,6 +110,14 @@ export async function applyTemplateToPatient(templateId: string, patientId: stri
                 notes: item.notes,
                 order: item.order,
                 weekday: item.weekday,
+                // HU-018c: las recetas se copian con sus porciones.
+                recipeId: item.recipeId,
+                portions: item.portions,
+                // HU-018d: la medida casera (copia) viaja con el ítem.
+                measureQty: item.measureQty,
+                measureName: item.measureName,
+                measurePlural: item.measurePlural,
+                measureGrams: item.measureGrams,
               })),
             },
           })),
