@@ -262,3 +262,5 @@ orquestador, para que las revise a la mañana:
 - HU-017d-1 done; recorrido del portal OK salvo: gráfico de peso con barras en 0 (bug previo del componente compartido, también en el panel) y título de pestaña 'NutriBot — Panel' → devuelto al implementer antes del reviewer.
 - HU-017d-1: arreglos del gráfico (9831216) y título (37cf2ac); recorrido OK. → `en_revision` (reviewer Opus).
 - HU-017d-1 **aprobada**. PR encadenado sobre #38. → 017d-2 `implementando` (rama feat/hu-017d2-diario; Opus; con R1).
+- HU-017d-2 done (7 commits); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017d-2 **aprobada**. PR encadenado sobre #39. → 017d-3 `implementando` (rama feat/hu-017d3-plan = 017d-2 + merge de feat/hu-018d-medidas-caseras).

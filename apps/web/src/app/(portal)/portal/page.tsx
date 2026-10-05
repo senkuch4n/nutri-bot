@@ -122,8 +122,8 @@ export default async function PortalHomePage() {
         <h2 className={cardTitle}>{PORTAL_TEXT.diaryTitle}</h2>
         <p className="mt-1 text-headline">{PORTAL_TEXT.diaryQuestion}</p>
         {diaryText ? <p className="mt-0.5 text-body-lg text-muted-foreground">{diaryText}</p> : null}
-        {/* 017d-1: lleva al diario; desde 017d-2 abre el sheet (?anotar=1). */}
-        <ButtonLink href="/portal/diario" size="lg" className="mt-4 w-full">
+        {/* 017d-2: abre "Anotar comida" directo (?anotar=1). */}
+        <ButtonLink href="/portal/diario?anotar=1" size="lg" className="mt-4 w-full">
           <PencilLine aria-hidden />
           {PORTAL_TEXT.addMeal}
         </ButtonLink>

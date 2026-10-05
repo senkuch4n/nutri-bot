@@ -85,3 +85,65 @@ Ninguno.
 - **Q4 sin prueba de runtime ni test unitario:** queda para el runtime de 017d-2 ("Anotar comida" con texto → arrastrar → "¿Descartar…?" → Cancelar). Un caso borde teórico: si un dueño cierra el sheet en forma asíncrona, después del cuadro, el panel volvería a 0 y después saldría sin la velocidad del fling. Es un detalle visual, sin pérdida de estado.
 - **D20 (contraste de las tarjetas con el brillo bajo) y D19 (prueba con la mamá en un celular real):** `progress/recorrido_HU-017d.md` no los menciona. Quedan pendientes del orquestador o del usuario.
 - `ComparativeChart` y `StudyComparisonChart` del panel siguen con la animación de Recharts. Pueden arrancar con las barras en 0 en una pestaña en segundo plano. Está fuera de alcance; lo anotó el implementer.
+
+---
+
+# Review — HU-017d, entrega 017d-2 (diario + R1)
+
+**Veredicto:** APPROVED
+
+Diff revisado: `git diff feat/hu-017d-portal...HEAD` (rama `feat/hu-017d2-diario`, commits `16f13aa`..`31ea74a`), sin los archivos del arnés. Comandos que corrí yo:
+- `npm run typecheck`: exit 0 en core, db, bot y web.
+- `npm run test`: 132 archivos y 2139 tests, todos OK.
+- `npm run lint --workspace apps/web`: sin warnings.
+- `./ops/harness/verify.sh`: "Arnés OK", exit 0. El WARN del bot aparece porque cambió core; `apps/bot/**` no tiene diff.
+- Consulta de solo lectura a la base de dev: 0 pacientes `hu017d*` o con JID `549351001740*`, `DiaryEntry` = 2 y `Patient` = 21, los mismos conteos de antes.
+
+## Checkpoints
+- C1 backlog válido, una HU activa por responsable: [x] (verify.sh: "senkuch4n: HU-017d")
+- C1 bitácora refleja la HU: [x]
+- C1 no toca archivos de la otra persona: [x]. Tampoco toca la zona de imleticio (T6).
+- C1 verify.sh exit 0: [x]
+- C2 HU con sus secciones: [x]
+- C2 SDD con workspaces, checklist y contrato: [x]
+- C2 firmas = contrato: [x]. Coinciden `PORTAL_DIARY_TEXT` (textos exactos), `DiaryDayGroup`, `groupDiaryByDay`, las constantes y funciones de `photo-resize`, `DiaryState`/`DiaryDeleteResult`, `deleteDiaryEntryAction(id)`, los cuatro componentes y `useKeyboardInset`/`keyboardInsetFrom`.
+- C3 lógica pura en core, sin duplicar domain: [x]. `groupDiaryByDay` está en core. La consulta sin bytes va con `select` en la página (Q6). `packages/db` no cambia.
+- C3 schema/domain: [x]. No hay cambios (T1/T3).
+- C3 migraciones: [x]. No hay migraciones.
+- C3 el portal solo expone datos propios: [x] (ver el punto 1 abajo)
+- C3 bot en silencio y textos: [x]. El bot y `messages.ts` no tienen diff.
+- C3 sin console.log/TODO: [x]. El grep sobre las líneas agregadas da vacío.
+- C4 typecheck: [x]
+- C4 tests de core y test: [x]. Hay 7 de `groupDiaryByDay`, más los de photo-resize, keyboard-inset y actions.
+- C4 bot simulado: [x]. No aplica.
+- C4 PDF: [x]. No aplica.
+- C5 impl existe: [x]. Es la sección 017d-2 de `progress/impl_HU-017d.md`.
+- C5 review con veredicto: [x]
+- C5 sin scripts ni datos de prueba sueltos: [x]
+
+## Lo que verifiqué punto por punto
+
+1. **Aislamiento entre pacientes.** Las dos actions sacan la paciente de la cookie firmada (`getPortalPatient`, HMAC + `findUnique`), nunca de un parámetro: `actions.ts:23` y `:51`. En el borrado, `findUnique({ select: { patientId } })` y `entry.patientId !== patient.id` dan `deleteError` sin borrar (`actions.ts:56-59`). El test "de otra paciente" lo cubre. El alta usa `patient.id` y el form no lleva ningún id. Para leer, la lista filtra `where: { patientId: patient.id }` (`page.tsx:15-20`). La foto pasa por `photo/[id]/route.ts`, que no cambió y compara `entry.patientId !== patient.id` antes de devolver bytes. El chequeo y el delete no son atómicos, pero `patientId` no cambia, así que no hay TOCTOU.
+2. **Borrado idempotente con Deshacer.** La key es `diary:<id>` y `if (!scheduled) return` maneja el doble toque (`diary-list.tsx:41-50`). Las filas y los grupos que salen quedan `inert` (`:106`, `:124`). La action da `ok: true` si el registro no existe o si llega un P2025 entre medio (`actions.ts:58`, `:63`). El plazo es de 8 s (`notify.ts`, `duration: 8000`). Un error al confirmar devuelve la fila con `deleteError`. `PendingUnloadGuard` está en `(portal)/layout.tsx:41`, dentro del `ConfirmProvider` y solo con paciente, y `guardUnload: true` está puesto.
+3. **Foto.** Los dos inputs tienen `accept="image/*"` (`diary-entry-sheet.tsx:198`, `:207`), uno con `capture="environment"`. Si el navegador no decodifica la foto (HEIC en Chrome de escritorio), el resultado es `unreadable` → `errorPhoto` (`photo-resize.ts:96`). `canUploadAsIs` deja pasar solo JPEG/PNG/WEBP de ≤ 2,5 MB y ≤ 1600 px, y todo lo demás se re-codifica a JPEG sobre fondo blanco. El servidor sigue validando el tipo y el tope de 3 MB (`actions.ts:32`), cubierto con los tests de gif y de 3 MB + 1. `resizePhotoForUpload` no tira y libera el bitmap o el object URL en `finally`. Una foto que termina de prepararse después de cerrar el sheet se descarta (`generation`, `:55`, `:88-92`).
+4. **La consulta no trae bytes.** `select: { id, note, createdAt, photoMimeType }` (`page.tsx:20`), y `hasPhoto` sale de `photoMimeType`. El runtime del implementer midió un HTML de 32 KB sin `/9j/`.
+5. **Sheet arrastrable y guardia de descarte.** `requestOpenChange` pregunta con `dirty`, ignora el cierre mientras guarda (`:71`) y usa `confirm` desde el handler, fuera de la transición. El guardado exitoso cierra sin preguntar. `useUnsavedChangesGuard(open && dirty)` (`:50`). La vuelta a 0 cuando se veta el cierre por arrastre (Q4) está en `primitives/sheet.tsx` desde 017d-1. Lo leí y es coherente: `stillOpenRef` sigue en `true` mientras el confirm asíncrono está pendiente, así que el panel vuelve antes de la pregunta. Se verificó en runtime (y = 410 → 410). No hace falta `SheetTrigger`: `useOverlayOpenInfo` del Root guarda y devuelve el foco. El inset del teclado entra por `style.bottom` (`:147`), y `SheetPanel` lo combina en `style={{ ...style, ... }}`.
+6. **Props de servidor a cliente.** `DiaryScreen` recibe `groups` (strings, booleanos y `null`) y `openOnMount` (booleano). La página importa `DiaryGroupRow` solo como tipo. `actions.ts` (`"use server"`) exporta dos funciones async y dos `export type` propios, sin re-exports (T9c). Los íconos se importan en los componentes cliente.
+7. **Fechas y zona horaria.** `groupDiaryByDay` usa `dayKeyInTz`/`calendarDaysBetween` con `pro.timezone` en el servidor. El test de las 23:30 en Argentina (02:30Z) da "Ayer". Que el 2/10/2026 caiga viernes es correcto: la SDD traía mal el día de la semana, y el implementer lo documentó.
+8. **R1.** `comparative-chart.tsx:119-120` y `study-comparison-chart.tsx:104` llevan `isAnimationActive={false}`, el mismo cambio de prop que `9831216`.
+9. **Alcance.** Los archivos del diff son exactamente los de 7-2 más R1. `sheet.tsx` no aparece porque 4.6 ya entró en 017d-1. `diary-form.tsx` se borró, y `grep DiaryForm apps/web/src` da vacío.
+
+## Cambios requeridos
+
+Ninguno.
+
+## Dudas (no bloqueantes)
+
+- **Metadatos EXIF de la foto subida tal cual.** Cuando `canUploadAsIs` da `true` (`photo-resize.ts:97`), sube el archivo original, con su EXIF, incluido el GPS si la cámara lo guardó. El dato solo lo ve la nutricionista, y lo que se re-codifica sale sin EXIF. Es lo que dice el contrato de la SDD, pero conviene decidir si se re-codifica siempre para limpiar la ubicación.
+- **`EmptyState` sin la acción "Anotar comida"** (`diary-screen.tsx:45`). La SDD 4.5 la pedía. El implementer lo justifica porque el botón lleno de arriba siempre está a la vista, y el escenario "Diario vacío" se cumple igual. Es un desvío menor que está documentado.
+- **El formulario no se remonta con `key={openCount}`** como dice 4.5. Lo reemplaza un efecto que limpia todo al cerrar y revoca el object URL. Es equivalente.
+- **Borrar con el link vencido:** la action devuelve `errorNoAccess`, pero `runDeferredDelete` muestra `errorMessage` (`deleteError`, "No se pudo borrar. Probá de nuevo."). Como pide la SDD, el registro vuelve. El texto no explica que hay que pedir otro link.
+- **Existencia de un id ajeno:** borrar un id que no existe da `ok: true` y uno de otra paciente da `ok: false`, así que se puede distinguir si el id existe. No se borra ni se filtra contenido, y los ids son cuid imposibles de adivinar. El riesgo es despreciable.
+- **`max-h-[90dvh]` con `bottom = alto del teclado`** en iOS: `dvh` no se achica con el teclado, así que un contenido alto podría pasar el borde de arriba del visual viewport. Con el contenido de este sheet no debería pasar. Queda para el recorrido en Safari o el simulador (Q5), que todavía falta, igual que la cámara real, HEIC, el movimiento reducido del sheet y D19 (3).
+- **`somatochart.tsx:117`/`:127`** sigue con `isAnimationActive={!reduced}` y podría tener el mismo problema de las pestañas de fondo. R1 nombraba solo perímetros y comparación de estudios, así que queda fuera.
+- **R1 no se probó en runtime:** los gráficos están detrás de Google. Es una prop idéntica a la ya verificada en `evolution-chart`.

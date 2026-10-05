@@ -15,8 +15,8 @@
   ],
   "entregas": {
     "017d-1": "aprobada (2026-10-05, 1ª revisión)",
-    "017d-2": "implementando",
-    "017d-3": "pendiente (mergea feat/hu-018d-medidas-caseras)"
+    "017d-2": "aprobada (2026-10-05, 1ª revisión)",
+    "017d-3": "implementando"
   },
   "modelo": "opus",
   "skills": [
@@ -26,5 +26,5 @@
     "mblode-agent-skills-ui-animation"
   ],
   "modelo_reviewer": "opus",
-  "entrega_actual": "017d-2"
+  "entrega_actual": "017d-3"
 }

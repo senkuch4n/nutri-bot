@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  PORTAL_DIARY_TEXT,
   PORTAL_TEXT,
+  groupDiaryByDay,
   diaryTodayText,
   formatHeightMeters,
   formatPortalDate,
@@ -266,6 +268,73 @@ describe("PORTAL_TEXT", () => {
     const banned = ["sesión", "token", "inválido", "kcal", "macros", "registro guardado"];
     for (const value of Object.values(PORTAL_TEXT)) {
       for (const word of banned) expect(value.toLowerCase()).not.toContain(word);
+    }
+  });
+});
+
+describe("groupDiaryByDay (017d-2)", () => {
+  it("agrupa en Hoy, Ayer y el día con nombre", () => {
+    const groups = groupDiaryByDay(
+      [
+        { id: "a", createdAt: d("2026-10-07T13:00:00Z") }, // hoy 10:00
+        { id: "b", createdAt: d("2026-10-06T16:40:00Z") }, // ayer 13:40
+        { id: "c", createdAt: d("2026-10-02T12:05:00Z") }, // 2/10 9:05
+      ],
+      NOW,
+      TZ,
+    );
+    // El 2/10/2026 es viernes (el ejemplo de la HU, "Jueves 2 de octubre", es de 2025).
+    expect(groups.map((g) => g.label)).toEqual(["Hoy", "Ayer", "Viernes 2 de octubre"]);
+    expect(groups.map((g) => g.dayKey)).toEqual(["2026-10-07", "2026-10-06", "2026-10-02"]);
+  });
+
+  it("un registro de otro año lleva el año", () => {
+    const [g] = groupDiaryByDay([{ createdAt: d("2025-10-02T15:00:00Z") }], NOW, TZ);
+    expect(g?.label).toBe("Jueves 2 de octubre de 2025");
+  });
+
+  it("las 23:30 de ayer en Argentina (02:30Z de hoy) caen en Ayer", () => {
+    const [g] = groupDiaryByDay([{ createdAt: d("2026-10-07T02:30:00Z") }], NOW, TZ);
+    expect(g?.label).toBe("Ayer");
+    expect(g?.dayKey).toBe("2026-10-06");
+    expect(g?.entries[0]?.timeLabel).toBe("23:30");
+  });
+
+  it("ordena grupos y entradas de lo más nuevo a lo más viejo, con la hora H:mm", () => {
+    const groups = groupDiaryByDay(
+      [
+        { id: "temprano", createdAt: d("2026-10-07T12:05:00Z") }, // 9:05
+        { id: "ayer", createdAt: d("2026-10-06T20:00:00Z") },
+        { id: "tarde", createdAt: d("2026-10-07T16:40:00Z") }, // 13:40
+      ],
+      NOW,
+      TZ,
+    );
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.entries.map((e) => [e.id, e.timeLabel])).toEqual([
+      ["tarde", "13:40"],
+      ["temprano", "9:05"],
+    ]);
+    expect(groups[1]?.entries.map((e) => e.id)).toEqual(["ayer"]);
+  });
+
+  it("conserva los campos extra y no cambia la entrada", () => {
+    const input = [{ id: "x", note: "Milanesa", hasPhoto: true, createdAt: d("2026-10-07T14:00:00Z") }];
+    const [g] = groupDiaryByDay(input, NOW, TZ);
+    expect(g?.entries[0]).toEqual({ ...input[0], timeLabel: "11:00" });
+    expect(input[0]).not.toHaveProperty("timeLabel");
+  });
+
+  it("sin registros devuelve []", () => {
+    expect(groupDiaryByDay([], NOW, TZ)).toEqual([]);
+  });
+});
+
+describe("PORTAL_DIARY_TEXT (017d-2)", () => {
+  it("no usa lenguaje técnico", () => {
+    const all = Object.values(PORTAL_DIARY_TEXT).join(" ").toLowerCase();
+    for (const word of ["registro guardado", "sesión", "token", "inválido", "kcal", "macros"]) {
+      expect(all).not.toContain(word);
     }
   });
 });
