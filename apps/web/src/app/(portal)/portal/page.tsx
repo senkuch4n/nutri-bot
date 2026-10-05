@@ -108,7 +108,7 @@ export default async function PortalHomePage() {
       {latestPlan ? (
         <PortalCardLink href="/portal/plan" label={`${PORTAL_TEXT.planTitle}: ${planTitle}`}>
           <p className={cardTitle}>{PORTAL_TEXT.planTitle}</p>
-          <p className="mt-1 text-headline">{planTitle}</p>
+          <p className="mt-1 break-words text-headline">{planTitle}</p>
           <p className="mt-0.5 text-body-lg text-muted-foreground">{PORTAL_TEXT.planHint}</p>
         </PortalCardLink>
       ) : (
