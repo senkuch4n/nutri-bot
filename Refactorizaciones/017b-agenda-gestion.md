@@ -1637,3 +1637,6 @@ módulos nuevos de core quedan sin uso si se revierte la UI y no molestan.
 ## Agregados a 017b-2 (del recorrido de 017b-1)
 
 - R1. Panel del turno: el foco inicial va al título del panel (o al botón cerrar), no a "Editar motivo".
+- R2. `/dev-diseno` (`_sections/calendar.tsx`): la demo del calendario usa la barra propia en lugar de `headerToolbar`
+  (los estilos `.fc-button-primary` ya no existen).
+- R3. `parsePhoneInput` acepta "54 9 351 15 555 2345" (con 9 y con 15, sin "+") como el mismo número; test incluido.
