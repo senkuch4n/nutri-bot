@@ -261,3 +261,4 @@ orquestador, para que las revise a la mañana:
 - HU-017d SDD lista (Refactorizaciones/017d-portal.md; Q1–Q16 aceptadas). → `implementando` 017d-1 (Opus).
 - HU-017d-1 done; recorrido del portal OK salvo: gráfico de peso con barras en 0 (bug previo del componente compartido, también en el panel) y título de pestaña 'NutriBot — Panel' → devuelto al implementer antes del reviewer.
 - HU-017d-1: arreglos del gráfico (9831216) y título (37cf2ac); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017d-1 **aprobada**. PR encadenado sobre #38. → 017d-2 `implementando` (rama feat/hu-017d2-diario; Opus; con R1).
