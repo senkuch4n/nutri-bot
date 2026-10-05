@@ -54,3 +54,20 @@ Solo lectura; no se envió ningún comunicado ni se marcó nada. Bot apagado; `O
   ("Enviado · Confirmación de turno · Maria López"), segmentado Todos/Por enviar/Enviados/No se enviaron (1).
 - `/mensajes`: "Pendientes (0) | Respondidas", vacío claro "No tenés mensajes pendientes.".
 - Consola sin errores en las tres.
+
+# Recorrido HU-017b-4 (orquestador, 2026-10-04/05)
+
+Solo lectura. Ajustes de la profesional idénticos byte a byte al respaldo (verificado por el implementer); zona
+`America/Argentina/Buenos_Aires`, moneda `ARS`, `updatedAt` original.
+
+## OK
+- `/ajustes`: índice General / Bot de WhatsApp / Google Calendar / Informes en PDF; aviso "WhatsApp desconectado: el bot
+  no está respondiendo" + "Conectar WhatsApp"; zona horaria y moneda en listas con nombres comunes ("Argentina (Buenos
+  Aires, Córdoba, …)", "Pesos argentinos (ARS)"); textos de ayuda simples; "Guardar" por grupo.
+- `/asistente`: "¿En qué te ayudo?" con sugerencias ("¿Qué turnos tengo mañana?", "¿Cuánto cobré este mes?", "Contame
+  de una paciente"), composer con "Preguntar" y el aviso de IA fijo.
+
+## Defecto encontrado y arreglado antes del reviewer
+- Reaparecía el error de hidratación del sidebar en `/ajustes` (ids de `useId` distintos; el arreglo R3 de 017c-3 no
+  lo cubría). Arreglado en 0aec47b con un id estable; tras reiniciar el dev server, consola limpia en `/ajustes` y
+  `/ajustes?tab=pdf` (el implementer: 0 errores en 144 recargas).
