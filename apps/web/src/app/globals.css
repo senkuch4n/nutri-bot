@@ -220,42 +220,12 @@
   --fc-highlight-color: hsl(var(--primary) / 0.12);
   font-size: 0.8125rem;
 }
-.fc .fc-toolbar-title {
-  @apply text-title-3 text-foreground;
-}
 .fc .fc-col-header-cell-cushion {
   @apply py-2 text-footnote font-semibold text-muted-foreground;
 }
 .fc .fc-timegrid-slot-label-cushion,
 .fc .fc-list-day-text {
   @apply text-footnote text-muted-foreground;
-}
-.fc .fc-button-primary {
-  @apply relative h-8 rounded-md border-0 bg-secondary px-3 text-subheadline font-medium normal-case text-foreground shadow-none press;
-}
-@media (hover: hover) and (pointer: fine) {
-  .fc .fc-button-primary:hover {
-    @apply border-0 bg-fill-hover text-foreground;
-  }
-}
-.fc .fc-button-primary:not(:disabled):active {
-  @apply bg-fill-pressed;
-}
-/* Activo: segmento elevado (anticipa el control segmentado de 017b). */
-.fc .fc-button-primary:not(:disabled).fc-button-active {
-  @apply bg-background font-semibold text-foreground shadow-thumb;
-}
-.fc .fc-button-primary:focus {
-  @apply shadow-none;
-}
-.fc .fc-button-primary.fc-button-active:focus {
-  @apply shadow-thumb;
-}
-.fc .fc-button-primary:focus-visible {
-  @apply outline outline-2 outline-offset-2 outline-ring ring-0;
-}
-.fc .fc-button-primary:disabled {
-  @apply border-0 bg-secondary text-foreground opacity-40;
 }
 .fc .fc-daygrid-event,
 .fc .fc-timegrid-event {
@@ -265,8 +235,10 @@
   @apply outline outline-2 outline-offset-2 outline-ring ring-0;
 }
 
+/* HU-017b-1 (C1): tinte muy suave, más liviano que cualquier turno; sin rayado. La barra es propia
+   (calendar-toolbar.tsx): las reglas de .fc-toolbar-title y .fc-button-primary ya no hacen falta. */
 .fc .fc-non-business {
-  background: hsl(var(--muted)); /* plano, sin rayado (017b lo aliviana: C1) */
+  background: hsl(var(--muted) / 0.45);
 }
 .fc .fc-timegrid-now-indicator-arrow {
   display: none;

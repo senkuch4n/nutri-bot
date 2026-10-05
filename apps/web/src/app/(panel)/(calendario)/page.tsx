@@ -1,11 +1,20 @@
-import { es } from "date-fns/locale";
 import { prisma } from "@nutri-bot/db";
-import { formatInTimeZone, fromZonedTime, isValidDayKey } from "@nutri-bot/core";
+import {
+  countAgendaDay,
+  formatInTimeZone,
+  fromZonedTime,
+  nextAppointmentText,
+  todaySummaryText,
+  weekSummaryText,
+} from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
 import { CalendarClient } from "../calendar-client";
 
 export const dynamic = "force-dynamic";
+
+/** Estados que cuentan en el resumen (D8): CANCELLED y AWAITING_PAYMENT no. */
+const COUNTED = ["CONFIRMED", "COMPLETED", "NO_SHOW"] as const;
 
 function toMin(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
@@ -16,34 +25,32 @@ function hhmmss(min: number): string {
   return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}:00`;
 }
 
-export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ fecha?: string | string[] }> }) {
-  // HU-017c-2 (Q7): `?fecha=yyyy-MM-dd` abre el calendario en ese día (lo usa la tarjeta "Próximo turno").
-  const { fecha } = await searchParams;
-  const focusDate = typeof fecha === "string" && isValidDayKey(fecha) ? fecha : undefined;
+/**
+ * HU-017b-1 (SDD 4.5). `?fecha=` y `?vista=` los lee el cliente desde la URL (Q3): así el "Atrás" de
+ * Next, que puede restaurar las props del render original, no lleva a otro día.
+ */
+export default async function CalendarPage() {
   const pro = await getProfessional();
   const tz = pro.timezone;
   const now = new Date();
 
   const todayKey = formatInTimeZone(now, tz, "yyyy-MM-dd");
   const todayStart = fromZonedTime(`${todayKey}T00:00:00`, tz);
-  const todayEnd = fromZonedTime(`${todayKey}T23:59:59`, tz);
+  const todayEnd = fromZonedTime(`${todayKey}T23:59:59.999`, tz);
   const isoDow = Number(formatInTimeZone(now, tz, "i")); // 1 = lunes … 7 = domingo
-  const weekStartKey = formatInTimeZone(
-    new Date(now.getTime() - (isoDow - 1) * 86_400_000),
-    tz,
-    "yyyy-MM-dd",
-  );
+  const weekStartKey = formatInTimeZone(new Date(now.getTime() - (isoDow - 1) * 86_400_000), tz, "yyyy-MM-dd");
   const weekStart = fromZonedTime(`${weekStartKey}T00:00:00`, tz);
   const weekEnd = new Date(weekStart.getTime() + 7 * 86_400_000);
 
-  const [services, rules, todayCount, weekCount, nextAppt] = await Promise.all([
+  const [services, rules, todayAppts, weekCount, nextAppt] = await Promise.all([
     listServices({ activeOnly: true }),
     prisma.availabilityRule.findMany({ where: { active: true } }),
-    prisma.appointment.count({
-      where: { status: "CONFIRMED", startsAt: { gte: todayStart, lte: todayEnd } },
+    prisma.appointment.findMany({
+      where: { status: { in: [...COUNTED] }, startsAt: { gte: todayStart, lte: todayEnd } },
+      select: { status: true, startsAt: true },
     }),
     prisma.appointment.count({
-      where: { status: "CONFIRMED", startsAt: { gte: weekStart, lt: weekEnd } },
+      where: { status: { in: [...COUNTED] }, startsAt: { gte: weekStart, lt: weekEnd } },
     }),
     prisma.appointment.findFirst({
       where: { status: "CONFIRMED", startsAt: { gte: now } },
@@ -60,32 +67,32 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
   const starts = rules.map((r) => toMin(r.startTime));
   const ends = rules.map((r) => toMin(r.endTime));
-  const slotMin = starts.length
-    ? hhmmss(Math.floor(Math.min(...starts) / 60) * 60 - 60)
-    : "08:00:00";
+  const slotMin = starts.length ? hhmmss(Math.floor(Math.min(...starts) / 60) * 60 - 60) : "08:00:00";
   const slotMax = ends.length ? hhmmss(Math.ceil(Math.max(...ends) / 60) * 60 + 60) : "20:00:00";
 
-  const next = nextAppt
-    ? {
-        time:
-          formatInTimeZone(nextAppt.startsAt, tz, "yyyy-MM-dd") === todayKey
-            ? formatInTimeZone(nextAppt.startsAt, tz, "HH:mm")
-            : formatInTimeZone(nextAppt.startsAt, tz, "EEE d · HH:mm", { locale: es }),
-        label: `${nextAppt.patient.name ?? nextAppt.patient.phone} · ${nextAppt.service.name}`,
-      }
-    : null;
+  const summary = {
+    todayText: todaySummaryText(countAgendaDay(todayAppts, now)),
+    weekText: weekSummaryText(weekCount),
+    nextText: nextAppt
+      ? nextAppointmentText(
+          { startsAt: nextAppt.startsAt, patient: nextAppt.patient, serviceName: nextAppt.service.name },
+          now,
+          tz,
+        )
+      : null,
+  };
 
   return (
     <CalendarClient
       tz={tz}
       currency={pro.currency}
+      todayKey={todayKey}
       services={services.map((s) => ({ id: s.id, name: s.name, durationMin: s.durationMin }))}
       legend={services.map((s) => ({ name: s.name, color: s.color }))}
-      summary={{ today: todayCount, week: weekCount, next }}
+      summary={summary}
       businessHours={businessHours}
       slotMin={slotMin}
       slotMax={slotMax}
-      focusDate={focusDate}
     />
   );
 }

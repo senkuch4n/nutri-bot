@@ -243,3 +243,8 @@ orquestador, para que las revise a la mañana:
 - HU-017c-4 reviewer: CHANGES_REQUESTED (R5: un cálculo nuevo dentro de releaseAfterMs queda oculto). → `rechazada_reintentando` (intento 1/2).
 - HU-017c-4 ronda 2 done (46b2b0c). → `en_revision` (ronda 2).
 - HU-017c-4 **aprobada** (ronda 2). HU-017c → `aprobada`. PR encadenado sobre #32. Sigue HU-017b.
+- HU-017b → `afinando` (afinador Opus; rama feat/hu-017b-agenda encadenada sobre 017c-4).
+- HU-017b afinada y validada (D1–D24; D17 vacaciones por rango queda como idea aparte). → `en_arquitectura` (architect Opus + ui).
+- HU-017b SDD lista (Refactorizaciones/017b-agenda-gestion.md; Q1–Q24 aceptadas; hallazgos: botPaused no frena la cola, 9 reglas inactivas listadas, z.coerce.boolean en servicios). Bot apagado confirmado. → `implementando` 017b-1 (Opus).
+- HU-017b-1 done (8 commits); recorrido OK (progress/recorrido_HU-017b.md). → `en_revision` (reviewer Opus).
+- HU-017b-1 **aprobada**. PR encadenado sobre #33. → 017b-2 `implementando` (rama feat/hu-017b2-disponibilidad; Opus; con R1–R3).

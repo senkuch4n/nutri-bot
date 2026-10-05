@@ -4,10 +4,27 @@
   "slug": "rediseno-apple-agenda-gestion",
   "titulo": "Rediseño Apple (3/5): agenda y gestión (calendario, disponibilidad, servicios, mensajes, pagos, avisos, asistente, ajustes)",
   "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
-  "estado": "no_afinada",
+  "estado": "implementando",
   "intentos_revision": 0,
-  "hu": "docs/hu-rediseno-apple.md",
-  "sdd": null,
-  "rama": null,
-  "notas": "Depende de HU-017a."
+  "hu": "docs/hu-017b-agenda-gestion.md",
+  "sdd": "Refactorizaciones/017b-agenda-gestion.md",
+  "rama": "feat/hu-017b-agenda",
+  "notas": "Depende de HU-017a. Rama encadenada sobre feat/hu-017c4-informe (reusa deferred-delete, menús \"…\", GroupedListRow, arreglo de hidratación y el deep link ?fecha= de la ficha). Afinada en modo autónomo (2026-10-04).",
+  "skills_architect": [
+    "ui"
+  ],
+  "entregas": {
+    "017b-1": "aprobada (2026-10-04, 1ª revisión)",
+    "017b-2": "implementando",
+    "017b-3": "pendiente",
+    "017b-4": "pendiente"
+  },
+  "modelo": "opus",
+  "skills": [
+    "ui-ux-pro-max",
+    "apple-design",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "entrega_actual": "017b-2"
 }

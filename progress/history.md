@@ -443,3 +443,7 @@
 - Avisos agrupados en "Antes de enviar" con su acción, marca "Editado", jerarquía de acciones, confirmación de envío; PDF del informe con paleta fría y escala Inter (el PDF del plan no cambia). R5–R7 de la revisión de 017c-3.
 - Reviewer: CHANGES_REQUESTED en la 1ª (R5 ocultaba un cálculo nuevo) → APPROVED en la ronda 2. HU-017c completa (4 entregas, PR #30 → #31 → #32 → #33).
 - Pendiente del usuario: validar con la nutricionista las 3 tareas de D1.
+
+## HU-017b-1 — Calendario y turno (aprobada 2026-10-04, senkuch4n)
+- Barra propia con resumen en palabras, vista Día en el celular, `?fecha=` que abre el día (cierra Q7 de 017c), panel del turno en palabras ("Vino a la consulta"), cancelar con confirmación + Deshacer diferido (no encola durante el plazo) y aviso al cerrar, "Nuevo turno" eligiendo a la paciente y teléfono normalizado en core, "Registrar pago" desde el turno.
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. Bot apagado durante toda la entrega.
