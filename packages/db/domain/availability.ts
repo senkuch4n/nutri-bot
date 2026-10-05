@@ -1,5 +1,5 @@
 import {
-  dayKeyInTz,
+  dayKeyFromDbDate,
   getAvailableSlots,
   isSlotAvailable,
   type BusyInterval,
@@ -37,7 +37,7 @@ async function loadRulesAndExceptions(tz: string, db: AvailabilityClient = prism
   }));
 
   const coreExceptions: Exception[] = exceptions.map((e) => ({
-    dayKey: dayKeyInTz(e.date, tz),
+    dayKey: dayKeyFromDbDate(e.date),
     type: e.type,
     startTime: e.startTime,
     endTime: e.endTime,
