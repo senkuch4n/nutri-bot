@@ -42,3 +42,5 @@ export * from "./patient-directory";
 export * from "./patient-summary";
 export * from "./phone-input";
 export * from "./agenda";
+export * from "./availability-text";
+export * from "./service-summary";

@@ -43,6 +43,9 @@ function argentine(national: string): PhoneInputResult {
  *  3. Sin "+" (se asume Argentina):
  *     - 13 dígitos que empiezan con "549" y nacional válido → igual.
  *     - 12 dígitos que empiezan con "54" y nacional válido (fijo sin el 9) → "549" + nacional.
+ *     - 12 o más dígitos que empiezan con "54" (HU-017b-2, R3: "54 9 351 15 555 2345"): se trata como
+ *       el "+54" de arriba (se saca el "9", el troncal y el "15"); si queda un nacional válido, listo.
+ *       Un nacional argentino nunca empieza con "54", así que no se confunde con uno.
  *     - Si no: quitarTroncal (un "0" adelante) y quitar15; si queda un nacional válido → "549" + nacional.
  *     - Cualquier otra cosa → "invalid" (un número de otro país se escribe con "+": Q8).
  *  Nacional argentino válido: 10 dígitos que empiezan con "11", "2" o "3".
@@ -70,6 +73,12 @@ export function parsePhoneInput(raw: string): PhoneInputResult {
   }
   if (digits.length === 12 && digits.startsWith("54") && isArgentineNational(digits.slice(2))) {
     return { ok: true, digits: `549${digits.slice(2)}` };
+  }
+  if (digits.length >= 12 && digits.startsWith("54")) {
+    let national = digits.slice(2);
+    if (national.startsWith("9")) national = national.slice(1);
+    const withCountry = argentine(national);
+    if (withCountry.ok) return withCountry;
   }
   return argentine(digits);
 }

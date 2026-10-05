@@ -66,7 +66,8 @@ export function updateService(
     price: number;
     durationMin: number;
     color: string;
-    active: boolean;
+    /** HU-017b-2 (Q17): opcional; si no viene, no se toca. El form de edición no lo manda. */
+    active?: boolean;
   } & DepositFields &
     PrepFields &
     ReasonFields &

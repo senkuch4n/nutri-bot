@@ -22,3 +22,19 @@ ningún turno real.
 ## Observaciones
 - Al abrir el panel del turno el foco inicial cae en "Editar motivo" (anillo visible); sería más natural en el título
   o en cerrar. Menor: pasa a 017b-2 (R1).
+
+# Recorrido HU-017b-2 (orquestador, 2026-10-04)
+
+Solo lectura. Datos intactos: `AvailabilityRule` 17 filas (9 activas, 8 inactivas; el "16/9 inactivas" de la SDD era un
+conteo errado), `Service` 9, `OutboundMessage` 12; el implementer comparó un hash de todas las filas antes/después.
+
+## OK
+- `/disponibilidad`: "Tu horario de todas las semanas y los días especiales", lista por día con solo las 9 reglas
+  activas ("de 9:00 a 13:00 ›"), "Agregar horario" por día, "Domingo · No atendés", "Días especiales" vacío con su
+  explicación y "Agregar excepción".
+- `/servicios`: "Lo que el bot les ofrece a tus pacientes", "Activos (6)" y "Pausados (3)", precio destacado, resumen en
+  una línea, "Editar" y switch "Lo ofrece el bot". Consola sin errores en las dos.
+
+## Observación (dato, no defecto)
+- El servicio "Antropometría" tiene la seña fija guardada como **$ 19.999,73** (editado el 2026-10-03). Se muestra
+  bien; avisarle al usuario por si fue un error de carga.

@@ -15,8 +15,8 @@
   ],
   "entregas": {
     "017b-1": "aprobada (2026-10-04, 1ª revisión)",
-    "017b-2": "implementando",
-    "017b-3": "pendiente",
+    "017b-2": "aprobada (2026-10-04, 1ª revisión)",
+    "017b-3": "implementando",
     "017b-4": "pendiente"
   },
   "modelo": "opus",
@@ -26,5 +26,5 @@
     "web-design-guidelines"
   ],
   "modelo_reviewer": "opus",
-  "entrega_actual": "017b-2"
+  "entrega_actual": "017b-3"
 }

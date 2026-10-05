@@ -130,6 +130,14 @@ export function AppointmentDetailSheet({
           // Un clic dentro del calendario elige otro turno o una franja: no cierra el panel.
           if (interactionAreaRef?.current?.contains(e.target as Node)) e.preventDefault();
         }}
+        onOpenAutoFocus={(e) => {
+          // HU-017b-2 (R1): el foco inicial va al título del panel (el nombre), no a "Editar motivo".
+          const title = (e.target as HTMLElement | null)?.querySelector<HTMLElement>("[data-appointment-title]");
+          if (title) {
+            e.preventDefault();
+            title.focus();
+          }
+        }}
         onCloseAutoFocus={(e) => {
           const el = returnFocusRef?.current;
           if (el?.isConnected) {
@@ -336,7 +344,13 @@ function AppointmentBody({
   return (
     <>
       <SheetHeader>
-        <SheetTitle>{appt.patientLabel}</SheetTitle>
+        <SheetTitle
+          data-appointment-title=""
+          tabIndex={-1}
+          className="rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {appt.patientLabel}
+        </SheetTitle>
         <SheetDescription>
           {appt.serviceName} · {capitalizeFirst(whenLabel)}
         </SheetDescription>

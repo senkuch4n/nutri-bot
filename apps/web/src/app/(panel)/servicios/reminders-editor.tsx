@@ -10,6 +10,7 @@ import {
   type ServiceReminder,
   type ServiceReminderError,
 } from "@nutri-bot/core";
+import { Switch } from "@/components/primitives/switch";
 import { Button, Input, Select } from "@/components/ui";
 
 interface Row {
@@ -109,23 +110,21 @@ export function RemindersEditor({
   return (
     <div className="space-y-3">
       <input type="hidden" name="reminders" value={JSON.stringify(payload)} />
-      <div>
-        <p className="text-sm font-medium">Recordatorios</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          El bot le recuerda el turno al paciente por WhatsApp. Podés poner hasta 3.
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
+      {/* HU-017b-2: el título "Recordatorios" lo pone el grupo del formulario. */}
+      <div className="space-y-1 text-footnote text-muted-foreground">
+        <p>El bot le recuerda el turno al paciente por WhatsApp. Podés poner hasta 3.</p>
+        <p>
           El que pide confirmar le pregunta al paciente si va a venir (sí/no). Si responde que no, el turno se
           cancela solo.
         </p>
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+        <p className="rounded-lg border border-dashed px-3 py-2.5 text-callout text-muted-foreground">
           Los turnos de este servicio no van a recibir recordatorios.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-3">
           {rows.map((row, index) => {
             const n = index + 1;
             const error = touched.has(row.id) || showErrors ? rowError(index) : undefined;
@@ -151,41 +150,43 @@ export function RemindersEditor({
                     aria-invalid={error ? true : undefined}
                     aria-describedby={error ? errorId : undefined}
                     data-reminder-amount={index}
-                    className="w-24"
+                    className="h-11 w-20 tabular-nums"
                   />
                   <Select
                     value={row.unit}
                     onChange={(e) => update(row.id, { unit: e.currentTarget.value as ReminderUnit })}
                     aria-label={`Unidad del recordatorio ${n}`}
-                    className="w-28"
+                    className="h-11 w-28"
                   >
                     <option value="DAYS">días</option>
                     <option value="HOURS">horas</option>
                   </Select>
-                  <span className="text-sm text-muted-foreground">antes</span>
-                  <label htmlFor={confirmId} className="flex min-h-9 cursor-pointer items-center gap-2 text-sm sm:ml-2">
-                    <input
-                      id={confirmId}
-                      type="checkbox"
-                      checked={row.asksConfirmation}
-                      onChange={(e) => update(row.id, { asksConfirmation: e.currentTarget.checked })}
-                      className="h-4 w-4 accent-primary"
-                    />
-                    Pide confirmar (sí/no)
-                  </label>
+                  <span className="text-callout text-muted-foreground">antes</span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     onClick={() => remove(row.id)}
                     aria-label={`Quitar recordatorio ${n}`}
-                    className="ml-auto"
+                    title={`Quitar recordatorio ${n}`}
+                    className="ml-auto size-11 text-muted-foreground hover:text-destructive"
                   >
                     <Trash2 aria-hidden />
                   </Button>
+                  {/* HU-017b-2: los sí/no son switches. */}
+                  <div className="flex min-h-11 w-full items-center gap-3">
+                    <Switch
+                      id={confirmId}
+                      checked={row.asksConfirmation}
+                      onCheckedChange={(checked) => update(row.id, { asksConfirmation: checked })}
+                    />
+                    <label htmlFor={confirmId} className="cursor-pointer text-callout">
+                      Pide confirmar (sí/no)
+                    </label>
+                  </div>
                 </div>
                 {error ? (
-                  <p id={errorId} className="mt-1 text-sm text-destructive">
+                  <p id={errorId} className="mt-1 text-footnote text-destructive">
                     {error}
                   </p>
                 ) : null}
@@ -196,15 +197,14 @@ export function RemindersEditor({
       )}
 
       {listError && (showErrors || listError === SERVICE_REMINDERS_TEXT.tooMany) ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-footnote text-destructive">
           {listError}
         </p>
       ) : null}
 
       <Button
         type="button"
-        variant="secondary"
-        size="sm"
+        variant="tinted"
         onClick={add}
         disabled={full}
         title={full ? SERVICE_REMINDERS_TEXT.tooMany : undefined}
