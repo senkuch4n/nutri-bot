@@ -4,7 +4,7 @@
   "slug": "rediseno-apple-portal",
   "titulo": "Rediseño Apple (4/5): portal del paciente (inicio, evolución, plan, diario; sheets arrastrables)",
   "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
-  "estado": "en_arquitectura",
+  "estado": "implementando",
   "intentos_revision": 0,
   "hu": "docs/hu-017d-portal.md",
   "sdd": "Refactorizaciones/017d-portal.md",
@@ -14,8 +14,17 @@
     "ui"
   ],
   "entregas": {
-    "017d-1": "en_arquitectura",
+    "017d-1": "implementando",
     "017d-2": "pendiente",
     "017d-3": "pendiente (mergea feat/hu-018d-medidas-caseras)"
-  }
+  },
+  "modelo": "opus",
+  "skills": [
+    "ui-ux-pro-max",
+    "apple-design",
+    "web-design-guidelines",
+    "mblode-agent-skills-ui-animation"
+  ],
+  "modelo_reviewer": "opus",
+  "entrega_actual": "017d-1"
 }

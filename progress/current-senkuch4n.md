@@ -258,3 +258,4 @@ orquestador, para que las revise a la mañana:
 - HU-017b-4: arreglo de hidratación (0aec47b); recorrido OK. → `en_revision` (reviewer Opus).
 - HU-017b-4 **aprobada**. HU-017b → `aprobada`. PR encadenado sobre #37. → HU-017d `afinando` (rama feat/hu-017d-portal encadenada).
 - HU-017d afinada y validada (D1–D20 salvo D14: 017d-3 mergea la rama de 018d en vez de esperar develop). → `en_arquitectura` (architect Opus + ui).
+- HU-017d SDD lista (Refactorizaciones/017d-portal.md; Q1–Q16 aceptadas). → `implementando` 017d-1 (Opus).
