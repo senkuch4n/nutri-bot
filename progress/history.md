@@ -451,3 +451,7 @@
 ## HU-017b-2 — Disponibilidad y servicios (aprobada 2026-10-04, senkuch4n)
 - Disponibilidad como lista por día con solo las reglas activas, editar horario, superposición bloqueada, excepciones en palabras con Deshacer; servicios con precio destacado, Activos/Pausados, "Lo ofrece el bot" con Deshacer, formulario por grupos y arreglo de z.coerce.boolean (no reactiva servicios pausados).
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. El reviewer encontró un bug del MVP (excepciones aplicadas el día anterior en el bot) → tarea directa, PR #35.
+
+## HU-017b-3 — Mensajes, pagos y avisos (aprobada 2026-10-04, senkuch4n)
+- Mensajes en tarjetas con "Ya respondí" + Deshacer; pagos por mes en la zona de la profesional con glosario y pago manual con monto precargado y turnos que vinieron; comunicado solo a personas (16), con vista previa + Deshacer diferido; cola en palabras con error simple. R4–R6 de 017b-2.
+- Reviewer: CHANGES_REQUESTED en la 1ª (doble clic en "Ya respondí" se escapaba al Deshacer) → APPROVED en la ronda 2. Ningún mensaje real; OutboundMessage 12 antes y después.

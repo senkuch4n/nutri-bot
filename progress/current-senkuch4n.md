@@ -253,3 +253,4 @@ orquestador, para que las revise a la mañana:
 - HU-017b-3 done (7 commits); recorrido OK (comunicado solo a 16 personas). → `en_revision` (reviewer Opus).
 - HU-017b-3 reviewer: CHANGES_REQUESTED (doble clic en 'Ya respondí': el Deshacer no evita el commit). → `rechazada_reintentando` (intento 1/2).
 - HU-017b-3 ronda 2 done. → `en_revision` (ronda 2).
+- HU-017b-3 **aprobada** (ronda 2). PR encadenado sobre #36. → 017b-4 `implementando` (rama feat/hu-017b4-ajustes; Opus).
