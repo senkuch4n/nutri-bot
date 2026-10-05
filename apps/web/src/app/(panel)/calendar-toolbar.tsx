@@ -57,7 +57,7 @@ export function CalendarToolbar({
         ref={titleRef}
         tabIndex={-1}
         aria-live="polite"
-        className="col-span-2 -order-1 min-h-7 min-w-0 text-balance text-title-3 focus-visible:outline-none sm:order-none sm:flex-1 sm:px-2"
+        className="col-span-2 -order-1 min-h-7 min-w-0 rounded-md text-balance text-title-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:order-none sm:flex-1 sm:px-2"
       >
         {title}
       </h2>

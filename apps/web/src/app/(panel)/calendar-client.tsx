@@ -168,8 +168,9 @@ export function CalendarClient({
       { todayKey, wide: m.wide },
     );
     lastQueryRef.current = searchString;
-    if (api.view.type !== FC_VIEW[route.view]) api.changeView(FC_VIEW[route.view], route.dayKey);
-    else api.gotoDate(route.dayKey);
+    // changeView(tipo, fecha) en FullCalendar 6 deja como fecha actual el inicio del período: se separa.
+    if (api.view.type !== FC_VIEW[route.view]) api.changeView(FC_VIEW[route.view]);
+    api.gotoDate(route.dayKey);
   }, [searchString, searchParams, todayKey]);
 
   const refetch = useCallback(() => {
