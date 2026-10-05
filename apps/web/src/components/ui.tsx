@@ -187,12 +187,18 @@ export function Metric({
   decimals = 1,
   size = "md",
   trend,
+  valueText,
+  caption,
 }: {
   label: string;
   value: number | null | undefined;
   unit?: string;
   decimals?: number;
   size?: "md" | "lg";
+  /** HU-017b-3 (opcional): el valor ya formateado (p. ej. "$ 245.000") en lugar de `fmt(value)` + unidad. */
+  valueText?: string;
+  /** HU-017b-3 (opcional): renglón gris debajo del número ("12 Mercado Pago · 5 efectivo o transferencia"). */
+  caption?: ReactNode;
   /** `display: "label"` (HU-017c-2, opcional): muestra `label` como texto visible en lugar del delta
    *  ("Bajó 6,8 kg desde el 11/05"). Por defecto, el delta con signo, como siempre. */
   trend?: {
@@ -230,6 +236,8 @@ export function Metric({
       <p className={cn("mt-0.5 tabular-nums", size === "lg" ? "text-metric" : "text-metric-md")}>
         {empty ? (
           <span className="text-tertiary">—</span>
+        ) : valueText !== undefined ? (
+          valueText
         ) : (
           <>
             {fmt(value)}
@@ -252,6 +260,7 @@ export function Metric({
           )}
         </p>
       ) : null}
+      {caption ? <p className="mt-0.5 text-footnote text-muted-foreground">{caption}</p> : null}
     </div>
   );
 }

@@ -1,12 +1,15 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { formatPrice } from "@nutri-bot/core";
+import { PAYMENT_TEXT, formatPrice } from "@nutri-bot/core";
+import { SegmentedControl } from "@/components/segmented-control";
 import { Button, EmptyState, Field, FormError, Input, Select } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { registerManualPaymentAction, type PaymentFormState } from "./actions";
 
 const initial: PaymentFormState = { ok: false };
+
+type Kind = "FULL" | "DEPOSIT";
 
 export interface AppointmentOption {
   id: string;
@@ -14,12 +17,19 @@ export interface AppointmentOption {
   priceSnapshot: string;
   /** Opcional (017b-1): para el toast "Pago registrado: $ 15.000 de Brenda Yebara". */
   patientLabel?: string;
+  /** Opcional (017b-3): seña configurada del servicio; se precarga al elegir "Seña". */
+  depositAmount?: string;
 }
 
 /** "15000.00" → "15000" (el input numérico arranca con el precio del turno). */
 function amountFromPrice(priceSnapshot: string | undefined): string {
   const n = Number(priceSnapshot);
   return priceSnapshot !== undefined && Number.isFinite(n) ? String(n) : "";
+}
+
+function defaultAmount(option: AppointmentOption | undefined, kind: Kind): string {
+  if (kind === "DEPOSIT" && option?.depositAmount) return amountFromPrice(option.depositAmount);
+  return amountFromPrice(option?.priceSnapshot);
 }
 
 export function ManualPaymentForm({
@@ -42,8 +52,12 @@ export function ManualPaymentForm({
       ? defaultAppointmentId
       : appointments[0]?.id;
   const [appointmentId, setAppointmentId] = useState(firstId ?? "");
+  const [kind, setKind] = useState<Kind>("FULL");
   const [amount, setAmount] = useState(() =>
-    amountFromPrice(appointments.find((a) => a.id === firstId)?.priceSnapshot),
+    defaultAmount(
+      appointments.find((a) => a.id === firstId),
+      "FULL",
+    ),
   );
 
   // Se lee en el efecto sin ser dependencia: los consumidores pasan callbacks inline.
@@ -55,20 +69,17 @@ export function ManualPaymentForm({
     if (!state.ok) return;
     const { onDone: done, appointments: list, appointmentId: id, currency: cur } = latest.current;
     const patientLabel = list.find((a) => a.id === id)?.patientLabel;
-    const kind = state.kind ?? "FULL";
+    const paidKind = state.kind ?? "FULL";
     const paid = state.amount ?? 0;
-    notify.saved(patientLabel && cur ? `Pago registrado: ${formatPrice(paid, cur)} de ${patientLabel}` : "Pago registrado");
-    done?.({ kind, amount: paid });
+    notify.saved(patientLabel && cur ? PAYMENT_TEXT.registered(formatPrice(paid, cur), patientLabel) : "Pago registrado");
+    done?.({ kind: paidKind, amount: paid });
   }, [state]);
 
   if (appointments.length === 0) {
-    return (
-      <EmptyState
-        title="No hay turnos para asociar"
-        description="Tiene que haber un turno confirmado entre hace 7 días y dentro de 7 días."
-      />
-    );
+    return <EmptyState title={PAYMENT_TEXT.noAppointments} />;
   }
+
+  const selected = appointments.find((a) => a.id === appointmentId);
 
   return (
     <form action={action} className="grid gap-4">
@@ -76,10 +87,11 @@ export function ManualPaymentForm({
         <Select
           name="appointmentId"
           value={appointmentId}
+          className="h-11"
           onChange={(e) => {
             const id = e.target.value;
             setAppointmentId(id);
-            setAmount(amountFromPrice(appointments.find((a) => a.id === id)?.priceSnapshot));
+            setAmount(defaultAmount(appointments.find((a) => a.id === id), kind));
           }}
         >
           {appointments.map((a) => (
@@ -89,28 +101,41 @@ export function ManualPaymentForm({
           ))}
         </Select>
       </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Tipo">
-          <Select name="kind" defaultValue="FULL">
-            <option value="FULL">Pago total</option>
-            <option value="DEPOSIT">Seña</option>
-          </Select>
-        </Field>
-        <Field label="Monto">
-          <Input
-            type="number"
-            name="amount"
-            step="0.01"
-            min="0"
-            inputMode="decimal"
-            required
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-          />
-        </Field>
+      <div className="grid gap-2">
+        <span aria-hidden className="text-subheadline font-medium">
+          Tipo
+        </span>
+        <input type="hidden" name="kind" value={kind} />
+        <SegmentedControl<Kind>
+          value={kind}
+          onValueChange={(next) => {
+            setKind(next);
+            setAmount(defaultAmount(selected, next));
+          }}
+          aria-label="Tipo de pago"
+          size="lg"
+          fullWidth
+          options={[
+            { value: "FULL", label: PAYMENT_TEXT.kind.FULL },
+            { value: "DEPOSIT", label: PAYMENT_TEXT.kind.DEPOSIT },
+          ]}
+        />
       </div>
+      <Field label={currency ? `Monto (${currency})` : "Monto"}>
+        <Input
+          type="number"
+          name="amount"
+          step="0.01"
+          min="0"
+          inputMode="decimal"
+          required
+          className="h-11 tabular-nums"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+      </Field>
       <div className="flex items-center justify-end gap-3 pt-2">
-        <Button type="submit" loading={pending}>
+        <Button type="submit" size="lg" loading={pending}>
           {pending ? "Guardando…" : "Registrar pago"}
         </Button>
       </div>
