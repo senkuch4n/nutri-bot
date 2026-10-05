@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { AnimatePresence, m } from "motion/react";
+import { useState, type ReactNode } from "react";
+import { AnimatePresence, m, useIsPresent } from "motion/react";
 import { ImageOff, Trash2 } from "lucide-react";
 import { PORTAL_DIARY_TEXT as T } from "@nutri-bot/core";
 import { deleteDiaryEntryAction } from "@/app/(portal)/portal/diario/actions";
@@ -57,15 +57,7 @@ export function DiaryList({ groups }: { groups: DiaryGroupRow[] }) {
       <div className="space-y-6">
         <AnimatePresence initial={false}>
           {visible.map((group) => (
-            <m.section
-              key={group.dayKey}
-              layout="position"
-              aria-labelledby={`diario-dia-${group.dayKey}`}
-              initial={enter}
-              animate={shown}
-              exit={{ opacity: 0, transition: { duration: 0.15 } }}
-              transition={springs.standard}
-            >
+            <DiaryGroupSection key={group.dayKey} labelledBy={`diario-dia-${group.dayKey}`}>
               <h2
                 id={`diario-dia-${group.dayKey}`}
                 className="mb-2 px-4 text-subheadline font-semibold text-muted-foreground"
@@ -75,25 +67,17 @@ export function DiaryList({ groups }: { groups: DiaryGroupRow[] }) {
               <ul className="overflow-hidden rounded-xl bg-card shadow-card more-contrast:border more-contrast:border-input">
                 <AnimatePresence initial={false}>
                   {group.entries.map((entry) => (
-                    <m.li
-                      key={entry.id}
-                      layout="position"
-                      initial={enter}
-                      animate={shown}
-                      exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                      transition={springs.standard}
-                      className="border-b border-border px-4 py-3 last:border-b-0"
-                    >
+                    <DiaryListItem key={entry.id}>
                       <DiaryEntryItem
                         entry={entry}
                         onDelete={() => remove(entry)}
                         onOpenPhoto={() => setPhoto({ id: entry.id, title: `${group.label}, ${entry.timeLabel}` })}
                       />
-                    </m.li>
+                    </DiaryListItem>
                   ))}
                 </AnimatePresence>
               </ul>
-            </m.section>
+            </DiaryGroupSection>
           ))}
         </AnimatePresence>
       </div>
@@ -105,6 +89,43 @@ export function DiaryList({ groups }: { groups: DiaryGroupRow[] }) {
         }}
       />
     </>
+  );
+}
+
+/** Grupo de un día. Igual que la fila: entra con la transición y, al quedar vacío, se funde inerte. */
+function DiaryGroupSection({ labelledBy, children }: { labelledBy: string; children: ReactNode }) {
+  const isPresent = useIsPresent();
+  return (
+    <m.section
+      layout="position"
+      aria-labelledby={labelledBy}
+      initial={enter}
+      animate={shown}
+      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+      transition={springs.standard}
+      inert={!isPresent || undefined}
+    >
+      {children}
+    </m.section>
+  );
+}
+
+/** Fila animada. Mientras se funde al borrarla queda `inert`: un segundo toque no le llega ni le roba
+ *  el foco al título (el doble toque en "Borrar"). */
+function DiaryListItem({ children }: { children: ReactNode }) {
+  const isPresent = useIsPresent();
+  return (
+    <m.li
+      layout="position"
+      initial={enter}
+      animate={shown}
+      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+      transition={springs.standard}
+      inert={!isPresent || undefined}
+      className="border-b border-border px-4 py-3 last:border-b-0"
+    >
+      {children}
+    </m.li>
   );
 }
 
