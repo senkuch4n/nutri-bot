@@ -14,7 +14,8 @@ import { useConfirm, type ConfirmOptions } from "@/components/confirm";
  */
 export function useUnsavedChangesGuard(
   dirty: boolean,
-  confirmOptions: { title: string; description: string; confirmLabel: string },
+  /** `cancelLabel` (HU-017b-2, opcional): texto de la opción segura ("Seguir editando"). */
+  confirmOptions: { title: string; description: string; confirmLabel: string; cancelLabel?: string },
 ): { guardNavigation: (href: string) => Promise<void> } {
   const confirm = useConfirm();
   const router = useRouter();
