@@ -18,3 +18,16 @@ Portal de María González con un token de 60 min generado localmente (no se gua
 ## Nota
 - Para mirar la ficha del panel en runtime, el implementer armó una cookie de sesión local de Auth.js con AUTH_SECRET
   (15 min, sin escribir en la base, borrada al terminar).
+
+# Recorrido HU-017d-2 (orquestador, 2026-10-05)
+
+Solo lectura sobre el diario de María González (no se anotó nada). `Patient` 21 al final (la paciente de prueba del
+implementer se borró).
+
+## OK
+- `/portal/diario`: "Tu diario · Anotá lo que comés, con foto si querés. Tu nutricionista lo ve.", "Anotar comida",
+  vacío "Todavía no anotaste nada". Título de pestaña "Tu espacio". Consola sin errores.
+- "Anotar comida" abre el sheet (lateral en escritorio): "¿Qué comiste?" con ejemplo, "Elegir foto", "Guardar"; Esc
+  cierra sin guardar.
+- Alta con foto, foto grande, borrar con Deshacer, sheet arrastrable y aviso al recargar con borrado pendiente: los
+  probó el implementer en runtime con su paciente de prueba (progress/impl_HU-017d.md).
