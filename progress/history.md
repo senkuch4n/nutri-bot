@@ -463,3 +463,7 @@
 ## HU-017d-1 — Portal: acceso, inicio y evolución (aprobada 2026-10-05, senkuch4n)
 - Link vencido propio, saludo grande, próximo turno destacado (y con seña pendiente), tarjetas tocables, conteo del diario, botón WhatsApp solo con teléfono real; evolución con peso y altura sin juicios de color, historial sin notas. Arregla el gráfico de peso con barras en 0 (animación en pestañas ocultas) y el título del portal.
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión.
+
+## HU-017d-2 — Portal: diario (aprobada 2026-10-05, senkuch4n)
+- "Anotar comida" en un sheet arrastrable con foto achicada en el celular, lista por día, foto grande, borrar con Deshacer idempotente; los otros gráficos del panel tampoco animan (R1).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión.
