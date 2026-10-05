@@ -489,3 +489,7 @@
 ## HU-018d-1b — Stepper y conversión de unitHint (aprobada 2026-10-04, senkuch4n)
 - Stepper de cantidad para ítems en medida casera, aviso "Tenías anotado" + "Pasar a medida" (prellena si el texto es legible), `unitHint` fuera del formulario, script `measures:convert-hints` (en seco en dev: 77 a crear, 2 ilegibles; aplicarlo queda para el usuario), R2–R4 de la revisión de 1a.
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. HU-018d cerrada (018d-2 opcional, solo si la nutricionista la pide).
+
+## HU-017d-3 — Portal: plan (aprobada 2026-10-05, senkuch4n) · HU-017d cerrada
+- Plan del portal sin kcal ni macros, "Hoy" en el selector de días, comidas legibles, "Ver receta" como fila entera con sheet inferior y medida casera (rama con merge de 018d).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. HU-017d completa (PR #39 → #40 → #41; #41 después de #28).

@@ -290,3 +290,4 @@ orquestador, para que las revise a la mañana:
 - HU-017d-2 **aprobada**. PR encadenado sobre #39. → 017d-3 `implementando` (rama feat/hu-017d3-plan = 017d-2 + merge de feat/hu-018d-medidas-caseras).
 - 017d-3: merge de feat/hu-018d-medidas-caseras en feat/hu-017d3-plan (conflicto solo en esta bitácora; se conservaron las dos partes).
 - HU-017d-3 done; recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017d-3 **aprobada**. HU-017d → `aprobada`. PR encadenado sobre #40 (y después de #28).
