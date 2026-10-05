@@ -130,3 +130,39 @@ Las firmas coinciden con la SDD 4.1, 4.2, 4.3 y 4.5: `PORTAL_TEXT` (textos exact
   el mismo `PortalCardLink` que la de evolución, que sí se probó.
 - Las etiquetas del eje del gráfico usan la zona del navegador (`Intl.DateTimeFormat` sin `timeZone`, ya
   estaba así). El historial usa la zona de la profesional.
+
+### Correcciones del recorrido (ronda 1)
+
+- `9831216`, gráfico de peso con las barras en 0. **Causa:** Recharts avanza la animación de crecimiento de
+  `<Bar>` con `requestAnimationFrame`, y Chrome no da cuadros a una pestaña o ventana que no está en
+  primer plano (el Chrome del recorrido). Por eso las barras quedaban en su alto inicial, 0. Los valores
+  ya llegaban numéricos (`Number(...)` en el portal y en `evolution-series` del panel), y el dominio y
+  el contenedor estaban bien. Lo reproduje con `requestAnimationFrame` anulado: antes del arreglo, 0
+  rectángulos dibujados. **Arreglo** en `components/evolution-chart.tsx`, que comparten portal y panel:
+  `isAnimationActive={false}`, así el gráfico se dibuja ya con su alto final. Eso también cubre el
+  movimiento reducido (reemplaza el `useReducedMotionConfig` de `df85010`). Las filas salen de
+  `lib/evolution-chart-rows.ts` (`evolutionChartRows`, nuevo), que pasa `value` a número aunque llegue
+  un Decimal como string y descarta lo que no es finito. Su test es `lib/evolution-chart-rows.test.ts`
+  (3 tests). Las props no cambian.
+- `37cf2ac`, título de la pestaña. `generateMetadata` en `(portal)/layout.tsx` usa
+  `getPortalDocumentTitle()` (nuevo en `lib/shell.ts`, nunca tira) y `portalDocumentTitle()` (nuevo en
+  core, con 2 tests): da "Tu espacio — Lic. Daiana Ponce", y con nombre vacío o el "Nutricionista" del
+  seed sin título (regla Q1) da "Tu espacio". El panel sigue con "NutriBot — Panel". Las firmas del
+  contrato de la SDD no cambian: solo se suman funciones.
+- **Verificación:** `typecheck` en los 4 workspaces OK. `test` OK, 129 archivos y 2103 tests. `lint` de
+  web sin warnings. `verify.sh` dice "Arnés OK". `next build` y `next build --turbopack` en una copia,
+  exit 0. Runtime con `next start :3198` sobre los dos builds:
+  - Portal de María González (solo lectura, token local): las barras miden 166/162/158 px con etiquetas
+    78 / 76 / 74,5, igual con `requestAnimationFrame` anulado.
+  - Ficha del panel `/pacientes/<María>?tab=historial&vista=medidas`, con una cookie de sesión de Auth.js
+    armada en local con `AUTH_SECRET` para un mail de `ALLOWED_EMAILS` (sin login de Google, sin
+    escribir en la base y con vencimiento de 15 min): el gráfico de Peso da 166/162/158 px, con y sin
+    rAF.
+  - La pestaña del portal dice "Tu espacio" (en dev la profesional es el seed) y la del panel "NutriBot — Panel".
+  - Sin errores de consola ni del servidor.
+  - No se crearon datos. Se borraron la copia, playwright y los tokens.
+- **Pendiente para el orquestador:** los otros gráficos del panel (`ComparativeChart` y
+  `StudyComparisonChart`) siguen con la animación de Recharts, así que en una pestaña de fondo pueden
+  arrancar en 0 hasta que la pestaña se ve. Están fuera del pedido. El dev server de :3100 seguía
+  sirviendo el `<title>` viejo, probablemente por la caché de Turbopack: conviene reiniciarlo antes de
+  mirar el título.
