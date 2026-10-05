@@ -166,3 +166,142 @@ Las firmas coinciden con la SDD 4.1, 4.2, 4.3 y 4.5: `PORTAL_TEXT` (textos exact
   arrancar en 0 hasta que la pestaña se ve. Están fuera del pedido. El dev server de :3100 seguía
   sirviendo el `<title>` viejo, probablemente por la caché de Turbopack: conviene reiniciarlo antes de
   mirar el título.
+
+## 017d-2: diario (+ agregado R1)
+
+- **Estado:** done
+- **Rama:** `feat/hu-017d2-diario` (sale de la punta aprobada de 017d-1, `9ecdc30`). Sin push.
+- **Modelo:** Opus. Skills: ui-ux-pro-max, apple-design, mblode-agent-skills-ui-animation (criterios para
+  la entrada y la salida de filas, el sheet y la vuelta del arrastre) y web-design-guidelines (autochequeo).
+- **Sin migraciones ni cambios en `schema.prisma`, `packages/db`, `apps/bot` ni `messages.ts`** (T1, T3, T4).
+  `primitives/sheet.tsx` tampoco cambia: Q4 (4.6) ya entró en 017d-1 (`aefe6da`) y acá se verificó en runtime.
+
+### Commits
+
+| Commit | Fase |
+|---|---|
+| `16f13aa` | 1 core: `PORTAL_DIARY_TEXT`, `DiaryDayGroup`, `groupDiaryByDay` + 7 tests |
+| `89bfe1e` | 2 `lib/photo-resize.ts` y `lib/use-keyboard-inset.ts` + tests (10 y 4) |
+| `87e6fac` | 3 `diario/actions.ts` + `actions.test.ts` (15 tests) |
+| `150fca4` | 4 los 4 componentes, `page.tsx`, se borra `diary-form.tsx`, `PendingUnloadGuard` en el layout, link `?anotar=1` del inicio |
+| `1b7fb4f` | R1: `comparative-chart.tsx` y `study-comparison-chart.tsx` con `isAnimationActive={false}` |
+| `267d383` | Ajuste del runtime: la fila y el grupo que se funden al borrar quedan `inert` |
+| (este) | 5 verificación: esta sección |
+
+
+Entre la fase 3 y la 4 el `typecheck` de web no pasa (la página vieja usaba la firma vieja de
+`deleteDiaryEntryAction`). Es el orden de fases de la SDD; desde la fase 4 todo compila.
+
+### Contrato compartido
+
+Las firmas coinciden con 4.1–4.7 de 017d-2: `PORTAL_DIARY_TEXT` (textos exactos), `DiaryDayGroup<T>`,
+`groupDiaryByDay(entries, now, tz)`, `PHOTO_MAX_SIDE`, `PHOTO_MAX_BYTES`, `PHOTO_TARGET_BYTES`,
+`PHOTO_ALLOWED_TYPES`, `fitWithin`, `canUploadAsIs`, `PHOTO_ATTEMPTS`, `ResizeResult`,
+`resizePhotoForUpload`, `DiaryState`, `DiaryDeleteResult`, `addDiaryEntryAction(_prev, formData)`,
+`deleteDiaryEntryAction(id)`, `DiaryEntryRow`, `DiaryGroupRow`, `DiaryScreen({ groups, openOnMount })`,
+`DiaryEntrySheet({ open, onOpenChange })`, `DiaryList({ groups })`,
+`DiaryPhotoSheet({ entryId, title, onOpenChange })`, `useKeyboardInset(enabled)`, `keyboardInsetFrom(innerHeight, vv)`.
+Lo que se sumó en `diary-list.tsx` (`DIARY_TITLE_ID`, `diaryDeletionKey`, `visibleDiaryGroups`) son
+exports nuevos que no cambian ninguna firma.
+
+### Decisiones no obvias
+
+- **El ejemplo de fechas de la SDD no coincide con el calendario.** El 7/10/2026 es miércoles y el 2/10/2026
+  es **viernes** (la SDD dice "martes" y "Jueves 2 de octubre"). El test usa la fecha real: "Viernes 2 de
+  octubre". "Jueves 2 de octubre de 2025" sí es correcto (otro año). La función no tiene nada hardcodeado.
+- **`DiaryPhotoSheet.title`** es cuándo se anotó ("Hoy, 13:40"): va en `SheetDescription`, debajo del título fijo
+  "Foto de la comida" (4.5 dice "título + hora").
+- **Sin `SheetTrigger`:** "Anotar comida" es un `Button` con `onClick`. El foco vuelve igual al disparador porque
+  el `Sheet` de 017a guarda el elemento con foco al abrir (`useOverlayOpenInfo`). Verificado en runtime: después
+  de Esc, el foco está en "Anotar comida".
+- **El `EmptyState` no repite el botón "Anotar comida":** el botón lleno de arriba siempre está visible, y dos
+  botones iguales seguidos sobran. El escenario "Diario vacío" se cumple igual (texto + botón).
+- **Doble submit:** además del `disabled` del botón, hay un ref `submitting`, y mientras guarda el sheet no se
+  cierra (`requestOpenChange` lo ignora).
+- **La foto que termina de prepararse después de cerrar el sheet se descarta** (contador de "generación").
+  La foto se codifica sobre un fondo blanco, así un PNG transparente no queda negro en el JPEG.
+- **Borrado idempotente:** "no existe" da `ok: true`, y también un `P2025` de Prisma (borrado entre el
+  `findUnique` y el `delete`, p. ej. desde otra pestaña).
+- **Filas y grupos que se van quedan `inert`** (`useIsPresent`). En el runtime, el segundo clic del doble toque
+  caía en la fila que se estaba fundiendo y le sacaba el foco al título. Ahora no le llega. Si el segundo toque
+  cae en una zona no enfocable, el foco puede ir al `body` (comportamiento del navegador), pero no hay un
+  segundo toast ni un segundo borrado.
+- **El grupo nuevo ("Hoy" cuando no había) entra con la transición:** el `AnimatePresence initial={false}` de
+  afuera anima el `section` nuevo. Si solo se animara el `li`, el primer registro de un día nuevo aparecería de
+  golpe, porque un `AnimatePresence` recién montado con `initial={false}` no anima a sus primeros hijos.
+  `layout="position"` evita que el texto se deforme cuando se corren las filas.
+- **T9:** (a) la página le pasa a `DiaryScreen` solo strings y booleanos, y los íconos se importan en el cliente;
+  (b) `?anotar=1` se limpia con `replaceUrlInRouter` (`replaceState(null, …)`); (c) `actions.ts` exporta solo
+  dos funciones async y dos `export type` propios; (d) la key es `diary:<id>`; (e) los ids son fijos con
+  prefijo `portal-` (`portal-diary-title`, `portal-diary-note-error`) o `diario-dia-<dayKey>`; (f) los grupos y
+  la hora se calculan en el servidor con `pro.timezone`.
+
+### Verificación
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` | core, db, bot y web en verde |
+| `npm run test` | 132 archivos, **2139 tests** OK (36 nuevos: core 7, photo-resize 10, keyboard-inset 4, actions 15) |
+| `npm run lint --workspace apps/web` | "No ESLint warnings or errors" |
+| `./ops/harness/verify.sh` | "Arnés OK" (el WARN del bot es porque cambió core; `apps/bot/**` sin diff) |
+| `next build` (webpack, copia en el scratchpad) | exit 0. Solo el warning de `jose`/Edge Runtime, que ya estaba |
+| `next build --turbopack` (misma copia) | "Compiled successfully", exit 0. Con `node_modules` como symlink Turbopack falla ("points out of the filesystem root"), así que la copia lleva `node_modules` clonados (`cp -c`) |
+
+**Runtime:** `next start -p 3198` + Chromium headless (playwright-core, 390×844 táctil y 1366×768), **sobre los dos
+builds: 49/49 chequeos OK en cada uno.** El dev server de :3100 no se tocó (sigue respondiendo 200).
+- Inicio: el botón "Anotar comida" tiene `href="/portal/diario?anotar=1"`. Al entrar, el sheet está abierto, la URL
+  queda en `/portal/diario` y `history.length` crece solo por la navegación (3→4, sin entrada extra).
+- Sheet: agarre visible y campo a **17 px**. Hay dos botones, "Sacar foto" (con un input `capture="environment"`)
+  y "Elegir de la galería". Guardar sin nada → "Escribí qué comiste o agregá una foto." y el sheet sigue abierto.
+- Foto **JPEG de 5,21 MB y 4032×3024** (generada en el scratchpad) → miniatura y "Quitar foto". En la base quedó con
+  **697 456 bytes, `image/jpeg`** y 1600 px de ancho.
+- Offline (`context.setOffline(true)`) → "No se pudo guardar. Probá de nuevo.", y el texto y la miniatura siguen
+  ahí. No se ve el error boundary.
+- Tocar afuera con texto → "¿Descartar lo que anotaste?" → "Seguir anotando" → el sheet sigue con el texto.
+- **Arrastre desde el agarre con texto (Q4):** el panel sigue al dedo (y de 410 a 830). Al soltar aparece la
+  pregunta. Con "Seguir anotando", **el panel vuelve exactamente arriba** (y = 410,0).
+- Guardar → "Guardando…" con el botón deshabilitado → toast "¡Listo! Ya lo anotaste." → el sheet se cierra → el
+  registro aparece bajo "Hoy". Entra con transición: un `MutationObserver` lo vio con opacidad inicial 0.
+- Grupos: "Hoy", "Ayer" y "Miércoles 30 de septiembre". La hora va en formato `H:mm`.
+- Miniatura → sheet "Foto de la comida", con la descripción "Hoy, 1:34" y la imagen cargada (`naturalWidth` 1600).
+  Se cierra con la X.
+- **Borrar con doble toque → la fila sale al instante y aparece un solo toast "Borraste el registro."** Durante
+  el plazo la base sigue teniendo la fila (count 1). "Deshacer" → "Listo, el registro volvió.", la fila vuelve y la
+  base sigue con 1.
+- Con un borrado pendiente, recargar → diálogo `beforeunload` (aceptado). Después de recargar, el registro sigue en
+  la base y en la lista: si se recarga, no se borra nada.
+- Un toque en "Borrar" → el foco va a "Tu diario" (`portal-diary-title`). Al vencer el plazo (8 s) → count 0, y la
+  fila no vuelve.
+- El HTML de `/portal/diario` pesa **32 KB** y no tiene bytes de fotos (no aparece `/9j/`).
+- A 1366 px: el sheet entra desde la derecha (448 px de ancho, alto completo), con un solo botón "Elegir foto" y el
+  foco en el campo. Esc sin texto lo cierra sin preguntar, y el foco vuelve a "Anotar comida".
+- La consola no muestra errores ni avisos de hidratación. Lo único es un 404 de `/favicon.ico`, que ya estaba y no
+  es de esta HU. En el log del servidor (los dos builds) no aparecen "cannot be passed", "Functions cannot be
+  passed" ni errores.
+- **No se probó en runtime:** R1, porque los gráficos del panel están detrás de Google. Es el mismo cambio de una
+  prop que `9831216`. Tampoco se probaron la cámara real, el teclado de iOS (Q5) ni el movimiento reducido del
+  sheet: quedan para el recorrido en Safari o en el simulador contra `next dev` (Q13).
+
+### Datos de prueba (creados y borrados por id)
+
+- El bot estaba apagado: `ps` no mostró ningún proceso de `apps/bot`.
+- Conteos de antes, `Patient|Appointment|EvolutionEntry|DiaryEntry|OutboundMessage`: `21|22|17|2|12`.
+- Se creó la paciente `hu017d2-paciente`, con el JID inventado `5493510017402@s.whatsapp.net` y el nombre "Prueba
+  Diario 017d". También se crearon `hu017d2-diario-ayer` y `hu017d2-diario-viejo`.
+- La UI creó 5 `DiaryEntry`, una por corrida: `cmuuraahr000163dm4wjcib5k`, `cmuurd2ca0001yraap9hx1agg`,
+  `cmuurdtdx0003yraavgc7q3lr`, `cmuurelt20005yraas4tn0weg` y `cmuurhdvw00017qo0ixeu7vt0`. Cada corrida borró la
+  suya con el flujo de Deshacer vencido.
+- Limpieza, solo por esos ids: 2 `DiaryEntry` (las de la UI ya no estaban) y 1 paciente. No se tocaron las
+  `DiaryEntry` de pacientes reales.
+- Conteos de después: `21|22|17|2|12`, iguales a los de antes.
+- El token estuvo solo en un archivo del scratchpad, que ya se borró. También se borraron la copia del build,
+  `playwright-core` y la foto de 5 MB. El `next start` de :3198 está apagado.
+
+### Para el orquestador / recorrido
+
+- Queda en el scratchpad de la sesión la captura `diario-1366.png`, junto con los logs `run-webpack.txt` y `run-turbo.txt`.
+- Para el recorrido en iPhone o en el simulador (`next dev`, Q13):
+  - "Guardar" tiene que quedar visible con el teclado abierto (Q5).
+  - Probar la cámara y la galería, incluida una foto HEIC.
+  - Revisar el movimiento reducido: solo fundido.
+  - D19 (3).
