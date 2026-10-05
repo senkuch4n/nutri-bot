@@ -2,15 +2,15 @@
 
 import { useCallback, useState } from "react";
 import { Plus } from "lucide-react";
-import { AVAILABILITY_TEXT, WEEKDAY_NAMES, exceptionDayLabel, exceptionLine } from "@nutri-bot/core";
+import { AVAILABILITY_TEXT, WEEKDAY_NAMES, exceptionDayLabel } from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
-import { Button, Card, PageHeader } from "@/components/ui";
-import { Modal } from "@/components/modal";
+import { Button, PageHeader } from "@/components/ui";
 import { useDeferredDelete, usePendingDeletions } from "@/lib/deferred-delete";
 import { WeeklySchedule, type Rule } from "./schedule";
 import { RangeSheet, suggestedRange, type RangeTarget } from "./range-sheet";
-import { ExceptionForm, ExceptionsList } from "./exceptions";
-import { deleteRuleAction } from "./actions";
+import { ExceptionsSection } from "./exceptions";
+import { ExceptionSheet } from "./exception-sheet";
+import { deleteExceptionAction, deleteRuleAction } from "./actions";
 
 const T = AVAILABILITY_TEXT;
 
@@ -26,6 +26,10 @@ export interface ExceptionData {
 
 export function ruleDeletionKey(id: string): string {
   return `rule:${id}`;
+}
+
+export function exceptionDeletionKey(id: string): string {
+  return `exception:${id}`;
 }
 
 export function DisponibilidadView({
@@ -44,6 +48,7 @@ export function DisponibilidadView({
   const deferredDelete = useDeferredDelete();
   const pending = usePendingDeletions();
   const visibleRules = rules.filter((r) => !pending.has(ruleDeletionKey(r.id)));
+  const visibleExceptions = exceptions.filter((e) => !pending.has(exceptionDeletionKey(e.id)));
 
   const openAdd = (weekday: number) => {
     const day = visibleRules.filter((r) => r.weekday === weekday);
@@ -78,6 +83,27 @@ export function DisponibilidadView({
     [confirm, deferredDelete],
   );
 
+  const deleteException = useCallback(
+    async (e: ExceptionData) => {
+      const label = exceptionDayLabel(e.dayKey, todayKey);
+      const ok = await confirm({
+        title: T.exceptionDeleteTitle(label.charAt(0).toLowerCase() + label.slice(1)),
+        description: T.exceptionDeleteDescription,
+        confirmLabel: "Borrar",
+        cancelLabel: "Volver",
+      });
+      if (!ok) return false;
+      deferredDelete({
+        key: exceptionDeletionKey(e.id),
+        message: T.exceptionDeleted,
+        undoneMessage: T.exceptionUndone,
+        commit: () => deleteExceptionAction(e.id),
+      });
+      return true;
+    },
+    [confirm, deferredDelete, todayKey],
+  );
+
   return (
     <div>
       <PageHeader
@@ -94,24 +120,19 @@ export function DisponibilidadView({
       <div className="grid gap-8 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
         <WeeklySchedule rules={visibleRules} onAdd={openAdd} onEdit={openEdit} />
 
-        <Card title="Excepciones" className="xl:sticky xl:top-8">
-          <ExceptionsList
-            exceptions={exceptions.map((e) => ({
-              id: e.id,
-              dateLabel: exceptionDayLabel(e.dayKey, todayKey),
-              detail: exceptionLine(e, todayKey),
-              reason: null,
-              blocked: e.type === "BLOCKED",
-            }))}
+        <div className="xl:sticky xl:top-8">
+          <ExceptionsSection
+            exceptions={visibleExceptions}
+            todayKey={todayKey}
+            onAdd={() => setExcOpen(true)}
+            onDelete={deleteException}
           />
-        </Card>
+        </div>
       </div>
 
       <RangeSheet target={rangeTarget} open={rangeOpen} onOpenChange={setRangeOpen} onDelete={deleteRule} />
 
-      <Modal open={excOpen} onClose={() => setExcOpen(false)} title="Nueva excepción">
-        <ExceptionForm onDone={() => setExcOpen(false)} />
-      </Modal>
+      <ExceptionSheet open={excOpen} onOpenChange={setExcOpen} todayKey={todayKey} />
     </div>
   );
 }
