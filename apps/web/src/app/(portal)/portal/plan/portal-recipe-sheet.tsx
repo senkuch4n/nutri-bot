@@ -3,25 +3,32 @@
 import { RECIPE_PICKER_TEXT } from "@nutri-bot/core";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/primitives/sheet";
 import { RecipeDetailBody } from "@/components/recipes/recipe-detail-body";
-import { Button } from "@/components/ui";
 import type { PortalRecipeView } from "@/lib/portal-recipe";
+import { useMediaQuery } from "@/lib/use-media-query";
+import { cn } from "@/lib/utils";
 
 /**
- * HU-018c-2 (SDD 7.6): "Ver receta" en el portal. Abre un panel a la derecha (pantalla completa en el
- * celular, se cierra arrastrando) con la receta completa: foto, ingredientes, preparación (abierta),
- * tips y "Fuente: …" (D3 = b). Sin macros: `PortalRecipeView` ni siquiera los trae.
+ * HU-018c-2 (SDD 7.6): "Ver receta" en el portal, con la receta completa: foto, ingredientes,
+ * preparación (abierta), tips y "Fuente: …". Sin macros: `PortalRecipeView` ni siquiera los trae.
+ * HU-017d-3 (D12, D13): en el celular es un sheet inferior con agarre (el encabezado también arrastra);
+ * desde 768 px, el panel a la derecha de 018c-2. `trigger` es un elemento que arma el cliente (la fila
+ * entera de la receta), nunca una función (T9a).
  */
-export function PortalRecipeSheet({ recipe }: { recipe: PortalRecipeView }) {
+export function PortalRecipeSheet({ recipe, trigger }: { recipe: PortalRecipeView; trigger: React.ReactElement }) {
+  const compact = useMediaQuery("(max-width: 767px)");
   return (
     <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="secondary" size="lg" className="w-full sm:w-auto" aria-haspopup="dialog">
-          {RECIPE_PICKER_TEXT.viewRecipe}
-          <span className="sr-only">: {recipe.name}</span>
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="right" className="w-full p-0 sm:max-w-lg">
-        <SheetHeader className="material-bar sticky top-0 z-10 border-b px-5 pb-4 pr-14 pt-5 text-left">
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      <SheetContent
+        side={compact ? "bottom" : "right"}
+        className={cn("theme-portal p-0", compact ? "pt-0" : "w-full sm:max-w-lg")}
+      >
+        <SheetHeader
+          className={cn(
+            "material-bar sticky top-0 z-10 border-b px-5 pb-4 pr-14 text-left",
+            compact ? "pt-7" : "pt-5",
+          )}
+        >
           <SheetTitle className="text-title-2">{recipe.name}</SheetTitle>
           <SheetDescription className="sr-only">{RECIPE_PICKER_TEXT.portalSheetDescription}</SheetDescription>
         </SheetHeader>
