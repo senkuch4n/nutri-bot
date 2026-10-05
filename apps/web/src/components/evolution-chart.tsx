@@ -1,5 +1,6 @@
 "use client";
 
+import { useReducedMotionConfig } from "motion/react";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/primitives/chart";
 import { chartDefaultColor } from "@/lib/chart-theme";
@@ -34,6 +35,8 @@ export function EvolutionChart({
   decimals?: number;
   showValues?: boolean;
 }) {
+  // HU-017d-1 (Q15): con movimiento reducido, las barras aparecen sin crecer.
+  const reduced = useReducedMotionConfig();
   const sorted = [...points].sort((a, b) => a.date.getTime() - b.date.getTime());
   if (sorted.length === 0) {
     return <p className="text-sm text-muted-foreground">Sin datos para graficar.</p>;
@@ -94,7 +97,7 @@ export function EvolutionChart({
             />
           }
         />
-        <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
+        <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={!reduced}>
           {rows.map((r, i) => (
             <Cell key={i} fill={color} fillOpacity={r.isLast ? 1 : 0.85} />
           ))}
