@@ -68,7 +68,8 @@ export function PaymentsTable({ rows, monthLabel }: { rows: PaymentRow[]; monthL
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Paciente o servicio"
+            placeholder="Paciente o servicio…"
+            spellCheck={false}
             className="h-11 pl-9"
             autoComplete="off"
           />
