@@ -248,3 +248,4 @@ orquestador, para que las revise a la mañana:
 - HU-017b SDD lista (Refactorizaciones/017b-agenda-gestion.md; Q1–Q24 aceptadas; hallazgos: botPaused no frena la cola, 9 reglas inactivas listadas, z.coerce.boolean en servicios). Bot apagado confirmado. → `implementando` 017b-1 (Opus).
 - HU-017b-1 done (8 commits); recorrido OK (progress/recorrido_HU-017b.md). → `en_revision` (reviewer Opus).
 - HU-017b-1 **aprobada**. PR encadenado sobre #33. → 017b-2 `implementando` (rama feat/hu-017b2-disponibilidad; Opus; con R1–R3).
+- HU-017b-2 done (8 commits); recorrido OK (seña de Antropometría guardada como 19.999,73: avisar al usuario). → `en_revision` (reviewer Opus).
