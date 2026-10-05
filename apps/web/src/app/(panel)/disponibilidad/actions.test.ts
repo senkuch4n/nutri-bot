@@ -62,6 +62,13 @@ describe("addRuleAction", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/disponibilidad");
   });
 
+  it("R4: si la base falla al crear → error inline, sin revalidar", async () => {
+    mocks.ruleCreate.mockRejectedValueOnce(new Error("db"));
+    const r = await addRuleAction(prev, form({ weekday: "1", startTime: "13:00", endTime: "15:00" }));
+    expect(r).toEqual({ ok: false, error: "No se pudo guardar. Probá de nuevo." });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("valida solo contra las reglas activas del mismo día", async () => {
     await addRuleAction(prev, form({ weekday: "1", startTime: "13:00", endTime: "15:00" }));
     expect(mocks.ruleFindMany).toHaveBeenCalledWith(

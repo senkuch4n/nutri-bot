@@ -131,7 +131,8 @@ function ExceptionForm({ todayKey, onDone }: { todayKey: string; onDone: () => v
       </label>
 
       {withHours ? (
-        <div className="grid grid-cols-2 gap-3">
+        // R5 (017b-3): `key` por tipo → al cambiar de tipo, Desde/Hasta vuelven a los valores del tipo nuevo.
+        <div key={kind} className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="mb-1.5 block text-subheadline font-medium text-foreground">{T.from}</span>
             <Input

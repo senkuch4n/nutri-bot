@@ -15,6 +15,10 @@ export const notify = {
   info: (message: string) => {
     toast(message);
   },
+  /** HU-017b-3 (R6): cierra el toast con ese id, si sigue en pantalla. */
+  dismiss: (id: string) => {
+    toast.dismiss(id);
+  },
   /**
    * HU-018b (SDD 7.9): toast con "Deshacer" (8 s). El botón de acción lleva 44 px de alto
    * (objetivo de toque); su color sale de `toastClassNames.actionButton`.
@@ -23,9 +27,11 @@ export const notify = {
    * plazo (`onAutoClose`) o se cierra (`onDismiss`). El clic en "Deshacer" no dispara ninguno de los
    * dos en sonner 2. Con el mouse encima el plazo se pausa.
    */
-  undo: (message: string, onUndo: () => void | Promise<void>, options?: { onExpire?: () => void }) => {
+  undo: (message: string, onUndo: () => void | Promise<void>, options?: { onExpire?: () => void; id?: string }) => {
     const onExpire = options?.onExpire;
     toast(message, {
+      // HU-017b-3 (R6, opcional): con el mismo `id`, el toast nuevo reemplaza al anterior (uno vivo por cosa).
+      ...(options?.id ? { id: options.id } : {}),
       duration: 8000,
       action: { label: "Deshacer", onClick: () => void onUndo() },
       classNames: { actionButton: "!h-11 !px-4 !text-callout !font-semibold" },
