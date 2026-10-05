@@ -4,10 +4,10 @@
   "slug": "rediseno-apple-portal",
   "titulo": "Rediseño Apple (4/5): portal del paciente (inicio, evolución, plan, diario; sheets arrastrables)",
   "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
-  "estado": "no_afinada",
+  "estado": "afinando",
   "intentos_revision": 0,
-  "hu": "docs/hu-rediseno-apple.md",
+  "hu": "docs/hu-017d-portal.md",
   "sdd": null,
-  "rama": null,
-  "notas": "Depende de HU-017a."
+  "rama": "feat/hu-017d-portal",
+  "notas": "Depende de HU-017a. Rama encadenada sobre feat/hu-017b4-ajustes. Afinada en modo autónomo (2026-10-05)."
 }
