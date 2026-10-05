@@ -5,7 +5,7 @@ import { es as esLocale } from "date-fns/locale";
 import { firstName } from "./agenda";
 import type { WeightPoint } from "./patient-summary";
 import { professionalDisplayName, professionalSignature, type ProfessionalIdentity } from "./professional-identity";
-import { formatTimeAgo } from "./relative-date";
+import { calendarDaysBetween, capitalizeFirst, formatTimeAgo } from "./relative-date";
 import { dayKeyInTz, formatInTimeZone, wallTimeToUtc } from "./time";
 import { classifyWhatsappJid } from "./whatsapp-contact";
 
@@ -230,4 +230,78 @@ export function portalEvolutionRows(
       weightText: e.weightKg == null ? null : formatWeightKg(e.weightKg),
       heightText: e.heightCm == null ? null : formatHeightMeters(e.heightCm),
     }));
+}
+
+// ---------------------------------------------------------------------------------------------------
+// HU-017d-2 (SDD 4.1 de 017d-2): diario.
+
+/** Textos exactos del diario del portal (HU §2.2 y §4). */
+export const PORTAL_DIARY_TEXT = {
+  title: "Tu diario",
+  subtitle: "Anotá lo que comés, con foto si querés. Tu nutricionista lo ve.",
+  addMeal: "Anotar comida",
+  sheetTitle: "Anotar comida",
+  noteLabel: "¿Qué comiste?",
+  notePlaceholder: "Ej: almuerzo, milanesa con ensalada y una fruta",
+  takePhoto: "Sacar foto",
+  pickFromGallery: "Elegir de la galería",
+  pickPhoto: "Elegir foto", // ≥ 768 px
+  preparingPhoto: "Preparando la foto…",
+  removePhoto: "Quitar foto",
+  save: "Guardar",
+  saving: "Guardando…",
+  saved: "¡Listo! Ya lo anotaste.",
+  errorEmpty: "Escribí qué comiste o agregá una foto.",
+  errorPhoto: "Esa foto no se puede usar. Probá con otra.",
+  errorSave: "No se pudo guardar. Probá de nuevo.",
+  errorNoAccess: "Tu link venció. Escribí portal por WhatsApp y te mandamos uno nuevo.",
+  discardTitle: "¿Descartar lo que anotaste?",
+  discardBody: "Lo que escribiste y la foto no se guardan.",
+  discardConfirm: "Descartar",
+  discardCancel: "Seguir anotando",
+  deleteLabel: "Borrar",
+  deleted: "Borraste el registro.",
+  undone: "Listo, el registro volvió.",
+  deleteError: "No se pudo borrar. Probá de nuevo.",
+  photoAlt: "Foto de la comida",
+  photoSheetTitle: "Foto de la comida",
+  emptyTitle: "Todavía no anotaste nada",
+} as const;
+
+export interface DiaryDayGroup<T> {
+  /** "yyyy-MM-dd" en tz */
+  dayKey: string;
+  /** "Hoy" | "Ayer" | "Jueves 2 de octubre" | "Jueves 2 de octubre de 2025" */
+  label: string;
+  entries: (T & { timeLabel: string })[]; // timeLabel "13:40" ("H:mm", formatInTimeZone)
+}
+
+function diaryDayLabel(dayKey: string, sample: Date, nowKey: string, tz: string): string {
+  const days = calendarDaysBetween(dayKey, nowKey);
+  if (days === 0) return "Hoy";
+  if (days === 1) return "Ayer";
+  const sameYear = dayKey.slice(0, 4) === nowKey.slice(0, 4);
+  const pattern = sameYear ? "EEEE d 'de' MMMM" : "EEEE d 'de' MMMM 'de' yyyy";
+  return capitalizeFirst(formatInTimeZone(sample, tz, pattern, { locale: esLocale }));
+}
+
+/** Agrupa por día calendario en tz. Grupos del día más nuevo al más viejo; dentro, por createdAt desc. */
+export function groupDiaryByDay<T extends { createdAt: Date }>(
+  entries: readonly T[],
+  now: Date,
+  tz: string,
+): DiaryDayGroup<T>[] {
+  const nowKey = dayKeyInTz(now, tz);
+  const sorted = entries.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const groups: DiaryDayGroup<T>[] = [];
+  for (const entry of sorted) {
+    const dayKey = dayKeyInTz(entry.createdAt, tz);
+    let group = groups[groups.length - 1];
+    if (!group || group.dayKey !== dayKey) {
+      group = { dayKey, label: diaryDayLabel(dayKey, entry.createdAt, nowKey, tz), entries: [] };
+      groups.push(group);
+    }
+    group.entries.push({ ...entry, timeLabel: formatInTimeZone(entry.createdAt, tz, "H:mm") });
+  }
+  return groups;
 }
