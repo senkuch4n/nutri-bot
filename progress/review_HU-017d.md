@@ -147,3 +147,59 @@ Ninguno.
 - **`max-h-[90dvh]` con `bottom = alto del teclado`** en iOS: `dvh` no se achica con el teclado, así que un contenido alto podría pasar el borde de arriba del visual viewport. Con el contenido de este sheet no debería pasar. Queda para el recorrido en Safari o el simulador (Q5), que todavía falta, igual que la cámara real, HEIC, el movimiento reducido del sheet y D19 (3).
 - **`somatochart.tsx:117`/`:127`** sigue con `isAnimationActive={!reduced}` y podría tener el mismo problema de las pestañas de fondo. R1 nombraba solo perímetros y comparación de estudios, así que queda fuera.
 - **R1 no se probó en runtime:** los gráficos están detrás de Google. Es una prop idéntica a la ya verificada en `evolution-chart`.
+
+---
+
+# Review — HU-017d, entrega 017d-3 (plan, con el merge de 018d)
+
+**Veredicto:** APPROVED
+
+Alcance revisado: `git diff 03cd797..HEAD` sin los archivos del arnés, más el merge `03cd797` en sí.
+Comandos que corrí yo: `npm run typecheck` (core, db, bot, web) dio exit 0. `npm run test` dio 151 archivos y 2368 tests, exit 0. `npm run lint --workspace apps/web` no dio warnings ni errores. `./ops/harness/verify.sh` dio exit 0, "Arnés OK". Su aviso "Se tocó el bot" sale de comparar contra `develop`: en `git diff 03cd797..HEAD` no hay nada de `apps/bot`.
+
+## Checkpoints
+- C1 backlog válido, 1 HU activa por responsable: [x]. `backlog/HU-017d.json` está en `en_revision`, `entrega_actual` 017d-3.
+- C1 bitácora refleja la HU: [x]. `progress/current-senkuch4n.md` registra el merge y 017d-3.
+- C1 no toca HU de la otra persona: [x]. El diff de 017d-3 no tiene archivos de imleticio. `lib/plan-pdf.tsx`, `/portal/plan/pdf`, `alimentos/**`, `planes/**`, `meals-editor.tsx`, `meal-view.ts` y `macro-totals.tsx` no tienen diff desde `03cd797`.
+- C1 verify.sh exit 0: [x]
+- C2 HU completa: [x]. `docs/hu-017d-portal.md`, §2.3, §4.3 y D1/D13–D16 resueltas.
+- C2 SDD con contrato: [x]. `Refactorizaciones/017d-portal.md` §4-3.
+- C2 firmas = contrato: [x]. `DaySelector.today?: Weekday` (`day-selector.tsx:33`). `PortalPlanView` sin `totals` y `weekly?: { today; loadedDays } | null` (`plan-view.tsx:21-30`). `PortalMealItems`, `PortalMealCard` y `PortalDayView` sin `dayTotals` (`portal-day-view.tsx`). `PortalRecipeSheet({ recipe, trigger: React.ReactElement })` (`portal-recipe-sheet.tsx:19`).
+- C3 lógica pura en core y sin duplicar domain: [x]. 017d-3 no agrega lógica nueva: reusa `recipePortionText`, `measureAmountText`, `formatGrams`, `itemsForDay` y `RECIPE_PICKER_TEXT` de 018, sin cambiarlos.
+- C3 schema/domain y consumidores: [x]. 017d-3 no los cambia. Los de 018 llegan con el merge y bot y web compilan.
+- C3 migraciones: [x]. 017d-3 no agrega ninguna. `food_measures` viene de 018d, que ya está aprobada.
+- C3 el portal solo expone datos propios: [x]. `page.tsx` sigue buscando el plan por `patient.id` de la cookie, con status ACTIVE, y `listPlanRecipePreviews(plan.id)` trae solo las recetas de ese plan. No hay ids en query ni en params.
+- C3 bot en silencio y textos: [x]. No aplica: el bot no tiene diff.
+- C3 sin console.log/TODO: [x]. El grep sobre las líneas agregadas da vacío.
+- C4 typecheck: [x]
+- C4 tests: [x]. Son 11 nuevos: 3 de `day-selector.test.tsx` y 8 de `portal-day-view.test.tsx`, y cubren todos los casos de §9-3. Core no cambia.
+- C4 bot simulado: [x]. No aplica.
+- C4 PDF: [x]. El PDF no cambia: solo cambió el botón (`tinted`, "Descargar plan (PDF)", `plan-view.tsx:112-121`). El implementer verificó `GET /portal/plan/pdf` con 200 `application/pdf`.
+- C5 impl: [x]. Es la sección 017d-3 de `progress/impl_HU-017d.md`.
+- C5 review: [x]
+- C5 sin scripts ni datos sueltos: [x]. `git status` no muestra archivos nuevos de la HU (los sin trackear son de antes y ajenos). La limpieza por id está documentada, con los conteos de antes y después iguales.
+
+## Lo que verifiqué punto por punto
+
+1. **El merge (`03cd797`).** `git show --cc 03cd797` muestra cambios de resolución solo en `progress/current-senkuch4n.md` y `progress/history.md`. Todo el código se mezcló solo, sin edición manual. En la bitácora quedaron las dos partes: entradas de 018c/018d y de 017c/017b/017d, más la línea del merge. `git grep` no encuentra marcadores de conflicto en el código. `packages/core/src/index.ts` exporta `./portal` al final y conserva los exports de 018 (T2). La rama `feat/hu-018d-medidas-caseras` coincide con `origin` (`aa9f3e6`) y todavía no está en `develop`, así que el merge corresponde (Resolución D14). Typecheck y tests pasan con el merge.
+2. **Sin kcal ni macros en lo que se ve (D1).** `MacroTotals` desapareció de `plan-view.tsx` y de `portal-day-view.tsx`, y nada en `(portal)` lo importa. `page.tsx` ya no manda `totals` ni `dayTotals` (Q10): `computeWeeklyTotals` se queda en el servidor solo para `isWeekly` y `loadedDays` (`page.tsx:45-52`). Un grep de `kcal|macro|proteína|carbohidrat|grasas|fibra|energía` en `app/(portal)`, `components/portal` y `lib/portal-recipe.ts` solo encuentra comentarios y el `showMacros={false}` del sheet. `PortalRecipeView` no tiene `perPortion` y `portalMealsForClient` le saca los macros a las recetas. El test "no muestra kcal ni macros" renderiza una comida con alimento, medida y receta. Excepción conocida: Q11, en Dudas.
+3. **"Ver receta" (D13).** Con detalle, la fila entera es un `<button type="button">` (`portal-day-view.tsx:66-77`) con `min-h-16`, miniatura de 48 px `rounded-lg`, nombre, porción, "Fuente: …" y `RECIPE_PICKER_TEXT.viewRecipe` + `ChevronRight` (`aria-hidden`) a la derecha. Tiene foco visible y press. `SheetTrigger asChild` le suma `aria-haspopup="dialog"`, y el test lo verifica. Sin detalle, la fila no es botón ni dice "Ver receta" (`:35-41`, con test). El nombre accesible del botón incluye el nombre de la receta, así que no hace falta el `sr-only` de 018c-2.
+4. **Sheet inferior.** `useMediaQuery("(max-width: 767px)")` da `bottom` en el celular y `right` desde 768 px. El sheet lleva `theme-portal` y `pt-7` en el encabezado compacto, que es arrastrable porque `SheetHeader` trae `data-sheet-handle`. `RecipeDetailBody` queda igual (`showMacros={false}`). El default de servidor de `useMediaQuery` (false) no produce desajuste de hidratación, porque el sheet está cerrado en el primer render y `SheetContent` no monta nada hasta abrirse. El arreglo `[&>button]:z-20 [&>[aria-hidden=true]]:z-20` (`portal-recipe-sheet.tsx:600-603` del diff) corresponde a la estructura real del primitivo: el agarre es el único hijo directo `aria-hidden` (`primitives/sheet.tsx:267`) y la X el único botón hijo directo (`:272`).
+5. **Medida casera.** `PortalFoodItem` (`portal-day-view.tsx:84-102`) usa `li flex items-start justify-between gap-4`, el nombre con `min-w-0 flex-1 break-words text-body-lg` y la derecha con `shrink-0 flex-col items-end`: `measureAmountText` en Body y `formatGrams` en `text-footnote tabular-nums text-muted-foreground`. Sin medida va `Quantity decimals={1}`, que da "37,5 g" (D15). Los tests cubren "1½ tazas" + "270 g" y "37,5 g".
+6. **Serialización de servidor a cliente (T9a).** `page.tsx` pasa solo datos planos a `PortalPlanView`, que es server-safe. Este pasa a componentes de un archivo `"use client"` solo `meal`, `items`, `recipes`, `today` y `loadedDays`, todo plano. `trigger` es un elemento JSX que arma `PortalRecipeItem`, que ya está del lado cliente. Ningún ícono ni función cruza el límite.
+7. **"Hoy" y día.** `DaySelector` sin `today` arma el mismo `aria-label` que antes (`[long, null, unloaded?…].join(", ")` es lo mismo que `"Martes, sin cargar"`) y el mismo DOM. Su único otro consumidor, `meals-editor.tsx:169`, no pasa `today`. El día de hoy sale de `weekdayInTimeZone(new Date(), pro.timezone)` en el servidor. El `h2` del día está en `text-title-3` y el texto de día vacío es literal al Gherkin. El fundido usa `initial={changed ? { opacity: 0 } : false}`: es un desvío justificado de la SDD, para que el HTML del servidor no llegue en opacidad 0. `MotionProvider` (LazyMotion) está en `app/layout.tsx:15`.
+8. **Textos.** "Todavía no tenés un plan." y "Cuando tu nutricionista te lo comparta, lo vas a ver acá." (`page.tsx:35-36`). "Todos los días" va en `span` sin `Badge`. "Elegí una de estas opciones". "Descargar plan (PDF)" en `tinted`, `size="lg"`, `w-full sm:w-auto`, debajo del título.
+9. **Alcance.** `git diff 03cd797..HEAD --name-only` da exactamente los 7 archivos de §7.2 más los del arnés.
+
+## Cambios requeridos
+
+Ninguno.
+
+## Dudas (no bloqueantes)
+
+- **Q11: `macros`/`kcalBreakdown` de los ítems de alimento siguen en el payload RSC.** `portalMealsForClient` (`lib/portal-recipe.ts:43-56`) limpia solo las recetas. La paciente no los ve, pero están en los props que viajan al cliente (el implementer contó "kcal" 22 veces en el RSC). La SDD decidió no tocarlo en 017d (Q11, aceptada, porque es código de 018). Por eso no bloquea. Hay que anotarlo en el PR y abrir una tarea directa: alcanza con poner `macros: null, kcalBreakdown: null` también en los ítems de alimento, porque el portal ya no los usa en el cliente. El comentario de `lib/portal-recipe.ts:39` ("Los totales del día se calculan en el server ANTES…") quedó viejo: ya no hay totales en el portal.
+- **La X y el agarre se van con el scroll.** Los dos son `absolute` dentro de un panel `overflow-y-auto` (`primitives/sheet.tsx:81`, `:267`, `:272`), mientras el encabezado es `sticky`. Con una receta larga, al bajar dejan de verse, aunque el encabezado sigue arrastrando, y Esc y tocar afuera siguen andando. Es del primitivo y el implementer lo anotó. Hay que mirarlo en el recorrido en el celular.
+- **El selector `[&>[aria-hidden=true]]:z-20 [&>button]:z-20`** depende de la estructura interna de `SheetPanel`. Si el primitivo suma otro hijo directo `aria-hidden` o botón, cambia sin aviso. Lo mismo pasa en `recipe-picker-sheet.tsx:249` del panel (018c), que todavía no tiene el arreglo: va en el PR para imleticio.
+- **El texto de la porción** dice "1 porción (¾ albóndigas)" (`recipePortionText` de 018) y no "1 porción: ¾ albóndigas" como el Gherkin. Se respeta D14 (no tocar 018).
+- **Padding de la fila de receta:** quedó `py-2` en el botón dentro de un `li py-1`, contra `py-3` en la SDD. El alto mínimo de 64 px se mantiene. Es cosmético.
+- **En el recorrido del orquestador faltan** "Receta en el plan" y "Alimento en medida casera" en el celular: el plan real no tiene recetas ni medidas. También falta D19 (2) en un celular real. El runtime del implementer cubre las dos cosas con datos de prueba en Chromium.

@@ -20,6 +20,8 @@ export * from "./micronutrient-recommendations";
 export * from "./plan-micronutrients";
 export * from "./weekly-menu";
 export * from "./recipes";
+export * from "./recipe-picker";
+export * from "./household-measures";
 export * from "./recipe-photo";
 export * from "./food-search";
 export * from "./es-ar-number";

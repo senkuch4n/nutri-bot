@@ -226,6 +226,30 @@ orquestador, para que las revise a la mañana:
 - HU-018a-2 done (extractor en seco: 320 borradores, 0 gramos inventados; 1619 tests). Recorrido: **Build Error en Turbopack** (export type re-export en actions.ts 'use server', bc034b7) → devuelto al implementer antes del reviewer.
 - HU-018a-2: arreglo Turbopack (cccfd78); recorrido OK. → `en_revision`.
 - HU-018a-2 **aprobada**. HU-018a → `aprobada`. PR a develop. Siguen: 018c (buscador) y la tarea directa del bug de auth.ts.
+- PR #24 mergeado. Tarea directa: fix login Google (solo GOOGLE_CALENDAR_OWNER_EMAIL guarda el token) → PR #25. HU-018c → `en_arquitectura` (rama feat/hu-018c-buscador-recetas; architect Opus + ui).
+- PR #25 (fix login Google) mergeado. Falta definir GOOGLE_CALENDAR_OWNER_EMAIL en producción. Traer develop a la rama de 018c antes de implementar.
+- HU-018c SDD lista (Refactorizaciones/buscador-recetas.md; sin migración; corte 018c-1 buscador / 018c-2 detalle de receta; hallazgo: copiar/repetir/deshacer y aplicar plantilla perderían recipeId). → `arquitectura_lista`.
+- HU-018c: usuario aprueba SDD (018c-1 → 018c-2; D1–D9 aceptadas). → `implementando` 018c-1 (Opus; apple-design, ui-ux-pro-max).
+- 2026-10-03: el usuario activó modo autónomo ("realizá todas las HU que puedas; si no podés avanzar con una, avanzá con otra"). Decisiones que normalmente se preguntan: se toma la recomendada y se anota acá y en backlog.
+- Seña con Mercado Pago probada por el usuario: funciona.
+- HU-018c-1 done; recorrido OK (progress/recorrido_HU-018c.md); datos de prueba borrados. → `en_revision` (reviewer Opus, recomendado; modo autónomo).
+- HU-018c-1 **aprobada**. PR a develop. Sigue 018c-2 en rama encadenada (feat/hu-018c2-detalle-receta desde 018c-1) para no esperar el merge.
+- HU-018c-2 → `implementando` (Opus; apple-design, ui-ux-pro-max — recomendados, modo autónomo). Rama feat/hu-018c2-detalle-receta encadenada sobre feat/hu-018c-buscador-recetas (PR #26).
+
+## 2026-10-04 — vuelta del viaje, modo autónomo (/goal: "realizá todas las HU pendientes")
+- Decisiones que normalmente se preguntan (modelo, skills, validaciones): se toma la recomendada y se anota acá.
+- HU-018c-2: implementer relanzado (Opus; apple-design, ui-ux-pro-max) sobre el WIP de feat/hu-018c2-detalle-receta.
+- Orden siguiente: 018d → 017c → 017b → 017d → 017f. PR #26 sigue abierto (lo revisa imleticio).
+- HU-018c-2 done (4bcc6ea); recorrido OK (detalle en el buscador). → `en_revision` (reviewer Opus).
+- HU-018c-2 **aprobada** (1ª revisión). HU-018c → `aprobada`. PR a develop (encadenado sobre #26).
+- HU-018d → `afinando` (afinador Opus; rama feat/hu-018d-medidas-caseras encadenada sobre 018c-2).
+- HU-018d afinada (docs/hu-medidas-caseras.md); validada en modo autónomo con todas las recomendaciones (D2 pendiente de preguntarle a la nutricionista; 018d-2 opcional). → `en_arquitectura` (architect Opus; migracion-prisma + ui).
+- HU-018d SDD lista (Refactorizaciones/medidas-caseras.md; T1–T17 aceptadas; corte 018d-1a/1b; hallazgo T1: los unitHint están en alimentos PROPIO, ya no usables). → `implementando` 018d-1a (Opus; migracion-prisma, apple-design, ui-ux-pro-max).
+- Bloqueo de macOS (EPERM en los archivos del arnés) resuelto por el usuario. Los subagentes del arnés dejaron de estar cargados en la sesión: se lanzan como general-purpose con las instrucciones de .claude/agents/<rol>.md. 018d-1a relanzada (Opus).
+- HU-018d-1a done (8 commits, migración food_measures aplicada); recorrido OK (progress/recorrido_HU-018d.md). → `en_revision` (reviewer Opus).
+- HU-018d-1a **aprobada** (1ª revisión). PR a develop (encadenado sobre #27). → 018d-1b `implementando` (Opus; apple-design, ui-ux-pro-max; suma R2–R4 de la revisión).
+- HU-018d-1b done (stepper, conversión de unitHint en seco: 77 a crear / 2 ilegibles, R2–R4, prellenado de 'Pasar a medida'); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-018d-1b **aprobada**. HU-018d → `aprobada`. PR #28 actualizado. Pendiente del usuario: `npm run measures:convert-hints -- --apply` si quiere convertir los unitHint. Sigue HU-017c.
 - HU-017c → `afinando` (afinador Opus; rama feat/hu-017c-pacientes desde develop; sin observar a la nutricionista, con el diagnóstico del 2026-10-03).
 - HU-017c afinada y validada (D1–D18; D2/D3 confirmados por lectura: 5 @newsletter, 9 @lid). → `en_arquitectura` (architect Opus + ui). Tarea directa nueva: el bot no debe crear Patient desde @newsletter.
 - Tarea directa: el bot ignora @newsletter y @broadcast (isIgnoredJid + test) → PR #29 a develop.
@@ -264,3 +288,23 @@ orquestador, para que las revise a la mañana:
 - HU-017d-1 **aprobada**. PR encadenado sobre #38. → 017d-2 `implementando` (rama feat/hu-017d2-diario; Opus; con R1).
 - HU-017d-2 done (7 commits); recorrido OK. → `en_revision` (reviewer Opus).
 - HU-017d-2 **aprobada**. PR encadenado sobre #39. → 017d-3 `implementando` (rama feat/hu-017d3-plan = 017d-2 + merge de feat/hu-018d-medidas-caseras).
+- 017d-3: merge de feat/hu-018d-medidas-caseras en feat/hu-017d3-plan (conflicto solo en esta bitácora; se conservaron las dos partes).
+- HU-017d-3 done; recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017d-3 **aprobada**. HU-017d → `aprobada`. PR encadenado sobre #40 (y después de #28).
+- HU-017f → `bloqueada`: depende de HU-017e (imleticio, sin arrancar). Se destraba cuando 017e esté en develop.
+
+## Cierre 2026-10-05 (modo autónomo) — estado
+- **Aprobadas en esta tanda:** 018c-2, 018d (1a+1b), 017c (1–4), 017b (1–4), 017d (1–3). Tareas directas: bot ignora
+  @newsletter (#29), excepciones de disponibilidad corridas un día (#35).
+- **PR abiertos, en orden de merge:** #26 → #27 → #28 (018c/018d, migración food_measures) · #29 · #35 ·
+  #30 → #31 → #32 → #33 (017c) → #34 → #36 → #37 → #38 (017b) → #39 → #40 → #41 (017d; #41 después de #28).
+- **Sin HU propias pendientes:** 017f bloqueada por 017e (imleticio); 018d-2 opcional (solo si la nutricionista la pide).
+- **Pendientes del usuario:** revisar/mergear los PR (o pasárselos a imleticio); `npm run measures:convert-hints
+  --workspace packages/db -- --apply` si quiere convertir los unitHint; preguntarle a la nutricionista por una tabla de
+  medidas caseras (D2 de 018d) y validar con ella las tareas de usabilidad (D1 de 017c/017b, D19 de 017d); seña de
+  Antropometría guardada como $ 19.999,73; `GOOGLE_CALENDAR_OWNER_EMAIL` en producción; número de WhatsApp de la
+  profesional en Ajustes (el portal no muestra "Escribile" sin él).
+- **Ideas anotadas (no abiertas como HU):** guardar el pushName de WhatsApp para distinguir "Por completar"; vacaciones
+  por rango (D17 de 017b).
+- **Entorno:** `lsof` se cuelga en esta máquina (usar `ps`/`curl --max-time`); el :3000 lo usa otro proyecto, el panel
+  de dev corrió en :3100.

@@ -31,3 +31,15 @@ implementer se borró).
   cierra sin guardar.
 - Alta con foto, foto grande, borrar con Deshacer, sheet arrastrable y aviso al recargar con borrado pendiente: los
   probó el implementer en runtime con su paciente de prueba (progress/impl_HU-017d.md).
+
+# Recorrido HU-017d-3 (orquestador, 2026-10-05)
+
+Rama con el merge de 018d (03cd797); `prisma migrate status` al día. Solo lectura sobre el plan de María González.
+Datos: `Patient` 21, `NutritionPlan` 11, `FoodMeasure` 0, `Recipe` 9 (iguales antes y después).
+
+## OK
+- `/portal/plan`: "Plan bajo en sodio", comidas en tarjetas ("Desayuno · Todos los días", "Yogur descremado · 200 g"),
+  **sin kcal ni macros** (D1), gramos sin decimales de más. Sin "Descargar plan (PDF)" porque el plan no tiene PDF
+  generado. Título "Tu espacio". Consola sin errores.
+- "Ver receta" como fila entera con sheet inferior y medida casera "1½ tazas · 270 g": probados por el implementer en
+  runtime con su plan de prueba (progress/impl_HU-017d.md).

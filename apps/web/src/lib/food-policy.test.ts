@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   // HU-018b-2: la página del plan carga el objetivo (D7) y la consulta del aviso (D11).
   getPlanTarget: vi.fn().mockResolvedValue(null), getPlanConsultationId: vi.fn().mockResolvedValue(null),
   patient: vi.fn(), evolution: vi.fn(), clinical: vi.fn(),
+  // HU-018d: las páginas cargan las medidas de los SARA 2 y las actions resuelven la medida elegida.
+  listMeasuresForPicker: vi.fn().mockResolvedValue({}), resolveMeasureItem: vi.fn(),
+  // 018d-1b (R4): la action traduce este error a un mensaje amable.
+  FoodMeasureNotFoundError: class FoodMeasureNotFoundError extends Error {},
 }));
 
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -23,6 +27,11 @@ vi.mock("@nutri-bot/db", () => ({ prisma: {
   nutritionPlan: { findUnique: vi.fn().mockResolvedValue({ patientId: "patient" }) },
 } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// HU-018c: la página del plan monta el buscador de recetas; sus actions no se usan en este test.
+vi.mock("@/app/(panel)/recipe-picker-actions", () => ({}));
+// HU-018d: el editor monta el cuadro de medida casera; sus actions no se usan en este test.
+vi.mock("@/app/(panel)/food-measure-actions", () => ({}));
+vi.mock("server-only", () => ({})); // lib/revalidate-menu-owner (HU-018c)
 vi.mock("next/navigation", () => ({ notFound: vi.fn(), redirect: vi.fn() }));
 vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
 vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
@@ -78,8 +87,11 @@ describe("SARA2-only new food selections", () => {
     const page = await PlanPage({ params: Promise.resolve({ id: "patient", planId: "plan" }) });
     expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
     const editor = propsWith(page, "ownerField")[0]!;
-    expect(editor.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2" }]);
+    expect(editor.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);
     expect(editor.meals).toMatchObject([{ items: [{ foodId: "own", foodName: "Historical food", macros: { kcal: 100 } }] }]);
+    // HU-018d: las medidas de los SARA 2 llegan al editor.
+    expect(mocks.listMeasuresForPicker).toHaveBeenCalled();
+    expect(editor.measures).toEqual({});
   });
 
   it("passes only active SARA2 to the template picker", async () => {
@@ -88,7 +100,7 @@ describe("SARA2-only new food selections", () => {
     }] });
     const page = await TemplatePage({ params: Promise.resolve({ id: "template" }) });
     expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
-    expect(propsWith(page, "ownerField")[0]?.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2" }]);
+    expect(propsWith(page, "ownerField")[0]?.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);
     expect(propsWith(page, "ownerField")[0]?.meals).toMatchObject([{ items: [{ foodId: "own", foodName: "Historical food" }] }]);
   });
 
@@ -142,5 +154,44 @@ describe("SARA2-only new food selections", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain("PROPIO históricos");
     expect(mocks.applyTemplateToPatient).not.toHaveBeenCalled();
+  });
+
+  it.each([addPlanMealItemAction, addTemplateMealItemAction])("HU-018d: alta en medida casera usa los gramos de la medida e ignora quantityGrams", async (action) => {
+    mocks.getFood.mockResolvedValue(sara);
+    mocks.resolveMeasureItem.mockResolvedValue({ measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270 });
+    await action(form({
+      planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", quantityGrams: "999",
+      customLabel: "ignorada", measureId: "m1", measureQty: "1,5", weekday: "TUE",
+    }));
+    expect(mocks.resolveMeasureItem).toHaveBeenCalledWith("sara", "m1", 1.5);
+    const write = action === addPlanMealItemAction ? mocks.addMealItem : mocks.addTemplateMealItem;
+    expect(write).toHaveBeenCalledWith("meal", {
+      foodId: "sara", customLabel: null, notes: null, order: 0, weekday: "TUE",
+      measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270,
+    });
+  });
+
+  it.each([addPlanMealItemAction, addTemplateMealItemAction])("HU-018d: cantidad inválida no escribe y un PROPIO con medida sigue rechazado", async (action) => {
+    mocks.getFood.mockResolvedValue(sara);
+    await action(form({ planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", measureId: "m1", measureQty: "1,3" }));
+    mocks.getFood.mockResolvedValue(own);
+    await expect(action(form({ planId: "plan", templateId: "template", mealId: "meal", foodId: "own", measureId: "m1", measureQty: "1" })))
+      .rejects.toThrow("Solo se pueden agregar alimentos activos de SARA 2.");
+    expect(mocks.resolveMeasureItem).not.toHaveBeenCalled();
+    expect(mocks.addMealItem).not.toHaveBeenCalled();
+    expect(mocks.addTemplateMealItem).not.toHaveBeenCalled();
+  });
+
+  it.each([addPlanMealItemAction, addTemplateMealItemAction])("018d-1b (R4): medida borrada con el editor abierto → error amable, sin escribir", async (action) => {
+    mocks.getFood.mockResolvedValue(sara);
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new mocks.FoodMeasureNotFoundError());
+    const values = { planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", measureId: "m1", measureQty: "1" };
+    expect(await action(form(values))).toEqual({ ok: false, error: "Esa medida ya no existe. Elegí otra." });
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new RangeError("qty"));
+    expect(await action(form(values))).toEqual({ ok: false, error: "Esa medida ya no existe. Elegí otra." });
+    mocks.resolveMeasureItem.mockRejectedValueOnce(new Error("boom"));
+    await expect(action(form(values))).rejects.toThrow("boom");
+    expect(mocks.addMealItem).not.toHaveBeenCalled();
+    expect(mocks.addTemplateMealItem).not.toHaveBeenCalled();
   });
 });

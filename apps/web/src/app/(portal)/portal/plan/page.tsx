@@ -1,10 +1,12 @@
 import { ClipboardList } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
-import { WEEKDAYS, computeWeeklyTotals, weekdayInTimeZone, type Macros, type Weekday } from "@nutri-bot/core";
+import { RECIPE_ITEM_SELECT, listPlanRecipePreviews } from "@nutri-bot/db/domain";
+import { computeWeeklyTotals, weekdayInTimeZone, type Weekday } from "@nutri-bot/core";
 import { Card, EmptyState } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
 import { toMealView } from "@/lib/meal-view";
+import { portalMealsForClient, toPortalRecipeMap } from "@/lib/portal-recipe";
 import { PortalPlanView } from "./plan-view";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +21,8 @@ export default async function PortalPlanPage() {
     include: {
       meals: {
         orderBy: { order: "asc" },
-        include: { items: { orderBy: { order: "asc" }, include: { food: true } } },
+        // HU-018c: el ítem de receta trae su receta (nombre, porción, fuente y foto), como getPlan.
+        include: { items: { orderBy: { order: "asc" }, include: { food: true, recipe: { select: RECIPE_ITEM_SELECT } } } },
       },
     },
   });
@@ -29,7 +32,7 @@ export default async function PortalPlanPage() {
       <Card>
         <EmptyState
           icon={ClipboardList}
-          title="Todavía no tenés un plan activo."
+          title="Todavía no tenés un plan."
           description="Cuando tu nutricionista te lo comparta, lo vas a ver acá."
         />
       </Card>
@@ -37,25 +40,28 @@ export default async function PortalPlanPage() {
   }
 
   const meals = toMealView(plan.meals);
-  // HU-018b: plan no semanal → el total de siempre; semanal → total por día y hoy seleccionado.
+  // HU-018b: semanal → hoy seleccionado y los días cargados. HU-017d-3 (D1, Q10): los totales ya no
+  // viajan al navegador; computeWeeklyTotals sigue diciendo si el plan es semanal y qué días tienen algo.
   const weeklyTotals = computeWeeklyTotals(meals);
-  const totals = weeklyTotals.days.MON.macros;
-  let weekly: { today: Weekday; dayTotals: Record<Weekday, Macros>; loadedDays: Weekday[] } | null = null;
+  let weekly: { today: Weekday; loadedDays: Weekday[] } | null = null;
   if (weeklyTotals.isWeekly) {
     const pro = await getProfessional();
     weekly = {
       today: weekdayInTimeZone(new Date(), pro.timezone),
-      dayTotals: Object.fromEntries(WEEKDAYS.map((d) => [d, weeklyTotals.days[d].macros])) as Record<Weekday, Macros>,
       loadedDays: weeklyTotals.loadedDays,
     };
   }
+
+  // HU-018c-2 (SDD 7.6): el detalle de las recetas del plan ACTIVE del paciente (solo esas: el plan se
+  // buscó por patientId y status ACTIVE), sin macros. Los ítems de receta viajan sin macros.
+  const recipes = toPortalRecipeMap(await listPlanRecipePreviews(plan.id));
 
   return (
     <PortalPlanView
       title={plan.title}
       notes={plan.notes}
-      meals={meals}
-      totals={totals}
+      meals={portalMealsForClient(meals)}
+      recipes={recipes}
       hasPdf={Boolean(plan.pdfData)}
       weekly={weekly}
     />
