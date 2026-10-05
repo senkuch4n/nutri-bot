@@ -305,3 +305,142 @@ builds: 49/49 chequeos OK en cada uno.** El dev server de :3100 no se tocó (sig
   - Probar la cámara y la galería, incluida una foto HEIC.
   - Revisar el movimiento reducido: solo fundido.
   - D19 (3).
+
+---
+
+## 017d-3: plan (con el merge de 018d)
+
+- **Estado:** done
+- **Rama:** `feat/hu-017d3-plan`. Arranca del merge de `feat/hu-018d-medidas-caseras` (`03cd797`), que hizo el
+  orquestador (Q16). Antes de cambiar nada verifiqué el merge: `typecheck` de los 4 workspaces en verde, `test`
+  149 archivos y 2357 tests en verde, y `migrate status` → "Database schema is up to date!" (24 migraciones).
+- **Modelo:** Opus. Skills: apple-design (fila con press en pointer-down, sheet con agarre y encabezado
+  arrastrable), mblode-agent-skills-ui-animation (fundido de 150 ms solo con `opacity`, sin animación al montar),
+  web-design-guidelines (autochequeo, ver abajo) y ui-ux-pro-max (criterios de jerarquía y objetivos táctiles).
+- **Sin migraciones ni cambios en `schema.prisma`, `packages/*`, `apps/bot` ni la zona de imleticio.** El PDF
+  (`lib/plan-pdf.tsx`, `/portal/plan/pdf`) no se tocó: D16 es solo el botón.
+
+### Commits
+
+| Commit | Fase |
+|---|---|
+| `a7f8f69` | 1: `DaySelector.today?` + `day-selector.test.tsx` |
+| `d0a0549` | 2: `page.tsx`, `plan-view.tsx`, `portal-day-view.tsx`, `portal-recipe-sheet.tsx` + `portal-day-view.test.tsx` |
+| `64da48e` | 2 (arreglo que encontró el runtime): la X y el agarre del sheet de receta quedan arriba del encabezado sticky |
+| (este) | 3: este archivo |
+
+### Archivos tocados (`git diff 03cd797 --name-only`, igual a la tabla 7.2)
+
+- `apps/web/src/components/weekly-menu/day-selector.tsx` (`today?`) y `day-selector.test.tsx` (nuevo, 3 tests)
+- `apps/web/src/app/(portal)/portal/plan/page.tsx`: deja de mandar `totals` y `dayTotals` (Q10). Sin plan →
+  "Todavía no tenés un plan.". La consulta, `RECIPE_ITEM_SELECT`, `listPlanRecipePreviews`, `toPortalRecipeMap`
+  y `portalMealsForClient` siguen como vienen de 018d.
+- `plan-view.tsx`, `portal-day-view.tsx`, `portal-recipe-sheet.tsx` y `portal-day-view.test.tsx` (nuevo, 8 tests)
+- `git diff 03cd797 -- apps/web/src/components/macro-totals.tsx` → vacío. Tampoco hay diff en `apps/bot`,
+  `packages/` ni la zona de imleticio (T6).
+
+### Contrato compartido
+
+Las firmas coinciden con la SDD 4-3: `DaySelector` `today?: Weekday` (opcional; el editor no lo pasa y el HTML sin
+`today` es idéntico: snapshot inline grabado **antes** del cambio), `PortalPlanView({ title, notes, meals, hasPdf,
+weekly?: { today; loadedDays } | null, recipes? })` sin `totals`, `PortalMealItems({ items, recipes? })`,
+`PortalMealCard({ meal, items, recipes? })`, `PortalDayView({ meals, today, loadedDays, recipes? })` sin
+`dayTotals`, y `PortalRecipeSheet({ recipe, trigger: React.ReactElement })`. El servidor no le pasa funciones ni
+componentes a un cliente (T9a): `trigger` es un elemento que arma `PortalMealItems` (que ya es cliente) y `page.tsx`
+solo pasa datos planos.
+
+### Decisiones no obvias
+
+- **El fundido no corre en la primera pintada.** La SDD dice `<m.div key={day} initial={{ opacity: 0 }} …>`. Si
+  fuera literal, el HTML del servidor llegaría con `opacity: 0` y las comidas no se verían hasta hidratar. Por eso
+  `initial` es `false` hasta que la paciente cambia de día, y desde ahí `{ opacity: 0 }` con `fades.fast`. En el
+  runtime, al tocar el martes la opacidad arranca en 0 y a los 400 ms está en 1. Con movimiento reducido,
+  `MotionConfig reducedMotion="user"` deja el fundido (es solo opacidad).
+- **La X y el agarre del sheet quedaban tapados** por el encabezado `material-bar sticky top-0 z-10`. Venía así
+  de 018c-2. Playwright no podía tocar la X ("intercepts pointer events") y en la captura no se veía el agarre.
+  Lo arreglé sin cambiar la API de `Sheet`, con `[&>button]:z-20 [&>[aria-hidden=true]]:z-20` en el `SheetContent`
+  del portal: la X es el único botón hijo directo del panel y el agarre es el único hijo directo `aria-hidden`.
+  **El mismo encabezado está en `components/recipe-picker/recipe-picker-sheet.tsx:249` (panel, 018c)**. Ahí no
+  lo toqué porque está fuera de este alcance: hay que mirarlo.
+- **La X se va con el scroll.** El botón es `absolute` dentro del panel que scrollea (así es el primitivo), y con
+  una receta larga sale de la vista. Igual se puede cerrar con el agarre o el encabezado (los dos arrastran),
+  tocando afuera o con Esc. No lo cambié porque es del primitivo.
+- **Porción de la receta:** la HU dice "1 porción: ¾ albóndigas", pero `recipePortionText` (018, no se toca por
+  D14) devuelve "1 porción (¾ albóndigas)". El test usa el texto real.
+- **Alimento en gramos:** el número va en el color del texto y la "g" en gris (lo hace `Quantity`). Antes el
+  número también iba en gris. La SDD pide `className="text-body-lg"` y no pide el gris, así que queda así.
+- **Encabezados:** en la vista por día, h1 (plan), h2 (día) y h3 (comida). En el plan no semanal, para no saltar
+  del h1 al h3, agregué un h2 `sr-only` "Comidas del plan" con id fijo `portal-plan-meals` (T9e).
+- **Receta sin detalle:** la fila se muestra con miniatura, nombre y porción, pero no es botón ni dice "Ver
+  receta" (lo prueba un test).
+- **Autochequeo web-design-guidelines:** foco visible en la fila (`outline-ring`), `alt=""` en la miniatura
+  decorativa, `aria-hidden` en el chevron, `break-words` y `min-w-0` en los nombres, la cantidad con `shrink-0` y
+  hover solo con puntero fino (`hoverOnlyWhenSupported`). El día elegido no va en la URL, igual que en 018b, y
+  queda fuera del alcance.
+
+### Verificación
+
+| Comando | Resultado |
+|---|---|
+| `npm run typecheck` (core, db, bot, web) | exit 0 |
+| `npm run test` | 151 archivos, 2368 tests, exit 0 (+11 tests de 017d-3) |
+| `npm run lint --workspace apps/web` | "No ESLint warnings or errors" |
+| `./ops/harness/verify.sh` | "Arnés OK". Avisa que "Se tocó el bot", pero el aviso compara contra `develop` (trae 017d-1/2 y 018): en `git diff 03cd797` no hay nada de `apps/bot` |
+| `npm run test:recipe-picker --workspace packages/db` | "OK: flujo de ítems de receta (018c)". Conteos antes y después iguales: `{ recipes: 9, planItems: 128, templateItems: 0, plans: 11 }` |
+| `npm run test:food-measures --workspace packages/db` | exit 0. Conteos antes y después iguales (`foods 980, measures 0, planItems 128, plans 11, patients 21`) |
+| `next build` (webpack, copia en el scratchpad con `db:generate`) | exit 0. `/portal/plan` pesa 9,69 kB |
+| `next build --turbopack` (la misma copia) | "Compiled successfully", exit 0 |
+
+**Runtime:** `next start -p 3197` sobre los dos builds y Chromium headless (playwright-core en el scratchpad),
+a 390×844 táctil y a 1366×768. El dev server de :3100 no se tocó: sigue vivo (responde 307).
+- `/portal/plan` responde 200, sin error boundary ("Algo salió mal" no aparece).
+- En el DOM no aparecen "kcal", "Proteínas", "Carbohidratos", "Grasas", "Fibra", "Energía" ni "Total del".
+  Tampoco hay "kcal" en el HTML fuera de los `<script>`.
+- **Q11:** el payload RSC trae "kcal" 22 veces, porque los ítems de alimento siguen trayendo `macros`
+  (`portalMealsForClient` solo limpia las recetas). No se muestra. Hay que anotarlo en el PR para 018.
+- Título y notas del plan. "Descargar plan (PDF)" `tinted` (`bg-primary-soft`), de 44 px de alto y 358 px de
+  ancho. `GET /portal/plan/pdf` → 200 `application/pdf`.
+- Hoy era lunes (America/Argentina): el radio "Lunes, hoy" está elegido y dice "Hoy". Debajo, el h2 "Lunes".
+- Almuerzo: "Arroz blanco cocido · 1½ tazas · 270 g" y "Queso cremoso · 2 cucharadas soperas · 30 g". En las
+  filas de alimento la cantidad no se sale de la fila.
+- Colación (EVERY_DAY, opciones): "Todos los días" en texto, "Elegí una de estas opciones" y "37,5 g".
+- **Receta:** la fila es un `<button>` de 82 px de alto. Tocar el nombre (no solo "Ver receta") abre el sheet
+  **inferior** (de y = 328 a 844, a todo el ancho), con agarre, `theme-portal`, el título de la receta y sin
+  kcal ni macros.
+  - Se cierra con Esc, y el foco vuelve a la fila.
+  - Se cierra con la X (después del arreglo: `elementFromPoint` sobre la X da el botón "Cerrar").
+  - Se cierra arrastrando el encabezado hacia abajo (touch por CDP).
+- A 1366 px el sheet entra **desde la derecha** (512 px de ancho, alto completo) y se cierra con Esc.
+- Martes: al tocarlo, la opacidad arranca en 0 y termina en 1 (fundido), y se ve "120 g".
+- **Día vacío:** con la colación de prueba pasada a PER_DAY (solo el lunes), el jueves muestra "El jueves no
+  tiene comidas cargadas. Mirá otro día o preguntale a tu nutricionista.". Con la colación EVERY_DAY el jueves
+  la muestra, como corresponde.
+- Consola: sin errores de hidratación ni de página. Lo único es el 404 de `/favicon.ico`, que ya estaba. En los
+  logs de `next start` de los dos builds no aparece "cannot be passed" ni ningún error.
+- Capturas en el scratchpad de la sesión: `plan-390.png`, `receta-390.png` y `receta-1366.png`.
+
+### Datos de prueba (creados y borrados por id)
+
+- El bot estaba apagado: `ps` no mostró ningún proceso de `apps/bot`.
+- Conteos de antes (`patients|plans|meals|items|recipes|foods|outbound`): `21|11|40|128|9|980|12`.
+- Se creó la paciente "Prueba Plan 017d" (`cmuusc6xd0000orstg3lj9stx`, JID inventado `5490000017303@s.whatsapp.net`).
+  También se creó el plan ACTIVE semanal `cmuusc6xg0002orstx507kbdq`, con un PDF falso de 50 bytes.
+  - Comidas: `cmuusc6xk0004orstmssjnjqs` (Almuerzo, PER_DAY) y `cmuusc6xm0006orstm8smeb4p` (Colación).
+  - 6 ítems: `cmuusc6xn0008orsto805y0px`, `cmuusc6xr000aorstho2f1u3g`, `cmuusc6xs000corst9tvjbbe7`,
+    `cmuusc6xt000eorstljapxb7t`, `cmuusc6xu000gorstw9uxjey0` y `cmuusc6xw000iorsti4a53rqf`.
+  - Los ítems referencian, **solo para leerlos**, la receta publicada `cmusa9qn7000c79pwi9vntpeh` y los alimentos
+    `cmtynk2e800001y4zkerocwsl` y `cmtynk2e8000d1y4z5sae50xr`.
+- El token se guardó solo en un archivo del scratchpad, que ya se borró.
+- Limpieza, solo por esos ids: ítems → comidas → plan → paciente. Conteos de después: `21|11|40|128|9|980|12`,
+  iguales a los de antes. No hubo filas en `OutboundMessage`.
+- También se borraron el script temporal (`packages/db/scripts/.tmp-017d3.ts`), la copia del build y
+  `playwright-core`. El `next start` de :3197 está apagado.
+
+### Para el orquestador / recorrido / PR
+
+- Recorrido en el celular (`next dev`, Q13): D19 (2), "decir qué come hoy en el almuerzo". También probar el
+  arrastre real del sheet de receta y una receta con "Fuente: …": la de dev no tiene fuente, así que esa línea
+  solo la cubre el test.
+- PR: avisarle a imleticio que se tocó la presentación del plan en el portal y `DaySelector` (`today?`), y
+  pasarle Q11 (las `macros` de los ítems de alimento siguen en el payload). Avisarle también que el encabezado
+  sticky de `recipe-picker-sheet.tsx` probablemente tape la X igual que tapaba la del portal.
