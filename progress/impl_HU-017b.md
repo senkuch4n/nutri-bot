@@ -746,3 +746,20 @@ Los de 7-4, más tres archivos nuevos chicos dentro de `ajustes/`:
 - Subir o quitar el logo o la firma reales, desconectar Google y pausar el bot no se probaron en runtime, a propósito
   (regla de la entrega). Los cubren los tests existentes y el código. El selector se probó hasta la vista previa.
 - No hay capturas antes/después en `docs/auditoria-apple/017b/`: quedan para el recorrido del orquestador.
+
+### Arreglo pedido después del recorrido: error de hidratación del sidebar en `next dev`
+
+- **Causa:** en `next dev`, Next pone antes de `<PanelLayout>` una cantidad variable de `<link>`/`<script>` del segmento.
+  En una parte de las recargas, el cliente no tiene la misma cantidad que el servidor. Eso corre la posición del layout en
+  el árbol, y todo `useId` que cuelga de él sale distinto ("_R_15etb_" en el servidor, "_R_4petb_" en el cliente). No
+  depende de la página: también pasaba en `/`.
+- **Arreglo** (commit "HU-017b-4: sin error de hidratación del sidebar en Ajustes"):
+  - El `<aside>` de `AppSidebar` y el `aria-controls` de su botón usan un id fijo, `panel-sidebar`. Es único porque la
+    sidebar se monta una sola vez, en el layout del panel.
+  - El mismo problema apareció una vez en los ids de `AjustesTabs`, así que también pasaron a un prefijo fijo: `ajustes-…`.
+- **Verificación:** levanté un `next dev --turbopack` aparte en :3198, sobre una copia del repo en el scratchpad. Recargué
+  `/ajustes`, cada `?tab=`, `/asistente`, `/pacientes/<id>` y `/` a 1366 y 390 px: **0 errores en 144 cargas**. Antes del
+  arreglo salían 1 de cada 16 a 64 cargas. Typecheck, lint y los 2061 tests siguen en verde.
+- **Hay que reiniciar el dev server de :3100 (no lo paré).** Su render del servidor quedó con el módulo viejo: el servidor
+  sigue mandando `_R_4petb_` y el cliente ya manda `panel-sidebar`, así que hasta que se reinicie va a mostrar este mismo
+  aviso.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { m, useReducedMotionConfig } from "motion/react";
 import { CalendarDays, ChevronLeft, ChevronRight, FileText, MessageCircle, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { SETTINGS_TEXT as T } from "@nutri-bot/core";
@@ -21,6 +21,11 @@ export const AJUSTES_TABS = [
 export type AjustesTabValue = (typeof AJUSTES_TABS)[number]["value"];
 
 const DEFAULT_TAB: AjustesTabValue = "general";
+
+/** Prefijo fijo de los ids de esta pantalla (hay una sola por página). No es `useId`: en `next dev` la
+ *  posición del árbol del layout puede variar entre servidor y cliente y los `useId` salen distintos
+ *  (mismo caso que el `<aside>` de la sidebar). */
+const IDS = "ajustes";
 
 // Íconos definidos acá (no se pasan desde el server component, T9a).
 const ICONS: Record<AjustesTabValue, LucideIcon> = {
@@ -81,7 +86,6 @@ function AjustesLayout({
   const [selected, setSelected] = useState<AjustesTabValue | null>(fromUrl);
   const dirty = useDirtySections();
   const reduced = Boolean(useReducedMotionConfig());
-  const headingIds = useId();
   const lastOpened = useRef<AjustesTabValue | null>(null);
   const focusTarget = useRef<"heading" | "row" | null>(null);
 
@@ -97,12 +101,12 @@ function AjustesLayout({
     if (!target || window.matchMedia("(min-width: 1024px)").matches) return;
     if (target === "heading" && selected) {
       window.scrollTo({ top: 0 });
-      document.getElementById(`${headingIds}-${selected}`)?.focus({ preventScroll: true });
+      document.getElementById(`${IDS}-${selected}`)?.focus({ preventScroll: true });
     } else if (target === "row" && lastOpened.current) {
       const index = AJUSTES_TABS.findIndex((t) => t.value === lastOpened.current);
-      document.getElementById(`${headingIds}-list`)?.querySelectorAll("button")[index]?.focus();
+      document.getElementById(`${IDS}-list`)?.querySelectorAll("button")[index]?.focus();
     }
-  }, [selected, headingIds]);
+  }, [selected]);
 
   const open = useCallback((tab: AjustesTabValue) => {
     lastOpened.current = tab;
@@ -163,7 +167,7 @@ function AjustesLayout({
         </nav>
 
         {/* Lista de secciones (celular, sin sección elegida) */}
-        <div id={`${headingIds}-list`} className={cn("lg:hidden", selected && "hidden")}>
+        <div id={`${IDS}-list`} className={cn("lg:hidden", selected && "hidden")}>
           <GroupedList>
             {AJUSTES_TABS.map((t) => (
               <MobileSectionRow
@@ -185,7 +189,7 @@ function AjustesLayout({
             return (
               <m.section
                 key={t.value}
-                aria-labelledby={`${headingIds}-${t.value}`}
+                aria-labelledby={`${IDS}-${t.value}`}
                 initial={false}
                 animate={{ opacity: visible ? 1 : 0 }}
                 transition={reduced ? { duration: 0 } : fades.fast}
@@ -200,7 +204,7 @@ function AjustesLayout({
                   {T.back}
                 </button>
                 <h2
-                  id={`${headingIds}-${t.value}`}
+                  id={`${IDS}-${t.value}`}
                   tabIndex={-1}
                   className="mb-5 text-title-1 focus-visible:outline-none lg:text-title-2"
                 >
