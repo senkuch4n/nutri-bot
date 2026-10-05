@@ -1,119 +1,165 @@
-import { ChevronRight } from "lucide-react";
+import { CalendarDays, CircleAlert, MessageCircle, PencilLine } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
-import { formatDateTime, formatPrice, messages, professionalSignature } from "@nutri-bot/core";
-import { Badge, ButtonLink, Card, Quantity } from "@/components/ui";
+import {
+  PORTAL_TEXT,
+  diaryTodayText,
+  formatAppointmentWhen,
+  formatPrice,
+  formatTimeAgo,
+  messages,
+  portalGreeting,
+  portalProfessionalLine,
+  professionalWhatsappUrl,
+  startOfTodayInTz,
+} from "@nutri-bot/core";
+import { PortalCardLink } from "@/components/portal/portal-card-link";
+import { PortalLogoutButton } from "@/components/portal/portal-logout-button";
+import { buttonVariants } from "@/components/primitives/button";
+import { ButtonLink, Card, Metric, cn } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
 import { getProfessional } from "@/lib/professional";
 
 export const dynamic = "force-dynamic";
 
+const cardTitle = "text-subheadline font-semibold text-muted-foreground";
+
+// HU-017d-1 (SDD 4.4 y 5.1): inicio del portal. Fechas y "hoy" en la zona de la profesional (T9f).
 export default async function PortalHomePage() {
   const patient = await getPortalPatient();
   if (!patient) return null; // el layout ya cubre este caso
 
-  const [pro, nextAppointment, latestPlan, latestEntry] = await Promise.all([
-    getProfessional(),
+  const now = new Date();
+  const pro = await getProfessional();
+  const tz = pro.timezone;
+
+  const [nextAppointment, latestPlan, latestWeight, diaryToday] = await Promise.all([
+    // D6: el primero por fecha entre confirmados y los que esperan la seña.
     prisma.appointment.findFirst({
-      where: { patientId: patient.id, status: "CONFIRMED", startsAt: { gte: new Date() } },
-      include: { service: true },
+      where: { patientId: patient.id, status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
       orderBy: { startsAt: "asc" },
+      select: { startsAt: true, status: true, priceSnapshot: true, service: { select: { name: true } } },
     }),
     prisma.nutritionPlan.findFirst({
       where: { patientId: patient.id, status: "ACTIVE" },
       orderBy: { updatedAt: "desc" },
+      select: { title: true },
     }),
     prisma.evolutionEntry.findFirst({
       where: { patientId: patient.id, weightKg: { not: null } },
       orderBy: { recordedAt: "desc" },
+      select: { weightKg: true, recordedAt: true },
     }),
+    prisma.diaryEntry.count({ where: { patientId: patient.id, createdAt: { gte: startOfTodayInTz(now, tz) } } }),
   ]);
 
+  const whatsappUrl = professionalWhatsappUrl(pro.phoneJid);
   const insurances = messages.formatInsuranceList(pro.acceptedInsurances);
-  const cardLink = "mt-4 w-full sm:w-auto";
+  const diaryText = diaryTodayText(diaryToday);
+  const planTitle = latestPlan?.title.trim() || PORTAL_TEXT.planTitle;
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-balance text-2xl font-semibold tracking-tight">
-          Hola{patient.name ? `, ${patient.name}` : ""} 👋
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Este es tu espacio con{" "}
-          {professionalSignature({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}.
+    <div className="space-y-4">
+      <header className="mb-2">
+        <h1 className="text-balance text-large-title">{portalGreeting(patient.name)}</h1>
+        <p className="mt-1 text-pretty text-body-lg text-muted-foreground">
+          {portalProfessionalLine({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}
         </p>
       </header>
 
-      <div className="space-y-4">
-        <Card title="Tu próximo turno">
-          {nextAppointment ? (
-            <div>
-              <p className="text-base font-medium first-letter:uppercase">
-                {formatDateTime(nextAppointment.startsAt, pro.timezone)} hs
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {nextAppointment.service.name} ·{" "}
-                {formatPrice(nextAppointment.priceSnapshot.toString(), pro.currency)}
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No tenés turnos próximos. Escribile a tu nutricionista por WhatsApp para sacar uno.
+      {/* Tu próximo turno: la tarjeta destacada; no navega. */}
+      <section aria-labelledby="portal-next-appointment" className="rounded-xl bg-card p-6 shadow-card more-contrast:border more-contrast:border-input">
+        <h2 id="portal-next-appointment" className="flex items-center gap-1.5 text-subheadline font-semibold text-primary">
+          <CalendarDays className="size-4 shrink-0" aria-hidden />
+          {PORTAL_TEXT.nextAppointmentLabel}
+        </h2>
+        {nextAppointment ? (
+          <>
+            <p className="mt-2 text-title-2 tabular-nums">{formatAppointmentWhen(nextAppointment.startsAt, now, tz)}</p>
+            <p className="mt-1 text-body-lg text-muted-foreground">
+              {nextAppointment.service.name} · {formatPrice(nextAppointment.priceSnapshot.toString(), pro.currency)}
             </p>
-          )}
-        </Card>
+            {nextAppointment.status === "AWAITING_PAYMENT" ? (
+              <p className="mt-3 flex items-start gap-1.5 text-callout text-warning">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                {PORTAL_TEXT.awaitingDeposit}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-headline">{PORTAL_TEXT.noAppointmentsTitle}</p>
+            <p className="mt-1 text-pretty text-body-lg text-muted-foreground">{PORTAL_TEXT.noAppointmentsBody}</p>
+            {whatsappUrl ? (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(buttonVariants({ variant: "tinted", size: "lg" }), "mt-4 w-full")}
+              >
+                <MessageCircle aria-hidden />
+                {PORTAL_TEXT.writeWhatsapp}
+                <span className="sr-only"> (se abre en otra pestaña)</span>
+              </a>
+            ) : null}
+          </>
+        )}
+      </section>
 
-        <Card title="Tu plan vigente">
-          {latestPlan ? (
-            <div>
-              <p className="text-sm font-medium">{latestPlan.title}</p>
-              <ButtonLink href="/portal/plan" variant="secondary" size="lg" className={cardLink}>
-                Ver plan
-                <ChevronRight aria-hidden />
-              </ButtonLink>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Todavía no tenés un plan activo.</p>
-          )}
+      {latestPlan ? (
+        <PortalCardLink href="/portal/plan" label={`${PORTAL_TEXT.planTitle}: ${planTitle}`}>
+          <p className={cardTitle}>{PORTAL_TEXT.planTitle}</p>
+          <p className="mt-1 break-words text-headline">{planTitle}</p>
+          <p className="mt-0.5 text-body-lg text-muted-foreground">{PORTAL_TEXT.planHint}</p>
+        </PortalCardLink>
+      ) : (
+        <Card className="p-5">
+          <h2 className={cardTitle}>{PORTAL_TEXT.planTitle}</h2>
+          <p className="mt-1 text-body-lg text-muted-foreground">{PORTAL_TEXT.noPlan}</p>
         </Card>
+      )}
 
-        <Card title="Tu evolución">
-          {latestEntry?.weightKg ? (
-            <div>
-              <p className="text-sm text-muted-foreground">Último peso registrado</p>
-              <Quantity
-                value={Number(latestEntry.weightKg)}
-                unit="kg"
-                className="mt-1 block text-2xl font-semibold"
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Todavía no hay registros.</p>
-          )}
-          <ButtonLink href="/portal/evolucion" variant="secondary" size="lg" className={cardLink}>
-            Ver evolución
-            <ChevronRight aria-hidden />
-          </ButtonLink>
+      <Card className="p-5">
+        <h2 className={cardTitle}>{PORTAL_TEXT.diaryTitle}</h2>
+        <p className="mt-1 text-headline">{PORTAL_TEXT.diaryQuestion}</p>
+        {diaryText ? <p className="mt-0.5 text-body-lg text-muted-foreground">{diaryText}</p> : null}
+        {/* 017d-1: lleva al diario; desde 017d-2 abre el sheet (?anotar=1). */}
+        <ButtonLink href="/portal/diario" size="lg" className="mt-4 w-full">
+          <PencilLine aria-hidden />
+          {PORTAL_TEXT.addMeal}
+        </ButtonLink>
+      </Card>
+
+      <PortalCardLink href="/portal/evolucion" label={PORTAL_TEXT.evolutionTitle}>
+        <p className={cardTitle}>{PORTAL_TEXT.evolutionTitle}</p>
+        {latestWeight?.weightKg != null ? (
+          <div className="mt-2">
+            {/* D3: sin `trend` (pinta flecha y color). */}
+            <Metric
+              label={PORTAL_TEXT.lastWeightLabel}
+              value={Number(latestWeight.weightKg)}
+              unit="kg"
+              size="lg"
+              caption={formatTimeAgo(latestWeight.recordedAt, now, tz)}
+            />
+          </div>
+        ) : (
+          <p className="mt-1 text-pretty text-body-lg text-muted-foreground">{PORTAL_TEXT.noWeightYet}</p>
+        )}
+      </PortalCardLink>
+
+      {insurances.length > 0 ? (
+        <Card className="p-5">
+          <h2 className={cardTitle}>{PORTAL_TEXT.insurancesTitle}</h2>
+          <ul className="mt-2 space-y-1 text-body-lg">
+            {insurances.map((i) => (
+              <li key={i}>{i}</li>
+            ))}
+          </ul>
         </Card>
+      ) : null}
 
-        <Card title="Diario alimentario">
-          <p className="text-sm text-muted-foreground">Anotá lo que comiste hoy, con foto si querés.</p>
-          <ButtonLink href="/portal/diario" variant="secondary" size="lg" className={cardLink}>
-            Abrir diario
-            <ChevronRight aria-hidden />
-          </ButtonLink>
-        </Card>
-
-        {insurances.length > 0 ? (
-          <Card title="Obras sociales">
-            <ul className="flex flex-wrap gap-2">
-              {insurances.map((i) => (
-                <li key={i}>
-                  <Badge tone="neutral">{i}</Badge>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        ) : null}
+      <div className="pt-2">
+        <PortalLogoutButton />
       </div>
     </div>
   );

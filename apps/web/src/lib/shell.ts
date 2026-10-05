@@ -1,5 +1,5 @@
 import "server-only";
-import { professionalDisplayName } from "@nutri-bot/core";
+import { portalDocumentTitle, professionalDisplayName, professionalWhatsappUrl } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { countPendingInquiries } from "@nutri-bot/db/domain";
 
@@ -25,6 +25,34 @@ export async function getProfessionalPortalName(): Promise<string | null> {
     return professionalDisplayName(pro);
   } catch {
     return null;
+  }
+}
+
+/** HU-017d-1 (D7, D8): nombre del portal y link de WhatsApp de la profesional para la pantalla de acceso
+ *  del layout. Igual que getProfessionalPortalName: nunca tira (ante error → { name: null, whatsappUrl: null }). */
+export async function getProfessionalPortalContact(): Promise<{ name: string | null; whatsappUrl: string | null }> {
+  try {
+    const pro = await prisma.professional.findUnique({
+      where: { id: 1 },
+      select: { name: true, title: true, phoneJid: true },
+    });
+    if (!pro) return { name: null, whatsappUrl: null };
+    return {
+      name: pro.name?.trim() ? professionalDisplayName(pro) : null,
+      whatsappUrl: professionalWhatsappUrl(pro.phoneJid),
+    };
+  } catch {
+    return { name: null, whatsappUrl: null };
+  }
+}
+
+/** HU-017d-1: título de la pestaña del portal ("Tu espacio — Lic. Daiana Ponce"). Nunca tira. */
+export async function getPortalDocumentTitle(): Promise<string> {
+  try {
+    const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: { name: true, title: true } });
+    return portalDocumentTitle(pro ?? { title: null, name: "" });
+  } catch {
+    return portalDocumentTitle({ title: null, name: "" });
   }
 }
 

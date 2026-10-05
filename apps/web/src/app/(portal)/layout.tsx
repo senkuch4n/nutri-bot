@@ -1,49 +1,57 @@
-import { Wordmark } from "@/components/brand";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import { ConfirmProvider } from "@/components/confirm";
+import { PortalAccessGate, PortalAccessScreen } from "@/components/portal/portal-access";
 import { Toaster } from "@/components/primitives/sonner";
 import { PortalHeader } from "@/components/shell/portal-header";
 import { PortalNav } from "@/components/shell/portal-nav";
 import { getPortalPatient } from "@/lib/patient-session";
-import { getProfessionalPortalName } from "@/lib/shell";
+import { getPortalDocumentTitle, getProfessionalPortalContact } from "@/lib/shell";
+
+// HU-017d-1: la pestaña del portal no dice "NutriBot — Panel" (el título del layout raíz).
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: await getPortalDocumentTitle(),
+    description: "Tu plan, tu evolución y tu diario, con tu nutricionista.",
+  };
+}
 
 // HU-017a §10.3. `theme-portal` = fondo agrupado cálido (D2); el resto de la paleta es la del panel.
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
-  const [patient, professionalName] = await Promise.all([
-    getPortalPatient(),
-    getProfessionalPortalName(),
-  ]);
+  const [patient, contact] = await Promise.all([getPortalPatient(), getProfessionalPortalContact()]);
 
   if (!patient) {
+    // HU-017d-1 (Q2): el layout no recibe searchParams; el gate cliente distingue "link vencido"
+    // (?error=invalid) de "sin link". El Suspense evita el aviso de useSearchParams en el build.
     return (
-      <div className="theme-portal grid min-h-[100dvh] place-items-center bg-grouped px-4 text-foreground">
-        <div className="w-full max-w-sm rounded-xl bg-card p-8 text-center shadow-card more-contrast:border more-contrast:border-input">
-          <Wordmark subtitle={professionalName} className="mb-6 justify-center" />
-          <h1 className="text-balance text-title-2">Portal del paciente</h1>
-          <p className="mt-3 text-pretty text-callout text-muted-foreground">
-            Para entrar necesitás un link de acceso. Escribile a tu nutricionista por WhatsApp
-            <strong className="font-semibold text-foreground"> &quot;portal&quot; </strong> o elegí la
-            opción del menú y te lo mandamos.
-          </p>
-        </div>
-      </div>
+      <Suspense
+        fallback={
+          <PortalAccessScreen variant="no-link" professionalName={contact.name} whatsappUrl={contact.whatsappUrl} />
+        }
+      >
+        <PortalAccessGate professionalName={contact.name} whatsappUrl={contact.whatsappUrl} />
+      </Suspense>
     );
   }
 
   return (
-    <div className="theme-portal relative min-h-[100dvh] bg-grouped text-foreground">
-      <PortalHeader professionalName={professionalName} />
-      {/* El contenido pasa por debajo del header y de la tab bar (materiales translúcidos). */}
-      <main
-        data-portal-main
-        className="mx-auto max-w-2xl px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1.5rem)] pt-6 md:py-8"
-      >
-        {children}
-      </main>
-      <PortalNav variant="bottom" />
-      <Toaster
-        position="top-center"
-        offset={{ top: "calc(env(safe-area-inset-top) + 4rem)" }}
-        mobileOffset={{ top: "calc(env(safe-area-inset-top) + 4rem)" }}
-      />
-    </div>
+    <ConfirmProvider>
+      <div className="theme-portal relative min-h-[100dvh] bg-grouped text-foreground">
+        <PortalHeader professionalName={contact.name} />
+        {/* El contenido pasa por debajo del header y de la tab bar (materiales translúcidos). */}
+        <main
+          data-portal-main
+          className="mx-auto max-w-2xl px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1.5rem)] pt-6 md:py-8"
+        >
+          {children}
+        </main>
+        <PortalNav variant="bottom" />
+        <Toaster
+          position="top-center"
+          offset={{ top: "calc(env(safe-area-inset-top) + 4rem)" }}
+          mobileOffset={{ top: "calc(env(safe-area-inset-top) + 4rem)" }}
+        />
+      </div>
+    </ConfirmProvider>
   );
 }

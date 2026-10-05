@@ -3,14 +3,13 @@
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/primitives/chart";
 import { chartDefaultColor } from "@/lib/chart-theme";
+import { evolutionChartRows } from "@/lib/evolution-chart-rows";
 
 export interface EvolutionPoint {
   date: Date;
   value: number;
 }
 
-const fmtDay = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit" });
-const fmtFull = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", year: "numeric" });
 
 /**
  * Una serie en el tiempo como barras con base en cero (una barra por medición). La variación se
@@ -34,21 +33,14 @@ export function EvolutionChart({
   decimals?: number;
   showValues?: boolean;
 }) {
-  const sorted = [...points].sort((a, b) => a.date.getTime() - b.date.getTime());
-  if (sorted.length === 0) {
+  const rows = evolutionChartRows(points);
+  if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">Sin datos para graficar.</p>;
   }
 
   const fmtNum = new Intl.NumberFormat("es-AR", { maximumFractionDigits: decimals });
   const withUnit = (n: number) => fmtNum.format(n) + (unit ? ` ${unit}` : "");
-  const labels = showValues ?? sorted.length <= 8;
-
-  const rows = sorted.map((p, i) => ({
-    label: fmtDay.format(p.date),
-    full: fmtFull.format(p.date),
-    value: p.value,
-    isLast: i === sorted.length - 1,
-  }));
+  const labels = showValues ?? rows.length <= 8;
 
   return (
     <ChartContainer
@@ -94,7 +86,10 @@ export function EvolutionChart({
             />
           }
         />
-        <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
+        {/* Sin animación de crecimiento (HU-017d-1): Recharts la avanza con requestAnimationFrame y, si la
+            pestaña o la ventana no está en primer plano (Chrome no da cuadros), las barras quedaban en 0.
+            El gráfico se dibuja ya con su altura final; también cubre el movimiento reducido (Q15). */}
+        <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false}>
           {rows.map((r, i) => (
             <Cell key={i} fill={color} fillOpacity={r.isLast ? 1 : 0.85} />
           ))}

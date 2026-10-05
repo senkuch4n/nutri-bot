@@ -459,3 +459,7 @@
 ## HU-017b-4 — Asistente y ajustes (aprobada 2026-10-05, senkuch4n) · HU-017b cerrada
 - Ajustes en listas agrupadas con guardado por grupo y "Cambios sin guardar", zona horaria y moneda en listas, textos sin jerga con detalle técnico aparte; Asistente con sugerencias, composer y aviso de IA. Arregla del todo el error de hidratación del sidebar (id estable).
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. Ajustes de la profesional intactos byte a byte. HU-017b completa (PR #34 → #36 → #37 → #38).
+
+## HU-017d-1 — Portal: acceso, inicio y evolución (aprobada 2026-10-05, senkuch4n)
+- Link vencido propio, saludo grande, próximo turno destacado (y con seña pendiente), tarjetas tocables, conteo del diario, botón WhatsApp solo con teléfono real; evolución con peso y altura sin juicios de color, historial sin notas. Arregla el gráfico de peso con barras en 0 (animación en pestañas ocultas) y el título del portal.
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión.
