@@ -54,7 +54,7 @@ function ExceptionItem({ exc }: { exc: ExceptionView }) {
       </div>
       <button
         type="button"
-        onClick={() => start(() => deleteExceptionAction(exc.id))}
+        onClick={() => start(async () => { await deleteExceptionAction(exc.id); })}
         disabled={pending}
         aria-label={`Quitar excepción del ${exc.dateLabel}`}
         title="Quitar"

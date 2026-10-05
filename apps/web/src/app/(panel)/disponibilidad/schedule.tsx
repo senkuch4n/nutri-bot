@@ -143,7 +143,7 @@ function Block({ rule, startMin }: { rule: Rule; startMin: number }) {
       <p className="text-xs leading-tight tabular-nums text-muted-foreground">{rule.endTime}</p>
       <button
         type="button"
-        onClick={() => start(() => deleteRuleAction(rule.id))}
+        onClick={() => start(async () => { await deleteRuleAction(rule.id); })}
         disabled={pending}
         aria-label={`Quitar bloque ${rule.startTime} a ${rule.endTime}`}
         title="Quitar bloque"

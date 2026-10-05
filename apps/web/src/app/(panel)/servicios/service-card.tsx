@@ -76,7 +76,7 @@ export function ServiceCard({
             disabled={pending}
             aria-busy={pending || undefined}
             // `checked` es `!service.active` al tocarlo: misma llamada que antes.
-            onCheckedChange={(checked) => start(() => toggleServiceAction(service.id, checked))}
+            onCheckedChange={(checked) => start(async () => { await toggleServiceAction(service.id, checked); })}
           />
         </div>
       </div>

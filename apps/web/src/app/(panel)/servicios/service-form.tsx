@@ -149,7 +149,7 @@ export function ServiceForm({ editing, onDone }: { editing?: EditableService; on
           <input
             type="checkbox"
             name="requiresDeposit"
-            value="true"
+            value="1"
             checked={requiresDeposit}
             onChange={(e) => setRequiresDeposit(e.target.checked)}
             className="h-4 w-4 accent-primary"
