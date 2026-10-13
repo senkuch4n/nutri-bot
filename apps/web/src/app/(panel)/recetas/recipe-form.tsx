@@ -44,6 +44,7 @@ import { Checkbox } from "@/components/primitives/checkbox";
 import { ChipGroup } from "@/components/recipes/chip-group";
 import { IngredientFoodPicker } from "@/components/recipes/ingredient-food-picker";
 import { RecipePhoto } from "@/components/recipes/recipe-photo";
+import { resizePhotoForUpload } from "@/lib/photo-resize";
 import { Badge, Button, FormError, Input, PageHeader, Textarea, inputClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { recipePhotoUrl } from "@/lib/recipe-view";
@@ -325,10 +326,18 @@ function RecipeFormInner({
     }
   }
 
-  function onPickPhoto(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function onPickPhoto(e: ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!picked) return;
+    // En Vercel el body de una server action no puede pasar de 4,5 MB: se achica en el navegador
+    // igual que la foto del diario (queda ≤ 2,5 MB).
+    const resized = await resizePhotoForUpload(picked);
+    if (!resized.ok) {
+      setPhotoError(RECIPE_TEXT.photoInvalid);
+      return;
+    }
+    const file = resized.file;
     const sizeError = recipePhotoSizeError(file.size);
     const typeOk = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
     if (sizeError || !typeOk) {
