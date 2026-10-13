@@ -314,3 +314,11 @@ orquestador, para que las revise a la mañana:
   (conflictos solo en HU-018c.json y esta bitácora: se conservó la versión de la rama). Sigue: #41 a develop (incluye
   #27, #28, #30–#40) y deploy de develop en Vercel + Postgres en Neon (vacía + datos base: ficha profesional,
   servicios, SARA 2).
+- #41 mergeado a develop (incluye #27, #28, #30–#40; cerrados con comentario). #42 (foto de receta achicada en el
+  navegador, límite 4,5 MB de Vercel) mergeado.
+- **Producción en Vercel:** https://nutribot-gold.vercel.app (proyecto `nutribot`, Root `apps/web`, región gru1,
+  rama de producción `develop`: cada merge a develop publica). Base Neon `nutribot-db` (sa-east-1) con las 24
+  migraciones, SARA 2 (890), seed base (ficha "Nutricionista", 3 servicios, horarios L–V) y 1 receta publicada.
+  Login con Google probado por el usuario: OK. Sin bot, sin Mercado Pago.
+- Pendiente: mail de la nutricionista en `ALLOWED_EMAILS` (y usuaria de prueba en Google Cloud si la app está en
+  modo Prueba); el portal del paciente no tiene cómo recibir el link sin el bot (idea: "Copiar link del portal").
