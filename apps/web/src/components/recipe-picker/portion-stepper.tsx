@@ -1,13 +1,11 @@
 "use client";
 
-import { Minus, Plus } from "lucide-react";
 import { PORTION_MAX, PORTION_MIN, formatPortions, stepPortions, stepperAriaLabel } from "@nutri-bot/core";
-import { Button } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { StepperControl } from "@/components/stepper-control";
 
 /**
- * HU-018c (D9): "− 1 porción +", de ½ en ½ entre ½ y 4. Botones de 44 px separados por el texto; el
- * valor se anuncia (aria-live) al cambiar. Lo usan la tarjeta del buscador y el ítem del editor.
+ * HU-018c (D9): "− 1 porción +", de ½ en ½ entre ½ y 4. Lo usan la tarjeta del buscador y el ítem
+ * del editor. HU-018d: es un envoltorio de StepperControl (mismo DOM que antes).
  */
 export function PortionStepper({
   value,
@@ -22,35 +20,20 @@ export function PortionStepper({
   disabled?: boolean;
   className?: string;
 }) {
-  const atMin = value <= PORTION_MIN;
-  const atMax = value >= PORTION_MAX;
   return (
-    <div role="group" aria-label={`Porciones de ${recipeName}`} className={cn("inline-flex items-center gap-2", className)}>
-      <Button
-        type="button"
-        variant="secondary"
-        size="icon"
-        className="size-11 rounded-full [&_svg]:size-5"
-        aria-label={stepperAriaLabel(-1, recipeName)}
-        disabled={disabled || atMin}
-        onClick={() => onChange(stepPortions(value, -1))}
-      >
-        <Minus aria-hidden />
-      </Button>
-      <span aria-live="polite" className="min-w-[6.5rem] text-center text-callout font-semibold tabular-nums">
-        {formatPortions(value)}
-      </span>
-      <Button
-        type="button"
-        variant="secondary"
-        size="icon"
-        className="size-11 rounded-full [&_svg]:size-5"
-        aria-label={stepperAriaLabel(1, recipeName)}
-        disabled={disabled || atMax}
-        onClick={() => onChange(stepPortions(value, 1))}
-      >
-        <Plus aria-hidden />
-      </Button>
-    </div>
+    <StepperControl
+      value={value}
+      onChange={onChange}
+      canDecrement={value > PORTION_MIN}
+      canIncrement={value < PORTION_MAX}
+      step={(direction) => stepPortions(value, direction)}
+      format={formatPortions}
+      groupLabel={`Porciones de ${recipeName}`}
+      minusLabel={stepperAriaLabel(-1, recipeName)}
+      plusLabel={stepperAriaLabel(1, recipeName)}
+      disabled={disabled}
+      className={className}
+      valueClassName="min-w-[6.5rem]"
+    />
   );
 }

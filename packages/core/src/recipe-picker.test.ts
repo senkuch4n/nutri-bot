@@ -30,7 +30,11 @@ import {
   pickerTitle,
   prepareRecipeImpact,
   recipeAddedMessage,
+  recipePhotoCreditText,
   recipePortionText,
+  recipeSourceText,
+  recipeYieldText,
+  scopeForDaysToAdd,
   stepperAriaLabel,
   type PickerScope,
   type RecipeImpact,
@@ -172,6 +176,39 @@ describe("peor día (varios días marcados)", () => {
     const tie = [meal("d", "PER_DAY", [it_("THU", m(1000, 50, 100, 60)), it_("SAT", m(1000, 50, 100, 60))])];
     const impact = impactFor(tie, "d", { kind: "DAYS", focusDay: "SAT", days: ["THU", "SAT"] });
     expect(impact.fit).toEqual({ kind: "OVER", macro: "fat", excess: 8, day: "THU" });
+  });
+});
+
+describe("scopeForDaysToAdd (impacto y botón miden los mismos días)", () => {
+  const scope: PickerScope = { kind: "DAYS", focusDay: "TUE", days: ["TUE", "THU", "SAT"] };
+  it("saca los días que ya tienen la receta", () => {
+    expect(scopeForDaysToAdd(scope, ["TUE", "SAT"])).toEqual({ kind: "DAYS", focusDay: "TUE", days: ["TUE", "SAT"] });
+  });
+  it("sin cambios devuelve el mismo alcance (misma referencia)", () => {
+    expect(scopeForDaysToAdd(scope, ["SAT", "TUE", "THU"])).toBe(scope);
+  });
+  it("si el día que se edita ya la tiene (Agregada) o no es DAYS, no cambia", () => {
+    expect(scopeForDaysToAdd(scope, ["THU"])).toBe(scope);
+    const every: PickerScope = { kind: "EVERY_DAY" };
+    expect(scopeForDaysToAdd(every, [])).toBe(every);
+  });
+  it("el peor día deja de ser uno donde no se agrega nada", () => {
+    // El jueves ya tiene la receta: el botón dice "Agregar en 2 días" y el encaje no habla del jueves.
+    const meals = [
+      meal("d", "PER_DAY", [
+        it_("TUE", m(1000, 50, 100, 30)),
+        it_("THU", m(1000, 50, 100, 60)), // este ítem es la receta r1
+        it_("SAT", m(1000, 50, 100, 30)),
+      ]),
+    ];
+    const withRecipe = meals[0]!.items.map((i) => ({ weekday: i.weekday, recipeId: i.weekday === "THU" ? "r1" : null }));
+    const daysToAdd = daysMissingRecipe({ mode: "PER_DAY", items: withRecipe }, "r1", scope.days);
+    expect(daysToAdd).toEqual(["TUE", "SAT"]);
+    expect(impactFor(meals, "d", scope).fit).toMatchObject({ kind: "OVER", day: "THU" });
+    const narrowed = scopeForDaysToAdd(scope, daysToAdd);
+    const impact = impactFor(meals, "d", narrowed);
+    expect(impact.fit).toEqual({ kind: "FITS" });
+    expect(addButtonLabel(daysToAdd.length)).toBe("Agregar en 2 días");
   });
 });
 
@@ -399,5 +436,29 @@ describe("búsqueda del buscador (D13 y la HU)", () => {
   it("una receta con avena sin el momento aparece recién con 'Todos'", () => {
     expect(filterRecipes(cards, { ...filters, query: "avena" }).some((c) => c.name === "Galletitas")).toBe(false);
     expect(filterRecipes(cards, { ...filters, moment: null, query: "avena" }).some((c) => c.name === "Galletitas")).toBe(true);
+  });
+});
+
+describe("textos del detalle (018c-2)", () => {
+  it("recipeYieldText", () => {
+    expect(recipeYieldText(4)).toBe("Rinde 4 porciones");
+    expect(recipeYieldText(8)).toBe("Rinde 8 porciones");
+    expect(recipeYieldText(1)).toBe("Rinde 1 porción");
+    expect(recipeYieldText(0)).toBeNull();
+    expect(recipeYieldText(null)).toBeNull();
+  });
+  it("fuente y crédito de la foto", () => {
+    expect(recipeSourceText(" Nutriarte ")).toBe("Fuente: Nutriarte");
+    expect(recipeSourceText("  ")).toBeNull();
+    expect(recipeSourceText(null)).toBeNull();
+    expect(recipePhotoCreditText("Ana")).toBe("Foto: Ana");
+    expect(recipePhotoCreditText(null)).toBeNull();
+  });
+  it("títulos de las secciones", () => {
+    expect([RECIPE_PICKER_TEXT.ingredientsTitle, RECIPE_PICKER_TEXT.preparationTitle, RECIPE_PICKER_TEXT.tipsTitle]).toEqual([
+      "Ingredientes",
+      "Preparación",
+      "Tips y conservación",
+    ]);
   });
 });

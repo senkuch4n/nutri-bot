@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { FileText } from "lucide-react";
+import { FileText, Pencil, Plus } from "lucide-react";
 import { ISAK_REPORT_TEXT, ISAK_TEXT, type IsakMeasures, type buildIsakSummary } from "@nutri-bot/core";
 import { Badge, Button, ButtonLink, Card } from "@/components/ui";
-import { DeleteIsakStudyButton } from "./delete-isak-study-button";
+import { usePendingDeletion } from "@/lib/deferred-delete";
+import { IsakStudyMoreMenu } from "./delete-isak-study-button";
 import { MUSCLE_BONE_TONES } from "./diagnosis-rows";
 import { IsakForm } from "./isak-form";
 
@@ -30,7 +31,9 @@ export function IsakCard({
   startEditing: boolean;
 }) {
   const [mode, setMode] = useState<"view" | "form">(startEditing && study ? "form" : "view");
-  const summary = study?.summary;
+  // HU-017c-3: mientras corre el plazo de "Deshacer", el estudio se ve como borrado.
+  const deleting = usePendingDeletion(study ? `isak:${study.entryId}` : "isak:");
+  const summary = study && !deleting ? study.summary : undefined;
   const nothingToShow = summary && !summary.tissuesLine && !summary.somatotypeLine && !summary.sum6Line;
 
   return (
@@ -47,9 +50,9 @@ export function IsakCard({
             initial={study ? study.values : { weightKg: prefill.weightKg, heightCm: prefill.heightCm }}
             onDone={() => setMode("view")}
           />
-        ) : study && summary ? (
+        ) : study && summary && !deleting ? (
           <div className="space-y-4">
-            <div className="space-y-2 text-sm tabular-nums">
+            <div className="space-y-2 text-body tabular-nums">
               {summary.tissuesLine ? <p>{summary.tissuesLine}</p> : null}
               {summary.somatotypeLine ? (
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -64,18 +67,23 @@ export function IsakCard({
                 <p className="text-muted-foreground">Estudio cargado. Faltan medidas para los cálculos.</p>
               ) : null}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <ButtonLink href={`/pacientes/${patientId}/consultas/${consultationId}/antropometria`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <ButtonLink href={`/pacientes/${patientId}/consultas/${consultationId}/antropometria`} size="lg" className="max-sm:w-full">
                 {ISAK_TEXT.viewFull}
               </ButtonLink>
-              <ButtonLink href={`/pacientes/${patientId}/consultas/${consultationId}/antropometria/informe`} variant="secondary">
+              <ButtonLink
+                href={`/pacientes/${patientId}/consultas/${consultationId}/antropometria/informe`}
+                variant="secondary"
+                size="lg"
+              >
                 <FileText aria-hidden />
-                {ISAK_TEXT.reportButton}
+                Informe
               </ButtonLink>
-              <Button type="button" variant="secondary" onClick={() => setMode("form")}>
+              <Button type="button" variant="secondary" size="lg" onClick={() => setMode("form")}>
+                <Pencil aria-hidden />
                 Editar
               </Button>
-              <DeleteIsakStudyButton
+              <IsakStudyMoreMenu
                 patientId={patientId}
                 consultationId={consultationId}
                 entryId={study.entryId}
@@ -88,10 +96,23 @@ export function IsakCard({
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">{ISAK_TEXT.empty}</p>
-            <Button type="button" onClick={() => setMode("form")}>
+            <p className="text-body text-muted-foreground">{ISAK_TEXT.empty}</p>
+            {/* Mientras corre el "Deshacer" el estudio todavía existe: cargar otro chocaría con él. */}
+            <Button
+              type="button"
+              size="lg"
+              disabled={deleting}
+              aria-describedby={deleting ? `${consultationId}-isak-espera` : undefined}
+              onClick={() => setMode("form")}
+            >
+              <Plus aria-hidden />
               {ISAK_TEXT.load}
             </Button>
+            {deleting ? (
+              <p id={`${consultationId}-isak-espera`} className="text-footnote text-muted-foreground">
+                Vas a poder cargar otro cuando se cierre el aviso de “Deshacer”.
+              </p>
+            ) : null}
           </div>
         )}
       </Card>

@@ -1,28 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { EventInput } from "@fullcalendar/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CalendarApi, DatesSetArg, EventInput } from "@fullcalendar/core";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import { calendarPeriodTitle, type CalendarView } from "@nutri-bot/core";
 import { Skeleton } from "@/components/primitives/skeleton";
+import { FC_VIEW, calendarViewFromFc } from "@/lib/calendar-route";
+import { CalendarToolbar } from "../../calendar-toolbar";
 import { chartPalette } from "@/lib/design-tokens";
 import { DemoSection } from "./section";
 
 // Referencias estables (igual que calendar-client.tsx).
 const PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
-const HEADER_TOOLBAR = {
-  left: "prev,next today",
-  center: "title",
-  right: "dayGridMonth,timeGridWeek,timeGridDay",
-} as const;
-const BUTTON_TEXT = {
-  today: "Hoy",
-  month: "Mes",
-  week: "Semana",
-  day: "Día",
-} as const;
 const BUSINESS_HOURS = {
   daysOfWeek: [1, 2, 3, 4, 5],
   startTime: "09:00",
@@ -41,6 +33,28 @@ export function CalendarSection() {
   // El calendario depende de la hora (hoy, indicador de "ahora", título): se monta solo en el cliente
   // para que el HTML del servidor y la hidratación no puedan diferir.
   const [events, setEvents] = useState<EventInput[] | null>(null);
+  // HU-017b-2 (R2): la misma barra propia que el calendario real (los estilos de `headerToolbar` ya no
+  // existen desde 017b-1).
+  const calRef = useRef<FullCalendar>(null);
+  const [view, setView] = useState<CalendarView>("semana");
+  const [title, setTitle] = useState("");
+  const withApi = (fn: (api: CalendarApi) => void) => {
+    const api = calRef.current?.getApi();
+    if (api) fn(api);
+  };
+  const onDatesSet = useCallback((arg: DatesSetArg) => {
+    const api = arg.view.calendar;
+    const next = calendarViewFromFc(arg.view.type);
+    setView(next);
+    setTitle(
+      calendarPeriodTitle(
+        next,
+        api.formatIso(arg.view.currentStart, true),
+        api.formatIso(arg.view.currentEnd, true),
+        api.formatIso(new Date(), true),
+      ),
+    );
+  }, []);
   useEffect(() => {
     const now = new Date();
     const monday = new Date(now);
@@ -78,30 +92,41 @@ export function CalendarSection() {
       id="calendario"
       index={13}
       title="Calendario"
-      description="Tema de FullCalendar desde los tokens: botones gray, el activo como segmento elevado, hoy con un tinte casi imperceptible. Los colores de los turnos son dato (servicio)."
+      description="Barra propia (‹ Hoy ›, título y segmentado, como en el calendario real) y tema de FullCalendar desde los tokens: hoy con un tinte casi imperceptible. Los colores de los turnos son dato (servicio)."
     >
       <div className="min-h-[40rem] rounded-xl bg-card p-4 shadow-card">
         {events === null ? (
           <Skeleton className="h-[38rem] w-full" />
         ) : (
-          <FullCalendar
-            plugins={PLUGINS}
-            initialView="timeGridWeek"
-            headerToolbar={HEADER_TOOLBAR}
-            buttonText={BUTTON_TEXT}
-            locale="es"
-            firstDay={1}
-            nowIndicator
-            allDaySlot={false}
-            slotDuration="00:30:00"
-            slotMinTime="08:00:00"
-            slotMaxTime="19:00:00"
-            businessHours={BUSINESS_HOURS}
-            expandRows
-            height="auto"
-            events={events}
-            eventInteractive
-          />
+          <>
+            <CalendarToolbar
+              view={view}
+              title={title}
+              onPrev={() => withApi((api) => api.prev())}
+              onNext={() => withApi((api) => api.next())}
+              onToday={() => withApi((api) => api.today())}
+              onViewChange={(v) => withApi((api) => api.changeView(FC_VIEW[v]))}
+            />
+            <FullCalendar
+              ref={calRef}
+              plugins={PLUGINS}
+              initialView="timeGridWeek"
+              headerToolbar={false}
+              datesSet={onDatesSet}
+              locale="es"
+              firstDay={1}
+              nowIndicator
+              allDaySlot={false}
+              slotDuration="00:30:00"
+              slotMinTime="08:00:00"
+              slotMaxTime="19:00:00"
+              businessHours={BUSINESS_HOURS}
+              expandRows
+              height="auto"
+              events={events}
+              eventInteractive
+            />
+          </>
         )}
       </div>
     </DemoSection>

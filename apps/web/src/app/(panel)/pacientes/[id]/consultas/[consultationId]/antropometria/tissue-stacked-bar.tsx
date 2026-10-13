@@ -19,7 +19,11 @@ export function TissueStackedBar({ tissues }: { tissues: IsakStudyResult["tissue
   return (
     <figure className="mt-4 space-y-3" aria-label="Fraccionamiento tisular en %">
       {/* La barra es decorativa: los mismos valores van en texto en la leyenda. */}
-      <div aria-hidden className="flex h-3 overflow-hidden rounded-full">
+      {/* HU-017c-3: entrada corta (fundido + leve desplazamiento, 300 ms); nada con movimiento reducido. */}
+      <div
+        aria-hidden
+        className="flex h-3 overflow-hidden rounded-full motion-safe:duration-300 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-left-2"
+      >
         {parts.map((p) => (
           <div key={p.key} className="h-full" style={{ width: `${p.percent}%`, backgroundColor: p.color }} />
         ))}

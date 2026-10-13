@@ -427,6 +427,46 @@
   de la revisión. Aprobada en la primera revisión.
 - **Modelos:** implementer Opus; reviewer Opus.
 
+## HU-017c-1 — Lista de pacientes simple (aprobada 2026-10-04, senkuch4n)
+- Buscador grande sin acentos, próximo turno en lenguaje común, teléfono con formato, canales @newsletter ocultos, "Por completar" para contactos sin nombre con "Poner nombre", helpers de contacto/teléfono/fechas en core.
+- Implementer Opus (ui-ux-pro-max, apple-design, web-design-guidelines), reviewer Opus: APPROVED en la 1ª revisión.
+
+## HU-017c-2 — Ficha de 4 pestañas y Resumen (aprobada 2026-10-04, senkuch4n)
+- Ficha de 7 a 4 pestañas (Resumen, Consultas, Plan, Historial) con alias de URLs viejas, Resumen con una acción principal y tarjetas en lenguaje común, "Editar datos" en un solo Sheet ($transaction), Historial con segmentado.
+- Recorrido encontró un crash en runtime (íconos como función a componentes cliente), arreglado antes de la revisión. Reviewer: CHANGES_REQUESTED en la 1ª (replaceState con el estado de Next pierde la pestaña tras una server action) → APPROVED en la ronda 2.
+
+## HU-017c-3 — Consulta, ISAK y Deshacer (aprobada 2026-10-04, senkuch4n)
+- Borrado diferido con "Deshacer" (consulta, estudio, cálculo, medición, quitar plan), destructivas en menú "…" con confirmaciones simples, botones grandes con ícono y texto, columna lateral sticky, ISAK con índice y barras z. Arregla el error de hidratación del sidebar en todo el panel (R3) y la coma decimal (R4).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. R5–R7 pasan a 017c-4.
+
+## HU-017c-4 — Informe antropométrico y su PDF (aprobada 2026-10-04, senkuch4n) · HU-017c cerrada
+- Avisos agrupados en "Antes de enviar" con su acción, marca "Editado", jerarquía de acciones, confirmación de envío; PDF del informe con paleta fría y escala Inter (el PDF del plan no cambia). R5–R7 de la revisión de 017c-3.
+- Reviewer: CHANGES_REQUESTED en la 1ª (R5 ocultaba un cálculo nuevo) → APPROVED en la ronda 2. HU-017c completa (4 entregas, PR #30 → #31 → #32 → #33).
+- Pendiente del usuario: validar con la nutricionista las 3 tareas de D1.
+
+## HU-017b-1 — Calendario y turno (aprobada 2026-10-04, senkuch4n)
+- Barra propia con resumen en palabras, vista Día en el celular, `?fecha=` que abre el día (cierra Q7 de 017c), panel del turno en palabras ("Vino a la consulta"), cancelar con confirmación + Deshacer diferido (no encola durante el plazo) y aviso al cerrar, "Nuevo turno" eligiendo a la paciente y teléfono normalizado en core, "Registrar pago" desde el turno.
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. Bot apagado durante toda la entrega.
+
+## HU-017b-2 — Disponibilidad y servicios (aprobada 2026-10-04, senkuch4n)
+- Disponibilidad como lista por día con solo las reglas activas, editar horario, superposición bloqueada, excepciones en palabras con Deshacer; servicios con precio destacado, Activos/Pausados, "Lo ofrece el bot" con Deshacer, formulario por grupos y arreglo de z.coerce.boolean (no reactiva servicios pausados).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. El reviewer encontró un bug del MVP (excepciones aplicadas el día anterior en el bot) → tarea directa, PR #35.
+
+## HU-017b-3 — Mensajes, pagos y avisos (aprobada 2026-10-04, senkuch4n)
+- Mensajes en tarjetas con "Ya respondí" + Deshacer; pagos por mes en la zona de la profesional con glosario y pago manual con monto precargado y turnos que vinieron; comunicado solo a personas (16), con vista previa + Deshacer diferido; cola en palabras con error simple. R4–R6 de 017b-2.
+- Reviewer: CHANGES_REQUESTED en la 1ª (doble clic en "Ya respondí" se escapaba al Deshacer) → APPROVED en la ronda 2. Ningún mensaje real; OutboundMessage 12 antes y después.
+
+## HU-017b-4 — Asistente y ajustes (aprobada 2026-10-05, senkuch4n) · HU-017b cerrada
+- Ajustes en listas agrupadas con guardado por grupo y "Cambios sin guardar", zona horaria y moneda en listas, textos sin jerga con detalle técnico aparte; Asistente con sugerencias, composer y aviso de IA. Arregla del todo el error de hidratación del sidebar (id estable).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. Ajustes de la profesional intactos byte a byte. HU-017b completa (PR #34 → #36 → #37 → #38).
+
+## HU-017d-1 — Portal: acceso, inicio y evolución (aprobada 2026-10-05, senkuch4n)
+- Link vencido propio, saludo grande, próximo turno destacado (y con seña pendiente), tarjetas tocables, conteo del diario, botón WhatsApp solo con teléfono real; evolución con peso y altura sin juicios de color, historial sin notas. Arregla el gráfico de peso con barras en 0 (animación en pestañas ocultas) y el título del portal.
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión.
+
+## HU-017d-2 — Portal: diario (aprobada 2026-10-05, senkuch4n)
+- "Anotar comida" en un sheet arrastrable con foto achicada en el celular, lista por día, foto grande, borrar con Deshacer idempotente; los otros gráficos del panel tampoco animan (R1).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión.
 ## HU-018c-1 · Buscador de recetas en la comida (aprobada 2026-10-03, senkuch4n)
 - **Qué:** "Agregar receta" en cada comida abre un panel lateral (pantalla completa en el celular) con buscador por
   ingrediente o nombre, chips (tipo, momento inferido del nombre de la comida, etiquetas), grilla de tarjetas con foto
@@ -437,3 +477,19 @@
 - **Verificación:** 1712 tests; `next build` y `next build --turbopack`; `test:recipe-picker`; recorrido en Chrome
   (`progress/recorrido_HU-018c.md`). Aprobada en la primera revisión. Pendientes menores para 018c-2 en la SDD.
 - **Modelos:** architect Opus; implementer Opus; reviewer Opus. Tramo hecho en modo autónomo (decisiones recomendadas).
+
+## HU-018c-2 — Detalle de la receta (aprobada 2026-10-04, senkuch4n)
+- Detalle de receta en el buscador (foto, ingredientes con medida casera y gramos, preparación, impacto, pie fijo para agregar) y "Ver receta" en el portal sin macros. Cierra los 4 pendientes de la revisión de 018c-1.
+- Implementer Opus (apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones menores en progress/review_HU-018c.md (test unitario de applyTemplateToPatient con receta, retry sin cancelación, macros de ítems que viajan al portal como ya pasaba con alimentos, mirar el PDF real antes del merge).
+
+## HU-018d-1a — Medidas caseras en el plan (aprobada 2026-10-04, senkuch4n)
+- Migración `food_measures` (modelo FoodMeasure + 4 columnas nullable en PlanMealItem/TemplateMealItem). Medidas por alimento en la ficha, alta en medida casera en planes y plantillas (y crear medida desde el editor), copias que conservan la medida, portal y PDF con "1½ tazas (270 g)".
+- Implementer Opus (migracion-prisma, apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Observaciones R2–R4 pasan a 018d-1b.
+
+## HU-018d-1b — Stepper y conversión de unitHint (aprobada 2026-10-04, senkuch4n)
+- Stepper de cantidad para ítems en medida casera, aviso "Tenías anotado" + "Pasar a medida" (prellena si el texto es legible), `unitHint` fuera del formulario, script `measures:convert-hints` (en seco en dev: 77 a crear, 2 ilegibles; aplicarlo queda para el usuario), R2–R4 de la revisión de 1a.
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. HU-018d cerrada (018d-2 opcional, solo si la nutricionista la pide).
+
+## HU-017d-3 — Portal: plan (aprobada 2026-10-05, senkuch4n) · HU-017d cerrada
+- Plan del portal sin kcal ni macros, "Hoy" en el selector de días, comidas legibles, "Ver receta" como fila entera con sheet inferior y medida casera (rama con merge de 018d).
+- Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. HU-017d completa (PR #39 → #40 → #41; #41 después de #28).

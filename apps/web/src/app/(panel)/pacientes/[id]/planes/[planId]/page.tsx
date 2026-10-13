@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@nutri-bot/db";
-import { getPlan, getPlanConsultationId, getPlanTarget, listFoods } from "@nutri-bot/db/domain";
+import { getPlan, getPlanConsultationId, getPlanTarget, listFoods, listMeasuresForPicker } from "@nutri-bot/db/domain";
 import { computeAgeYears, computePlanMicronutrients, formatInTimeZone } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { formatDateTime } from "@nutri-bot/core";
@@ -34,11 +34,12 @@ export default async function PlanDetailPage({
 }) {
   const { id, planId } = await params;
   const query = (await searchParams) ?? {};
-  const [plan, foods, pro, planTarget] = await Promise.all([
+  const [plan, foods, pro, planTarget, measures] = await Promise.all([
     getPlan(planId),
     listFoods({ activeOnly: true, source: "SARA2" }),
     getProfessional(),
     getPlanTarget(planId),
+    listMeasuresForPicker(),
   ]);
   if (!plan || plan.patientId !== id) notFound();
 
@@ -104,7 +105,8 @@ export default async function PlanDetailPage({
             ownerId={plan.id}
             ownerField="planId"
             meals={meals}
-            foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source }))}
+            foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source, kcalPer100: Number(f.kcalPer100) }))}
+            measures={measures}
             addMealAction={addPlanMealAction}
             deleteMealAction={deletePlanMealAction}
             addItemAction={addPlanMealItemAction}

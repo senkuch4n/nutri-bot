@@ -114,8 +114,10 @@ export function ComparativeChart({
           }
         />
         <ChartLegend content={<ChartLegendContent />} />
-        <Bar yAxisId="left" dataKey="left" fill="var(--color-left)" radius={[4, 4, 0, 0]} maxBarSize={40} />
-        <Bar yAxisId="right" dataKey="right" fill="var(--color-right)" radius={[4, 4, 0, 0]} maxBarSize={40} />
+        {/* Sin animación de crecimiento (HU-017d-2, R1; igual que evolution-chart): Recharts la avanza con
+            requestAnimationFrame y en una pestaña de fondo las barras quedaban en 0 hasta verse. */}
+        <Bar yAxisId="left" dataKey="left" fill="var(--color-left)" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={false} />
+        <Bar yAxisId="right" dataKey="right" fill="var(--color-right)" radius={[4, 4, 0, 0]} maxBarSize={40} isAnimationActive={false} />
       </BarChart>
     </ChartContainer>
   );

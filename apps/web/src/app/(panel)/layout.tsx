@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ConfirmProvider } from "@/components/confirm";
+import { PendingUnloadGuard } from "@/components/pending-unload-guard";
 import { Toaster } from "@/components/primitives/sonner";
 import { TooltipProvider } from "@/components/primitives/tooltip";
 import { AppSidebar } from "@/components/shell/app-sidebar";
@@ -60,6 +61,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           </main>
         </AppSidebar>
         <Toaster position="bottom-right" />
+        <PendingUnloadGuard />
       </ConfirmProvider>
     </TooltipProvider>
   );

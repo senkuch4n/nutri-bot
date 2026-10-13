@@ -1,28 +1,41 @@
-import { QrCode } from "lucide-react";
-import { PROFESSIONAL_TEXT, professionalLogoNotice, professionalSignatureLines } from "@nutri-bot/core";
+import { CircleCheck, CircleSlash } from "lucide-react";
+import {
+  PROFESSIONAL_TEXT,
+  SETTINGS_TEXT as T,
+  formatPhone,
+  professionalLogoNotice,
+  professionalSignatureLines,
+} from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { signIn } from "@/auth";
-import { Separator } from "@/components/primitives/separator";
-import { Alert, Badge, Button, ButtonLink, Card, PageHeader } from "@/components/ui";
-import { getProfessional } from "@/lib/professional";
-import { AjustesTabs } from "./ajustes-tabs";
-import {
-  SettingsFormProvider,
-  SettingsGeneralFields,
-  SettingsPdfFields,
-  SettingsSignatureFields,
-  type SettingsDefaults,
-} from "./settings-form";
-import { GoogleCalendarForm } from "./google-calendar-form";
-import { BotToggle } from "./bot-toggle";
-import { AfterHoursForm } from "./after-hours-form";
-import { BotAiForm } from "./bot-ai-form";
+import { GroupedList, GroupedListRow } from "@/components/grouped-list";
+import { Alert, Button, ButtonLink } from "@/components/ui";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
+import { getProfessional } from "@/lib/professional";
+import { DetailDisclosure } from "../pacientes/[id]/detail-disclosure";
+import { AfterHoursForm } from "./after-hours-form";
+import { AjustesTabs } from "./ajustes-tabs";
+import { BotAiForm } from "./bot-ai-form";
+import { BotToggle } from "./bot-toggle";
+import { GeneralForm } from "./general-form";
+import { GoogleCalendarForm, GoogleDisconnectButton } from "./google-calendar-form";
 import { LogoForm } from "./logo-form";
+import { PdfStyleForm } from "./pdf-style-form";
 import { SignatureForm } from "./signature-form";
-import { disconnectGoogleAction } from "./actions";
+import { SignatureIdentityForm } from "./signature-identity-form";
 
 export const dynamic = "force-dynamic";
+
+/** Ícono + texto: el estado no depende solo del color. */
+function StatusValue({ ok, children }: { ok: boolean; children: string }) {
+  const Icon = ok ? CircleCheck : CircleSlash;
+  return (
+    <span className={ok ? "inline-flex items-center gap-1.5 text-success" : "inline-flex items-center gap-1.5 text-destructive"}>
+      <Icon className="size-4" strokeWidth={2} aria-hidden />
+      {children}
+    </span>
+  );
+}
 
 export default async function AjustesPage() {
   const [pro, botStatus, logo] = await Promise.all([
@@ -32,42 +45,40 @@ export default async function AjustesPage() {
   ]);
   const googleConnected = Boolean(pro.googleRefreshToken);
   const botConnected = botStatus?.connected ?? false;
+  const calendarId = pro.googleCalendarId ?? "";
+  const usesMainCalendar = calendarId === "" || calendarId === "primary";
+  const phoneDigits = pro.phoneJid?.split("@")[0] ?? "";
 
-  const defaults: SettingsDefaults = {
-    timezone: pro.timezone,
-    currency: pro.currency,
-    phone: pro.phoneJid?.split("@")[0] ?? "",
-    acceptedInsurances: pro.acceptedInsurances ?? "",
-    pdfAccentColor: pro.pdfAccentColor ?? "",
-    pdfFooterText: pro.pdfFooterText ?? "",
-    title: pro.title ?? "",
-    licenseNumber: pro.licenseNumber ?? "",
-  };
+  const banner = botConnected ? null : (
+    <Alert tone="danger" title={T.botDisconnected}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p>{T.botDisconnectedHelp}</p>
+        <ButtonLink href="/ajustes/whatsapp">{T.connectWhatsapp}</ButtonLink>
+      </div>
+    </Alert>
+  );
 
   const general = (
-    <Card title="General" description="Zona horaria, moneda y datos que usa el bot.">
-      <SettingsGeneralFields defaults={defaults} />
-    </Card>
+    <GeneralForm
+      defaults={{
+        timezone: pro.timezone,
+        currency: pro.currency,
+        phone: phoneDigits ? formatPhone(phoneDigits) : "",
+        acceptedInsurances: pro.acceptedInsurances ?? "",
+      }}
+    />
   );
 
   const whatsapp = (
-    <Card
-      title="Bot de WhatsApp"
-      description="El bot nunca contesta mensajes comunes: solo se activa cuando alguien escribe una palabra clave como turno, turnos o menú. Igual podés apagarlo del todo."
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Conexión</span>
-          {botConnected ? <Badge tone="success">Conectado</Badge> : <Badge tone="danger">Desconectado</Badge>}
-        </div>
-        <ButtonLink variant="secondary" size="sm" href="/ajustes/whatsapp">
-          <QrCode aria-hidden />
-          Ver QR y vinculación
-        </ButtonLink>
-      </div>
-      <Separator className="my-4" />
-      <BotToggle paused={pro.botPaused} />
-      <Separator className="my-4" />
+    <>
+      <GroupedList>
+        <GroupedListRow
+          label={T.connection}
+          href="/ajustes/whatsapp"
+          value={<StatusValue ok={botConnected}>{botConnected ? T.connected : T.disconnected}</StatusValue>}
+        />
+        <BotToggle paused={pro.botPaused} />
+      </GroupedList>
       <AfterHoursForm
         defaults={{
           enabled: pro.afterHoursEnabled,
@@ -75,79 +86,100 @@ export default async function AjustesPage() {
           attendTo: pro.afterHoursStart,
         }}
       />
-      <Separator className="my-4" />
-      <BotAiForm
-        defaults={{ enabled: pro.botAiEnabled, info: pro.botAiInfo ?? "" }}
-        keyStatus={getBotAiKeyStatus()}
-      />
-    </Card>
+      <BotAiForm defaults={{ enabled: pro.botAiEnabled, info: pro.botAiInfo ?? "" }} keyStatus={getBotAiKeyStatus()} />
+    </>
   );
 
   const google = (
-    <Card
-      title="Google Calendar"
-      description="Sincroniza los turnos confirmados con tu calendario de Google."
-      actions={googleConnected ? <Badge tone="success">Conectado</Badge> : <Badge tone="warning">Sin conectar</Badge>}
-    >
+    <>
       {pro.googleSyncError ? (
-        <Alert tone="danger" title="Error de sincronización" className="mb-4">
-          {pro.googleSyncError}. Reconectá para renovar el permiso.
+        <Alert tone="danger">
+          <p>{T.googleSyncError}</p>
+          <DetailDisclosure label={T.technicalDetail}>
+            <p className="break-words text-footnote text-muted-foreground" translate="no">
+              {pro.googleSyncError}
+            </p>
+          </DetailDisclosure>
         </Alert>
       ) : null}
-
-      <div className="flex flex-wrap gap-3">
-        <form
-          action={async () => {
-            "use server";
-            await signIn("google", { redirectTo: "/ajustes" });
-          }}
-        >
-          <Button type="submit" variant="secondary">
-            {googleConnected ? "Reconectar" : "Conectar Google Calendar"}
-          </Button>
-        </form>
-        {googleConnected ? (
-          <form action={disconnectGoogleAction}>
-            <Button type="submit" variant="ghost">
-              Desconectar
+      <div>
+        <GroupedList footer={T.googleHelp}>
+          <GroupedListRow
+            label="Estado"
+            value={
+              <StatusValue ok={googleConnected}>{googleConnected ? T.googleConnected : T.googleNotConnected}</StatusValue>
+            }
+          />
+          {googleConnected ? (
+            <GroupedListRow
+              label={T.googleCalendar}
+              value={usesMainCalendar ? T.googleMainCalendar : T.googleOtherCalendar}
+            />
+          ) : null}
+        </GroupedList>
+        <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
+          <form
+            action={async () => {
+              "use server";
+              await signIn("google", { redirectTo: "/ajustes?tab=google" });
+            }}
+          >
+            <Button type="submit" variant={googleConnected ? "secondary" : "primary"}>
+              {googleConnected ? T.googleReconnect : T.googleConnect}
             </Button>
           </form>
-        ) : null}
+          {googleConnected ? <GoogleDisconnectButton /> : null}
+        </div>
       </div>
-
-      {googleConnected ? <GoogleCalendarForm defaultId={pro.googleCalendarId ?? ""} /> : null}
-    </Card>
+      {googleConnected ? (
+        <div className="px-4">
+          <DetailDisclosure label={T.googleAdvanced}>
+            <GoogleCalendarForm defaultId={calendarId} />
+          </DetailDisclosure>
+        </div>
+      ) : null}
+    </>
   );
 
   const pdf = (
-    <div className="space-y-6">
-      <Card title="Firma y matrícula" description={PROFESSIONAL_TEXT.cardDescription}>
-        <SettingsSignatureFields defaults={defaults} />
-        <Separator className="my-4" />
-        <SignatureForm
-          hasSignature={pro.signatureMimeType !== null}
-          version={pro.updatedAt.getTime()}
-          lines={professionalSignatureLines({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}
-        />
-      </Card>
-      <Card title="Logo" description={PROFESSIONAL_TEXT.logoDescription}>
-        <LogoForm
-          hasLogo={Boolean(logo?.logoData)}
-          unsupportedNotice={logo?.logoData ? professionalLogoNotice(pro.logoMimeType) : null}
-        />
-      </Card>
-      <Card title="Estilo del PDF" description="Color y pie de página del PDF del plan.">
-        <SettingsPdfFields defaults={defaults} />
-      </Card>
-    </div>
+    <>
+      <SignatureIdentityForm
+        defaults={{ title: pro.title ?? "", licenseNumber: pro.licenseNumber ?? "" }}
+        description={PROFESSIONAL_TEXT.cardDescription}
+      />
+      <section>
+        <h3 className="px-4 pb-1.5 text-subheadline font-medium text-muted-foreground">Firma</h3>
+        <div className="rounded-xl bg-card p-4 shadow-card more-contrast:border more-contrast:border-input">
+          <SignatureForm
+            hasSignature={pro.signatureMimeType !== null}
+            version={pro.updatedAt.getTime()}
+            lines={professionalSignatureLines({ title: pro.title, name: pro.name, licenseNumber: pro.licenseNumber })}
+          />
+        </div>
+      </section>
+      <section>
+        <h3 className="px-4 pb-1.5 text-subheadline font-medium text-muted-foreground">{T.logoTitle}</h3>
+        <div className="rounded-xl bg-card p-4 shadow-card more-contrast:border more-contrast:border-input">
+          <LogoForm
+            hasLogo={Boolean(logo?.logoData)}
+            version={pro.updatedAt.getTime()}
+            unsupportedNotice={logo?.logoData ? professionalLogoNotice(pro.logoMimeType) : null}
+          />
+        </div>
+        <p className="px-4 pt-1.5 text-footnote text-muted-foreground">{PROFESSIONAL_TEXT.logoDescription}</p>
+      </section>
+      <PdfStyleForm defaults={{ pdfAccentColor: pro.pdfAccentColor ?? "", pdfFooterText: pro.pdfFooterText ?? "" }} />
+    </>
   );
 
   return (
-    <div>
-      <PageHeader title="Ajustes" description="Configuración del panel, el bot y las integraciones." />
-      <SettingsFormProvider>
-        <AjustesTabs panels={{ general, whatsapp, google, pdf }} />
-      </SettingsFormProvider>
-    </div>
+    <AjustesTabs
+      panels={{ general, whatsapp, google, pdf }}
+      summaries={{
+        whatsapp: botConnected ? T.connected : T.disconnected,
+        google: googleConnected ? T.googleConnected : T.googleNotConnected,
+      }}
+      banner={banner}
+    />
   );
 }

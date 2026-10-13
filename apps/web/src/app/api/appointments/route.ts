@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@nutri-bot/db";
-import { isConsultationEmpty } from "@nutri-bot/core";
+import { appointmentEventTitle, isConsultationEmpty, patientDisplayName } from "@nutri-bot/core";
 import { auth } from "@/auth";
 
 export async function GET(req: Request) {
@@ -23,6 +23,8 @@ export async function GET(req: Request) {
     include: {
       patient: true,
       service: true,
+      // HU-017b-1 (D9): "Registrar pago" se ofrece si el turno todavía no tiene un pago total aprobado.
+      payments: { where: { kind: "FULL", status: "APPROVED" }, select: { id: true }, take: 1 },
       consultation: {
         select: {
           id: true,
@@ -44,7 +46,7 @@ export async function GET(req: Request) {
 
   const events = appts.map((a) => ({
     id: a.id,
-    title: `${a.patient.name ?? a.patient.phone} · ${a.service.name}`,
+    title: appointmentEventTitle(a.patient, a.service.name),
     start: a.startsAt.toISOString(),
     end: a.endsAt.toISOString(),
     backgroundColor: statusColor[a.status] ?? a.service.color,
@@ -53,6 +55,9 @@ export async function GET(req: Request) {
       status: a.status,
       patientName: a.patient.name,
       patientPhone: a.patient.phone,
+      patientJid: a.patient.whatsappJid,
+      patientLabel: patientDisplayName(a.patient),
+      hasFullPayment: a.payments.length > 0,
       serviceName: a.service.name,
       price: a.priceSnapshot.toString(),
       googleSynced: Boolean(a.googleEventId),

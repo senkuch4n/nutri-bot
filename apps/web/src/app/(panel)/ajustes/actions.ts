@@ -3,59 +3,117 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
-import { logoImageSizeError, validateAfterHoursConfig, validateBotAiInfo, validateLogoImage } from "@nutri-bot/core";
+import {
+  PHONE_INPUT_TEXT,
+  SETTINGS_TEXT,
+  isCurrencyCode,
+  logoImageSizeError,
+  parsePhoneInput,
+  validateAfterHoursConfig,
+  validateBotAiInfo,
+  validateLogoImage,
+} from "@nutri-bot/core";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 
 export type SettingsState = { ok: boolean; error?: string };
 
+// HU-017b-4 (Q19, D19): cada grupo de Ajustes guarda SOLO sus columnas. Antes un solo form juntaba
+// General, Firma y matrícula y Estilo del PDF, y guardar uno pisaba lo tipeado en los otros.
+
 const generalSchema = z.object({
-  timezone: z.string().trim().min(3),
-  currency: z.string().trim().length(3).toUpperCase(),
-  phone: z.string().trim().optional().or(z.literal("")),
-  acceptedInsurances: z.string().trim().max(500).optional().or(z.literal("")),
+  timezone: z.string().trim().min(1, SETTINGS_TEXT.invalidTimezone),
+  currency: z
+    .string()
+    .trim()
+    .refine(isCurrencyCode, SETTINGS_TEXT.invalidCurrency)
+    .transform((c) => c.toUpperCase()),
+  phone: z.string().optional().default(""),
+  acceptedInsurances: z.string().trim().max(500, SETTINGS_TEXT.insurancesTooLong).optional().default(""),
+});
+
+function isValidTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** General: zona horaria, moneda, "Tu WhatsApp" (con parsePhoneInput: vacío → null) y obras sociales. */
+export async function saveGeneralSettingsAction(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const parsed = generalSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? SETTINGS_TEXT.saveError };
+  const { timezone, currency, phone, acceptedInsurances } = parsed.data;
+  if (!isValidTimezone(timezone)) return { ok: false, error: SETTINGS_TEXT.invalidTimezone };
+
+  let phoneJid: string | null = null;
+  const phoneResult = parsePhoneInput(phone);
+  if (phoneResult.ok) phoneJid = `${phoneResult.digits}@s.whatsapp.net`;
+  else if (phoneResult.error === "invalid") return { ok: false, error: PHONE_INPUT_TEXT.invalid };
+
+  try {
+    await prisma.professional.update({
+      where: { id: 1 },
+      data: { timezone, currency, phoneJid, acceptedInsurances: acceptedInsurances || null },
+      select: { id: true },
+    });
+  } catch {
+    return { ok: false, error: SETTINGS_TEXT.saveError };
+  }
+  revalidatePath("/ajustes");
+  return { ok: true };
+}
+
+const pdfStyleSchema = z.object({
   pdfAccentColor: z
     .string()
     .trim()
-    .regex(/^#[0-9a-fA-F]{6}$/, "Color inválido")
+    .regex(/^#[0-9a-fA-F]{6}$/, SETTINGS_TEXT.pdfColorInvalid)
     .optional()
     .or(z.literal("")),
-  pdfFooterText: z.string().trim().max(300).optional().or(z.literal("")),
-  // HU-007 (D1): firma del informe antropométrico.
-  title: z.string().trim().max(20).optional().or(z.literal("")),
-  licenseNumber: z.string().trim().max(40).optional().or(z.literal("")),
+  pdfFooterText: z.string().trim().max(300, SETTINGS_TEXT.pdfFooterTooLong).optional().or(z.literal("")),
 });
 
-export async function saveSettingsAction(
-  _prev: SettingsState,
-  formData: FormData,
-): Promise<SettingsState> {
-  const parsed = generalSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
-  }
+/** Informes en PDF → Color y pie de página. */
+export async function savePdfStyleAction(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const parsed = pdfStyleSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? SETTINGS_TEXT.saveError };
   try {
-    Intl.DateTimeFormat("en-US", { timeZone: parsed.data.timezone });
+    await prisma.professional.update({
+      where: { id: 1 },
+      data: {
+        pdfAccentColor: parsed.data.pdfAccentColor || null,
+        pdfFooterText: parsed.data.pdfFooterText || null,
+      },
+      select: { id: true },
+    });
   } catch {
-    return { ok: false, error: "Zona horaria inválida (ej: America/Argentina/Buenos_Aires)" };
+    return { ok: false, error: SETTINGS_TEXT.saveError };
   }
+  revalidatePath("/ajustes");
+  return { ok: true };
+}
 
-  const digits = (parsed.data.phone ?? "").replace(/\D/g, "");
+// HU-007 (D1), HU-016: título y matrícula (firma del informe y portal).
+const signatureIdentitySchema = z.object({
+  title: z.string().trim().max(20, SETTINGS_TEXT.titleTooLong).optional().or(z.literal("")),
+  licenseNumber: z.string().trim().max(40, SETTINGS_TEXT.licenseTooLong).optional().or(z.literal("")),
+});
 
-  await prisma.professional.update({
-    where: { id: 1 },
-    data: {
-      timezone: parsed.data.timezone,
-      currency: parsed.data.currency,
-      phoneJid: digits ? `${digits}@s.whatsapp.net` : null,
-      acceptedInsurances: parsed.data.acceptedInsurances || null,
-      pdfAccentColor: parsed.data.pdfAccentColor || null,
-      pdfFooterText: parsed.data.pdfFooterText || null,
-      title: parsed.data.title || null,
-      licenseNumber: parsed.data.licenseNumber || null,
-    },
-    select: { id: true },
-  });
-
+/** Informes en PDF → Firma y matrícula (título y matrícula). */
+export async function saveSignatureIdentityAction(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const parsed = signatureIdentitySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? SETTINGS_TEXT.saveError };
+  try {
+    await prisma.professional.update({
+      where: { id: 1 },
+      data: { title: parsed.data.title || null, licenseNumber: parsed.data.licenseNumber || null },
+      select: { id: true },
+    });
+  } catch {
+    return { ok: false, error: SETTINGS_TEXT.saveError };
+  }
   revalidatePath("/ajustes");
   return { ok: true };
 }

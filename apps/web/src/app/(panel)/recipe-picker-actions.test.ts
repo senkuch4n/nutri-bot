@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
   return {
     RecipeNotAvailableError,
     addRecipeItems: vi.fn(),
+    getRecipePreview: vi.fn(),
     listRecipeCards: vi.fn(),
     removeMenuItems: vi.fn(),
     setRecipeItemPortions: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("@nutri-bot/db/domain", () => ({
   RecipeNotAvailableError: mocks.RecipeNotAvailableError,
   addRecipeItems: mocks.addRecipeItems,
+  getRecipePreview: mocks.getRecipePreview,
   listRecipeCards: mocks.listRecipeCards,
   removeMenuItems: mocks.removeMenuItems,
   setRecipeItemPortions: mocks.setRecipeItemPortions,
@@ -32,6 +34,7 @@ vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.reval
 import * as actions from "./recipe-picker-actions";
 import {
   addRecipeToMealAction,
+  getRecipePreviewAction,
   listPickerRecipesAction,
   removeRecipeItemsAction,
   setRecipeItemPortionsAction,
@@ -126,5 +129,29 @@ describe("recipe-picker-actions", () => {
 
     mocks.removeMenuItems.mockRejectedValueOnce(new RangeError("x"));
     expect(await removeRecipeItemsAction({ kind: "plan", ownerId: "plan1", itemIds: ["a"] })).toEqual({ ok: false, error: REMOVE_ERROR });
+  });
+});
+
+describe("getRecipePreviewAction (018c-2)", () => {
+  it("sin sesión → sessionExpired y no lee la receta", async () => {
+    mocks.hasPanelSession.mockResolvedValue(false);
+    expect(await getRecipePreviewAction("r1")).toEqual({ ok: false, error: SESSION });
+    expect(mocks.getRecipePreview).not.toHaveBeenCalled();
+  });
+  it("devuelve el detalle", async () => {
+    const recipe = { id: "r1", name: "Budín" };
+    mocks.getRecipePreview.mockResolvedValue(recipe);
+    expect(await getRecipePreviewAction("r1")).toEqual({ ok: true, recipe });
+    expect(mocks.getRecipePreview).toHaveBeenCalledWith("r1");
+  });
+  it("borrador o inexistente (null) o id inválido → notPublished", async () => {
+    mocks.getRecipePreview.mockResolvedValue(null);
+    expect(await getRecipePreviewAction("r1")).toEqual({ ok: false, error: NOT_PUBLISHED });
+    expect(await getRecipePreviewAction("")).toEqual({ ok: false, error: NOT_PUBLISHED });
+  });
+  it("si la base falla → loadError, y el log lleva solo el código", async () => {
+    mocks.getRecipePreview.mockRejectedValue(new Error("secreto del payload"));
+    expect(await getRecipePreviewAction("r1")).toEqual({ ok: false, error: "No se pudieron cargar las recetas." });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("secreto");
   });
 });

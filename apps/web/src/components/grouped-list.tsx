@@ -37,6 +37,7 @@ export function GroupedListRow({
   onClick,
   destructive = false,
   disabled = false,
+  size = "md",
 }: {
   label: ReactNode;
   description?: ReactNode;
@@ -47,7 +48,10 @@ export function GroupedListRow({
   onClick?: () => void;
   destructive?: boolean;
   disabled?: boolean;
+  /** "lg" (HU-017c-1): fila de 56 px, título de 17 px semibold y descripción de 14 px (hasta 2 líneas). */
+  size?: "md" | "lg";
 }) {
+  const large = size === "lg";
   const interactive = Boolean(href || onClick) && !disabled;
   const body = (
     <>
@@ -55,8 +59,10 @@ export function GroupedListRow({
         <Icon className={cn("size-[1.125rem] shrink-0", destructive ? "text-destructive" : "text-muted-foreground")} strokeWidth={1.75} aria-hidden />
       ) : null}
       <span className="min-w-0 flex-1">
-        <span className={cn("block text-callout", destructive ? "text-destructive" : "text-foreground")}>{label}</span>
-        {description ? <span className="block text-footnote text-muted-foreground">{description}</span> : null}
+        <span className={cn("block", large ? "text-headline" : "text-callout", destructive ? "text-destructive" : "text-foreground")}>{label}</span>
+        {description ? (
+          <span className={cn("block text-muted-foreground", large ? "mt-0.5 text-callout" : "text-footnote")}>{description}</span>
+        ) : null}
       </span>
       {value !== undefined ? <span className="shrink-0 text-callout tabular-nums text-muted-foreground">{value}</span> : null}
       {accessory ? <span className="shrink-0">{accessory}</span> : null}
@@ -66,7 +72,8 @@ export function GroupedListRow({
 
   // Resaltado de fila de iOS: cambia el tono en el pointer-down, sin escala (§1, §16 Familiarity).
   const rowClass = cn(
-    "relative flex min-h-11 w-full items-center gap-3 px-4 py-2.5 text-left",
+    "relative flex w-full items-center gap-3 px-4 text-left",
+    large ? "min-h-14 py-3" : "min-h-11 py-2.5",
     interactive &&
       "press-none transition-colors duration-hover hover:bg-overlay-hover pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
     disabled && "opacity-40",

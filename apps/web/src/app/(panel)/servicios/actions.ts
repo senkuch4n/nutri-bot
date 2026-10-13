@@ -16,8 +16,10 @@ const schema = z
       .string()
       .regex(/^#[0-9a-fA-F]{6}$/, "Color inválido")
       .default("#2563eb"),
-    active: z.coerce.boolean().optional(),
-    requiresDeposit: z.coerce.boolean().optional(),
+    // HU-017b-2 (Q17): `active` ya no viene del form (lo cambia solo el switch de la tarjeta), así guardar
+    // un servicio pausado no lo reactiva. requiresDeposit llega como "0"/"1" del switch: no
+    // z.coerce.boolean(), que con "0" o "false" da true.
+    requiresDeposit: z.enum(["0", "1"]).optional(),
     depositKind: z.enum(["FIXED", "PERCENT"]).optional(),
     depositValue: z.coerce.number().positive().optional(),
     prepInstructions: z.string().trim().max(1000).optional().or(z.literal("")),
@@ -27,7 +29,7 @@ const schema = z
     // HU-014: JSON del editor de recordatorios. Ausente (cliente viejo) → no se toca.
     reminders: z.string().optional(),
   })
-  .refine((v) => !v.requiresDeposit || (v.depositKind && v.depositValue), {
+  .refine((v) => v.requiresDeposit !== "1" || (v.depositKind && v.depositValue), {
     message: "Si el servicio requiere seña, indicá el tipo y el monto",
     path: ["depositValue"],
   });
@@ -45,7 +47,7 @@ export async function saveServiceAction(
   const {
     id,
     description,
-    requiresDeposit,
+    requiresDeposit: requiresDepositRaw,
     depositKind,
     depositValue,
     prepInstructions,
@@ -70,10 +72,11 @@ export async function saveServiceAction(
     }
     reminders = r.reminders;
   }
+  const requiresDeposit = requiresDepositRaw === "1";
   const payload = {
     ...rest,
     description: description || null,
-    requiresDeposit: requiresDeposit ?? false,
+    requiresDeposit,
     depositKind: requiresDeposit ? (depositKind ?? null) : null,
     depositValue: requiresDeposit ? (depositValue ?? null) : null,
     prepInstructions: prepInstructions || null,
@@ -85,7 +88,8 @@ export async function saveServiceAction(
 
   try {
     if (id) {
-      await updateService(id, { ...payload, active: parsed.data.active ?? true });
+      // Sin `active`: en edición no se toca (Q17).
+      await updateService(id, payload);
     } else {
       await createService(payload);
     }
@@ -97,7 +101,13 @@ export async function saveServiceAction(
   return { ok: true };
 }
 
-export async function toggleServiceAction(id: string, active: boolean) {
-  await setServiceActive(id, active);
+/** Switch "Lo ofrece el bot" de la tarjeta. "Deshacer" llama a la misma action con `true`. */
+export async function toggleServiceAction(id: string, active: boolean): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await setServiceActive(id, active);
+  } catch {
+    return { ok: false, error: "No se pudo cambiar. Probá de nuevo." };
+  }
   revalidatePath("/servicios");
+  return { ok: true };
 }

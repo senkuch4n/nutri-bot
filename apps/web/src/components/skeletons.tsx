@@ -78,3 +78,20 @@ export function CardSkeleton({ lines = 3, bare }: { lines?: number; bare?: boole
     </Wrapper>
   );
 }
+
+/** Lista agrupada de filas grandes (HU-017c-1): nombre (40 %) y segunda línea (65 %), 56 px por fila. */
+export function GroupedListSkeleton({ rows = 8, bare }: { rows?: number; bare?: boolean }) {
+  return (
+    <Wrapper bare={bare} className="overflow-hidden rounded-xl bg-card shadow-card">
+      {Array.from({ length: rows }, (_, r) => (
+        <div
+          key={r}
+          className="relative flex min-h-14 flex-col justify-center gap-2 px-4 py-3 after:absolute after:bottom-0 after:left-4 after:right-0 after:h-px after:bg-border last:after:hidden"
+        >
+          <Skeleton className="h-4 w-2/5" />
+          <Skeleton className="h-3 w-[65%]" />
+        </div>
+      ))}
+    </Wrapper>
+  );
+}

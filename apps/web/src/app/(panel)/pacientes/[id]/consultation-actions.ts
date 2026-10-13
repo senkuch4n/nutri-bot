@@ -231,6 +231,11 @@ export async function deleteConsultationMeasurementAction(
 
 // ─── Eliminar consulta ──────────────────────────────────────────────────────────
 
+/**
+ * Sin `redirect()` (HU-017c-3, D12a): el borrado es diferido y corre 8 s después, cuando la
+ * profesional ya está en otra pantalla. La navegación a `?tab=consultas` la hace el cliente al
+ * programar el borrado.
+ */
 export async function deleteConsultationAction(patientId: string, consultationId: string): Promise<ActionState> {
   if (!idSchema.safeParse(patientId).success || !idSchema.safeParse(consultationId).success) return INVALID;
   if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
@@ -241,5 +246,5 @@ export async function deleteConsultationAction(patientId: string, consultationId
     return { ok: false, error: "No se pudo eliminar la consulta." };
   }
   revalidatePath(`/pacientes/${patientId}`);
-  redirect(`/pacientes/${patientId}?tab=consultas`);
+  return { ok: true };
 }

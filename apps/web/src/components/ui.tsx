@@ -187,13 +187,27 @@ export function Metric({
   decimals = 1,
   size = "md",
   trend,
+  valueText,
+  caption,
 }: {
   label: string;
   value: number | null | undefined;
   unit?: string;
   decimals?: number;
   size?: "md" | "lg";
-  trend?: { delta: number; unit?: string; sentiment: "positive" | "negative" | "neutral"; label?: string };
+  /** HU-017b-3 (opcional): el valor ya formateado (p. ej. "$ 245.000") en lugar de `fmt(value)` + unidad. */
+  valueText?: string;
+  /** HU-017b-3 (opcional): renglón gris debajo del número ("12 Mercado Pago · 5 efectivo o transferencia"). */
+  caption?: ReactNode;
+  /** `display: "label"` (HU-017c-2, opcional): muestra `label` como texto visible en lugar del delta
+   *  ("Bajó 6,8 kg desde el 11/05"). Por defecto, el delta con signo, como siempre. */
+  trend?: {
+    delta: number;
+    unit?: string;
+    sentiment: "positive" | "negative" | "neutral";
+    label?: string;
+    display?: "delta" | "label";
+  };
 }) {
   const fmt = (n: number) => new Intl.NumberFormat("es-AR", { maximumFractionDigits: decimals }).format(n);
   const empty = value === null || value === undefined || Number.isNaN(value);
@@ -222,6 +236,8 @@ export function Metric({
       <p className={cn("mt-0.5 tabular-nums", size === "lg" ? "text-metric" : "text-metric-md")}>
         {empty ? (
           <span className="text-tertiary">—</span>
+        ) : valueText !== undefined ? (
+          valueText
         ) : (
           <>
             {fmt(value)}
@@ -233,11 +249,18 @@ export function Metric({
       </p>
       {trend ? (
         <p className={cn("mt-0.5 inline-flex items-center gap-1 text-footnote font-medium tabular-nums", trendMeta)}>
-          <TrendIcon className="size-3.5" strokeWidth={2} aria-hidden />
-          <span aria-hidden>{deltaText}</span>
-          <span className="sr-only">{spoken}</span>
+          <TrendIcon className="size-3.5 shrink-0" strokeWidth={2} aria-hidden />
+          {trend.display === "label" && trend.label ? (
+            <span>{trend.label}</span>
+          ) : (
+            <>
+              <span aria-hidden>{deltaText}</span>
+              <span className="sr-only">{spoken}</span>
+            </>
+          )}
         </p>
       ) : null}
+      {caption ? <p className="mt-0.5 text-footnote text-muted-foreground">{caption}</p> : null}
     </div>
   );
 }

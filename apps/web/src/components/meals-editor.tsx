@@ -16,11 +16,9 @@ import {
   type MealMode,
   type Weekday,
 } from "@nutri-bot/core";
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, Quantity, Textarea } from "@/components/ui";
-import { NumberInput } from "@/components/number-input";
+import { Alert, Badge, Button, Card, EmptyState, Field, Input, Quantity } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { FoodCatalogProvider, type FoodOption } from "@/components/food-catalog";
-import { FoodPicker } from "@/components/food-picker";
 import { KcalBreakdownPopover } from "@/components/kcal-breakdown-popover";
 import { copyDayAction } from "@/app/(panel)/weekly-menu-actions";
 import { CopyDayDialog } from "@/components/weekly-menu/copy-day-dialog";
@@ -32,6 +30,9 @@ import { MealCardMenu } from "@/components/weekly-menu/meal-card-menu";
 import { useMenuUndo } from "@/components/weekly-menu/use-menu-undo";
 import { WeeklyOverview } from "@/components/weekly-menu/weekly-overview";
 import type { RecipeItemView } from "@/components/recipe-picker/types";
+import type { AddMealItemResult, FoodMeasureView, MeasureItemView } from "@/components/food-measures/types";
+import { AddFoodForm } from "@/components/food-measures/add-food-form";
+import { MeasureMealItem } from "@/components/food-measures/measure-meal-item";
 import { RecipeMealItem } from "@/components/recipe-picker/recipe-meal-item";
 import { RecipePickerSheet } from "@/components/recipe-picker/recipe-picker-sheet";
 
@@ -51,6 +52,8 @@ export interface MealItemView {
   weekday: Weekday | null;
   /** HU-018c: ítem de receta (macros ya multiplicados por las porciones). Opcional: los fixtures de 018b no cambian. */
   recipe?: RecipeItemView | null;
+  /** HU-018d: ítem de alimento en medida casera. Opcional: los fixtures de 018b/018c no cambian. */
+  measure?: MeasureItemView | null;
 }
 
 export interface MealView {
@@ -70,7 +73,7 @@ export interface MealsEditorProps {
   foods: FoodOption[];
   addMealAction: (formData: FormData) => Promise<void>;
   deleteMealAction: (formData: FormData) => Promise<void>;
-  addItemAction: (formData: FormData) => Promise<void>;
+  addItemAction: (formData: FormData) => Promise<AddMealItemResult | void>;
   deleteItemAction: (formData: FormData) => Promise<void>;
   showMacros?: boolean;
   /** HU-018b: dueño de las comidas, para las actions del menú semanal. */
@@ -81,6 +84,8 @@ export interface MealsEditorProps {
   targetMissingHref: string | null;
   /** HU-018b: día con el que abre (lo calcula la página con `?dia=`). */
   initialDay: DaySelection;
+  /** HU-018d: medidas caseras de los alimentos SARA 2 activos, por foodId (solo los que tienen). */
+  measures?: Record<string, FoodMeasureView[]>;
 }
 
 const ZERO: Macros = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
@@ -109,6 +114,7 @@ export function MealsEditor({
   target,
   targetMissingHref,
   initialDay,
+  measures,
 }: MealsEditorProps) {
   const weekly = computeWeeklyTotals(meals);
   const [selected, setSelected] = useState<DaySelection>(initialDay);
@@ -157,7 +163,7 @@ export function MealsEditor({
   const otherLoadedDays = day ? weekly.loadedDays.filter((d) => d !== day) : [];
 
   return (
-    <FoodCatalogProvider foods={foods}>
+    <FoodCatalogProvider foods={foods} measures={measures}>
       <div className="space-y-6">
         {weekly.isWeekly ? (
           <DaySelector value={selected} onValueChange={setSelected} loadedDays={weekly.loadedDays} />
@@ -338,7 +344,7 @@ function MealCard({
   kind: "plan" | "template";
   ownerId: string;
   ownerField: "planId" | "templateId";
-  addItemAction: (formData: FormData) => Promise<void>;
+  addItemAction: (formData: FormData) => Promise<AddMealItemResult | void>;
   deleteItemAction: (formData: FormData) => Promise<void>;
   deleteMealAction: (formData: FormData) => Promise<void>;
   showMacros: boolean;
@@ -410,6 +416,21 @@ function MealCard({
                   />
                 );
               }
+              if (item.measure) {
+                return (
+                  <MeasureMealItem
+                    key={item.id}
+                    item={item}
+                    measure={item.measure}
+                    kind={kind}
+                    ownerId={ownerId}
+                    ownerField={ownerField}
+                    deleteItemAction={deleteItemAction}
+                    showMacros={showMacros}
+                    where={where}
+                  />
+                );
+              }
               const itemName = itemLabel(item);
               return (
                 <li key={item.id} className="flex items-start justify-between gap-4 px-4 py-3">
@@ -467,32 +488,16 @@ function MealCard({
           </Button>
         </div>
 
-        <form key={`${meal.id}-${weekday}`} action={addItemAction} className="mt-4 space-y-4">
-          <h3 className="text-sm font-semibold">Agregar alimento</h3>
-          <input type="hidden" name="mealId" value={meal.id} />
-          <input type="hidden" name={ownerField} value={ownerId} />
-          <input type="hidden" name="weekday" value={weekday} />
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
-            <Field label="Alimento">
-              <FoodPicker name="foodId" />
-            </Field>
-            <Field label="Cantidad">
-              <NumberInput unit="g" name="quantityGrams" min="0" step="1" />
-            </Field>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Descripción libre" hint="Solo si no elegiste un alimento.">
-              <Input name="customLabel" />
-            </Field>
-            <Field label="Nota" hint="Opcional">
-              <Textarea name="notes" rows={1} className="min-h-9" />
-            </Field>
-          </div>
-          <SubmitButton variant="secondary" size="lg" pendingLabel="Agregando…">
-            <Plus aria-hidden />
-            {perDay ? `Agregar al ${WEEKDAY_LABELS[day!].lower}` : "Agregar"}
-          </SubmitButton>
-        </form>
+        {/* HU-018d: el bloque "Agregar alimento" se movió a food-measures/add-food-form.tsx (+ medida casera). */}
+        <AddFoodForm
+          key={`${meal.id}-${weekday}`}
+          mealId={meal.id}
+          ownerField={ownerField}
+          ownerId={ownerId}
+          weekday={weekday}
+          submitLabel={perDay ? `Agregar al ${WEEKDAY_LABELS[day!].lower}` : "Agregar"}
+          addItemAction={addItemAction}
+        />
       </Card>
     </section>
   );

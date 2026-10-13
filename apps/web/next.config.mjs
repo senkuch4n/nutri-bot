@@ -8,6 +8,13 @@ const nextConfig = {
   experimental: {
     // Logo, foto de receta (5 MB + payload, HU-018a) y PDFs.
     serverActions: { bodySizeLimit: "6mb" },
+    // HU-017c-3 (R3): el "Segment Explorer" de las devtools de Next 15.5 (solo `next dev`) mete nodos
+    // propios alrededor de cada layout y, en una parte de las recargas, el árbol del cliente no
+    // coincide con el del servidor en la hidratación: los `useId` de todo el panel salen distintos
+    // (AppSidebar `aside id`/`aria-controls`, pestañas de Radix…) y React avisa "A tree hydrated but
+    // some attributes…". Con la herramienta apagada los ids coinciden siempre. No afecta producción
+    // (`next build`/`next start` no la usan). Detalle en progress/impl_HU-017c.md (017c-3).
+    devtoolSegmentExplorer: false,
   },
   // Mismo alias en `next dev --turbopack`, así desarrollo y producción resuelven igual.
   turbopack: { resolveAlias: { "motion/react": "framer-motion" } },

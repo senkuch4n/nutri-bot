@@ -1,6 +1,8 @@
 // PDF del informe antropométrico (HU-007). Solo dibuja: el modelo, los textos y la geometría de
 // los gráficos vienen de packages/core. Sin "server-only" (se renderiza en un script de prueba),
 // pero solo lo importan módulos de servidor.
+// HU-017c-4 (D15): paleta fría y escala Inter en pt de report-pdf-theme.ts; el acento sale de
+// Ajustes o es REPORT_DEFAULT_ACCENT. El PDF del plan sigue con pdf-theme.ts.
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import {
   ISAK_REPORT_TEXT,
@@ -20,7 +22,7 @@ import {
   pdfLogoSrc,
   type PdfSignatureInput,
 } from "@/lib/pdf-common";
-import { DEFAULT_PDF_ACCENT, pdfColors } from "@/lib/pdf-theme";
+import { REPORT_DEFAULT_ACCENT, reportPdfColors, reportPdfType } from "@/lib/report-pdf-theme";
 import { BodyFigure, CompositionBarsChart, GirthBarsChart, SomatochartPdf } from "@/lib/report-pdf-charts";
 
 export interface ReportPdfInput {
@@ -41,45 +43,61 @@ const CONTENT_WIDTH = 595.28 - 88;
 const GIRTH_CHART_WIDTH = 300;
 const SOMATOCHART_WIDTH = 260;
 
+const C = reportPdfColors;
+const TYPE = reportPdfType;
+/** Tamaño y peso de un paso de la escala (el lineHeight lo pone `content`, ver abajo). */
+const type = (t: (typeof TYPE)[keyof typeof TYPE]) => ({
+  fontSize: t.fontSize,
+  fontWeight: t.fontWeight,
+  letterSpacing: t.letterSpacing,
+});
+
 function buildStyles(accentColor: string) {
+  const common = buildCommonStyles(accentColor, C);
   return {
-    ...buildCommonStyles(accentColor),
+    ...common,
     ...StyleSheet.create({
+      page: { ...common.page, fontSize: TYPE.body.fontSize },
       // En react-pdf 4.9 el lineHeight heredado de `content` (1.45, el del plan) se aplica de más en
-      // los textos anidados. El informe tiene muchas filas cortas: usa uno más chico.
-      content: { lineHeight: 1.2 },
-      sectionTitle: { fontSize: 11, fontWeight: 600, lineHeight: 1.2 },
+      // los textos anidados. El informe tiene muchas filas cortas: usa el de la escala (1.2).
+      content: { lineHeight: TYPE.body.lineHeight },
+      title: { ...type(TYPE.title), lineHeight: TYPE.title.lineHeight },
+      sectionMark: { ...common.sectionMark, height: 13 },
+      sectionHeader: { ...common.sectionHeader, marginBottom: 4 },
+      sectionTitle: { ...type(TYPE.heading), lineHeight: TYPE.heading.lineHeight },
       section: { marginTop: 16 },
-      intro: { fontSize: 9, color: pdfColors.muted, marginBottom: 4 },
-      subTitle: { fontSize: 9.5, fontWeight: 600, marginTop: 6, marginBottom: 2 },
+      intro: { ...type(TYPE.caption), color: C.muted, marginBottom: 4 },
+      subTitle: { fontSize: TYPE.body.fontSize, fontWeight: 600, marginTop: 8, marginBottom: 2 },
       columnsHead: {
         flexDirection: "row",
         gap: 16,
         paddingBottom: 3,
         marginBottom: 2,
         borderBottomWidth: 0.5,
-        borderBottomColor: pdfColors.border,
+        borderBottomColor: C.border,
       },
-      columnHead: { flex: 1, fontSize: 8.5, fontWeight: 600, color: pdfColors.muted },
+      columnHead: { flex: 1, ...type(TYPE.caption), fontWeight: 600, color: C.muted },
       row: { flexDirection: "row", gap: 16, paddingVertical: 1.5 },
       cell: { flex: 1 },
       cellStrong: { flex: 1, fontWeight: 600 },
       paragraph: { marginTop: 6 },
-      note: { fontSize: 9, color: pdfColors.muted, marginBottom: 4 },
+      note: { ...type(TYPE.caption), color: C.muted, marginBottom: 4 },
       chartsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 6 },
+      // Compacto, como en HU-007: con la cifra en `metric` el informe pasa de 4 a 5 páginas.
       indicator: { marginTop: 6 },
       indicatorName: { fontWeight: 600 },
-      indicatorLine: { fontSize: 9 },
-      variation: { fontSize: 8.5, color: pdfColors.muted },
+      indicatorLine: { fontSize: TYPE.body.fontSize },
+      variation: { ...type(TYPE.caption), color: C.muted },
       tableRow: {
         flexDirection: "row",
         paddingVertical: 2,
         borderBottomWidth: 0.5,
-        borderBottomColor: pdfColors.border,
+        borderBottomColor: C.border,
       },
-      tableHead: { fontSize: 8.5, fontWeight: 600, color: pdfColors.muted },
+      tableHead: { ...type(TYPE.caption), fontWeight: 600, color: C.muted },
       tableName: { width: 110 },
       tableValue: { flex: 1 },
+      methods: { ...type(TYPE.caption), fontSize: 8, color: C.muted, marginBottom: 4 },
     }),
   };
 }
@@ -146,7 +164,7 @@ function Rows({
 
 export function AnthropometricReportDocument({ input }: { input: ReportPdfInput }) {
   const { model, texts } = input;
-  const accent = input.accentColor || DEFAULT_PDF_ACCENT;
+  const accent = input.accentColor || REPORT_DEFAULT_ACCENT;
   const styles = buildStyles(accent);
   const S = ISAK_REPORT_TEXT.sections;
 
@@ -255,7 +273,7 @@ export function AnthropometricReportDocument({ input }: { input: ReportPdfInput 
             <View style={styles.section} wrap={false}>
               <SectionTitle title={S.composition} styles={styles} />
               <Text style={styles.intro}>{model.composition.intro}</Text>
-              <Text style={[styles.intro, { fontSize: 8 }]}>{model.composition.methods}</Text>
+              <Text style={styles.methods}>{model.composition.methods}</Text>
               <View style={{ marginTop: 4, marginBottom: 8 }}>
                 <CompositionBarsChart layout={compositionLayout} />
               </View>
@@ -296,7 +314,7 @@ export function AnthropometricReportDocument({ input }: { input: ReportPdfInput 
           <Text orphans={2} widows={2}>
             {texts.conclusions}
           </Text>
-          <PdfSignatureBlock signature={input.signatureBlock} />
+          <PdfSignatureBlock signature={input.signatureBlock} palette={C} />
         </View>
 
         <PdfFooter

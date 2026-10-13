@@ -115,4 +115,28 @@ describe("plan micronutrient web adapter", () => {
       expect(toMicronutrientItems([{ items: [noYield] }])).toEqual([]);
     });
   });
+
+  describe("HU-018d: medida casera", () => {
+    const food = { id: "f", name: "Arroz blanco, hervido", kcalPer100: "130", proteinPer100: "2.7", carbsPer100: "28", fatPer100: "0.3", fiberPer100: "0.4", alcoholPer100: null };
+    const dec = (v: string) => ({ toString: () => v });
+    const gramsItem = { id: "g", foodId: "f", food, customLabel: null, quantityGrams: dec("270.00"), notes: null, weekday: "TUE" as const };
+    const measureItem = {
+      ...gramsItem, id: "m",
+      measureQty: dec("1.50"), measureName: "taza", measurePlural: "tazas", measureGrams: dec("180.0"),
+    };
+
+    it("un ítem con medida trae la medida en números y los mismos macros que en gramos", () => {
+      const [meal] = toMealView([{ id: "a", name: "Almuerzo", mode: "PER_DAY", items: [measureItem, gramsItem] }]);
+      const [withMeasure, inGrams] = meal!.items;
+      expect(withMeasure!.measure).toEqual({ qty: 1.5, name: "taza", plural: "tazas", gramsPerUnit: 180 });
+      expect(inGrams!.measure).toBeNull();
+      expect(withMeasure!.macros).toEqual(inGrams!.macros);
+      expect(withMeasure!.quantityGrams).toBe("270");
+    });
+
+    it("con un campo faltante queda como ítem en gramos", () => {
+      const [meal] = toMealView([{ id: "a", name: "Almuerzo", items: [{ ...measureItem, measurePlural: null }] }]);
+      expect(meal!.items[0]!.measure).toBeNull();
+    });
+  });
 });

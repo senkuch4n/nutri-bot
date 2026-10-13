@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState, useId, useState, useTransition } from "react";
+import { useActionState, useId, useState } from "react";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { ISAK_TEXT, computeBmi, computeWaistHipRatio, measurementKinds } from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
+import { MoreActionsMenu } from "@/components/more-actions-menu";
 import { Button, Card, EmptyState, FormError, Quantity } from "@/components/ui";
-import { notify, useActionToast } from "@/lib/notify";
+import { UNDO_TEXT, useDeferredDelete, usePendingDeletions } from "@/lib/deferred-delete";
+import { useActionToast } from "@/lib/notify";
 import type { ActionState } from "../../clinical-actions";
 import {
   addConsultationMeasurementAction,
@@ -58,7 +60,10 @@ export function ConsultationMeasurements({
 }) {
   const [showForm, setShowForm] = useState(false);
   const formId = useId();
-  const grouped = entries.map((e) => ({ entry: e, kinds: measurementKinds(e) }));
+  // HU-017c-3: las mediciones (y el estudio ISAK) con borrado pendiente no se muestran.
+  const pending = usePendingDeletions();
+  const visible = entries.filter((e) => !pending.has(`measurement:${e.id}`) && !pending.has(`isak:${e.id}`));
+  const grouped = visible.map((e) => ({ entry: e, kinds: measurementKinds(e) }));
   const anthropometry = grouped.filter((g) => g.kinds.anthropometry);
   // HU-006: el estudio ISAK se resume en Antropometría (una línea con enlace); nunca en Bioimpedancia.
   const bioimpedance = grouped.filter((g) => g.kinds.bioimpedance && g.entry.study !== "ISAK");
@@ -70,7 +75,7 @@ export function ConsultationMeasurements({
         <Button
           type="button"
           variant="secondary"
-          size="sm"
+          size="lg"
           aria-expanded={showForm}
           aria-controls={formId}
           onClick={() => setShowForm((v) => !v)}
@@ -86,7 +91,7 @@ export function ConsultationMeasurements({
         </div>
       ) : null}
 
-      {entries.length === 0 ? (
+      {visible.length === 0 ? (
         <EmptyState title="Sin mediciones en esta consulta." />
       ) : (
         <div className="space-y-8">
@@ -175,7 +180,12 @@ function MeasurementGroup({
                     </p>
                   ) : null}
                 </div>
-                <DeleteMeasurementButton patientId={patientId} consultationId={consultationId} entryId={entry.id} />
+                <MeasurementMoreMenu
+                  patientId={patientId}
+                  consultationId={consultationId}
+                  entry={entry}
+                  labels={shown.map((i) => i.label)}
+                />
               </div>
             </div>
           );
@@ -185,45 +195,52 @@ function MeasurementGroup({
   );
 }
 
-function DeleteMeasurementButton({
+function MeasurementMoreMenu({
   patientId,
   consultationId,
-  entryId,
+  entry,
+  labels,
 }: {
   patientId: string;
   consultationId: string;
-  entryId: string;
+  entry: EvolutionRow;
+  /** Rótulos de los valores cargados, para la confirmación ("peso, cintura…"). */
+  labels: string[];
 }) {
   const confirm = useConfirm();
-  const [pending, startTransition] = useTransition();
+  const deferDelete = useDeferredDelete();
+  const day = entry.recordedAtShortLabel.slice(0, 5);
 
   // Confirmación en el handler, fuera de toda transición (React 19: si no, deadlock).
-  async function handleClick() {
+  async function handleDelete() {
     const ok = await confirm({
-      title: "¿Borrar esta medición?",
-      description: "No se puede deshacer.",
-      confirmLabel: "Borrar medición",
+      title: UNDO_TEXT.measurement.confirmTitle,
+      description: UNDO_TEXT.measurement.confirmDescription(day, labels),
+      confirmLabel: UNDO_TEXT.measurement.confirmLabel,
     });
     if (!ok) return;
-    startTransition(async () => {
-      const res = await deleteConsultationMeasurementAction(patientId, consultationId, entryId);
-      if (res.ok) notify.saved("Medición borrada");
-      else notify.error(res.error);
+    deferDelete({
+      key: `measurement:${entry.id}`,
+      message: UNDO_TEXT.measurement.deleted,
+      undoneMessage: UNDO_TEXT.measurement.undone,
+      commit: () => deleteConsultationMeasurementAction(patientId, consultationId, entry.id),
     });
   }
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      loading={pending}
-      onClick={handleClick}
-      aria-label="Borrar esta medición"
-      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-    >
-      {pending ? null : <Trash2 aria-hidden />}
-    </Button>
+    <MoreActionsMenu
+      label={`Más opciones de la medición${labels.length ? ` (${labels.slice(0, 2).join(", ").toLowerCase()})` : ""}`}
+      className="-mr-2 -mt-2"
+      actions={[
+        {
+          key: "borrar",
+          label: UNDO_TEXT.measurement.confirmLabel,
+          icon: <Trash2 />,
+          destructive: true,
+          onSelect: handleDelete,
+        },
+      ]}
+    />
   );
 }
 

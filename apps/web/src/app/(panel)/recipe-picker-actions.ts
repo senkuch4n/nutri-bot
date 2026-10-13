@@ -5,6 +5,7 @@ import { RECIPE_PICKER_TEXT, WEEKDAYS, type Weekday } from "@nutri-bot/core";
 import {
   RecipeNotAvailableError,
   addRecipeItems,
+  getRecipePreview,
   listRecipeCards,
   removeMenuItems,
   setRecipeItemPortions,
@@ -14,6 +15,7 @@ import type {
   AddRecipeResult,
   ListPickerRecipesResult,
   PickerMutationResult,
+  RecipePreviewResult,
 } from "@/components/recipe-picker/types";
 import { errorCode } from "@/lib/error-code";
 import { toRecipeCardView } from "@/lib/recipe-view";
@@ -56,6 +58,21 @@ export async function listPickerRecipesAction(): Promise<ListPickerRecipesResult
   try {
     const cards = await listRecipeCards({ status: "PUBLISHED" });
     return { ok: true, cards: cards.map((c) => toRecipeCardView(c, "panel")) };
+  } catch (err) {
+    logError(err);
+    return { ok: false, error: RECIPE_PICKER_TEXT.loadError };
+  }
+}
+
+/** HU-018c-2: detalle de la receta (diálogo del buscador). Un borrador o una receta que no existe → notPublished. */
+export async function getRecipePreviewAction(recipeId: string): Promise<RecipePreviewResult> {
+  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const parsed = idSchema.safeParse(recipeId);
+  if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.notPublished };
+  try {
+    const recipe = await getRecipePreview(parsed.data);
+    if (!recipe) return { ok: false, error: RECIPE_PICKER_TEXT.notPublished };
+    return { ok: true, recipe };
   } catch (err) {
     logError(err);
     return { ok: false, error: RECIPE_PICKER_TEXT.loadError };

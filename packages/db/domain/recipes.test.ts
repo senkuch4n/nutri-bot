@@ -21,8 +21,10 @@ import {
   deleteDraftRecipe,
   getRecipe,
   getRecipePhotoBytes,
+  getRecipePreview,
   getRecipeUsage,
   listFoodsForRecipes,
+  listPlanRecipePreviews,
   listRecipeCards,
   patientCanSeeRecipePhoto,
   publishRecipe,
@@ -287,5 +289,49 @@ describe("RECIPE_ITEM_SELECT (018c)", () => {
     // No filtra por estado: una receta archivada sigue en el plan.
     expect(RECIPE_ITEM_SELECT).not.toHaveProperty("where");
     expect(JSON.stringify(RECIPE_ITEM_SELECT)).not.toMatch(/rawText|importHints|data|thumbData|published/);
+  });
+});
+
+describe("RecipePreview (018c-2)", () => {
+  const food = { id: "f1", name: "Avena, arrollada", group: "LEGUMBRES_CEREALES", source: "SARA2", active: true,
+    kcalPer100: dec(400), proteinPer100: dec(12), carbsPer100: dec(60), fatPer100: dec(8), fiberPer100: dec(10) };
+  const row = {
+    id: "r1", name: "Panqueques", status: "PUBLISHED", type: "BREAKFAST", portionHousehold: "2 panqueques",
+    yieldPortions: dec(4), sourceName: "Nutriarte", preparation: "Mezclar.", tips: "Se freezan.",
+    photo: { id: "ph1", credit: "Foto propia" },
+    ingredients: [
+      { label: null, grams: dec(200), noQuantity: false, household: "2 tazas", food },
+      { label: "Canela", grams: null, noQuantity: true, household: null, food: null },
+    ],
+  };
+
+  it("getRecipePreview excluye borradores, no pide datos de importación y arma los nombres con ingredientDisplayName", async () => {
+    p().recipe.findFirst.mockResolvedValue(row);
+    const r = await getRecipePreview("r1");
+    const args = p().recipe.findFirst.mock.calls[0][0];
+    expect(args.where).toEqual({ id: "r1", status: { not: "DRAFT" } });
+    expect(JSON.stringify(args.select)).not.toMatch(/rawText|importHints|importRawText|published|"data"|thumbData/);
+    expect(r).not.toBeNull();
+    expect(JSON.stringify(r)).not.toMatch(/rawText|importHints|published/);
+    expect(r!.ingredients).toEqual([
+      { name: "Avena", household: "2 tazas", grams: 200, noQuantity: false },
+      { name: "Canela", household: null, grams: null, noQuantity: true },
+    ]);
+    expect(r).toMatchObject({ yieldPortions: 4, photo: { id: "ph1", credit: "Foto propia" }, sourceName: "Nutriarte", macrosIncomplete: false });
+    expect(r!.perPortion!.kcal).toBe(200);
+  });
+
+  it("getRecipePreview da null si la receta es un borrador o no existe", async () => {
+    p().recipe.findFirst.mockResolvedValue(null);
+    expect(await getRecipePreview("draft")).toBeNull();
+  });
+
+  it("listPlanRecipePreviews pide recetas distintas del plan, sin borradores y por nombre", async () => {
+    p().recipe.findMany.mockResolvedValue([row]);
+    const list = await listPlanRecipePreviews("plan1");
+    const args = p().recipe.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ status: { not: "DRAFT" }, planItems: { some: { meal: { planId: "plan1" } } } });
+    expect(args.orderBy).toEqual({ name: "asc" });
+    expect(list.map((x) => x.id)).toEqual(["r1"]);
   });
 });

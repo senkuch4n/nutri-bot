@@ -234,19 +234,83 @@ orquestador, para que las revise a la mañana:
 - Seña con Mercado Pago probada por el usuario: funciona.
 - HU-018c-1 done; recorrido OK (progress/recorrido_HU-018c.md); datos de prueba borrados. → `en_revision` (reviewer Opus, recomendado; modo autónomo).
 - HU-018c-1 **aprobada**. PR a develop. Sigue 018c-2 en rama encadenada (feat/hu-018c2-detalle-receta desde 018c-1) para no esperar el merge.
-- Presentación del usuario: frené el implementer de 018c-2, su trabajo quedó en `git stash` ("HU-018c-2 en curso (frenado para la presentación)"); working tree en feat/hu-018c-buscador-recetas (018c-1 aprobada); npm run dev reiniciado. Retomar 018c-2 después: git switch feat/hu-018c2-detalle-receta && git stash pop.
-- 018c-2 retomada en un git worktree aislado (scratchpad/wt-018c2) para no tocar la demo; sin escrituras en la base mientras el usuario presenta.
+- HU-018c-2 → `implementando` (Opus; apple-design, ui-ux-pro-max — recomendados, modo autónomo). Rama feat/hu-018c2-detalle-receta encadenada sobre feat/hu-018c-buscador-recetas (PR #26).
 
-## Corte 2026-10-03 (el usuario se va de viaje) — cómo retomar
-- **PR abiertos para mergear:** #26 (HU-018c-1, aprobada).
-- **HU-018c-2 en curso** (detalle de receta + 4 pendientes de la revisión de 018c-1, SDD `buscador-recetas.md` última
-  sección). Rama `feat/hu-018c2-detalle-receta` (encadenada sobre la de 018c-1), pusheada como respaldo, con un commit
-  **WIP sin verificar** (`2f44c77`). Retomar: `git switch feat/hu-018c2-detalle-receta`, relanzar el implementer (Opus,
-  apple-design + ui-ux-pro-max) para terminar, verificar (typecheck, test, lint, `next build` y `--turbopack`, scripts
-  contra la base), recorrido en Chrome (diálogo de detalle y "Ver receta" en el portal) y reviewer. Cuando #26 se
-  mergee, rebasear sobre develop.
-- Queda un `git stash` "HU-018c-2 en curso (frenado para la presentación)" con el mismo contenido que el WIP: se puede
-  descartar una vez retomado.
-- **Después de 018c:** 018d (medidas caseras, sin afinar), 017c (pacientes, foco usabilidad), 017b/d/f. Pendientes del
-  usuario: `GOOGLE_CALENDAR_OWNER_EMAIL` en producción, revisar ~40 recetas, crédito de DeepSeek, 8 borradores de
-  muestra en la base, escenario 14 de `test:booking-reason`.
+## 2026-10-04 — vuelta del viaje, modo autónomo (/goal: "realizá todas las HU pendientes")
+- Decisiones que normalmente se preguntan (modelo, skills, validaciones): se toma la recomendada y se anota acá.
+- HU-018c-2: implementer relanzado (Opus; apple-design, ui-ux-pro-max) sobre el WIP de feat/hu-018c2-detalle-receta.
+- Orden siguiente: 018d → 017c → 017b → 017d → 017f. PR #26 sigue abierto (lo revisa imleticio).
+- HU-018c-2 done (4bcc6ea); recorrido OK (detalle en el buscador). → `en_revision` (reviewer Opus).
+- HU-018c-2 **aprobada** (1ª revisión). HU-018c → `aprobada`. PR a develop (encadenado sobre #26).
+- HU-018d → `afinando` (afinador Opus; rama feat/hu-018d-medidas-caseras encadenada sobre 018c-2).
+- HU-018d afinada (docs/hu-medidas-caseras.md); validada en modo autónomo con todas las recomendaciones (D2 pendiente de preguntarle a la nutricionista; 018d-2 opcional). → `en_arquitectura` (architect Opus; migracion-prisma + ui).
+- HU-018d SDD lista (Refactorizaciones/medidas-caseras.md; T1–T17 aceptadas; corte 018d-1a/1b; hallazgo T1: los unitHint están en alimentos PROPIO, ya no usables). → `implementando` 018d-1a (Opus; migracion-prisma, apple-design, ui-ux-pro-max).
+- Bloqueo de macOS (EPERM en los archivos del arnés) resuelto por el usuario. Los subagentes del arnés dejaron de estar cargados en la sesión: se lanzan como general-purpose con las instrucciones de .claude/agents/<rol>.md. 018d-1a relanzada (Opus).
+- HU-018d-1a done (8 commits, migración food_measures aplicada); recorrido OK (progress/recorrido_HU-018d.md). → `en_revision` (reviewer Opus).
+- HU-018d-1a **aprobada** (1ª revisión). PR a develop (encadenado sobre #27). → 018d-1b `implementando` (Opus; apple-design, ui-ux-pro-max; suma R2–R4 de la revisión).
+- HU-018d-1b done (stepper, conversión de unitHint en seco: 77 a crear / 2 ilegibles, R2–R4, prellenado de 'Pasar a medida'); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-018d-1b **aprobada**. HU-018d → `aprobada`. PR #28 actualizado. Pendiente del usuario: `npm run measures:convert-hints -- --apply` si quiere convertir los unitHint. Sigue HU-017c.
+- HU-017c → `afinando` (afinador Opus; rama feat/hu-017c-pacientes desde develop; sin observar a la nutricionista, con el diagnóstico del 2026-10-03).
+- HU-017c afinada y validada (D1–D18; D2/D3 confirmados por lectura: 5 @newsletter, 9 @lid). → `en_arquitectura` (architect Opus + ui). Tarea directa nueva: el bot no debe crear Patient desde @newsletter.
+- Tarea directa: el bot ignora @newsletter y @broadcast (isIgnoredJid + test) → PR #29 a develop.
+- HU-017c SDD lista (Refactorizaciones/017c-pacientes-consultas.md; Q1–Q16 aceptadas salvo Q6: ramas encadenadas). → `implementando` 017c-1 (Opus; ui-ux-pro-max, apple-design, web-design-guidelines).
+- HU-017c-1 done; recorrido OK (progress/recorrido_HU-017c.md; idea: guardar pushName para distinguir 'Por completar'). → `en_revision` (reviewer Opus).
+- HU-017c-1 **aprobada**. PR a develop. → 017c-2 `implementando` (rama feat/hu-017c2-ficha encadenada; Opus).
+- HU-017c-2 done, pero el recorrido encontró que la ficha rompe en runtime (íconos lucide pasados como función a componentes cliente; el build no lo detecta). Devuelto al implementer antes del reviewer.
+- HU-017c-2: arreglo de íconos (f5e6e2f, 9c6017b); recorrido OK. → `en_revision` (reviewer Opus). R3 (hidratación del sidebar) y R4 (coma decimal) pasan a 017c-3.
+- HU-017c-2 reviewer: CHANGES_REQUESTED (replaceState con window.history.state: Next no sincroniza y la pestaña/Editar datos se pierde tras una server action). → `rechazada_reintentando` (intento 1/2). Relanzo implementer (Opus).
+- HU-017c-2 ronda 2 done (9da10e9); re-test: cambiar a Historial deja ?tab=historial. → `en_revision` (ronda 2).
+- HU-017c-2 **aprobada** (ronda 2). PR encadenado sobre #30. → 017c-3 `implementando` (rama feat/hu-017c3-consulta; Opus; con R3 y R4).
+- HU-017c-3 done (9 commits, R3 y R4 incluidos); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017c-3 **aprobada**. PR encadenado sobre #31. → 017c-4 `implementando` (rama feat/hu-017c4-informe; Opus; con R5–R7).
+- HU-017c-4 done; recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017c-4 reviewer: CHANGES_REQUESTED (R5: un cálculo nuevo dentro de releaseAfterMs queda oculto). → `rechazada_reintentando` (intento 1/2).
+- HU-017c-4 ronda 2 done (46b2b0c). → `en_revision` (ronda 2).
+- HU-017c-4 **aprobada** (ronda 2). HU-017c → `aprobada`. PR encadenado sobre #32. Sigue HU-017b.
+- HU-017b → `afinando` (afinador Opus; rama feat/hu-017b-agenda encadenada sobre 017c-4).
+- HU-017b afinada y validada (D1–D24; D17 vacaciones por rango queda como idea aparte). → `en_arquitectura` (architect Opus + ui).
+- HU-017b SDD lista (Refactorizaciones/017b-agenda-gestion.md; Q1–Q24 aceptadas; hallazgos: botPaused no frena la cola, 9 reglas inactivas listadas, z.coerce.boolean en servicios). Bot apagado confirmado. → `implementando` 017b-1 (Opus).
+- HU-017b-1 done (8 commits); recorrido OK (progress/recorrido_HU-017b.md). → `en_revision` (reviewer Opus).
+- HU-017b-1 **aprobada**. PR encadenado sobre #33. → 017b-2 `implementando` (rama feat/hu-017b2-disponibilidad; Opus; con R1–R3).
+- HU-017b-2 done (8 commits); recorrido OK (seña de Antropometría guardada como 19.999,73: avisar al usuario). → `en_revision` (reviewer Opus).
+- HU-017b-2 **aprobada**. PR encadenado sobre #34. Tarea directa: excepciones de disponibilidad corridas un día (dayKeyInTz sobre @db.Date) → PR #35 a develop. → 017b-3 `implementando` (rama feat/hu-017b3-bandejas; Opus; con R4–R6).
+- HU-017b-3 done (7 commits); recorrido OK (comunicado solo a 16 personas). → `en_revision` (reviewer Opus).
+- HU-017b-3 reviewer: CHANGES_REQUESTED (doble clic en 'Ya respondí': el Deshacer no evita el commit). → `rechazada_reintentando` (intento 1/2).
+- HU-017b-3 ronda 2 done. → `en_revision` (ronda 2).
+- HU-017b-3 **aprobada** (ronda 2). PR encadenado sobre #36. → 017b-4 `implementando` (rama feat/hu-017b4-ajustes; Opus).
+- HU-017b-4 done; recorrido: Ajustes y Asistente OK, ajustes intactos (byte a byte), pero reaparece el error de hidratación del sidebar en /ajustes → devuelto al implementer antes del reviewer.
+- HU-017b-4: arreglo de hidratación (0aec47b); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017b-4 **aprobada**. HU-017b → `aprobada`. PR encadenado sobre #37. → HU-017d `afinando` (rama feat/hu-017d-portal encadenada).
+- HU-017d afinada y validada (D1–D20 salvo D14: 017d-3 mergea la rama de 018d en vez de esperar develop). → `en_arquitectura` (architect Opus + ui).
+- HU-017d SDD lista (Refactorizaciones/017d-portal.md; Q1–Q16 aceptadas). → `implementando` 017d-1 (Opus).
+- HU-017d-1 done; recorrido del portal OK salvo: gráfico de peso con barras en 0 (bug previo del componente compartido, también en el panel) y título de pestaña 'NutriBot — Panel' → devuelto al implementer antes del reviewer.
+- HU-017d-1: arreglos del gráfico (9831216) y título (37cf2ac); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017d-1 **aprobada**. PR encadenado sobre #38. → 017d-2 `implementando` (rama feat/hu-017d2-diario; Opus; con R1).
+- HU-017d-2 done (7 commits); recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017d-2 **aprobada**. PR encadenado sobre #39. → 017d-3 `implementando` (rama feat/hu-017d3-plan = 017d-2 + merge de feat/hu-018d-medidas-caseras).
+- 017d-3: merge de feat/hu-018d-medidas-caseras en feat/hu-017d3-plan (conflicto solo en esta bitácora; se conservaron las dos partes).
+- HU-017d-3 done; recorrido OK. → `en_revision` (reviewer Opus).
+- HU-017d-3 **aprobada**. HU-017d → `aprobada`. PR encadenado sobre #40 (y después de #28).
+- HU-017f → `bloqueada`: depende de HU-017e (imleticio, sin arrancar). Se destraba cuando 017e esté en develop.
+
+## Cierre 2026-10-05 (modo autónomo) — estado
+- **Aprobadas en esta tanda:** 018c-2, 018d (1a+1b), 017c (1–4), 017b (1–4), 017d (1–3). Tareas directas: bot ignora
+  @newsletter (#29), excepciones de disponibilidad corridas un día (#35).
+- **PR abiertos, en orden de merge:** #26 → #27 → #28 (018c/018d, migración food_measures) · #29 · #35 ·
+  #30 → #31 → #32 → #33 (017c) → #34 → #36 → #37 → #38 (017b) → #39 → #40 → #41 (017d; #41 después de #28).
+- **Sin HU propias pendientes:** 017f bloqueada por 017e (imleticio); 018d-2 opcional (solo si la nutricionista la pide).
+- **Pendientes del usuario:** revisar/mergear los PR (o pasárselos a imleticio); `npm run measures:convert-hints
+  --workspace packages/db -- --apply` si quiere convertir los unitHint; preguntarle a la nutricionista por una tabla de
+  medidas caseras (D2 de 018d) y validar con ella las tareas de usabilidad (D1 de 017c/017b, D19 de 017d); seña de
+  Antropometría guardada como $ 19.999,73; `GOOGLE_CALENDAR_OWNER_EMAIL` en producción; número de WhatsApp de la
+  profesional en Ajustes (el portal no muestra "Escribile" sin él).
+- **Ideas anotadas (no abiertas como HU):** guardar el pushName de WhatsApp para distinguir "Por completar"; vacaciones
+  por rango (D17 de 017b).
+- **Entorno:** `lsof` se cuelga en esta máquina (usar `ps`/`curl --max-time`); el :3000 lo usa otro proyecto, el panel
+  de dev corrió en :3100.
+
+## 2026-10-12 — deploy de la web a Vercel (para que la nutricionista pruebe; sin bot)
+- Usuario autorizó mergear la cadena de PR: #26, #29, #35 mergeados a develop; develop traído a feat/hu-017d3-plan
+  (conflictos solo en HU-018c.json y esta bitácora: se conservó la versión de la rama). Sigue: #41 a develop (incluye
+  #27, #28, #30–#40) y deploy de develop en Vercel + Postgres en Neon (vacía + datos base: ficha profesional,
+  servicios, SARA 2).

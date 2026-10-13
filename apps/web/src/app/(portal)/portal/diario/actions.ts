@@ -3,19 +3,25 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@nutri-bot/db";
 import { addDiaryEntry, deleteDiaryEntry } from "@nutri-bot/db/domain";
+import { PORTAL_DIARY_TEXT } from "@nutri-bot/core";
 import { getPortalPatient } from "@/lib/patient-session";
 
+// HU-017d-2 (SDD 4.4): errores en lenguaje simple (T10) y borrado idempotente para el "Deshacer" (T9d).
+
 export type DiaryState = { ok: boolean; error?: string };
+export type DiaryDeleteResult = { ok: boolean; error?: string };
 
 const ALLOWED_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 
-export async function addDiaryEntryAction(
-  _prev: DiaryState,
-  formData: FormData,
-): Promise<DiaryState> {
+function revalidateDiary() {
+  revalidatePath("/portal/diario");
+  revalidatePath("/portal"); // el conteo "Hoy anotaste…" del inicio
+}
+
+export async function addDiaryEntryAction(_prev: DiaryState, formData: FormData): Promise<DiaryState> {
   const patient = await getPortalPatient();
-  if (!patient) return { ok: false, error: "Sesión vencida. Volvé a pedir el link por WhatsApp." };
+  if (!patient) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
 
   const note = String(formData.get("note") ?? "").trim();
   const photo = formData.get("photo");
@@ -23,34 +29,40 @@ export async function addDiaryEntryAction(
   let photoMimeType: string | null = null;
 
   if (photo instanceof File && photo.size > 0) {
-    if (!ALLOWED_PHOTO_TYPES.has(photo.type)) {
-      return { ok: false, error: "Formato de foto inválido (usá JPG, PNG o WEBP)" };
-    }
-    if (photo.size > MAX_PHOTO_BYTES) {
-      return { ok: false, error: "La foto pesa más de 3 MB" };
+    if (!ALLOWED_PHOTO_TYPES.has(photo.type) || photo.size > MAX_PHOTO_BYTES) {
+      return { ok: false, error: PORTAL_DIARY_TEXT.errorPhoto };
     }
     photoData = Buffer.from(await photo.arrayBuffer());
     photoMimeType = photo.type;
   }
 
-  if (!note && !photoData) {
-    return { ok: false, error: "Escribí algo o adjuntá una foto" };
-  }
+  if (!note && !photoData) return { ok: false, error: PORTAL_DIARY_TEXT.errorEmpty };
 
-  await addDiaryEntry(patient.id, { note: note || null, photoData, photoMimeType });
-  revalidatePath("/portal/diario");
+  try {
+    await addDiaryEntry(patient.id, { note: note || null, photoData, photoMimeType });
+  } catch {
+    return { ok: false, error: PORTAL_DIARY_TEXT.errorSave };
+  }
+  revalidateDiary();
   return { ok: true };
 }
 
-export async function deleteDiaryEntryAction(formData: FormData): Promise<void> {
+export async function deleteDiaryEntryAction(id: string): Promise<DiaryDeleteResult> {
   const patient = await getPortalPatient();
-  if (!patient) return;
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
+  if (!patient) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
+  if (typeof id !== "string" || !id) return { ok: false };
 
-  const entry = await prisma.diaryEntry.findUnique({ where: { id }, select: { patientId: true } });
-  if (!entry || entry.patientId !== patient.id) return;
-
-  await deleteDiaryEntry(id);
-  revalidatePath("/portal/diario");
+  try {
+    const entry = await prisma.diaryEntry.findUnique({ where: { id }, select: { patientId: true } });
+    // Ya no está: el borrado es idempotente (un segundo commit o un registro borrado en otra pestaña).
+    if (!entry) return { ok: true };
+    if (entry.patientId !== patient.id) return { ok: false, error: PORTAL_DIARY_TEXT.deleteError };
+    await deleteDiaryEntry(id);
+  } catch (error) {
+    // Se borró entre la consulta y el delete (otra pestaña): también es "ya no está".
+    if ((error as { code?: unknown } | null)?.code === "P2025") return { ok: true };
+    return { ok: false, error: PORTAL_DIARY_TEXT.deleteError };
+  }
+  revalidateDiary();
+  return { ok: true };
 }

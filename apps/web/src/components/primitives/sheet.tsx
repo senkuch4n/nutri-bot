@@ -126,10 +126,13 @@ const SheetPanel = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   Omit<SheetContentProps, "side" | "forceMount"> & { side: Side }
 >(({ side, className, children, style, dismissOnDrag = true, onCloseAutoFocus, onPointerDownOutside, ...props }, forwardedRef) => {
-  const { setOpen, modal } = React.useContext(SheetContext)
+  const { open, setOpen, modal } = React.useContext(SheetContext)
   const openInfo = React.useContext(OverlayOpenInfoContext)
   const reduced = Boolean(useReducedMotionConfig())
   const [isPresent, safeToRemove] = usePresence()
+  // HU-017d (Q4): para saber, un cuadro después de soltar, si el dueño vetó el cierre.
+  const stillOpenRef = React.useRef(open && isPresent)
+  stillOpenRef.current = open && isPresent
   const panelRef = React.useRef<HTMLDivElement | null>(null)
   const size = React.useRef(0)
   const exitVelocity = React.useRef<number | null>(null)
@@ -144,6 +147,13 @@ const SheetPanel = React.forwardRef<
     onDismiss: (velocity) => {
       exitVelocity.current = velocity
       setOpen(false)
+      // HU-017d (Q4): si el dueño vetó el cierre (p. ej. pregunta "¿Descartar…?"), el panel sigue
+      // presente y no puede quedar donde lo soltó el dedo: vuelve a su lugar.
+      requestAnimationFrame(() => {
+        if (!stillOpenRef.current) return
+        exitVelocity.current = null
+        animateSingleValue(offset, 0, reduced ? fades.fast : springs.standard)
+      })
     },
   })
 

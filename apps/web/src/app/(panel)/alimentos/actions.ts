@@ -49,7 +49,7 @@ const ownFoodSchema = z.object({
   saturatedFatPer100: optionalNumber(100),
   sodiumMgPer100: optionalNumber(100000),
   cholesterolMgPer100: optionalNumber(10000),
-  unitHint: optionalText(120),
+  // HU-018d (D9): sin unitHint. El formulario ya no lo manda y domain no lo toca si falta la clave.
   confirmSaraDuplicate: z.literal("1").optional(),
 });
 
@@ -88,7 +88,6 @@ function parseOwnFood(formData: FormData): Parsed {
       addedSugarPer100: d.addedSugarPer100,
       saturatedFatPer100: d.saturatedFatPer100,
       cholesterolMgPer100: d.cholesterolMgPer100,
-      unitHint: d.unitHint,
     },
   };
 }

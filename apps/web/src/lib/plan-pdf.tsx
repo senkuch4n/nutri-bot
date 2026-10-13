@@ -6,6 +6,7 @@ import {
   computeWeeklyTotals,
   formatMacrosLine,
   itemsForDay,
+  measureWithGramsText,
   recipePortionText,
 } from "@nutri-bot/core";
 import type { MealItemView, MealView } from "@/components/meals-editor";
@@ -39,6 +40,8 @@ function buildStyles(accentColor: string) {
       itemName: { flex: 1, paddingRight: 8 },
       itemNote: { fontSize: 8.5, color: pdfColors.muted, marginTop: 1 },
       itemQty: { width: 64, textAlign: "right", color: pdfColors.muted },
+      // HU-018d: "1½ tazas (270 g)" necesita más ancho que "270 g".
+      itemQtyMeasure: { width: 132, textAlign: "right", color: pdfColors.muted },
       totals: {
         marginTop: 22,
         padding: 10,
@@ -104,7 +107,13 @@ function ItemRows({ items, styles }: { items: MealItemView[]; styles: PlanStyles
               <Text>{item.foodName ?? item.customLabel ?? "—"}</Text>
               {item.notes ? <Text style={styles.itemNote}>{item.notes}</Text> : null}
             </View>
-            <Text style={styles.itemQty}>{item.quantityGrams ? `${item.quantityGrams} g` : ""}</Text>
+            {item.measure ? (
+              <Text style={styles.itemQtyMeasure}>
+                {measureWithGramsText(item.measure.qty, item.measure, Number(item.quantityGrams))}
+              </Text>
+            ) : (
+              <Text style={styles.itemQty}>{item.quantityGrams ? `${item.quantityGrams} g` : ""}</Text>
+            )}
           </View>
         ),
       )}

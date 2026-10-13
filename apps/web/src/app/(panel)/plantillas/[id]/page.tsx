@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getTemplate, listFoods } from "@nutri-bot/db/domain";
+import { getTemplate, listFoods, listMeasuresForPicker } from "@nutri-bot/db/domain";
 import { Card, PageHeader } from "@/components/ui";
 import { MealsEditor } from "@/components/meals-editor";
 import { initialDayFor } from "@/components/weekly-menu/day-param";
@@ -25,7 +25,11 @@ export default async function TemplateDetailPage({
 }) {
   const { id } = await params;
   const query = (await searchParams) ?? {};
-  const [template, foods] = await Promise.all([getTemplate(id), listFoods({ activeOnly: true, source: "SARA2" })]);
+  const [template, foods, measures] = await Promise.all([
+    getTemplate(id),
+    listFoods({ activeOnly: true, source: "SARA2" }),
+    listMeasuresForPicker(),
+  ]);
   if (!template) notFound();
 
   const meals = toMealView(template.meals);
@@ -45,7 +49,8 @@ export default async function TemplateDetailPage({
           ownerId={template.id}
           ownerField="templateId"
           meals={meals}
-          foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source }))}
+          foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source, kcalPer100: Number(f.kcalPer100) }))}
+          measures={measures}
           addMealAction={addTemplateMealAction}
           deleteMealAction={deleteTemplateMealAction}
           addItemAction={addTemplateMealItemAction}

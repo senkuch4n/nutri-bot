@@ -17,6 +17,7 @@ export function DaySelector({
   onValueChange,
   includeWeek = true,
   loadedDays,
+  today,
   "aria-label": ariaLabel = "Día de la semana",
   className,
 }: {
@@ -26,16 +27,23 @@ export function DaySelector({
   includeWeek?: boolean;
   /** Si viene, los días que no están acá llevan el punto de "sin cargar". */
   loadedDays?: readonly Weekday[];
+  /** HU-017d-3: si viene, ese día muestra "Hoy" debajo de la abreviatura (text-caption) en lugar del
+   *  punto de "sin cargar"; su aria-label pasa a "Martes, hoy" (o "Martes, hoy, sin cargar"). El editor
+   *  no lo pasa: sin cambios. */
+  today?: Weekday;
   "aria-label"?: string;
   className?: string;
 }) {
-  const options: { value: DaySelection; short: string; long: string; unloaded: boolean }[] = [
-    ...(includeWeek ? [{ value: "WEEK" as const, short: "Semana", long: "Semana", unloaded: false }] : []),
+  const options: { value: DaySelection; short: string; long: string; unloaded: boolean; isToday: boolean }[] = [
+    ...(includeWeek
+      ? [{ value: "WEEK" as const, short: "Semana", long: "Semana", unloaded: false, isToday: false }]
+      : []),
     ...WEEKDAYS.map((day) => ({
       value: day,
       short: WEEKDAY_LABELS[day].short,
       long: WEEKDAY_LABELS[day].long,
       unloaded: loadedDays ? !loadedDays.includes(day) : false,
+      isToday: day === today,
     })),
   ];
 
@@ -58,7 +66,9 @@ export function DaySelector({
         <ToggleGroupItem
           key={option.value}
           value={option.value}
-          aria-label={option.unloaded ? `${option.long}, sin cargar` : option.long}
+          aria-label={[option.long, option.isToday ? "hoy" : null, option.unloaded ? "sin cargar" : null]
+            .filter(Boolean)
+            .join(", ")}
           className={cn(
             "relative h-11 min-w-0 flex-col gap-0.5 rounded-lg px-1 text-footnote font-medium tabular-nums sm:min-w-11 sm:px-3 sm:text-subheadline",
             "data-[state=on]:bg-primary-soft data-[state=on]:font-semibold data-[state=on]:text-primary",
@@ -66,7 +76,11 @@ export function DaySelector({
           )}
         >
           <span className="truncate">{option.short}</span>
-          {option.unloaded ? <span aria-hidden className="size-1.5 rounded-full bg-tertiary" /> : null}
+          {option.isToday ? (
+            <span aria-hidden className="text-caption leading-none">Hoy</span>
+          ) : option.unloaded ? (
+            <span aria-hidden className="size-1.5 rounded-full bg-tertiary" />
+          ) : null}
         </ToggleGroupItem>
       ))}
     </ToggleGroup>

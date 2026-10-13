@@ -124,6 +124,10 @@ La carga de SARA 2 va **después** de `migrate deploy` y se puede repetir en cad
 alimentos propios. Si la imagen del bot no trae `tsx`, correrla desde una máquina de desarrollo
 con la `DATABASE_URL` de producción por túnel: `DATABASE_URL=… npx tsx packages/db/scripts/sara2/load.ts`.
 
+(Opcional, HU-018d) Convertir las "Unidad de referencia" legibles (`1 taza ≈ 180 g`) en medidas caseras:
+`npm run measures:convert-hints:prod --workspace packages/db` corre en seco e imprime el reporte; si está
+bien, repetir con `-- --apply` (una transacción, idempotente, no toca `unitHint` ni los planes).
+
 ## Historias de usuario cubiertas
 
 | Historia | Dónde |

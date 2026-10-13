@@ -100,7 +100,8 @@ export function StudyComparisonChart({
         />
         <ChartLegend verticalAlign="top" content={<ChartLegendContent />} />
         {studies.map((s) => (
-          <Bar key={s.id} dataKey={s.id} fill={`var(--color-${s.id})`} radius={[3, 3, 0, 0]} maxBarSize={28} />
+          // Sin animación de crecimiento (HU-017d-2, R1): con rAF frenado (pestaña de fondo) quedaba en 0.
+          <Bar key={s.id} dataKey={s.id} fill={`var(--color-${s.id})`} radius={[3, 3, 0, 0]} maxBarSize={28} isAnimationActive={false} />
         ))}
       </BarChart>
     </ChartContainer>

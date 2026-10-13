@@ -154,7 +154,7 @@ describe("faltantes", () => {
       "height",
     ]);
     expect(missingFormulaDataMessage(items)).toBe(
-      'Faltan datos para los cálculos: sexo, actividad física, objetivo, fecha de nacimiento, peso, talla. La fecha de nacimiento se carga en "Datos". El peso y la talla se cargan en "Evolución".',
+      'Faltan datos para los cálculos: sexo, actividad física, objetivo, fecha de nacimiento, peso, talla. La fecha de nacimiento se carga en "Editar datos". El peso y la talla se cargan en "Historial".',
     );
   });
 
@@ -173,13 +173,13 @@ describe("faltantes", () => {
   it("sin fecha de nacimiento y sin talla", () => {
     const items = getMissingFormulaData({ ...complete, hasBirthDate: false, heightCm: null });
     expect(missingFormulaDataMessage(items)).toBe(
-      'Faltan datos para los cálculos: fecha de nacimiento, talla. La fecha de nacimiento se carga en "Datos". La talla se carga en "Evolución".',
+      'Faltan datos para los cálculos: fecha de nacimiento, talla. La fecha de nacimiento se carga en "Editar datos". La talla se carga en "Historial".',
     );
   });
 
   it("solo falta el peso", () => {
     const message = missingFormulaDataMessage(getMissingFormulaData({ ...complete, weightKg: null }));
-    expect(message).toBe('Faltan datos para los cálculos: peso. El peso se carga en "Evolución".');
+    expect(message).toBe('Faltan datos para los cálculos: peso. El peso se carga en "Historial".');
   });
 
   it("peso 0 cuenta como cargado (se decide por null, no por falsy)", () => {

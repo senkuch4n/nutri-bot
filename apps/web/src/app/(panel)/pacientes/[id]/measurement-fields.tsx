@@ -29,7 +29,7 @@ export function MeasurementFields({ leading, submit }: { leading?: ReactNode; su
       >
         {leading}
         <Field label="Peso">
-          <NumberInput unit="kg" step="0.1" min="0" name="weightKg" placeholder="70.5" />
+          <NumberInput unit="kg" step="0.1" min="0" name="weightKg" placeholder="70,5" />
         </Field>
         <Field label="Nota">
           <Textarea
@@ -102,7 +102,7 @@ export function MeasurementFields({ leading, submit }: { leading?: ReactNode; su
       {showBio ? (
         <div id={bioId} className="grid gap-4 rounded-lg bg-muted/60 p-4 sm:grid-cols-3 lg:grid-cols-4">
           <Field label="Grasa corporal">
-            <NumberInput unit="%" step="0.1" min="0" name="bodyFatPercent" placeholder="22.5" />
+            <NumberInput unit="%" step="0.1" min="0" name="bodyFatPercent" placeholder="22,5" />
           </Field>
           <Field label="Masa muscular">
             <NumberInput unit="kg" step="0.1" min="0" name="muscleMassKg" placeholder="55" />
@@ -114,7 +114,7 @@ export function MeasurementFields({ leading, submit }: { leading?: ReactNode; su
             <NumberInput unit="nivel" step="0.1" min="0" name="visceralFatLevel" placeholder="8" />
           </Field>
           <Field label="Masa ósea">
-            <NumberInput unit="kg" step="0.1" min="0" name="boneMassKg" placeholder="2.8" />
+            <NumberInput unit="kg" step="0.1" min="0" name="boneMassKg" placeholder="2,8" />
           </Field>
           <Field label="Metabolismo basal">
             <NumberInput unit="kcal" step="1" min="0" name="basalMetabolicRateKcal" placeholder="1500" />

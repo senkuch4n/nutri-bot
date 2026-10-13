@@ -74,7 +74,14 @@ export function RecipeMealItem({
         <form action={deleteItemAction}>
           <input type="hidden" name="itemId" value={item.id} />
           <input type="hidden" name={ownerField} value={ownerId} />
-          <SubmitButton variant="ghost" size="sm" pendingLabel="Quitando…" aria-label={`Quitar ${recipe.name} de ${where}`}>
+          <SubmitButton
+            variant="ghost"
+            size="sm"
+            // HU-018c-2 (revisión de 018c-1): 44 px, como el control de porciones de al lado.
+            className="h-11 px-4"
+            pendingLabel="Quitando…"
+            aria-label={`Quitar ${recipe.name} de ${where}`}
+          >
             {RECIPE_PICKER_TEXT.remove}
           </SubmitButton>
         </form>

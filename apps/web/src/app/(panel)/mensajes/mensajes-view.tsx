@@ -1,241 +1,257 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, Inbox, MessageCircle, Moon, RotateCw } from "lucide-react";
+import { AnimatePresence, m, useReducedMotionConfig } from "motion/react";
+import { Check, CheckCheck, ExternalLink, Inbox, MessageCircle, Moon, RotateCw } from "lucide-react";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
-import { Badge, Button, ButtonLink, Card, EmptyState, cn } from "@/components/ui";
-import { notify } from "@/lib/notify";
+import { SegmentedControl } from "@/components/segmented-control";
+import { Badge, Button, ButtonLink, EmptyState, PageHeader } from "@/components/ui";
+import { useDeferredDelete, usePendingDeletions } from "@/lib/deferred-delete";
+import { fades, springs } from "@/lib/motion";
 import { markInquiryAnsweredAction } from "./actions";
 
 type Status = "PENDING" | "ANSWERED";
 
-/** Fila serializable (sin Date): las columnas, que tienen funciones, viven en este componente. */
+/** Fila serializable (sin Date ni funciones). */
 export type InquiryRow = {
   id: string;
   status: Status;
   patientId: string;
-  /** name ?? phone */
-  patientLabel: string;
-  phone: string;
-  waUrl: string;
+  /** null → "Sin nombre". */
+  name: string | null;
+  /** Teléfono con formato, o HIDDEN_NUMBER_TEXT. */
+  phoneLabel: string;
+  /** null para los contactos que no muestran el número (@lid). */
+  waUrl: string | null;
+  /** "Hoy, 22:40" · "Ayer, 9:15" · "Hace 2 días". */
   receivedLabel: string;
+  receivedISO: string;
   receivedSort: number;
-  lastMessageLabel: string | null;
+  /** "Respondida hace 2 días". */
   answeredLabel: string | null;
+  answeredSort: number;
   afterHours: boolean;
   body: string;
 };
 
-type Filter = "PENDING" | "ANSWERED" | "ALL";
+export const MENSAJES_TEXT = {
+  title: "Mensajes",
+  description: "Lo que te dejaron con “Hablar con la nutricionista”. Respondé desde WhatsApp.",
+  live: "Se actualiza sola",
+  refresh: "Actualizar ahora",
+  pending: (n: number) => `Pendientes (${n})`,
+  answered: "Respondidas",
+  noName: "Sin nombre",
+  afterHours: "Fuera de horario",
+  reply: "Responder por WhatsApp",
+  open: "Abrir WhatsApp",
+  hiddenNumber: "Respondé desde tu WhatsApp: este contacto no muestra el número",
+  markAnswered: "Ya respondí",
+  marked: "Marcada como respondida",
+  undone: "Listo, sigue pendiente",
+  error: "No se pudo marcar la consulta. Probá de nuevo.",
+  justAnswered: "Respondida recién",
+  emptyPending: "No tenés mensajes pendientes.",
+  emptyPendingDescription: "Acá aparecen las consultas que te dejan con «Hablar con la nutricionista».",
+  emptyAnswered: "Todavía no marcaste ninguna consulta como respondida.",
+} as const;
 
-const statusMeta: Record<Status, { tone: "warning" | "success"; label: string }> = {
-  PENDING: { tone: "warning", label: "Pendiente" },
-  ANSWERED: { tone: "success", label: "Respondida" },
-};
+const T = MENSAJES_TEXT;
 
-const EMPTY_PENDING = {
-  title: "No hay consultas pendientes.",
-  description: "Acá aparecen las consultas que te dejan los pacientes por el bot con la opción “Hablar con la nutricionista”.",
-};
+export function inquiryAnsweredKey(id: string): string {
+  return `inquiry-answered:${id}`;
+}
 
-/** HU-011: bandeja "Mensajes" (consultas de la opción 0 del bot). */
-export function MensajesView({
-  rows,
-  counts,
-}: {
-  rows: InquiryRow[];
-  counts: { PENDING: number; ANSWERED: number };
-}) {
+type Tab = "PENDING" | "ANSWERED";
+
+/** HU-011 / HU-017b-3: bandeja "Mensajes" como tarjetas, con "Ya respondí" diferido (D16). */
+export function MensajesView({ rows }: { rows: InquiryRow[] }) {
   const router = useRouter();
-  const [filter, setFilter] = useState<Filter>("PENDING");
+  const [tab, setTab] = useState<Tab>("PENDING");
+  const pendingKeys = usePendingDeletions();
+  const deferred = useDeferredDelete();
 
-  const visible = useMemo(
-    () => (filter === "ALL" ? rows : rows.filter((r) => r.status === filter)),
-    [rows, filter],
-  );
+  // Durante los 8 s del "Deshacer" la consulta ya se ve en "Respondidas" (en la base sigue PENDING).
+  const { pending, answered } = useMemo(() => {
+    const p: InquiryRow[] = [];
+    const a: InquiryRow[] = [];
+    for (const r of rows) {
+      if (r.status === "PENDING" && !pendingKeys.has(inquiryAnsweredKey(r.id))) p.push(r);
+      else if (r.status === "PENDING") a.push({ ...r, status: "ANSWERED", answeredLabel: T.justAnswered, answeredSort: Number.MAX_SAFE_INTEGER });
+      else a.push(r);
+    }
+    p.sort((x, y) => x.receivedSort - y.receivedSort); // de la más vieja a la más nueva
+    a.sort((x, y) => y.answeredSort - x.answeredSort || y.receivedSort - x.receivedSort);
+    return { pending: p, answered: a };
+  }, [rows, pendingKeys]);
 
-  const chips: { key: Filter; label: string; count: number }[] = [
-    { key: "PENDING", label: "Pendientes", count: counts.PENDING },
-    { key: "ANSWERED", label: "Respondidas", count: counts.ANSWERED },
-    { key: "ALL", label: "Todas", count: counts.PENDING + counts.ANSWERED },
-  ];
+  const visible = tab === "PENDING" ? pending : answered;
 
-  const columns = useMemo<DataTableColumn<InquiryRow>[]>(
-    () => [
-      {
-        id: "paciente",
-        header: "Paciente",
-        sortValue: (r) => r.patientLabel,
-        cell: (r) => (
-          <div className="min-w-0">
-            <Link
-              href={`/pacientes/${r.patientId}`}
-              className="font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-            >
-              {r.patientLabel}
-            </Link>
-            <p className="text-xs tabular-nums text-muted-foreground">{r.phone}</p>
-          </div>
-        ),
-      },
-      {
-        id: "recibida",
-        header: "Recibida",
-        sortValue: (r) => r.receivedSort,
-        cell: (r) => (
-          <div className="space-y-1 whitespace-nowrap">
-            <p className="tabular-nums">{r.receivedLabel}</p>
-            {r.lastMessageLabel ? (
-              <p className="text-xs tabular-nums text-muted-foreground">{r.lastMessageLabel}</p>
-            ) : null}
-            {r.afterHours ? (
-              <Badge tone="info">
-                <Moon className="mr-1 h-3 w-3" aria-hidden />
-                Fuera de horario
-              </Badge>
-            ) : null}
-          </div>
-        ),
-      },
-      {
-        id: "consulta",
-        header: "Consulta",
-        className: "min-w-72",
-        cell: (r) => <InquiryBody body={r.body} />,
-      },
-      {
-        id: "estado",
-        header: "Estado",
-        cell: (r) => (
-          <div className="space-y-1 whitespace-nowrap">
-            <Badge tone={statusMeta[r.status].tone}>{statusMeta[r.status].label}</Badge>
-            {r.answeredLabel ? (
-              <p className="text-xs tabular-nums text-muted-foreground">{r.answeredLabel}</p>
-            ) : null}
-          </div>
-        ),
-      },
-      {
-        id: "acciones",
-        header: "",
-        cell: (r) => (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <ButtonLink
-              variant="secondary"
-              size="sm"
-              href={r.waUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Abrir WhatsApp con ${r.patientLabel}`}
-            >
-              <MessageCircle aria-hidden />
-              Abrir WhatsApp
-            </ButtonLink>
-            {r.status === "PENDING" ? <MarkAnsweredButton id={r.id} patientLabel={r.patientLabel} /> : null}
-          </div>
-        ),
-      },
-    ],
-    [],
-  );
-
-  const empty =
-    filter === "ANSWERED" ? (
-      <EmptyState icon={Inbox} title="Todavía no marcaste ninguna consulta como respondida." />
-    ) : (
-      <EmptyState icon={Inbox} title={EMPTY_PENDING.title} description={EMPTY_PENDING.description} />
-    );
+  function markAnswered(row: InquiryRow) {
+    deferred({
+      key: inquiryAnsweredKey(row.id),
+      message: T.marked,
+      undoneMessage: T.undone,
+      errorMessage: T.error,
+      commit: () => markInquiryAnsweredAction(row.id),
+    });
+  }
 
   return (
-    <Card
-      padding="none"
-      title="Mensajes por WhatsApp"
-      actions={
-        <Button variant="ghost" size="sm" onClick={() => router.refresh()}>
-          <RotateCw aria-hidden />
-          Actualizar
-        </Button>
-      }
-    >
+    <div>
+      <PageHeader
+        title={T.title}
+        description={T.description}
+        action={
+          <div className="flex items-center gap-2 text-subheadline text-muted-foreground">
+            <span className="hidden sm:inline">{T.live}</span>
+            <span aria-hidden className="hidden sm:inline">
+              ·
+            </span>
+            <Button variant="plain" size="lg" className="px-2" onClick={() => router.refresh()}>
+              <RotateCw aria-hidden />
+              {T.refresh}
+            </Button>
+          </div>
+        }
+      />
       {/* Una consulta nueva aparece sola, sin recargar. */}
       <AutoRefresh seconds={30} />
 
-      <div className="flex flex-wrap items-center gap-3 border-b px-6 py-3">
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={filter}
-          onValueChange={(v) => v && setFilter(v as Filter)}
-          aria-label="Filtrar por estado"
-          className="rounded-md border border-input p-0.5 [&>button]:border-0"
-        >
-          {chips.map((c) => (
-            <ToggleGroupItem key={c.key} value={c.key} className="data-[state=on]:font-semibold">
-              {c.label} ({c.count})
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
-      <DataTable<InquiryRow>
-        columns={columns}
-        rows={visible}
-        getRowId={(r) => r.id}
-        caption="Consultas de pacientes"
-        maxHeightClassName="max-h-[70vh]"
-        initialSort={{ columnId: "recibida", direction: "asc" }}
-        empty={empty}
+      <SegmentedControl<Tab>
+        value={tab}
+        onValueChange={setTab}
+        aria-label="Qué consultas ver"
+        size="lg"
+        className="mb-5 grid w-full sm:inline-grid sm:w-auto"
+        options={[
+          { value: "PENDING", label: T.pending(pending.length) },
+          { value: "ANSWERED", label: T.answered },
+        ]}
       />
-    </Card>
-  );
-}
 
-/** Texto completo en ≥ md; en pantallas chicas, 3 líneas con "Ver más". */
-function InquiryBody({ body }: { body: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const long = body.length > 140 || body.split("\n").length > 3;
-  return (
-    <div>
-      <p className={cn("whitespace-pre-wrap break-words", !expanded && "line-clamp-3 md:line-clamp-none")}>
-        {body}
-      </p>
-      {long ? (
-        <button
-          type="button"
-          className="mt-1 text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm md:hidden"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? "Ver menos" : "Ver más"}
-        </button>
-      ) : null}
+      {visible.length === 0 ? (
+        <div className="rounded-xl bg-card shadow-card">
+          {tab === "PENDING" ? (
+            <EmptyState icon={Inbox} title={T.emptyPending} description={T.emptyPendingDescription} />
+          ) : (
+            <EmptyState icon={CheckCheck} title={T.emptyAnswered} />
+          )}
+        </div>
+      ) : (
+        <InquiryList rows={visible} onMarkAnswered={markAnswered} />
+      )}
     </div>
   );
 }
 
-function MarkAnsweredButton({ id, patientLabel }: { id: string; patientLabel: string }) {
-  const [pending, start] = useTransition();
+function InquiryList({ rows, onMarkAnswered }: { rows: InquiryRow[]; onMarkAnswered: (row: InquiryRow) => void }) {
+  const reduced = Boolean(useReducedMotionConfig());
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      loading={pending}
-      aria-label={`Marcar como respondida la consulta de ${patientLabel}`}
-      onClick={() =>
-        // Sin confirmación (no destruye nada): no hay await confirm() dentro de la transición.
-        start(async () => {
-          const r = await markInquiryAnsweredAction(id);
-          if (r.ok) notify.saved("Consulta marcada como respondida");
-          else notify.error(r.error);
-        })
-      }
+    <ul className="space-y-3" aria-label="Consultas">
+      <AnimatePresence initial={false} mode="popLayout">
+        {rows.map((r) => (
+          <m.li
+            key={r.id}
+            layout={reduced ? false : "position"}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, x: 0 }}
+            // Sale hacia la derecha, donde está "Respondidas"; con movimiento reducido, solo un fundido.
+            exit={reduced ? { opacity: 0, transition: fades.fast } : { opacity: 0, x: 48, transition: springs.quick }}
+            transition={reduced ? fades.fast : springs.standard}
+          >
+            <InquiryCard row={r} onMarkAnswered={onMarkAnswered} />
+          </m.li>
+        ))}
+      </AnimatePresence>
+    </ul>
+  );
+}
+
+function InquiryCard({ row, onMarkAnswered }: { row: InquiryRow; onMarkAnswered: (row: InquiryRow) => void }) {
+  const who = row.name ?? T.noName;
+  const isPending = row.status === "PENDING";
+  return (
+    <article
+      aria-label={`Consulta de ${who}`}
+      className="rounded-xl bg-card p-4 shadow-card more-contrast:border more-contrast:border-input sm:p-5"
     >
-      {pending ? null : <Check aria-hidden />}
-      {pending ? "Marcando…" : "Marcar como respondida"}
-    </Button>
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <div className="min-w-0">
+          <h2 className="text-headline">
+            <Link
+              href={`/pacientes/${row.patientId}`}
+              className="rounded-sm underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {who}
+            </Link>
+          </h2>
+          <p className="text-subheadline tabular-nums text-muted-foreground">{row.phoneLabel}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-subheadline text-muted-foreground">
+          <time dateTime={row.receivedISO} className="tabular-nums">
+            {row.receivedLabel}
+          </time>
+          {row.afterHours ? (
+            <Badge tone="info">
+              <Moon className="mr-1 size-3" aria-hidden />
+              {T.afterHours}
+            </Badge>
+          ) : null}
+        </div>
+      </header>
+
+      <p className="mt-3 whitespace-pre-wrap break-words text-body">{row.body}</p>
+
+      {isPending ? (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          {row.waUrl ? (
+            <ButtonLink
+              variant="tinted"
+              size="lg"
+              href={row.waUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${T.reply} a ${who} (se abre en otra pestaña)`}
+            >
+              <MessageCircle aria-hidden />
+              {T.reply}
+              <ExternalLink className="size-4 opacity-70" aria-hidden />
+            </ButtonLink>
+          ) : (
+            <p className="text-callout text-muted-foreground sm:mr-2">{T.hiddenNumber}</p>
+          )}
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => onMarkAnswered(row)}
+            aria-label={`${T.markAnswered}: consulta de ${who}`}
+          >
+            <Check aria-hidden />
+            {T.markAnswered}
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-subheadline text-muted-foreground">{row.answeredLabel}</p>
+          {row.waUrl ? (
+            <ButtonLink
+              variant="plain"
+              size="lg"
+              className="px-2"
+              href={row.waUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${T.open} con ${who} (se abre en otra pestaña)`}
+            >
+              <MessageCircle aria-hidden />
+              {T.open}
+            </ButtonLink>
+          ) : null}
+        </div>
+      )}
+    </article>
   );
 }

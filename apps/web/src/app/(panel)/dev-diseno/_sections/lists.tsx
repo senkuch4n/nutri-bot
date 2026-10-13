@@ -49,6 +49,10 @@ export function ListsSection() {
             <GroupedListRow label="Acción" onClick={() => notify.info("Fila tocada")} />
             <GroupedListRow icon={LogOut} label="Cerrar sesión" destructive onClick={() => notify.info("Demo: no cierra sesión")} />
           </GroupedList>
+          <GroupedList header='Filas grandes (size="lg")'>
+            <GroupedListRow size="lg" label="Brenda Yebara" description="Hoy, 16:30 · +54 9 351 555-2345" href="#listas" />
+            <GroupedListRow size="lg" label="Juan Pérez" description="Sin turno · Última consulta hace 3 semanas" href="#listas" />
+          </GroupedList>
         </div>
 
         <div>
