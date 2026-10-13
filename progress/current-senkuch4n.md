@@ -308,3 +308,9 @@ orquestador, para que las revise a la mañana:
   por rango (D17 de 017b).
 - **Entorno:** `lsof` se cuelga en esta máquina (usar `ps`/`curl --max-time`); el :3000 lo usa otro proyecto, el panel
   de dev corrió en :3100.
+
+## 2026-10-12 — deploy de la web a Vercel (para que la nutricionista pruebe; sin bot)
+- Usuario autorizó mergear la cadena de PR: #26, #29, #35 mergeados a develop; develop traído a feat/hu-017d3-plan
+  (conflictos solo en HU-018c.json y esta bitácora: se conservó la versión de la rama). Sigue: #41 a develop (incluye
+  #27, #28, #30–#40) y deploy de develop en Vercel + Postgres en Neon (vacía + datos base: ficha profesional,
+  servicios, SARA 2).
