@@ -6,6 +6,14 @@ export function dayKeyInTz(instant: Date, tz: string): string {
   return formatInTimeZone(instant, tz, "yyyy-MM-dd");
 }
 
+/**
+ * "yyyy-MM-dd" de una columna `@db.Date` (día calendario sin hora). Prisma la devuelve como medianoche UTC,
+ * así que se lee en UTC: pasarla por `dayKeyInTz` la corre al día anterior en zonas al oeste de Greenwich.
+ */
+export function dayKeyFromDbDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 /** Día de la semana (0=domingo..6=sábado) de un instante, en la zona dada. */
 export function weekdayInTz(instant: Date, tz: string): number {
   return toZonedTime(instant, tz).getDay();
