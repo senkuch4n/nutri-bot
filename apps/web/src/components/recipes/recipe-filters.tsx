@@ -1,5 +1,6 @@
 "use client";
 
+import type { Ref } from "react";
 import { Search } from "lucide-react";
 import {
   RECIPE_MOMENTS,
@@ -31,12 +32,20 @@ export function RecipeFilters({
   countText,
   onClear,
   hideMoment = false,
+  placeholder = "Buscar por nombre o ingrediente…",
+  searchLabel = "Buscar por nombre o ingrediente",
+  inputRef,
 }: {
   value: Filters;
   onChange: (next: Filters) => void;
   countText: string;
   onClear: () => void;
   hideMoment?: boolean;
+  /** HU-018c: el buscador del plan usa sus propios textos. */
+  placeholder?: string;
+  searchLabel?: string;
+  /** HU-018c: para dar el foco al abrir el buscador. */
+  inputRef?: Ref<HTMLInputElement>;
 }) {
   const tags = (
     <ChipGroup
@@ -54,9 +63,10 @@ export function RecipeFilters({
       <div className="relative">
         <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <input
+          ref={inputRef}
           type="search"
-          aria-label="Buscar por nombre o ingrediente"
-          placeholder="Buscar por nombre o ingrediente…"
+          aria-label={searchLabel}
+          placeholder={placeholder}
           value={value.query}
           onChange={(e) => onChange({ ...value, query: e.target.value })}
           autoComplete="off"

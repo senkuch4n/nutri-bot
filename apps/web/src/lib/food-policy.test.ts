@@ -23,6 +23,9 @@ vi.mock("@nutri-bot/db", () => ({ prisma: {
   nutritionPlan: { findUnique: vi.fn().mockResolvedValue({ patientId: "patient" }) },
 } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// HU-018c: la página del plan monta el buscador de recetas; sus actions no se usan en este test.
+vi.mock("@/app/(panel)/recipe-picker-actions", () => ({}));
+vi.mock("server-only", () => ({})); // lib/revalidate-menu-owner (HU-018c)
 vi.mock("next/navigation", () => ({ notFound: vi.fn(), redirect: vi.fn() }));
 vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
 vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));

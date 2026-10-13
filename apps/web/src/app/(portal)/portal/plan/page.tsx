@@ -1,5 +1,6 @@
 import { ClipboardList } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
+import { RECIPE_ITEM_SELECT } from "@nutri-bot/db/domain";
 import { WEEKDAYS, computeWeeklyTotals, weekdayInTimeZone, type Macros, type Weekday } from "@nutri-bot/core";
 import { Card, EmptyState } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
@@ -19,7 +20,8 @@ export default async function PortalPlanPage() {
     include: {
       meals: {
         orderBy: { order: "asc" },
-        include: { items: { orderBy: { order: "asc" }, include: { food: true } } },
+        // HU-018c: el ítem de receta trae su receta (nombre, porción, fuente y foto), como getPlan.
+        include: { items: { orderBy: { order: "asc" }, include: { food: true, recipe: { select: RECIPE_ITEM_SELECT } } } },
       },
     },
   });

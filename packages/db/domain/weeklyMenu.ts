@@ -6,12 +6,12 @@
  *   3. `order` es correlativo dentro de cada (mealId, weekday).
  * Todas las escrituras van en `prisma.$transaction`.
  */
-import { DEFAULT_WEEKLY_MEALS, WEEKDAYS } from "@nutri-bot/core";
+import { DEFAULT_WEEKLY_MEALS, WEEKDAYS, normalizePortions } from "@nutri-bot/core";
 import { prisma, type MealMode, type Prisma, type Weekday } from "../index";
 
 export type MealOwnerKind = "plan" | "template";
 
-/** Un ítem tal como se copia o se restaura. 018c le agrega recipeId y portions. */
+/** Un ítem tal como se copia o se restaura. HU-018c: + recipeId y portions. */
 export interface MenuItemData {
   foodId: string | null;
   customLabel: string | null;
@@ -19,6 +19,10 @@ export interface MenuItemData {
   notes: string | null;
   order: number;
   weekday: Weekday | null;
+  /** HU-018c: ítem de receta (con receta, foodId y quantityGrams van en null). */
+  recipeId: string | null;
+  /** HU-018c: porciones de la receta (null si no es receta). */
+  portions: number | null;
 }
 
 /** Foto completa de una comida (todos sus días) para "Deshacer". */
@@ -62,6 +66,8 @@ interface ItemRow {
   notes: string | null;
   order: number;
   weekday: Weekday | null;
+  recipeId: string | null;
+  portions: { toString(): string } | null;
 }
 interface MealRow {
   id: string;
@@ -83,6 +89,9 @@ interface MealDelegate {
 }
 interface ItemDelegate {
   findFirst(args: any): Promise<any>;
+  findMany(args: any): Promise<any[]>;
+  create(args: any): Promise<any>;
+  update(args: any): Promise<unknown>;
   createMany(args: any): Promise<unknown>;
   deleteMany(args: any): Promise<unknown>;
   updateMany(args: any): Promise<unknown>;
@@ -103,13 +112,21 @@ function delegates(kind: MealOwnerKind, tx: Client): {
 
 const itemsOrder = [{ weekday: "asc" as const }, { order: "asc" as const }];
 
-/** Único lugar que lista los campos que se copian de un ítem (018c agrega recipeId y portions). */
-function itemCopyData(item: Pick<ItemRow, "foodId" | "customLabel" | "notes"> & { quantityGrams: unknown }): Omit<MenuItemData, "weekday" | "order"> {
+/** Único lugar que lista los campos que se copian de un ítem (HU-018c: + recipeId y portions). */
+function itemCopyData(
+  item: Pick<ItemRow, "foodId" | "customLabel" | "notes"> & {
+    quantityGrams: unknown;
+    recipeId?: string | null;
+    portions?: unknown;
+  },
+): Omit<MenuItemData, "weekday" | "order"> {
   return {
     foodId: item.foodId,
     customLabel: item.customLabel,
     quantityGrams: item.quantityGrams == null ? null : Number(item.quantityGrams),
     notes: item.notes,
+    recipeId: item.recipeId ?? null,
+    portions: item.portions == null ? null : Number(item.portions),
   };
 }
 
@@ -261,6 +278,19 @@ function assertSnapshotInvariants(snapshot: MealSnapshot) {
   } else if (snapshot.items.some((i) => i.weekday !== null)) {
     throw new MealModeError();
   }
+  // HU-018c (invariantes 3-1 y 3-2): receta ⇒ sin alimento ni gramos y con porciones válidas;
+  // sin receta ⇒ sin porciones.
+  for (const i of snapshot.items) {
+    const recipeId = i.recipeId ?? null;
+    const portions = i.portions ?? null;
+    if (recipeId !== null) {
+      if (i.foodId !== null || i.quantityGrams !== null || portions === null || normalizePortions(portions) === null) {
+        throw new MealModeError("Un ítem de receta no lleva alimento ni gramos, y sí porciones.");
+      }
+    } else if (portions !== null) {
+      throw new MealModeError("Solo un ítem de receta lleva porciones.");
+    }
+  }
 }
 
 /**
@@ -365,4 +395,102 @@ export async function resolveNewMealMode(
   const isOptions = data.isOptions ?? false;
   if (isOptions && mode === "PER_DAY") throw new MealModeError("Las opciones solo valen en comidas iguales todos los días.");
   return { mode, isOptions };
+}
+
+// ─── HU-018c: ítems de receta ────────────────────────────────────────────────────
+
+/** La receta no existe o no está PUBLISHED (D13). */
+export class RecipeNotAvailableError extends Error {
+  constructor(message = "La receta no está publicada.") {
+    super(message);
+    this.name = "RecipeNotAvailableError";
+  }
+}
+
+function assertPortions(portions: number): number {
+  const value = normalizePortions(portions);
+  if (value === null) throw new RangeError("Las porciones van de ½ en ½, entre ½ y 4.");
+  return value;
+}
+
+/**
+ * Agrega `portions` (default 1) de una receta PUBLISHED a una comida, en uno o varios días, en UNA
+ * transacción. EVERY_DAY → weekdays null; PER_DAY → 1..7 días distintos. Cada ítem va al final de su
+ * (mealId, weekday). Devuelve los ids creados en el orden de WEEKDAYS (para "Deshacer").
+ */
+export async function addRecipeItems(
+  kind: MealOwnerKind,
+  ownerId: string,
+  params: { mealId: string; recipeId: string; portions?: number; weekdays: Weekday[] | null },
+): Promise<{ itemIds: string[] }> {
+  const portions = assertPortions(params.portions ?? 1);
+  return prisma.$transaction(async (tx) => {
+    const current = await loadOwnedMeal(kind, tx, ownerId, params.mealId);
+    let days: (Weekday | null)[];
+    if (current.mode === "EVERY_DAY") {
+      if (params.weekdays !== null) throw new MealWeekdayMismatchError("Una comida igual todos los días no lleva día.");
+      days = [null];
+    } else {
+      const w = params.weekdays;
+      const valid = w !== null && w.length >= 1 && w.length <= 7 && new Set(w).size === w.length &&
+        w.every((d) => (WEEKDAYS as readonly string[]).includes(d));
+      if (!valid) throw new MealWeekdayMismatchError("Una comida que cambia cada día necesita días válidos.");
+      days = WEEKDAYS.filter((d) => w.includes(d));
+    }
+    const recipe = (await tx.recipe.findUnique({ where: { id: params.recipeId }, select: { status: true } })) as
+      | { status: string }
+      | null;
+    if (recipe?.status !== "PUBLISHED") throw new RecipeNotAvailableError();
+
+    const { item } = delegates(kind, tx);
+    const itemIds: string[] = [];
+    for (const weekday of days) {
+      const last = (await item.findFirst({
+        where: { mealId: params.mealId, weekday },
+        orderBy: { order: "desc" },
+        select: { order: true },
+      })) as { order: number } | null;
+      const created = (await item.create({
+        data: {
+          mealId: params.mealId,
+          recipeId: params.recipeId,
+          portions,
+          weekday,
+          order: last ? last.order + 1 : 0,
+          foodId: null,
+          quantityGrams: null,
+          customLabel: null,
+          notes: null,
+        },
+        select: { id: true },
+      })) as { id: string };
+      itemIds.push(created.id);
+    }
+    return { itemIds };
+  });
+}
+
+/** Cambia las porciones de UN ítem de receta del dueño. */
+export async function setRecipeItemPortions(
+  kind: MealOwnerKind,
+  ownerId: string,
+  itemId: string,
+  portions: number,
+): Promise<void> {
+  const value = assertPortions(portions);
+  const { item, ownerKey } = delegates(kind, prisma);
+  const found = await item.findFirst({
+    where: { id: itemId, recipeId: { not: null }, meal: { [ownerKey]: ownerId } },
+    select: { id: true },
+  });
+  if (!found) throw new MealOwnershipError("El ítem de receta no pertenece a este plan o plantilla.");
+  await item.update({ where: { id: itemId }, data: { portions: value } });
+}
+
+/** "Deshacer" de "Agregar" y "Quitar" de la tarjeta: borra SOLO esos ids y solo si son del dueño. */
+export async function removeMenuItems(kind: MealOwnerKind, ownerId: string, itemIds: string[]): Promise<number> {
+  if (itemIds.length < 1 || itemIds.length > 50) throw new RangeError("Entre 1 y 50 ítems.");
+  const { item, ownerKey } = delegates(kind, prisma);
+  const result = (await item.deleteMany({ where: { id: { in: itemIds }, meal: { [ownerKey]: ownerId } } })) as { count: number };
+  return result.count;
 }

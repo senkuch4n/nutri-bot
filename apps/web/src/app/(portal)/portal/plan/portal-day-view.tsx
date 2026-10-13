@@ -1,17 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { WEEKDAY_LABELS, itemsForDay, type Macros, type Weekday } from "@nutri-bot/core";
+import { WEEKDAY_LABELS, itemsForDay, recipePortionText, type Macros, type Weekday } from "@nutri-bot/core";
 import type { MealItemView, MealView } from "@/components/meals-editor";
 import { MacroTotals } from "@/components/macro-totals";
 import { Badge, Card, Quantity } from "@/components/ui";
 import { DaySelector } from "@/components/weekly-menu/day-selector";
+import { RecipePhoto } from "@/components/recipes/recipe-photo";
+import type { RecipeItemView } from "@/components/recipe-picker/types";
+import { recipePhotoUrl } from "@/lib/recipe-view";
+
+/**
+ * HU-018c: una receta en el portal. Miniatura, nombre, porción casera y "Fuente: …" (D3 = b). Sin
+ * macros ni gramos. "Ver receta" (el detalle) llega en 018c-2.
+ */
+function PortalRecipeItem({ recipe }: { recipe: RecipeItemView }) {
+  return (
+    <li className="flex items-center gap-3 py-3">
+      <RecipePhoto
+        photoUrl={recipe.photoId ? recipePhotoUrl(recipe.photoId, "portal") : null}
+        type={recipe.type}
+        alt=""
+        sizes="48px"
+        className="size-12 w-12 shrink-0 rounded-md [&_svg]:size-6"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm font-medium">{recipe.name}</p>
+        <p className="text-subheadline text-muted-foreground">
+          {recipePortionText(recipe.portions, recipe.portionHousehold)}
+        </p>
+        {recipe.sourceName ? (
+          <p className="text-footnote text-muted-foreground">Fuente: {recipe.sourceName}</p>
+        ) : null}
+      </div>
+    </li>
+  );
+}
 
 /** Lista de ítems de una comida en el portal (la usan la vista por día y la de siempre). */
 export function PortalMealItems({ items }: { items: MealItemView[] }) {
   return (
     <ul className="-my-3 divide-y">
-      {items.map((item) => (
+      {items.map((item) => item.recipe ? (
+        <PortalRecipeItem key={item.id} recipe={item.recipe} />
+      ) : (
         <li key={item.id} className="flex items-baseline justify-between gap-4 py-3 text-sm">
           <span className="min-w-0 break-words">{item.foodName ?? item.customLabel ?? "—"}</span>
           {item.quantityGrams ? (

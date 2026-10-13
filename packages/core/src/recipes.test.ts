@@ -7,6 +7,7 @@ import {
   RECIPE_TYPE_LABELS,
   compareWithPublished,
   computeRecipeMacros,
+  expandRecipeIngredients,
   filterRecipes,
   formatPortions,
   hasActiveRecipeFilters,
@@ -393,5 +394,31 @@ describe("catálogos", () => {
   it("labels completos", () => {
     expect(Object.keys(RECIPE_TYPE_LABELS)).toHaveLength(7);
     expect(RECIPE_TAG_LABELS.MEAL_PREP).toBe("Apta vianda / freezer");
+  });
+});
+
+describe("expandRecipeIngredients (018c, micronutrientes)", () => {
+  const foodA = { id: "a" };
+  const foodB = { id: "b" };
+  it("escala los gramos a las porciones del ítem y omite los c.n.", () => {
+    const out = expandRecipeIngredients(
+      [
+        { grams: 400, noQuantity: false, food: foodA },
+        { grams: 200, noQuantity: false, food: null }, // texto libre
+        { grams: null, noQuantity: false, food: foodB }, // sin gramos
+        { grams: null, noQuantity: true, food: foodB }, // c.n.
+      ],
+      4,
+      1.5,
+    );
+    expect(out).toEqual([
+      { food: foodA, grams: 150 },
+      { food: null, grams: 75 },
+      { food: foodB, grams: null },
+    ]);
+  });
+  it("sin rendimiento → []", () => {
+    expect(expandRecipeIngredients([{ grams: 100, noQuantity: false, food: foodA }], null, 1)).toEqual([]);
+    expect(expandRecipeIngredients([{ grams: 100, noQuantity: false, food: foodA }], 0, 1)).toEqual([]);
   });
 });

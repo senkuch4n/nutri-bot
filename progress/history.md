@@ -426,3 +426,14 @@
 - **Recorrido:** 1ª pasada con Build Error de Turbopack (`export type … from` en un `"use server"`), arreglado antes
   de la revisión. Aprobada en la primera revisión.
 - **Modelos:** implementer Opus; reviewer Opus.
+
+## HU-018c-1 · Buscador de recetas en la comida (aprobada 2026-10-03, senkuch4n)
+- **Qué:** "Agregar receta" en cada comida abre un panel lateral (pantalla completa en el celular) con buscador por
+  ingrediente o nombre, chips (tipo, momento inferido del nombre de la comida, etiquetas), grilla de tarjetas con foto
+  y el impacto en el día contra el objetivo (±5 %, peor día con varios marcados, promedio semanal en "Todos los días",
+  promedio en opciones). Agregar en uno o varios días, porciones de a ½ y "Deshacer". Ítem de receta en el editor,
+  plantillas, micronutrientes, PDF y portal (línea con nombre, porción y fuente). Copiar día, repetir, deshacer y
+  aplicar plantilla conservan la receta. Sin migración.
+- **Verificación:** 1712 tests; `next build` y `next build --turbopack`; `test:recipe-picker`; recorrido en Chrome
+  (`progress/recorrido_HU-018c.md`). Aprobada en la primera revisión. Pendientes menores para 018c-2 en la SDD.
+- **Modelos:** architect Opus; implementer Opus; reviewer Opus. Tramo hecho en modo autónomo (decisiones recomendadas).

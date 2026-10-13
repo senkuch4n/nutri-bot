@@ -226,3 +226,27 @@ orquestador, para que las revise a la mañana:
 - HU-018a-2 done (extractor en seco: 320 borradores, 0 gramos inventados; 1619 tests). Recorrido: **Build Error en Turbopack** (export type re-export en actions.ts 'use server', bc034b7) → devuelto al implementer antes del reviewer.
 - HU-018a-2: arreglo Turbopack (cccfd78); recorrido OK. → `en_revision`.
 - HU-018a-2 **aprobada**. HU-018a → `aprobada`. PR a develop. Siguen: 018c (buscador) y la tarea directa del bug de auth.ts.
+- PR #24 mergeado. Tarea directa: fix login Google (solo GOOGLE_CALENDAR_OWNER_EMAIL guarda el token) → PR #25. HU-018c → `en_arquitectura` (rama feat/hu-018c-buscador-recetas; architect Opus + ui).
+- PR #25 (fix login Google) mergeado. Falta definir GOOGLE_CALENDAR_OWNER_EMAIL en producción. Traer develop a la rama de 018c antes de implementar.
+- HU-018c SDD lista (Refactorizaciones/buscador-recetas.md; sin migración; corte 018c-1 buscador / 018c-2 detalle de receta; hallazgo: copiar/repetir/deshacer y aplicar plantilla perderían recipeId). → `arquitectura_lista`.
+- HU-018c: usuario aprueba SDD (018c-1 → 018c-2; D1–D9 aceptadas). → `implementando` 018c-1 (Opus; apple-design, ui-ux-pro-max).
+- 2026-10-03: el usuario activó modo autónomo ("realizá todas las HU que puedas; si no podés avanzar con una, avanzá con otra"). Decisiones que normalmente se preguntan: se toma la recomendada y se anota acá y en backlog.
+- Seña con Mercado Pago probada por el usuario: funciona.
+- HU-018c-1 done; recorrido OK (progress/recorrido_HU-018c.md); datos de prueba borrados. → `en_revision` (reviewer Opus, recomendado; modo autónomo).
+- HU-018c-1 **aprobada**. PR a develop. Sigue 018c-2 en rama encadenada (feat/hu-018c2-detalle-receta desde 018c-1) para no esperar el merge.
+- Presentación del usuario: frené el implementer de 018c-2, su trabajo quedó en `git stash` ("HU-018c-2 en curso (frenado para la presentación)"); working tree en feat/hu-018c-buscador-recetas (018c-1 aprobada); npm run dev reiniciado. Retomar 018c-2 después: git switch feat/hu-018c2-detalle-receta && git stash pop.
+- 018c-2 retomada en un git worktree aislado (scratchpad/wt-018c2) para no tocar la demo; sin escrituras en la base mientras el usuario presenta.
+
+## Corte 2026-10-03 (el usuario se va de viaje) — cómo retomar
+- **PR abiertos para mergear:** #26 (HU-018c-1, aprobada).
+- **HU-018c-2 en curso** (detalle de receta + 4 pendientes de la revisión de 018c-1, SDD `buscador-recetas.md` última
+  sección). Rama `feat/hu-018c2-detalle-receta` (encadenada sobre la de 018c-1), pusheada como respaldo, con un commit
+  **WIP sin verificar** (`2f44c77`). Retomar: `git switch feat/hu-018c2-detalle-receta`, relanzar el implementer (Opus,
+  apple-design + ui-ux-pro-max) para terminar, verificar (typecheck, test, lint, `next build` y `--turbopack`, scripts
+  contra la base), recorrido en Chrome (diálogo de detalle y "Ver receta" en el portal) y reviewer. Cuando #26 se
+  mergee, rebasear sobre develop.
+- Queda un `git stash` "HU-018c-2 en curso (frenado para la presentación)" con el mismo contenido que el WIP: se puede
+  descartar una vez retomado.
+- **Después de 018c:** 018d (medidas caseras, sin afinar), 017c (pacientes, foco usabilidad), 017b/d/f. Pendientes del
+  usuario: `GOOGLE_CALENDAR_OWNER_EMAIL` en producción, revisar ~40 recetas, crédito de DeepSeek, 8 borradores de
+  muestra en la base, escenario 14 de `test:booking-reason`.

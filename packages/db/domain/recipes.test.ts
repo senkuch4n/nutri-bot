@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({ prisma: {} as Record<string, any> }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 
 import {
+  RECIPE_ITEM_SELECT,
   RecipeNotFoundError,
   RecipeNotPublishableError,
   RecipeStatusError,
@@ -273,5 +274,18 @@ describe("lecturas", () => {
     expect(p().food.findMany.mock.calls[0][0].where).toEqual({ OR: [{ active: true }, { id: { in: ["old"] } }] });
     await listFoodsForRecipes();
     expect(p().food.findMany.mock.calls[1][0].where).toEqual({ active: true });
+  });
+});
+
+describe("RECIPE_ITEM_SELECT (018c)", () => {
+  it("trae lo del ítem de receta (macros, micronutrientes, foto, fuente) y nada de importación ni bytes", () => {
+    expect(Object.keys(RECIPE_ITEM_SELECT).sort()).toEqual(
+      ["id", "ingredients", "name", "photo", "portionHousehold", "sourceName", "status", "type", "yieldPortions"].sort(),
+    );
+    expect(RECIPE_ITEM_SELECT.photo).toEqual({ select: { id: true } });
+    expect(RECIPE_ITEM_SELECT.ingredients.select.food.select).toMatchObject({ nutrients: true, sodiumMgPer100: true, kcalPer100: true });
+    // No filtra por estado: una receta archivada sigue en el plan.
+    expect(RECIPE_ITEM_SELECT).not.toHaveProperty("where");
+    expect(JSON.stringify(RECIPE_ITEM_SELECT)).not.toMatch(/rawText|importHints|data|thumbData|published/);
   });
 });

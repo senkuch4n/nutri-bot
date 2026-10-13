@@ -91,4 +91,21 @@ describe("PlanDocument (HU-018b)", () => {
     const buffer = await renderPlanPdf(input(meals));
     expect(buffer.subarray(0, 5).toString()).toBe("%PDF-");
   }, 30_000);
+
+  it("HU-018c: la receta sale como una línea con nombre, porción y fuente", () => {
+    const recipeItem = (name: string, sourceName: string | null, portions = 1): MealItemView => ({
+      id: `i${++seq}`, foodId: null, foodName: null, customLabel: null, quantityGrams: null, notes: null,
+      macros: macros(255), kcalBreakdown: null, weekday: "TUE",
+      recipe: { id: `r${seq}`, name, status: "PUBLISHED", type: "BREAKFAST", portions, portionHousehold: "2 panqueques", photoId: null, sourceName, macrosIncomplete: false },
+    });
+    const out = render([
+      meal("Desayuno", "PER_DAY", [recipeItem("Panqueques de avena", "Nutriarte"), recipeItem("Budín propio", null, 1.5)]),
+    ]);
+    expect(out).toContain("Panqueques de avena");
+    expect(out).toContain("1 porción (2 panqueques) · Fuente: Nutriarte");
+    expect(out).toContain("Budín propio");
+    expect(out).toContain("1½ porciones (1 porción = 2 panqueques)");
+    expect(out.filter((t) => t.includes("Fuente"))).toHaveLength(1);
+    expect(out).not.toContain("—");
+  });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { Lock } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
 import { cn } from "@/lib/utils";
 
@@ -8,7 +9,12 @@ import { cn } from "@/lib/utils";
 // carrusel). Encendido = primary-soft + tint (estado on de HU-017a), con borde para que el chip
 // apagado también se lea como botón.
 
-export type ChipOption = { value: string; label: string };
+export type ChipOption = {
+  value: string;
+  label: string;
+  /** HU-018c: nombre accesible si la etiqueta visible es una abreviatura ("Mar" → "Martes"). */
+  ariaLabel?: string;
+};
 
 const chipClass =
   "h-11 min-w-0 rounded-full border border-border bg-background px-4 text-callout data-[state=on]:border-transparent";
@@ -35,6 +41,11 @@ type MultipleProps = CommonProps & {
   type: "multiple";
   value: readonly string[];
   onChange: (value: string[]) => void;
+  /**
+   * HU-018c: chips que quedan encendidos y no se apagan (aria-disabled, con un candado). El texto de
+   * ayuda lo pone quien lo usa.
+   */
+  lockedValues?: readonly string[];
 };
 
 const ALL = "__all";
@@ -42,6 +53,7 @@ const ALL = "__all";
 export function ChipGroup(props: SingleProps | MultipleProps) {
   const labelId = useId();
   const { label, options, labelPosition = "inline", invalid, id, describedBy } = props;
+  const locked = props.type === "multiple" ? (props.lockedValues ?? []) : [];
   const group =
     props.type === "single" ? (
       <ToggleGroup
@@ -63,7 +75,7 @@ export function ChipGroup(props: SingleProps | MultipleProps) {
           </ToggleGroupItem>
         ) : null}
         {options.map((o) => (
-          <ToggleGroupItem key={o.value} value={o.value} className={chipClass}>
+          <ToggleGroupItem key={o.value} value={o.value} aria-label={o.ariaLabel} className={chipClass}>
             {o.label}
           </ToggleGroupItem>
         ))}
@@ -75,15 +87,25 @@ export function ChipGroup(props: SingleProps | MultipleProps) {
         aria-labelledby={labelId}
         aria-describedby={describedBy}
         aria-invalid={invalid || undefined}
-        value={[...props.value]}
-        onValueChange={(v) => props.onChange(v)}
+        value={[...new Set([...props.value, ...locked])]}
+        onValueChange={(v) => props.onChange([...new Set([...locked, ...v])])}
         className="flex flex-wrap justify-start gap-2"
       >
-        {options.map((o) => (
-          <ToggleGroupItem key={o.value} value={o.value} className={chipClass}>
-            {o.label}
-          </ToggleGroupItem>
-        ))}
+        {options.map((o) => {
+          const isLocked = locked.includes(o.value);
+          return (
+            <ToggleGroupItem
+              key={o.value}
+              value={o.value}
+              aria-label={o.ariaLabel}
+              aria-disabled={isLocked || undefined}
+              className={cn(chipClass, isLocked && "cursor-default gap-1.5 [&_svg]:size-3")}
+            >
+              {isLocked ? <Lock aria-hidden /> : null}
+              {o.label}
+            </ToggleGroupItem>
+          );
+        })}
       </ToggleGroup>
     );
 

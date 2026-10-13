@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Plus, UtensilsCrossed } from "lucide-react";
+import { Copy, Plus, Search, UtensilsCrossed } from "lucide-react";
 import {
   WEEKDAY_LABELS,
   computeWeeklyTotals,
@@ -9,6 +9,8 @@ import {
   formatMacrosLine,
   itemsForDay,
   mealTotalForDay,
+  openPickerAriaLabel,
+  RECIPE_PICKER_TEXT,
   type AtwaterBreakdown,
   type Macros,
   type MealMode,
@@ -29,6 +31,9 @@ import { copiedDayMessage, itemLabel } from "@/components/weekly-menu/labels";
 import { MealCardMenu } from "@/components/weekly-menu/meal-card-menu";
 import { useMenuUndo } from "@/components/weekly-menu/use-menu-undo";
 import { WeeklyOverview } from "@/components/weekly-menu/weekly-overview";
+import type { RecipeItemView } from "@/components/recipe-picker/types";
+import { RecipeMealItem } from "@/components/recipe-picker/recipe-meal-item";
+import { RecipePickerSheet } from "@/components/recipe-picker/recipe-picker-sheet";
 
 export type { FoodOption } from "@/components/food-catalog";
 
@@ -44,6 +49,8 @@ export interface MealItemView {
   kcalBreakdown: AtwaterBreakdown | null;
   /** HU-018b: null = todos los días (comida EVERY_DAY). */
   weekday: Weekday | null;
+  /** HU-018c: ítem de receta (macros ya multiplicados por las porciones). Opcional: los fixtures de 018b no cambian. */
+  recipe?: RecipeItemView | null;
 }
 
 export interface MealView {
@@ -108,6 +115,10 @@ export function MealsEditor({
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   const [copyVariant, setCopyVariant] = useState<"to-others" | "into-day" | null>(null);
   const { pending: copying, run } = useMenuUndo(kind, ownerId);
+  // HU-018c: un solo buscador de recetas para todas las comidas. `picker` se conserva al cerrar para
+  // que el panel salga con su contenido.
+  const [picker, setPicker] = useState<{ mealId: string; day: Weekday | null } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Un plan semanal siempre tiene un día elegido; en uno no semanal el día no aplica.
   const day: Weekday | null = weekly.isWeekly && selected !== "WEEK" ? selected : null;
@@ -226,6 +237,10 @@ export function MealsEditor({
                 deleteItemAction={deleteItemAction}
                 deleteMealAction={deleteMealAction}
                 showMacros={showMacros}
+                onAddRecipe={() => {
+                  setPicker({ mealId: meal.id, day });
+                  setPickerOpen(true);
+                }}
                 onModeChanged={(mode) => {
                   // Un plan que se vuelve semanal desde la lista abre en el lunes, no en "Semana".
                   if (!weekly.isWeekly && mode === "PER_DAY") setSelected("MON");
@@ -250,6 +265,17 @@ export function MealsEditor({
             </form>
           </Card>
         ) : null}
+
+        <RecipePickerSheet
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          kind={kind}
+          ownerId={ownerId}
+          meals={meals}
+          mealId={picker?.mealId ?? null}
+          focusDay={picker?.day ?? null}
+          target={kind === "plan" ? target : null}
+        />
 
         {day ? (
           <CopyDayDialog
@@ -300,6 +326,7 @@ function MealCard({
   deleteItemAction,
   deleteMealAction,
   showMacros,
+  onAddRecipe,
   onModeChanged,
 }: {
   meal: MealView;
@@ -315,6 +342,8 @@ function MealCard({
   deleteItemAction: (formData: FormData) => Promise<void>;
   deleteMealAction: (formData: FormData) => Promise<void>;
   showMacros: boolean;
+  /** HU-018c: abre el buscador de recetas para esta comida (y el día de la pestaña). */
+  onAddRecipe: () => void;
   onModeChanged: (mode: MealMode) => void;
 }) {
   const perDay = meal.mode === "PER_DAY" && day !== null;
@@ -323,6 +352,10 @@ function MealCard({
   // "" = todos los días. Una comida "Cambia cada día" manda el día de la pestaña (pendiente de 018b-1).
   const weekday = perDay ? day! : "";
   const where = perDay ? `${meal.name} del ${WEEKDAY_LABELS[day!].lower}` : meal.name;
+  const recipeAria = openPickerAriaLabel(
+    meal.name,
+    !weeklyPlan ? { kind: "PLAN" } : perDay ? { kind: "DAYS", focusDay: day!, days: [day!] } : { kind: "EVERY_DAY" },
+  );
 
   return (
     <section id={`meal-${meal.id}`} aria-label={title} className="scroll-mt-6 md:scroll-mt-72 lg:scroll-mt-60">
@@ -362,6 +395,21 @@ function MealCard({
         {items.length > 0 ? (
           <ul className="divide-y rounded-md border">
             {items.map((item) => {
+              if (item.recipe) {
+                return (
+                  <RecipeMealItem
+                    key={item.id}
+                    item={item}
+                    recipe={item.recipe}
+                    kind={kind}
+                    ownerId={ownerId}
+                    ownerField={ownerField}
+                    deleteItemAction={deleteItemAction}
+                    showMacros={showMacros}
+                    where={where}
+                  />
+                );
+              }
               const itemName = itemLabel(item);
               return (
                 <li key={item.id} className="flex items-start justify-between gap-4 px-4 py-3">
@@ -411,7 +459,15 @@ function MealCard({
         ) : null}
 
         {/* key por día: al cambiar de pestaña el formulario empieza vacío (no se arrastra lo tipeado). */}
-        <form key={`${meal.id}-${weekday}`} action={addItemAction} className="mt-6 space-y-4 border-t pt-6">
+        {/* HU-018c: "Agregar receta" es la acción principal de la comida; "Agregar alimento" queda abajo. */}
+        <div className="mt-6 border-t pt-6">
+          <Button size="lg" className="w-full sm:w-auto" aria-label={recipeAria} onClick={onAddRecipe}>
+            <Search aria-hidden />
+            {RECIPE_PICKER_TEXT.openButton}
+          </Button>
+        </div>
+
+        <form key={`${meal.id}-${weekday}`} action={addItemAction} className="mt-4 space-y-4">
           <h3 className="text-sm font-semibold">Agregar alimento</h3>
           <input type="hidden" name="mealId" value={meal.id} />
           <input type="hidden" name={ownerField} value={ownerId} />
