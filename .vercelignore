@@ -1,0 +1,12 @@
+# `vercel --prod` desde la máquina sube la carpeta entera; esto no lo necesita el build de apps/web.
+docs/
+Refactorizaciones/
+progress/
+backlog/
+skills/
+.agents/
+.claude/
+apps/bot/.whatsapp-auth*
+**/.next/
+**/node_modules/
+.env*
