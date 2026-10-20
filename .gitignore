@@ -22,3 +22,5 @@ docs/ISAKMetry_*
 # de una paciente): no se versiona. Queda solo en la máquina local.
 docs/recetarios/
 docs/planes-alimentacion/
+.vercel
+.env*.local
