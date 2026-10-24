@@ -1,15 +1,32 @@
 import { prisma } from "@nutri-bot/db";
-import { PATIENT_DIRECTORY_TEXT, buildPatientDirectory, type PatientDirectoryInput } from "@nutri-bot/core";
+import {
+  PATIENT_ARCHIVE_TEXT,
+  PATIENT_DIRECTORY_TEXT,
+  buildArchivedPatientList,
+  buildPatientDirectory,
+  type PatientDirectoryInput,
+} from "@nutri-bot/core";
 import { PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
+import { ArchivedPatientList } from "./archived-patient-list";
 import { NewPatientSheet } from "./new-patient-sheet";
 import { PatientDirectory } from "./patient-directory";
 
 export const dynamic = "force-dynamic";
 
-export default async function PacientesPage() {
+// HU-019 (T14): la vista de archivadas es la misma ruta con `?vista=archivadas`.
+const ARCHIVED_SELECT = { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true } as const;
+
+export default async function PacientesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ vista?: string | string[] }>;
+}) {
+  const { vista } = await searchParams;
+  if (vista === "archivadas") return <ArchivedView />;
+
   const now = new Date();
-  const [pro, patients, conversations] = await Promise.all([
+  const [pro, patients, conversations, archived] = await Promise.all([
     getProfessional(),
     // Sin orderBy: el orden (alfabético es-AR y "Por completar") lo arma core.
     prisma.patient.findMany({
@@ -32,6 +49,7 @@ export default async function PacientesPage() {
       },
     }),
     prisma.conversationState.findMany({ select: { patientJid: true, updatedAt: true } }),
+    prisma.patient.findMany({ where: { archivedAt: { not: null } }, select: ARCHIVED_SELECT }),
   ]);
 
   const lastContactByJid = new Map(conversations.map((c) => [c.patientJid, c.updatedAt]));
@@ -53,11 +71,37 @@ export default async function PacientesPage() {
     };
   });
   const { named, unnamed } = buildPatientDirectory(inputs, now, pro.timezone);
+  // El contador cuenta las mismas filas que muestra la vista (sin canales ni grupos).
+  const archivedCount = buildArchivedPatientList(archivedInputs(archived), pro.timezone).length;
 
   return (
     <div>
       <PageHeader title={PATIENT_DIRECTORY_TEXT.title} action={<NewPatientSheet />} />
-      <PatientDirectory named={named} unnamed={unnamed} />
+      <PatientDirectory named={named} unnamed={unnamed} archivedCount={archivedCount} />
+    </div>
+  );
+}
+
+type ArchivedSelect = { id: string; name: string | null; phone: string; whatsappJid: string; archivedAt: Date | null };
+
+function archivedInputs(rows: ArchivedSelect[]) {
+  return rows.flatMap((p) => (p.archivedAt ? [{ ...p, archivedAt: p.archivedAt }] : []));
+}
+
+/** HU-019 (D2, SDD 7.4): `/pacientes?vista=archivadas`. Sin "Nuevo paciente". */
+async function ArchivedView() {
+  const [pro, archived] = await Promise.all([
+    getProfessional(),
+    prisma.patient.findMany({ where: { archivedAt: { not: null } }, select: ARCHIVED_SELECT }),
+  ]);
+  const rows = buildArchivedPatientList(archivedInputs(archived), pro.timezone);
+  return (
+    <div>
+      <PageHeader
+        title={PATIENT_ARCHIVE_TEXT.archivedTitle}
+        back={{ href: "/pacientes", label: PATIENT_ARCHIVE_TEXT.backToPatients }}
+      />
+      <ArchivedPatientList rows={rows} />
     </div>
   );
 }
