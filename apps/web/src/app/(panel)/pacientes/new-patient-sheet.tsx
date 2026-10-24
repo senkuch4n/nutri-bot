@@ -3,8 +3,8 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { UserPlus } from "lucide-react";
-import { PATIENT_DIRECTORY_TEXT } from "@nutri-bot/core";
+import { ArchiveRestore, UserPlus } from "lucide-react";
+import { PATIENT_ARCHIVE_TEXT, PATIENT_DIRECTORY_TEXT } from "@nutri-bot/core";
 import {
   Sheet,
   SheetClose,
@@ -17,7 +17,7 @@ import {
 import { Button, Field, FormError, Input } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { useMediaQuery } from "@/lib/use-media-query";
-import { createPatientAction, type CreatePatientState } from "./actions";
+import { createPatientAction, unarchivePatientAction, type CreatePatientState } from "./actions";
 
 const T = PATIENT_DIRECTORY_TEXT;
 const initial: CreatePatientState = { ok: false };
@@ -40,15 +40,30 @@ export function NewPatientSheet() {
           <SheetDescription>{T.newPatientDescription}</SheetDescription>
         </SheetHeader>
         {/* Se monta al abrir: cada apertura arranca con el form vacío. */}
-        {open ? <NewPatientForm /> : null}
+        {open ? <NewPatientForm onClose={() => setOpen(false)} /> : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-function NewPatientForm() {
+function NewPatientForm({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(createPatientAction, initial);
+  const [unarchiving, setUnarchiving] = useState(false);
+
+  // HU-019 (D7, SDD 7.5): el número es de una archivada → desarchivarla y abrir su ficha.
+  async function unarchiveAndOpen(id: string) {
+    setUnarchiving(true);
+    const r = await unarchivePatientAction(id);
+    setUnarchiving(false);
+    if (!r.ok) {
+      notify.error(r.error);
+      return;
+    }
+    notify.saved(PATIENT_ARCHIVE_TEXT.unarchived(r.name));
+    onClose();
+    router.push(`/pacientes/${id}`);
+  }
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
   // Controlados: React 19 resetea los campos no controlados de un <form action> al terminar la action.
@@ -97,7 +112,18 @@ function NewPatientForm() {
             aria-invalid={errors?.phone ? true : undefined}
           />
         </Field>
-        {!state.ok && state.existingId ? (
+        {!state.ok && state.existingId && state.existingArchived ? (
+          <Button
+            type="button"
+            variant="secondary"
+            loading={unarchiving}
+            onClick={() => void unarchiveAndOpen(state.existingId!)}
+            className="mt-2 w-full sm:w-auto"
+          >
+            <ArchiveRestore aria-hidden />
+            {PATIENT_ARCHIVE_TEXT.unarchiveAndOpen}
+          </Button>
+        ) : !state.ok && state.existingId ? (
           <Link
             href={`/pacientes/${state.existingId}`}
             className="mt-1.5 inline-block text-footnote text-primary underline-offset-2 hover:underline"
