@@ -68,6 +68,8 @@ model Patient {
   activityLevel ActivityLevel?
   nutritionGoal NutritionGoal?
   bodyFrame     BodyFrame?
+  /// HU-019: null = activa; con fecha = archivada (no aparece en la lista, "Nuevo turno" ni comunicados).
+  archivedAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   appointments Appointment[]
