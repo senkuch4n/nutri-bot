@@ -3,14 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
-import { getProfessional, updatePatientFormulaData } from "@nutri-bot/db/domain";
+import {
+  archivePatient,
+  getProfessional,
+  unarchivePatient,
+  updatePatientFormulaData,
+} from "@nutri-bot/db/domain";
 import {
   ACTIVITY_LEVEL_VALUES,
   BODY_FRAME_VALUES,
   NUTRITION_GOAL_VALUES,
+  PATIENT_ARCHIVE_TEXT,
   PATIENT_DIRECTORY_TEXT,
   PHONE_INPUT_TEXT,
   SEX_VALUES,
+  archiveBlockedText,
   isFutureDayKey,
   isValidDayKey,
   parsePhoneInput,
@@ -155,6 +162,8 @@ export type CreatePatientState = {
   fieldErrors?: Partial<Record<"name" | "phone", string>>;
   /** El número ya es de otra paciente: no se crea nada y se ofrece abrir su ficha. */
   existingId?: string;
+  /** HU-019 (D7): esa paciente está archivada → se ofrece "Desarchivar y abrir su ficha". */
+  existingArchived?: boolean;
   error?: string;
 };
 
@@ -177,8 +186,16 @@ export async function createPatientAction(
   try {
     const taken = await prisma.patient.findUnique({
       where: { whatsappJid: phoneToJid(phone.digits) },
-      select: { id: true, name: true, phone: true, whatsappJid: true },
+      select: { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true },
     });
+    if (taken?.archivedAt) {
+      return {
+        ok: false,
+        existingId: taken.id,
+        existingArchived: true,
+        fieldErrors: { phone: PATIENT_ARCHIVE_TEXT.phoneTakenArchived(patientDisplayName(taken)) },
+      };
+    }
     if (taken) {
       return {
         ok: false,
@@ -216,4 +233,75 @@ export async function setPatientNameAction(
   revalidatePath("/pacientes");
   revalidatePath(`/pacientes/${id}`);
   return { ok: true, name };
+}
+
+// ---------------------------------------------------------------------------
+// HU-019: archivar / desarchivar desde la ficha.
+// ---------------------------------------------------------------------------
+
+export type ArchivePatientActionResult =
+  | { ok: true; name: string | null }
+  | { ok: false; error: string; blocked?: true };
+
+function revalidateArchive(patientId: string) {
+  revalidatePath("/pacientes");
+  revalidatePath(`/pacientes/${patientId}`);
+  revalidatePath("/avisos");
+}
+
+async function patientName(patientId: string): Promise<string | null> {
+  const p = await prisma.patient.findUnique({ where: { id: patientId }, select: { name: true } });
+  return p?.name?.trim() || null;
+}
+
+/** HU-019. Llama archivePatient(id). pending_appointments → { ok:false, blocked:true, error: archiveBlockedText }.
+ *  not_found / excepción → { ok:false, error: archiveError }. ok → revalidatePath("/pacientes"),
+ *  revalidatePath(`/pacientes/${id}`), revalidatePath("/avisos"). */
+export async function archivePatientAction(patientId: string): Promise<ArchivePatientActionResult> {
+  if (typeof patientId !== "string" || patientId.trim() === "") {
+    return { ok: false, error: PATIENT_ARCHIVE_TEXT.archiveError };
+  }
+  try {
+    const now = new Date();
+    const result = await archivePatient(patientId, now);
+    if (!result.ok) {
+      if (result.reason === "not_found") return { ok: false, error: PATIENT_ARCHIVE_TEXT.archiveError };
+      const [name, pro] = await Promise.all([patientName(patientId), getProfessional()]);
+      return {
+        ok: false,
+        blocked: true,
+        error: archiveBlockedText({
+          name,
+          startsAt: result.next.startsAt,
+          moreCount: result.moreCount,
+          now,
+          tz: pro.timezone,
+        }),
+      };
+    }
+    const name = await patientName(patientId);
+    revalidateArchive(patientId);
+    return { ok: true, name };
+  } catch {
+    return { ok: false, error: PATIENT_ARCHIVE_TEXT.archiveError };
+  }
+}
+
+/** HU-019. Llama unarchivePatient(id). not_found / excepción → { ok:false, error: unarchiveError }.
+ *  ok → mismos revalidatePath. */
+export async function unarchivePatientAction(
+  patientId: string,
+): Promise<{ ok: true; name: string | null } | { ok: false; error: string }> {
+  if (typeof patientId !== "string" || patientId.trim() === "") {
+    return { ok: false, error: PATIENT_ARCHIVE_TEXT.unarchiveError };
+  }
+  try {
+    const result = await unarchivePatient(patientId);
+    if (!result.ok) return { ok: false, error: PATIENT_ARCHIVE_TEXT.unarchiveError };
+    const name = await patientName(patientId);
+    revalidateArchive(patientId);
+    return { ok: true, name };
+  } catch {
+    return { ok: false, error: PATIENT_ARCHIVE_TEXT.unarchiveError };
+  }
 }

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   findUnique: vi.fn(),
   findOrCreatePatient: vi.fn(),
+  archivePatient: vi.fn(),
+  unarchivePatient: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
@@ -19,6 +21,8 @@ vi.mock("@nutri-bot/db", () => ({
   },
 }));
 vi.mock("@nutri-bot/db/domain", () => ({
+  archivePatient: mocks.archivePatient,
+  unarchivePatient: mocks.unarchivePatient,
   updatePatientFormulaData: vi.fn(),
   getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
 }));
@@ -28,7 +32,13 @@ vi.mock("@/lib/patients", () => ({
   phoneToJid: (phone: string) => `${phone.replace(/\D/g, "")}@s.whatsapp.net`,
 }));
 
-import { createPatientAction, setPatientNameAction, updatePatientDataAction } from "./actions";
+import {
+  archivePatientAction,
+  createPatientAction,
+  setPatientNameAction,
+  unarchivePatientAction,
+  updatePatientDataAction,
+} from "./actions";
 
 function form(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -47,6 +57,8 @@ beforeEach(() => {
   mocks.findUnique.mockReset();
   mocks.findOrCreatePatient.mockReset();
   mocks.findOrCreatePatient.mockResolvedValue({ id: "pat-new" });
+  mocks.archivePatient.mockReset();
+  mocks.unarchivePatient.mockReset();
 });
 
 describe("createPatientAction", () => {
@@ -73,6 +85,24 @@ describe("createPatientAction", () => {
       ok: false,
       existingId: "pat-9",
       fieldErrors: { phone: "Ese número ya es de María Gómez" },
+    });
+    expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
+  });
+
+  it("HU-019: número de una archivada → no crea nada y ofrece desarchivarla", async () => {
+    mocks.findUnique.mockResolvedValue({
+      id: "pat-7",
+      name: "Ana López",
+      phone: "5491155551234",
+      whatsappJid: "5491155551234@s.whatsapp.net",
+      archivedAt: new Date("2026-10-01T12:00:00Z"),
+    });
+    const result = await createPatientAction({ ok: false }, form({ name: "Ana", phone: "11 5555-1234" }));
+    expect(result).toEqual({
+      ok: false,
+      existingId: "pat-7",
+      existingArchived: true,
+      fieldErrors: { phone: "Ese número es de Ana López, que está archivada." },
     });
     expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
   });
@@ -231,5 +261,75 @@ describe("updatePatientDataAction", () => {
     const result = await updatePatientDataAction({ ok: false }, form({ ...full, id: "" }));
     expect(result.ok).toBe(false);
     expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("archivePatientAction (HU-019)", () => {
+  it("ok → revalida lista, ficha y avisos y devuelve el nombre", async () => {
+    mocks.archivePatient.mockResolvedValue({ ok: true, archivedAt: new Date() });
+    mocks.findUnique.mockResolvedValue({ name: " Ana López " });
+    const r = await archivePatientAction("pat-1");
+    expect(r).toEqual({ ok: true, name: "Ana López" });
+    expect(mocks.archivePatient).toHaveBeenCalledWith("pat-1", expect.any(Date));
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
+  });
+
+  it("turno pendiente → blocked con el texto de archiveBlockedText, sin revalidar", async () => {
+    // Jueves 30/10/2025 10:00 en Buenos Aires; now en 2025 para que no muestre el año.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-10-24T15:00:00Z"));
+    try {
+      mocks.archivePatient.mockResolvedValue({
+        ok: false,
+        reason: "pending_appointments",
+        next: { startsAt: new Date("2025-10-30T13:00:00Z"), status: "CONFIRMED" },
+        moreCount: 0,
+      });
+      mocks.findUnique.mockResolvedValue({ name: "Ana López" });
+      const r = await archivePatientAction("pat-1");
+      expect(r).toEqual({
+        ok: false,
+        blocked: true,
+        error: "Ana tiene un turno el jueves 30/10 a las 10:00. Cancelalo antes de archivarla.",
+      });
+      expect(mocks.revalidatePath).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("not_found o excepción → archiveError", async () => {
+    mocks.archivePatient.mockResolvedValue({ ok: false, reason: "not_found" });
+    expect(await archivePatientAction("nope")).toEqual({ ok: false, error: "No se pudo archivar. Probá de nuevo." });
+    mocks.archivePatient.mockRejectedValue(new Error("db"));
+    expect(await archivePatientAction("pat-1")).toEqual({ ok: false, error: "No se pudo archivar. Probá de nuevo." });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("id vacío → error sin llamar al domain", async () => {
+    expect(await archivePatientAction("  ")).toEqual({ ok: false, error: "No se pudo archivar. Probá de nuevo." });
+    expect(mocks.archivePatient).not.toHaveBeenCalled();
+  });
+});
+
+describe("unarchivePatientAction (HU-019)", () => {
+  it("ok → revalida y devuelve el nombre (null si no tiene)", async () => {
+    mocks.unarchivePatient.mockResolvedValue({ ok: true });
+    mocks.findUnique.mockResolvedValue({ name: null });
+    expect(await unarchivePatientAction("pat-1")).toEqual({ ok: true, name: null });
+    expect(mocks.unarchivePatient).toHaveBeenCalledWith("pat-1");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
+  });
+
+  it("not_found o excepción → unarchiveError", async () => {
+    mocks.unarchivePatient.mockResolvedValue({ ok: false, reason: "not_found" });
+    expect(await unarchivePatientAction("nope")).toEqual({ ok: false, error: "No se pudo desarchivar. Probá de nuevo." });
+    mocks.unarchivePatient.mockRejectedValue(new Error("db"));
+    expect(await unarchivePatientAction("pat-1")).toEqual({ ok: false, error: "No se pudo desarchivar. Probá de nuevo." });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 });
