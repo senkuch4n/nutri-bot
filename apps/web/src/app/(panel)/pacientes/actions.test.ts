@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   upsert: vi.fn(),
   transaction: vi.fn(),
+  findUnique: vi.fn(),
+  findOrCreatePatient: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
   prisma: {
-    patient: { update: mocks.update },
+    patient: { update: mocks.update, findUnique: mocks.findUnique },
     clinicalRecord: { upsert: mocks.upsert },
     $transaction: mocks.transaction,
   },
@@ -21,7 +23,12 @@ vi.mock("@nutri-bot/db/domain", () => ({
   getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
 }));
 
-import { setPatientNameAction, updatePatientDataAction } from "./actions";
+vi.mock("@/lib/patients", () => ({
+  findOrCreatePatient: mocks.findOrCreatePatient,
+  phoneToJid: (phone: string) => `${phone.replace(/\D/g, "")}@s.whatsapp.net`,
+}));
+
+import { createPatientAction, setPatientNameAction, updatePatientDataAction } from "./actions";
 
 function form(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -37,6 +44,48 @@ beforeEach(() => {
   mocks.upsert.mockResolvedValue({});
   mocks.transaction.mockReset();
   mocks.transaction.mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops));
+  mocks.findUnique.mockReset();
+  mocks.findOrCreatePatient.mockReset();
+  mocks.findOrCreatePatient.mockResolvedValue({ id: "pat-new" });
+});
+
+describe("createPatientAction", () => {
+  it("normaliza el teléfono, crea la paciente y devuelve su id", async () => {
+    mocks.findUnique.mockResolvedValue(null);
+    const result = await createPatientAction({ ok: false }, form({ name: " Lucía Pérez ", phone: "0351 15 555 2345" }));
+    expect(result).toEqual({ ok: true, id: "pat-new", name: "Lucía Pérez" });
+    expect(mocks.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { whatsappJid: "5493515552345@s.whatsapp.net" } }),
+    );
+    expect(mocks.findOrCreatePatient).toHaveBeenCalledWith({ phone: "5493515552345", name: "Lucía Pérez" });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
+  });
+
+  it("número que ya es de otra paciente → no crea nada y ofrece su ficha", async () => {
+    mocks.findUnique.mockResolvedValue({
+      id: "pat-9",
+      name: "María Gómez",
+      phone: "5493515552345",
+      whatsappJid: "5493515552345@s.whatsapp.net",
+    });
+    const result = await createPatientAction({ ok: false }, form({ name: "Lucía", phone: "351 555 2345" }));
+    expect(result).toEqual({
+      ok: false,
+      existingId: "pat-9",
+      fieldErrors: { phone: "Ese número ya es de María Gómez" },
+    });
+    expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
+  });
+
+  it("valida nombre y teléfono sin tocar la base", async () => {
+    const result = await createPatientAction({ ok: false }, form({ name: " ", phone: "555 2345" }));
+    expect(result).toEqual({
+      ok: false,
+      fieldErrors: { name: "Escribí el nombre", phone: "Revisá el número: tiene que tener código de área" },
+    });
+    expect(mocks.findUnique).not.toHaveBeenCalled();
+    expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
+  });
 });
 
 describe("setPatientNameAction", () => {

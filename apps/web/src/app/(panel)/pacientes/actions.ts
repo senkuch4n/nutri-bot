@@ -9,10 +9,14 @@ import {
   BODY_FRAME_VALUES,
   NUTRITION_GOAL_VALUES,
   PATIENT_DIRECTORY_TEXT,
+  PHONE_INPUT_TEXT,
   SEX_VALUES,
   isFutureDayKey,
   isValidDayKey,
+  parsePhoneInput,
+  patientDisplayName,
 } from "@nutri-bot/core";
+import { findOrCreatePatient, phoneToJid } from "@/lib/patients";
 
 export type PatientState = { ok: boolean; error?: string };
 
@@ -142,6 +146,52 @@ export async function updatePatientDataAction(
   revalidatePath(`/pacientes/${id}`, "layout");
   revalidatePath("/pacientes");
   return { ok: true };
+}
+
+export type CreatePatientState = {
+  ok: boolean;
+  id?: string;
+  name?: string;
+  fieldErrors?: Partial<Record<"name" | "phone", string>>;
+  /** El número ya es de otra paciente: no se crea nada y se ofrece abrir su ficha. */
+  existingId?: string;
+  error?: string;
+};
+
+/** "Nuevo paciente" sin pasar por el bot ni por un turno. Mismas reglas que la paciente nueva de
+ *  "Nuevo turno": teléfono normalizado con parsePhoneInput y sin duplicar un número existente (así,
+ *  cuando escriba por WhatsApp, el bot la encuentra por el mismo JID). */
+export async function createPatientAction(
+  _prev: CreatePatientState,
+  formData: FormData,
+): Promise<CreatePatientState> {
+  const name = formText(formData, "name");
+  const phone = parsePhoneInput(formText(formData, "phone"));
+
+  const fieldErrors: NonNullable<CreatePatientState["fieldErrors"]> = {};
+  if (name === "") fieldErrors.name = PATIENT_DIRECTORY_TEXT.nameRequired;
+  else if (name.length > 120) fieldErrors.name = PATIENT_DIRECTORY_TEXT.nameTooLong;
+  if (!phone.ok) fieldErrors.phone = PHONE_INPUT_TEXT[phone.error];
+  if (Object.keys(fieldErrors).length > 0 || !phone.ok) return { ok: false, fieldErrors };
+
+  try {
+    const taken = await prisma.patient.findUnique({
+      where: { whatsappJid: phoneToJid(phone.digits) },
+      select: { id: true, name: true, phone: true, whatsappJid: true },
+    });
+    if (taken) {
+      return {
+        ok: false,
+        existingId: taken.id,
+        fieldErrors: { phone: PATIENT_DIRECTORY_TEXT.phoneTaken(patientDisplayName(taken)) },
+      };
+    }
+    const created = await findOrCreatePatient({ phone: phone.digits, name });
+    revalidatePath("/pacientes");
+    return { ok: true, id: created.id, name };
+  } catch {
+    return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
+  }
 }
 
 export type SetPatientNameState = { ok: boolean; error?: string; name?: string };
