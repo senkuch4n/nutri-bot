@@ -2,6 +2,7 @@ import { prisma } from "@nutri-bot/db";
 import { PATIENT_DIRECTORY_TEXT, buildPatientDirectory, type PatientDirectoryInput } from "@nutri-bot/core";
 import { PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
+import { NewPatientSheet } from "./new-patient-sheet";
 import { PatientDirectory } from "./patient-directory";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export default async function PacientesPage() {
 
   return (
     <div>
-      <PageHeader title={PATIENT_DIRECTORY_TEXT.title} />
+      <PageHeader title={PATIENT_DIRECTORY_TEXT.title} action={<NewPatientSheet />} />
       <PatientDirectory named={named} unnamed={unnamed} />
     </div>
   );
