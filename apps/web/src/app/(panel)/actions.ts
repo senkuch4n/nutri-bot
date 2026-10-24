@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
 import {
   AGENDA_TEXT,
+  PATIENT_ARCHIVE_TEXT,
   PHONE_INPUT_TEXT,
   buildPatientDirectory,
   classifyWhatsappJid,
@@ -30,7 +31,8 @@ export type ActionResult = { ok: boolean; error?: string };
 
 export type CreateAppointmentResult = ActionResult & {
   /** Solo cuando se pidió una paciente nueva con un número que ya es de otra (Q10). */
-  existingPatient?: { id: string; name: string | null; label: string }; // label = patientDisplayName
+  /** HU-019 (D7): `archived` = esa paciente está archivada; elegirla y guardar el turno la desarchiva. */
+  existingPatient?: { id: string; name: string | null; label: string; archived: boolean }; // label = patientDisplayName
 };
 
 const T = AGENDA_TEXT.create;
@@ -79,14 +81,15 @@ export async function createAppointmentAction(
       if (!phone.ok) return { ok: false, error: PHONE_INPUT_TEXT[phone.error] };
       const taken = await prisma.patient.findUnique({
         where: { whatsappJid: phoneToJid(phone.digits) },
-        select: { id: true, name: true, phone: true, whatsappJid: true },
+        select: { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true },
       });
       if (taken) {
         const label = patientDisplayName(taken);
+        const archived = taken.archivedAt !== null;
         return {
           ok: false,
-          error: T.existing(label),
-          existingPatient: { id: taken.id, name: taken.name?.trim() || null, label },
+          error: archived ? PATIENT_ARCHIVE_TEXT.phoneTakenArchived(label) : T.existing(label),
+          existingPatient: { id: taken.id, name: taken.name?.trim() || null, label, archived },
         };
       }
       const created = await findOrCreatePatient({ phone: phone.digits, name });
@@ -107,6 +110,8 @@ export async function createAppointmentAction(
   }
 
   revalidatePath("/");
+  // HU-019 (T4): crear el turno desarchiva a la paciente; la lista tiene que mostrarla de nuevo.
+  revalidatePath("/pacientes");
   return { ok: true };
 }
 
