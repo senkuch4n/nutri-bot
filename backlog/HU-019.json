@@ -4,11 +4,21 @@
   "slug": "archivar-pacientes",
   "titulo": "Archivar pacientes (sacarlas de la lista sin perder su historia)",
   "origen": "Pedido de la nutricionista (2026-10-24): CRUD de pacientes. Alta resuelta como tarea directa (PR #44); para la baja el usuario eligió archivar en vez de borrar.",
-  "estado": "afinando",
+  "estado": "implementando",
   "intentos_revision": 0,
   "hu": "docs/hu-archivar-pacientes.md",
-  "sdd": null,
+  "sdd": "Refactorizaciones/archivar-pacientes.md",
   "rama": "feat/HU-019-archivar-pacientes",
   "lock": "https://github.com/senkuch4n/nutri-bot/issues/45",
-  "notas": "Lock en GitHub (issue #45) en vez de Notion, por decisión del usuario 2026-10-24 (el MCP de Notion conectó a otro workspace). Lleva migración (packages/db)."
+  "notas": "Lock en GitHub (issue #45) en vez de Notion, por decisión del usuario 2026-10-24 (el MCP de Notion conectó a otro workspace). Lleva migración (packages/db).",
+  "skills_architect": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "apple-design",
+    "ui-ux-pro-max"
+  ]
 }

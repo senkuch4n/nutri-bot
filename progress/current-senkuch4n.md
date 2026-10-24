@@ -330,3 +330,4 @@ orquestador, para que las revise a la mañana:
 - **Lock en GitHub en vez de Notion** (decisión del usuario): el MCP de Notion conectó al workspace personal y no ve el
   tablero. Labels `HU` + `estado: …` creados en el repo (mapeo igual al de Notion en AGENTS.md).
 - **HU-019 archivar-pacientes** → issue #45, rama feat/HU-019-archivar-pacientes, `afinando` (afinador, Opus).
+- HU-019: HU validada (D1–D12 como recomendadas) y SDD lista (Refactorizaciones/archivar-pacientes.md). → `implementando` (Opus; migracion-prisma, apple-design, ui-ux-pro-max). Migrar Neon a mano antes del merge (10.3).
