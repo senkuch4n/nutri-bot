@@ -93,7 +93,7 @@ modificar datos de negocio preexistentes.**
   (`prisma.$transaction` que termina tirando un error a propósito).
 - No correr `npm run db:seed` / `seed:demo` sin que el usuario lo pida.
 
-## Arnés de orquestación RDD/SDD (backlog/ + progress/ + Notion)
+## Arnés de orquestación RDD/SDD (backlog/ + progress/ + issues de GitHub)
 
 Las HU nuevas pasan por un arnés con estado en disco, no en el chat, así una
 sesión nueva puede retomar donde quedó otra. Mapa:
@@ -104,7 +104,7 @@ sesión nueva puede retomar donde quedó otra. Mapa:
 | `backlog/_reglas.json` | Estados válidos, máx. 1 HU activa **por responsable**, tope de 2 reintentos de revisión | — |
 | `progress/current-<usuario>.md` | Bitácora viva de cada persona (`<usuario>` = `git config user.name`) | Orquestador de esa persona |
 | `progress/history.md` | Log append-only de HU cerradas (`merge=union` en `.gitattributes`: los agregados de los dos se juntan solos) | Orquestador, al cerrar cada HU |
-| Tablero de Notion | Quién tiene cada HU, prioridad y dependencias. Es el **lock** para tomar una HU | Orquestador (vía MCP de Notion) y las personas |
+| Issues de GitHub (label `HU`) | Quién tiene cada HU (assignee), estado grueso (labels `estado: …`) y dependencias. Es el **lock** para tomar una HU | Orquestador (vía `gh`) y las personas |
 | `progress/impl_<id>.md` | Lo que hizo el implementador: archivos, verificación, bloqueos | Subagente `implementer` |
 | `progress/review_<id>.md` | Veredicto del reviewer | Subagente `reviewer` |
 | `docs/hu-<slug>.md` | RDD: Historia de Usuario completa (Contexto, Gherkin, Datos, UX, Fuera de alcance, Dudas) | Subagente `afinador`, validada por el usuario |
@@ -133,44 +133,45 @@ un color o una config se hacen directo, sin backlog. HU + SDD + review son
 
 El repo lo trabajan dos personas, cada una con su orquestador. Reglas:
 
-- **Notion es el lock.** Base "Historias de usuario" (en "NutriBot — Desarrollo compartido"):
-  https://app.notion.com/p/57e6aaca24e3460782627b214ba9f848?v=023d5ffa27454127aa99d9225f152cce
-  (data source `collection://8f2aa2b0-bf72-4e53-82ae-a1e6da304c67`). Para tomar una HU hay que
-  asignarse como `Responsable` en Notion **antes** de lanzar el afinador. Si ya tiene otro
-  responsable, no se toca. El orquestador refleja cada cambio de estado de `backlog/<id>.json`
-  en la tarjeta de Notion.
-- **Personas** (`responsable` en `backlog/` = `git config user.name`):
+- **GitHub es el lock** (desde 2026-10-24; antes era un tablero de Notion). Cada HU es un issue de
+  `senkuch4n/nutri-bot` con la label `HU` y título `HU-0xx · <título>`:
+  https://github.com/senkuch4n/nutri-bot/issues?q=label%3AHU
+  Para tomar una HU hay que **asignarse el issue antes** de lanzar el afinador. Si ya tiene otro
+  assignee, no se toca. El orquestador refleja cada cambio de estado de `backlog/<id>.json` en las
+  labels del issue (`gh issue edit <n> --add-label … --remove-label …`) y guarda el link en el campo
+  `lock` del JSON.
+- **Personas** (`responsable` en `backlog/` = `git config user.name` = login de GitHub):
+  `senkuch4n` (Joel) e `imleticio` (Leo).
+- **Estados:** `backlog/<id>.json` tiene el estado fino; el issue, el grueso (una sola label
+  `estado: …` a la vez):
 
-  | git (`responsable`) | Notion | Notion user id |
-  |---|---|---|
-  | `senkuch4n` | Joel Serrudo | `22240119-f3aa-47ba-8a5e-d2488f8e4c2d` |
-  | `imleticio` | leo martinez | `03f17f25-f17d-4de0-bfa3-3a1f83d96fb9` |
-
-- **Estados:** `backlog/<id>.json` tiene el estado fino; Notion, el grueso:
-
-  | Arnés (`backlog/<id>.json`) | Notion `Estado` |
+  | Arnés (`backlog/<id>.json`) | Issue de GitHub |
   |---|---|
-  | `no_afinada` | Backlog |
-  | `validada`, `arquitectura_lista` (sin arrancar) | Lista |
-  | `afinando`, `afinada_pendiente_validacion`, `en_arquitectura`, `implementando`, `rechazada_reintentando` | En curso |
-  | `en_revision` | En revisión |
-  | `aprobada` | Hecha |
-  | `bloqueada` | Bloqueada |
+  | `no_afinada` | label `estado: backlog` |
+  | `validada`, `arquitectura_lista` (sin arrancar) | label `estado: lista` |
+  | `afinando`, `afinada_pendiente_validacion`, `en_arquitectura`, `implementando`, `rechazada_reintentando` | label `estado: en curso` |
+  | `en_revision` | label `estado: en revisión` |
+  | `aprobada` | issue cerrado (el PR lo cierra con `Closes #<n>`) |
+  | `bloqueada` | label `estado: bloqueada` |
 
-  `Descartada` y las tarjetas `Tipo` = "Épica candidata"/"Tarea directa" viven solo en Notion.
+  Una HU descartada es un issue cerrado como "not planned". Épicas candidatas e ideas sueltas van
+  como issues sin la label `HU` (o en `docs/historias-usuario-nutridesk.md`).
 - **Cada uno toca solo sus HU:** su `backlog/<id>.json`, su `progress/current-<usuario>.md` y los
   `docs/hu-*`, `Refactorizaciones/*`, `progress/{impl,review,recorrido}_<id>.md` de sus HU.
-- **IDs de HU:** se crean primero en Notion (la tarjeta reserva el número) y después en el repo,
-  para que los dos no usen el mismo `HU-0xx`.
+- **IDs de HU:** se reservan creando el issue (el título lleva el número) antes de crear nada en el
+  repo, para que los dos no usen el mismo `HU-0xx`. Antes de elegir el número, mirar los issues con
+  label `HU` (abiertos y cerrados) y `backlog/`.
+- **Dependencias y migraciones:** en el cuerpo del issue (`Depende de #<n>`). Una HU que toca
+  `schema.prisma` lleva además la label `migración`.
 
 ## Si usás otro agente (Codex, gentle-ai) o trabajás a mano
 
 El orquestador, los subagentes (`.claude/agents/`) y el hook `Stop` son de Claude Code. Con otra
 herramienta no corren, así que esto es lo **obligatorio para todos**, sin importar el agente:
 
-1. Asignarse la HU en Notion antes de empezar (y reservar el ID ahí si es nueva).
+1. Asignarse el issue de la HU en GitHub antes de empezar (y crearlo para reservar el ID si es nueva).
 2. Crear o actualizar `backlog/<id>.json` con `responsable` = tu `git config user.name` y el
-   `estado` que corresponda; reflejar el estado en la tarjeta de Notion (tabla de arriba).
+   `estado` que corresponda; reflejar el estado en las labels del issue (tabla de arriba).
 3. Rama `feat/<id>-<slug>` desde `develop`, PR a `develop` revisado por la otra persona.
 4. Las reglas de este archivo valen igual: migraciones, datos de la base de desarrollo,
    WhatsApp sin mensajes reales, un commit por tarea.
@@ -188,11 +189,11 @@ respaldan.
   una rama `feat/<id>-<slug>` y vuelve por **PR a `develop`**, que revisa la otra persona antes
   del merge. `develop` → `main` cuando se decide publicar.
 - Si una HU depende de otra que todavía no está en `develop`, se espera a que se mergee (lo marca
-  `Dependencias` en Notion). No se encadenan ramas de personas distintas.
+  `Depende de #<n>` en el issue). No se encadenan ramas de personas distintas.
 - HU chicas y merges frecuentes: antes de abrir el PR, `git rebase develop` (o merge de `develop`).
 
-**Migraciones de Prisma:** solo una HU que toque `schema.prisma` (`Workspaces` incluye
-`packages/db` en Notion) puede estar en `implementando` a la vez, en todo el equipo. Antes de
+**Migraciones de Prisma:** solo una HU que toque `schema.prisma` (issue con label
+`migración`) puede estar en `implementando` a la vez, en todo el equipo. Antes de
 crear la migración, traer `develop`. Si igual dos migraciones se cruzan, el segundo borra su
 carpeta de migración (que todavía no está en `develop`),
 hace rebase y la vuelve a generar.

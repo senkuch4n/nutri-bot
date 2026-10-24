@@ -322,3 +322,11 @@ orquestador, para que las revise a la mañana:
   Login con Google probado por el usuario: OK. Sin bot, sin Mercado Pago.
 - Pendiente: mail de la nutricionista en `ALLOWED_EMAILS` (y usuaria de prueba en Google Cloud si la app está en
   modo Prueba); el portal del paciente no tiene cómo recibir el link sin el bot (idea: "Copiar link del portal").
+
+## 2026-10-24 — alta de pacientes y HU-019
+- Tarea directa: botón «Nuevo paciente» en /pacientes (PR #44, mergeado a develop por el usuario). Sin recorrido en
+  navegador (login de Google); quedó pedido en el PR.
+- Respuesta a la nutricionista sobre armado de plan (objetivo de la consulta → barra de cobertura → PDF) y recetas.
+- **Lock en GitHub en vez de Notion** (decisión del usuario): el MCP de Notion conectó al workspace personal y no ve el
+  tablero. Labels `HU` + `estado: …` creados en el repo (mapeo igual al de Notion en AGENTS.md).
+- **HU-019 archivar-pacientes** → issue #45, rama feat/HU-019-archivar-pacientes, `afinando` (afinador, Opus).
