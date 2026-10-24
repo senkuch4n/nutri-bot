@@ -13,12 +13,15 @@ export default async function PacientesPage() {
     getProfessional(),
     // Sin orderBy: el orden (alfabético es-AR y "Por completar") lo arma core.
     prisma.patient.findMany({
+      // HU-019 (T8): solo activas; core además descarta archivadas.
+      where: { archivedAt: null },
       select: {
         id: true,
         name: true,
         phone: true,
         whatsappJid: true,
         createdAt: true,
+        archivedAt: true,
         appointments: {
           where: { status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
           orderBy: { startsAt: "asc" },
@@ -46,6 +49,7 @@ export default async function PacientesPage() {
           : null,
       lastConsultationAt: p.consultations[0]?.consultedAt ?? null,
       lastContactAt: lastContactByJid.get(p.whatsappJid) ?? null,
+      archivedAt: p.archivedAt,
     };
   });
   const { named, unnamed } = buildPatientDirectory(inputs, now, pro.timezone);

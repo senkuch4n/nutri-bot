@@ -123,12 +123,15 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
   const [pro, patients] = await Promise.all([
     getProfessional(),
     prisma.patient.findMany({
+      // HU-019 (T8): solo activas; core además descarta archivadas.
+      where: { archivedAt: null },
       select: {
         id: true,
         name: true,
         phone: true,
         whatsappJid: true,
         createdAt: true,
+        archivedAt: true,
         appointments: {
           where: { status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
           orderBy: { startsAt: "asc" },
@@ -152,6 +155,7 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
           : null,
       lastConsultationAt: null,
       lastContactAt: null,
+      archivedAt: p.archivedAt,
     };
   });
   const { named, unnamed } = buildPatientDirectory(inputs, now, pro.timezone);

@@ -1,9 +1,10 @@
 // HU-017c-1 (SDD 4.4). Directorio de pacientes del panel: arma las filas de la lista (con nombre y
 // "Por completar"), descarta grupos/canales/difusiones y resuelve la búsqueda sin tildes ni formato.
+import { formatArchivedDate, PATIENT_ARCHIVE_TEXT } from "./patient-archive";
 import { formatPhone } from "./phone-format";
 import { formatAppointmentWhen, formatTimeAgo } from "./relative-date";
 import { normalize } from "./wake";
-import { classifyWhatsappJid } from "./whatsapp-contact";
+import { classifyWhatsappJid, HIDDEN_NUMBER_TEXT } from "./whatsapp-contact";
 
 export interface PatientDirectoryInput {
   id: string;
@@ -17,6 +18,8 @@ export interface PatientDirectoryInput {
   lastConsultationAt: Date | null;
   /** ConversationState.updatedAt del JID, o null si no hay fila. */
   lastContactAt: Date | null;
+  /** HU-019: null = activa. Las archivadas se descartan (T8). Obligatorio a propósito. */
+  archivedAt: Date | null;
 }
 
 export interface PatientDirectoryRow {
@@ -75,6 +78,7 @@ export function buildPatientDirectory(
   for (const p of input) {
     const kind = classifyWhatsappJid(p.whatsappJid);
     if (kind === "not_person") continue;
+    if (p.archivedAt) continue; // HU-019: las archivadas van a buildArchivedPatientList.
     const name = p.name?.trim() || null;
     const base = {
       id: p.id,
@@ -101,6 +105,56 @@ export function buildPatientDirectory(
   named.sort((a, b) => collator.compare(a.row.name ?? "", b.row.name ?? "") || byId(a.row, b.row));
   unnamed.sort((a, b) => b.seen - a.seen || byId(a.row, b.row));
   return { named: named.map((x) => x.row), unnamed: unnamed.map((x) => x.row) };
+}
+
+export interface ArchivedPatientInput {
+  id: string;
+  name: string | null;
+  phone: string;
+  whatsappJid: string;
+  archivedAt: Date;
+}
+
+export interface ArchivedPatientRow
+  extends Pick<PatientDirectoryRow, "id" | "name" | "contactKind" | "phoneLabel" | "phoneDigits" | "searchName"> {
+  /** name ?? phoneLabel ?? HIDDEN_NUMBER_TEXT. */
+  title: string;
+  /** PATIENT_ARCHIVE_TEXT.archivedOn(formatArchivedDate(archivedAt, tz)) → "Archivada el 24/10/2026". */
+  archivedLabel: string;
+}
+
+/** HU-019 (D2, D12). Descarta not_person. Orden: primero con nombre (mismo collator que
+ *  buildPatientDirectory, empate por id); después sin nombre, por archivedAt desc (empate por id).
+ *  Las filas sirven para matchesPatientQuery. */
+export function buildArchivedPatientList(
+  input: readonly ArchivedPatientInput[],
+  tz: string,
+): ArchivedPatientRow[] {
+  const named: ArchivedPatientRow[] = [];
+  const unnamed: { row: ArchivedPatientRow; at: number }[] = [];
+
+  for (const p of input) {
+    const kind = classifyWhatsappJid(p.whatsappJid);
+    if (kind === "not_person") continue;
+    const name = p.name?.trim() || null;
+    const phoneLabel = kind === "phone" ? formatPhone(p.phone) : null;
+    const row: ArchivedPatientRow = {
+      id: p.id,
+      name,
+      contactKind: kind,
+      phoneLabel,
+      phoneDigits: kind === "phone" ? p.phone.replace(/\D/g, "") : null,
+      searchName: normalize(name ?? ""),
+      title: name ?? phoneLabel ?? HIDDEN_NUMBER_TEXT,
+      archivedLabel: PATIENT_ARCHIVE_TEXT.archivedOn(formatArchivedDate(p.archivedAt, tz)),
+    };
+    if (name) named.push(row);
+    else unnamed.push({ row, at: p.archivedAt.getTime() });
+  }
+
+  named.sort((a, b) => collator.compare(a.name ?? "", b.name ?? "") || byId(a, b));
+  unnamed.sort((a, b) => b.at - a.at || byId(a.row, b.row));
+  return [...named, ...unnamed.map((x) => x.row)];
 }
 
 const PHONE_ONLY = /^[\d\s+\-().]*$/;

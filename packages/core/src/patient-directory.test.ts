@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { formatPhone } from "./phone-format";
+import { HIDDEN_NUMBER_TEXT } from "./whatsapp-contact";
 import {
   PATIENT_DIRECTORY_TEXT,
+  buildArchivedPatientList,
   buildPatientDirectory,
   matchesPatientQuery,
   patientCountLabel,
@@ -25,6 +28,7 @@ function input(over: Partial<PatientDirectoryInput> = {}): PatientDirectoryInput
     nextAppointment: null,
     lastConsultationAt: null,
     lastContactAt: null,
+    archivedAt: null,
     ...over,
   };
 }
@@ -186,4 +190,50 @@ it("PATIENT_DIRECTORY_TEXT compone los textos dinámicos", () => {
   expect(PATIENT_DIRECTORY_TEXT.noResultsTitle("zzzz")).toBe("No encontramos a «zzzz»");
   expect(PATIENT_DIRECTORY_TEXT.incompleteTitle(4)).toBe("Por completar (4)");
   expect(PATIENT_DIRECTORY_TEXT.setNameDone("Lucía Pérez")).toBe("Listo, Lucía Pérez ya está en tus pacientes");
+});
+
+describe("HU-019: archivadas", () => {
+  const ARCH = new Date("2026-10-24T15:00:00Z");
+
+  it("buildPatientDirectory descarta archivadas (con y sin nombre) y deja igual a las activas", () => {
+    const active = [input({ id: "a", name: "Ana" }), input({ id: "x", name: null })];
+    const before = buildPatientDirectory(active, NOW, TZ);
+    const dir = buildPatientDirectory(
+      [...active, input({ id: "b", name: "Beto", archivedAt: ARCH }), input({ id: "y", name: null, archivedAt: ARCH })],
+      NOW,
+      TZ,
+    );
+    expect(dir.named.map((r) => r.id)).toEqual(["a"]);
+    expect(dir.unnamed.map((r) => r.id)).toEqual(["x"]);
+    expect(dir).toEqual(before);
+  });
+
+  it("buildArchivedPatientList: con nombre alfabético, sin nombre al final por archivedAt desc", () => {
+    const rows = buildArchivedPatientList(
+      [
+        { id: "s1", name: null, phone: "5493515550001", whatsappJid: "5493515550001@s.whatsapp.net", archivedAt: new Date("2026-09-01T12:00:00Z") },
+        { id: "z", name: "Zoe", phone: "5493515550002", whatsappJid: "5493515550002@s.whatsapp.net", archivedAt: ARCH },
+        { id: "s2", name: "  ", phone: "900000017002", whatsappJid: "900000017002@lid", archivedAt: new Date("2026-10-01T12:00:00Z") },
+        { id: "al", name: "álvaro", phone: "5493515550003", whatsappJid: "5493515550003@s.whatsapp.net", archivedAt: ARCH },
+        { id: "canal", name: null, phone: "120363000000000000", whatsappJid: "120363000000000000@newsletter", archivedAt: ARCH },
+      ],
+      TZ,
+    );
+    expect(rows.map((r) => r.id)).toEqual(["al", "z", "s2", "s1"]);
+    expect(rows.map((r) => r.title)).toEqual(["álvaro", "Zoe", HIDDEN_NUMBER_TEXT, formatPhone("5493515550001")]);
+    expect(rows[0]!.archivedLabel).toBe("Archivada el 24/10/2026");
+    expect(rows[2]!.contactKind).toBe("hidden");
+    expect(rows[2]!.phoneDigits).toBeNull();
+    expect(rows[3]!.name).toBeNull();
+  });
+
+  it("las filas de archivadas sirven para matchesPatientQuery (nombre y dígitos)", () => {
+    const [ana] = buildArchivedPatientList(
+      [{ id: "a", name: "Ana López", phone: "5491155551234", whatsappJid: "5491155551234@s.whatsapp.net", archivedAt: ARCH }],
+      TZ,
+    );
+    expect(matchesPatientQuery(ana!, "lopez")).toBe(true);
+    expect(matchesPatientQuery(ana!, "5555 1234")).toBe(true);
+    expect(matchesPatientQuery(ana!, "beto")).toBe(false);
+  });
 });
