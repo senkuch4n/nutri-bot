@@ -33,11 +33,12 @@ export default async function AvisosPage() {
     getProfessional(),
     prisma.outboundMessage.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
     prisma.outboundMessage.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.patient.findMany({ select: { whatsappJid: true } }),
+    // HU-019 (D5): sin archivadas, igual que la action que encola.
+    prisma.patient.findMany({ where: { archivedAt: null }, select: { whatsappJid: true, archivedAt: true } }),
   ]);
 
-  // D13: el mismo número que encola el comunicado (solo personas, sin repetidos).
-  const recipientCount = broadcastRecipients(patients.map((p) => p.whatsappJid)).length;
+  // D13: el mismo número que encola el comunicado (solo personas, sin repetidos ni archivadas).
+  const recipientCount = broadcastRecipients(patients).length;
 
   const counts = { PENDING: 0, SENT: 0, FAILED: 0 };
   for (const g of grouped) counts[g.status] = g._count._all;

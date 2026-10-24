@@ -18,10 +18,14 @@ export async function broadcastMessageAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
 
-  const patients = await prisma.patient.findMany({ select: { whatsappJid: true } });
+  const patients = await prisma.patient.findMany({
+    // HU-019 (D5): sin archivadas (core también las descarta).
+    where: { archivedAt: null },
+    select: { whatsappJid: true, archivedAt: true },
+  });
   // HU-017b-3 (D13): solo contactos persona (teléfonos y @lid), sin canales, grupos ni difusiones,
   // y sin repetidos. El mismo criterio y el mismo número que la lista de Pacientes.
-  const recipients = broadcastRecipients(patients.map((p) => p.whatsappJid));
+  const recipients = broadcastRecipients(patients);
   if (recipients.length === 0) return { ok: false, error: OUTBOX_TEXT.noRecipients };
 
   try {

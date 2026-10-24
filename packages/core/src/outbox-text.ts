@@ -60,11 +60,15 @@ export function outboxRecipientLabel(m: {
   return digits ? formatPhone(digits) : HIDDEN_NUMBER_TEXT;
 }
 
-/** Destinatarios del comunicado: solo isPersonJid, sin repetidos, en el orden de entrada. (D13) */
-export function broadcastRecipients(jids: readonly string[]): string[] {
+/** Destinatarios del comunicado: sin archivadas (HU-019, D5), solo isPersonJid (D13), sin repetidos,
+ *  en el orden de entrada. */
+export function broadcastRecipients(
+  patients: readonly { whatsappJid: string; archivedAt: Date | null }[],
+): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const jid of jids) {
+  for (const { whatsappJid: jid, archivedAt } of patients) {
+    if (archivedAt) continue;
     if (!isPersonJid(jid)) continue;
     const key = jid.trim().toLowerCase();
     if (seen.has(key)) continue;
