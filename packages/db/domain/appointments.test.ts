@@ -10,8 +10,9 @@ const mocks = vi.hoisted(() => ({
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
     service: { findUniqueOrThrow: vi.fn() },
-    patient: { findUniqueOrThrow: vi.fn() },
-    appointment: { create: vi.fn(), update: vi.fn() },
+    patient: { findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
+    appointment: { create: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
+    consultation: { create: vi.fn(), deleteMany: vi.fn() },
   },
 }));
 
@@ -25,7 +26,13 @@ vi.mock("./availability", () => ({
 }));
 vi.mock("./outbox", () => ({ enqueueMessage: mocks.enqueueMessage }));
 
-import { createAppointment, InvalidBookingReasonError, updateAppointmentReason } from "./appointments";
+import {
+  createAppointment,
+  InvalidBookingReasonError,
+  setAppointmentStatus,
+  SlotUnavailableError,
+  updateAppointmentReason,
+} from "./appointments";
 
 const TZ = "America/Argentina/Buenos_Aires";
 const STARTS = new Date("2026-10-12T13:00:00Z");
@@ -211,5 +218,77 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
     mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
     await createAppointment({ ...base, createdBy: "PROFESSIONAL", notifyPatient: false });
     expect(createData().bookedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("reservar desarchiva (HU-019, T4/T5)", () => {
+  const UNARCHIVE = { where: { id: "p1", archivedAt: { not: null } }, data: { archivedAt: null } };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
+    mocks.checkSlotAvailable.mockResolvedValue(true);
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mocks.prisma.patient.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
+      id: "a1",
+      startsAt: data.startsAt,
+      reason: data.reason,
+      status: data.status,
+    }));
+  });
+
+  it.each(["PROFESSIONAL", "PATIENT"] as const)("createAppointment (%s) desarchiva dentro de la transacción", async (createdBy) => {
+    const appt = await createAppointment({ ...base, createdBy, notifyPatient: false });
+    expect(appt.id).toBe("a1");
+    expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
+    expect(mocks.prisma.appointment.create.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.prisma.patient.updateMany.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("con seña (AWAITING_PAYMENT) también desarchiva", async () => {
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    expect(createData().status).toBe("AWAITING_PAYMENT");
+    expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
+  });
+
+  it("horario no disponible → SlotUnavailableError sin desarchivar", async () => {
+    mocks.checkSlotAvailable.mockResolvedValue(false);
+    await expect(createAppointment({ ...base, createdBy: "PROFESSIONAL" })).rejects.toBeInstanceOf(SlotUnavailableError);
+    expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
+  });
+
+  describe("setAppointmentStatus", () => {
+    function prevAppt(startsAt: Date, status = "NO_SHOW") {
+      return { id: "a1", patientId: "p1", startsAt, status, consultation: null };
+    }
+    beforeEach(() => {
+      mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: any }) => ({ id: "a1", status: data.status }));
+      mocks.prisma.consultation.create.mockResolvedValue({ id: "c1" });
+    });
+
+    it("a CONFIRMED con turno futuro → desarchiva", async () => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(new Date(Date.now() + 86_400_000)));
+      await setAppointmentStatus({ id: "a1", status: "CONFIRMED" });
+      expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
+    });
+
+    it("a CONFIRMED con turno pasado → no desarchiva", async () => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(new Date(Date.now() - 86_400_000)));
+      await setAppointmentStatus({ id: "a1", status: "CONFIRMED" });
+      expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
+    });
+
+    it.each(["COMPLETED", "NO_SHOW"] as const)("a %s (turno futuro) → no desarchiva", async (status) => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(
+        prevAppt(new Date(Date.now() + 86_400_000), "CONFIRMED"),
+      );
+      await setAppointmentStatus({ id: "a1", status });
+      expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
+    });
   });
 });
