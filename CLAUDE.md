@@ -27,7 +27,8 @@ código vos, salvo en los casos de "Cuándo NO aplica".
 
 En cada transición: actualizá `backlog/<id>.json` y la label `estado: …` del issue en GitHub.
 El mapeo de estados arnés → labels está en `AGENTS.md`. Al llegar a `aprobada`: abrí el PR
-contra `develop` (con `Closes #<n>`) para que lo revise la otra persona.
+contra `develop` (con `Closes #<n>`) para que lo revise la otra persona; cuando se mergea, cerrá el
+issue a mano (`gh issue close <n>`), porque GitHub solo lo cierra solo en merges a `main`.
 
 | Estado | Quién actúa | Qué hace el orquestador |
 |---|---|---|
