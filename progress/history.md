@@ -497,3 +497,12 @@
 ## HU-019 — Archivar pacientes (aprobada 2026-10-24, senkuch4n)
 - `Patient.archivedAt` (migración aditiva). Archivar desde la ficha (menú «Más», bloqueado si tiene turnos pendientes, lock compartido con la reserva), fila «Archivadas (N)» y vista `/pacientes?vista=archivadas`, banner + «Desarchivar». Crear un turno (panel o bot) o volverlo a CONFIRMED desarchiva. Archivadas fuera de la lista, del buscador de Nuevo turno y de los comunicados; el asistente IA las ve marcadas; portal y recordatorios sin cambios. «Nuevo paciente» con número de archivada ofrece desarchivarla.
 - Primera HU con lock en GitHub (issue #45) en vez de Notion. Implementer Opus (migracion-prisma, apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Dudas menores en progress/review_HU-019.md (doble aviso en Nuevo turno, texto de «Número oculto»). Migrar Neon antes del merge.
+
+## HU-020 · importar-planes-pdf — aprobada (2026-10-25, senkuch4n)
+- Carga asistida de planes alimentarios en PDF (formato Canva) como **plantillas en borrador**: parser puro sin IA
+  en `@nutri-bot/core/plan-import`, scripts `plans:import`/`plans:undo` (seco por defecto, `--write` con SI),
+  estado `DRAFT/PUBLISHED` y origen en `PlanTemplate`, secciones de texto `PlanTemplateSection`/`PlanSection`
+  (D9, también para HU-015), revisión en `/plantillas/[id]`, secciones en portal y PDF. Sin datos de la paciente
+  en la base ni en el repo (D12). D6 provisoria (tandas numeradas); D12/D14/D15 esperan más PDF de la nutricionista.
+- Migración `plan_template_import` (aditiva). Implementer Opus, reviewer Sonnet: APPROVED en la 1ª ronda.
+- Pendiente: migrar Neon antes del merge; recorrido visual con sesión de Google; importar en producción.

@@ -332,3 +332,17 @@ orquestador, para que las revise a la mañana:
 - **HU-019 archivar-pacientes** → issue #45, rama feat/HU-019-archivar-pacientes, `afinando` (afinador, Opus).
 - HU-019: HU validada (D1–D12 como recomendadas) y SDD lista (Refactorizaciones/archivar-pacientes.md). → `implementando` (Opus; migracion-prisma, apple-design, ui-ux-pro-max). Migrar Neon a mano antes del merge (10.3).
 - **HU-019 aprobada** (reviewer Opus, 1ª ronda). PR a develop con `Closes #45`; migrar Neon antes del merge.
+
+## 2026-10-25 — HU-020 importar planes desde PDF
+- La nutricionista pidió mandar planes y recetas listos en PDF en vez de cargarlos a mano. Las recetas ya tienen
+  carga asistida (recipes:extract). Para los planes no hay nada.
+- PDF de ejemplo (Canva, 15 págs.): cualitativo. Menús por día de la semana en texto libre, porciones generales,
+  recomendaciones y opciones; casi sin gramos.
+- **HU-020 importar-planes-pdf** → issue #48, rama feat/HU-020-importar-planes-pdf, `afinando` (afinador, Opus).
+- HU-020: afinada (D1–D16) → `afinada_pendiente_validacion`. D6 y D14 los tiene que contestar la nutricionista; D9 hay que hablarla con Leo (HU-015).
+- HU-020 **validada** (Resoluciones al final de la HU: D7 = dos comidas, D6 provisoria numerada, D9 secciones de texto; D12/D14/D15 pendientes de ella). Aviso a Leo en #48.
+- HU-020 → `en_arquitectura` (architect Opus; migracion-prisma + ui).
+- HU-020: SDD lista (Refactorizaciones/importar-planes-pdf.md), verify.sh OK → `arquitectura_lista`.
+- HU-020 → `implementando` (Opus; migracion-prisma, apple-design, ui-ux-pro-max, web-design-guidelines).
+- HU-020: implementer (Opus) `done` → progress/impl_HU-020.md (2526 tests OK, typecheck web+bot OK, prueba real en dev + undo). Sin recorrido visual (login de Google). → `en_revision`.
+- **HU-020 aprobada** (reviewer Sonnet, 1ª ronda). Dudas no bloqueantes: frases genéricas de menú del PDF real en fixtures y en la HU. PR a develop con `Closes #48`; migrar Neon antes del merge.
