@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./sara2": "./src/sara2/index.ts",
-    "./recipe-import": "./src/recipe-import/index.ts"
+    "./recipe-import": "./src/recipe-import/index.ts",
+    "./plan-import": "./src/plan-import/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

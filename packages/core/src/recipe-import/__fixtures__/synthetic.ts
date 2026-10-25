@@ -4,7 +4,7 @@ import type { BboxPage, BboxWord } from "../../sara2/bbox";
 // INVENTADOS: imitan la geometría de los formatos F1–F5 de los recetarios, pero no copian ningún
 // texto de terceros (D3: nada de los recetarios entra al repo).
 
-interface LineSpec {
+export interface LineSpec {
   text: string;
   x: number;
   y: number;
@@ -13,7 +13,7 @@ interface LineSpec {
 }
 
 /** Arma las palabras de una línea: cada carácter mide 0,5 × h y el espacio 0,3 × h. */
-function words({ text, x, y, h }: LineSpec): BboxWord[] {
+export function words({ text, x, y, h }: LineSpec): BboxWord[] {
   const out: BboxWord[] = [];
   let cx = x;
   for (const t of text.split(" ").filter(Boolean)) {
@@ -29,7 +29,7 @@ function rotatedWord(text: string, x: number, y: number, size: number): BboxWord
   return { x0: x, y0: y, x1: x + size, y1: y + text.length * size * 0.6, text };
 }
 
-function page(pageNumber: number, lines: LineSpec[], extra: BboxWord[] = []): BboxPage {
+export function page(pageNumber: number, lines: LineSpec[], extra: BboxWord[] = []): BboxPage {
   return { pageNumber, width: 595, height: 842, words: [...lines.flatMap(words), ...extra] };
 }
 

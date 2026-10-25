@@ -52,3 +52,4 @@ export * from "./outbox-text";
 export * from "./payment-text";
 export * from "./settings-options";
 export * from "./portal";
+export * from "./plan-templates";
