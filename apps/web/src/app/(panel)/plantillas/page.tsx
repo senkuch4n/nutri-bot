@@ -28,7 +28,17 @@ export default async function PlantillasPage() {
         </Card>
       ) : (
         <Card padding="none">
-          <TemplatesTable rows={templates.map((t) => ({ id: t.id, title: t.title, notes: t.notes }))} />
+          {/* HU-020: estado y origen para el chip "Borrador" y el subtítulo de importadas. */}
+          <TemplatesTable
+            rows={templates.map((t) => ({
+              id: t.id,
+              title: t.title,
+              notes: t.notes,
+              status: t.status,
+              origin: t.origin,
+              reviewed: t.reviewedAt !== null,
+            }))}
+          />
         </Card>
       )}
     </div>

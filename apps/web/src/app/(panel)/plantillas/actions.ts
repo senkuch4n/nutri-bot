@@ -18,6 +18,7 @@ import {
 import { MEASURE_TEXT, isWeekday } from "@nutri-bot/core";
 import { readMeasureFields, resolveFormMeasure } from "@/lib/measure-form";
 import type { AddMealItemResult } from "@/components/food-measures/types";
+import { touchTemplate } from "@/lib/touch-template";
 
 export type TemplateState = { ok: boolean; error?: string };
 
@@ -45,8 +46,7 @@ export async function updateTemplateAction(
   const parsed = templateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
   await updateTemplate(id, { title: parsed.data.title, notes: parsed.data.notes || null });
-  revalidatePath("/plantillas");
-  revalidatePath(`/plantillas/${id}`);
+  await touchTemplate(id);
   return { ok: true };
 }
 
@@ -63,7 +63,7 @@ export async function addTemplateMealAction(formData: FormData): Promise<void> {
   const template = await getTemplate(templateId);
   const order = template?.meals.length ?? 0;
   await addTemplateMeal(templateId, { name, order });
-  revalidatePath(`/plantillas/${templateId}`);
+  await touchTemplate(templateId);
 }
 
 export async function deleteTemplateMealAction(formData: FormData): Promise<void> {
@@ -71,7 +71,7 @@ export async function deleteTemplateMealAction(formData: FormData): Promise<void
   const mealId = String(formData.get("mealId") ?? "");
   if (!mealId) return;
   await deleteTemplateMeal(mealId);
-  revalidatePath(`/plantillas/${templateId}`);
+  await touchTemplate(templateId);
 }
 
 export async function addTemplateMealItemAction(formData: FormData): Promise<AddMealItemResult | void> {
@@ -102,7 +102,7 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<Add
   if (measure === "gone") {
     // 018d-1b (R4): la medida se borró con el editor abierto. Se revalida para que el editor traiga
     // las medidas actuales y se avisa, sin pasar por el error boundary.
-    revalidatePath(`/plantillas/${templateId}`);
+    await touchTemplate(templateId);
     return { ok: false, error: MEASURE_TEXT.measureGone };
   }
 
@@ -118,7 +118,7 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<Add
         order,
         weekday,
       });
-  revalidatePath(`/plantillas/${templateId}`);
+  await touchTemplate(templateId);
 }
 
 export async function deleteTemplateMealItemAction(formData: FormData): Promise<void> {
@@ -126,5 +126,5 @@ export async function deleteTemplateMealItemAction(formData: FormData): Promise<
   const itemId = String(formData.get("itemId") ?? "");
   if (!itemId) return;
   await deleteTemplateMealItem(itemId);
-  revalidatePath(`/plantillas/${templateId}`);
+  await touchTemplate(templateId);
 }

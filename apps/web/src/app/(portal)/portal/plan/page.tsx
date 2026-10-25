@@ -24,6 +24,8 @@ export default async function PortalPlanPage() {
         // HU-018c: el ítem de receta trae su receta (nombre, porción, fuente y foto), como getPlan.
         include: { items: { orderBy: { order: "asc" }, include: { food: true, recipe: { select: RECIPE_ITEM_SELECT } } } },
       },
+      // HU-020 (D9): textos del plan (recomendaciones, reemplazos…).
+      sections: { orderBy: { order: "asc" }, select: { id: true, title: true, body: true } },
     },
   });
 
@@ -64,6 +66,7 @@ export default async function PortalPlanPage() {
       recipes={recipes}
       hasPdf={Boolean(plan.pdfData)}
       weekly={weekly}
+      sections={plan.sections}
     />
   );
 }

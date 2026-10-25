@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   copyDay: vi.fn(), moveMeal: vi.fn(), renameMeal: vi.fn(), repeatMealInAllDays: vi.fn(),
   restoreMealSnapshots: vi.fn(), setMealMode: vi.fn(), setMealOptions: vi.fn(),
   revalidatePath: vi.fn(), findPlan: vi.fn(),
+  // HU-020 (T10): la rama template de revalidateMenuOwner marca el borrador importado como revisado.
+  markTemplateReviewed: vi.fn(),
 }));
 
 vi.mock("@nutri-bot/db/domain", () => mocks);
@@ -41,12 +43,13 @@ describe("weekly-menu-actions", () => {
     expect(mocks.revalidatePath.mock.calls).toEqual([["/pacientes/pat1"], ["/pacientes/pat1/planes/plan1"]]);
   });
 
-  it("setMealModeAction en una plantilla devuelve [foto] y revalida /plantillas/{id}", async () => {
+  it("setMealModeAction en una plantilla devuelve [foto], la marca revisada y revalida /plantillas y /plantillas/{id}", async () => {
     mocks.setMealMode.mockResolvedValue(snapshot);
     const result = await setMealModeAction({ kind: "template", ownerId: "t1", mealId: "meal1", mode: "PER_DAY" });
     expect(result).toEqual({ ok: true, undo: [snapshot] });
     expect(mocks.setMealMode).toHaveBeenCalledWith("template", "t1", "meal1", { mode: "PER_DAY", keepWeekday: undefined });
-    expect(mocks.revalidatePath.mock.calls).toEqual([["/plantillas/t1"]]);
+    expect(mocks.markTemplateReviewed).toHaveBeenCalledWith("t1");
+    expect(mocks.revalidatePath.mock.calls).toEqual([["/plantillas"], ["/plantillas/t1"]]);
   });
 
   it("setMealOptionsAction no devuelve undo", async () => {

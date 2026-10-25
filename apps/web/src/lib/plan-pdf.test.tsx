@@ -121,3 +121,21 @@ describe("PlanDocument (HU-018b)", () => {
     expect(out).not.toContain("270 g");
   });
 });
+
+describe("PlanDocument (HU-020): textos del plan", () => {
+  it("con sections: título y cuerpo después de los totales", () => {
+    const out = texts(
+      PlanDocument({
+        input: { ...input([meal("Desayuno", "EVERY_DAY", [item("Avena", null, 150)])]), sections: [{ title: "Recomendaciones", body: "a\nb" }] },
+      }),
+    );
+    expect(out).toContain("Recomendaciones");
+    expect(out).toContain("a\nb");
+    expect(out.indexOf("Total del plan")).toBeLessThan(out.indexOf("Recomendaciones"));
+  });
+
+  it("sin sections: igual que antes", () => {
+    const meals = [meal("Desayuno", "EVERY_DAY", [item("Avena", null, 150)])];
+    expect(texts(PlanDocument({ input: { ...input(meals), sections: [] } }))).toEqual(render(meals));
+  });
+});
