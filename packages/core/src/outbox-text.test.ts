@@ -69,6 +69,8 @@ describe("outboxRecipientLabel", () => {
   });
 });
 
+const active = (jids: string[]) => jids.map((whatsappJid) => ({ whatsappJid, archivedAt: null }));
+
 describe("broadcastRecipients", () => {
   it("descarta canales, grupos y difusiones, y deduplica conservando el orden", () => {
     const jids = [
@@ -81,7 +83,7 @@ describe("broadcastRecipients", () => {
       "5493510000002@c.us",
       "123456@LID",
     ];
-    expect(broadcastRecipients(jids)).toEqual([
+    expect(broadcastRecipients(active(jids))).toEqual([
       "5493510000001@s.whatsapp.net",
       "123456@lid",
       "5493510000002@c.us",
@@ -90,7 +92,18 @@ describe("broadcastRecipients", () => {
 
   it("vacío → vacío", () => {
     expect(broadcastRecipients([])).toEqual([]);
-    expect(broadcastRecipients(["x@newsletter"])).toEqual([]);
+    expect(broadcastRecipients(active(["x@newsletter"]))).toEqual([]);
+  });
+
+  it("HU-019 (D5): descarta archivadas; 10 activas + 2 archivadas → 10", () => {
+    const ARCH = new Date("2026-10-24T15:00:00Z");
+    const actives = Array.from({ length: 10 }, (_, i) => `54935100000${String(i).padStart(2, "0")}@s.whatsapp.net`);
+    const archived = [
+      { whatsappJid: "5493519999901@s.whatsapp.net", archivedAt: ARCH },
+      { whatsappJid: "999999@lid", archivedAt: ARCH },
+    ];
+    const out = broadcastRecipients([...active(actives.slice(0, 5)), ...archived, ...active(actives.slice(5))]);
+    expect(out).toEqual(actives);
   });
 });
 

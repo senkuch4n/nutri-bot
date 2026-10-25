@@ -4,9 +4,10 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEven
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, m, useReducedMotionConfig } from "motion/react";
-import { ChevronRight, Pencil, Search, SearchX, Users, X } from "lucide-react";
+import { Archive, ChevronRight, Pencil, Search, SearchX, Users, X } from "lucide-react";
 import {
   HIDDEN_NUMBER_TEXT,
+  PATIENT_ARCHIVE_TEXT,
   PATIENT_DIRECTORY_TEXT,
   capitalizeFirst,
   matchesPatientQuery,
@@ -35,9 +36,12 @@ function shortcutBlocked(target: EventTarget | null): boolean {
 export function PatientDirectory({
   named,
   unnamed,
+  archivedCount = 0,
 }: {
   named: PatientDirectoryRow[];
   unnamed: PatientDirectoryRow[];
+  /** HU-019 (D2): cantidad de archivadas; con N > 0 se muestra "Archivadas (N)" al final. */
+  archivedCount?: number;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -134,6 +138,7 @@ export function PatientDirectory({
     return (
       <div className="max-w-3xl">
         <EmptyState icon={Users} title={T.emptyTitle} description={T.emptyDescription} />
+        <ArchivedLink count={archivedCount} />
       </div>
     );
   }
@@ -238,6 +243,9 @@ export function PatientDirectory({
         />
       ) : null}
 
+      {/* HU-019: navegación, no resultado; se ve también con una búsqueda sin coincidencias. */}
+      <ArchivedLink count={archivedCount} />
+
       <NameContactSheet
         row={editing}
         open={sheetOpen}
@@ -246,6 +254,20 @@ export function PatientDirectory({
         onCloseAutoFocus={onCloseAutoFocus}
       />
     </div>
+  );
+}
+
+/** HU-019 (D2, SDD 7.3): fila "Archivadas (N)" al final de la lista; con N = 0 no se muestra. */
+function ArchivedLink({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <GroupedList className="mt-8">
+      <GroupedListRow
+        href="/pacientes?vista=archivadas"
+        icon={Archive}
+        label={PATIENT_ARCHIVE_TEXT.archivedSection(count)}
+      />
+    </GroupedList>
   );
 }
 

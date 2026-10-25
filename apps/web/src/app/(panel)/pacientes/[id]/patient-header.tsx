@@ -10,6 +10,7 @@ import { buttonVariants } from "@/components/primitives/button";
 import { cn } from "@/lib/utils";
 import { ClinicalAlert } from "./clinical-alert";
 import { HeaderNameButton } from "./header-name-button";
+import { PatientArchiveControls } from "./patient-archive-controls";
 
 const T = PATIENT_SUMMARY_TEXT;
 
@@ -22,6 +23,8 @@ export function PatientHeader({
   whatsappJid,
   ageYears,
   riskBackground,
+  archived,
+  pendingBlockedText,
 }: {
   patientId: string;
   name: string | null;
@@ -30,6 +33,10 @@ export function PatientHeader({
   whatsappJid: string;
   ageYears: number | null;
   riskBackground: string | null;
+  /** HU-019: el menú "Más" ofrece «Desarchivar» en vez de «Archivar paciente». */
+  archived: boolean;
+  /** HU-019 (D3): aviso de turno pendiente (archiveBlockedText) o null si no tiene. */
+  pendingBlockedText: string | null;
 }) {
   const chatUrl = whatsappChatUrl({ whatsappJid, phone });
   const isPhone = classifyWhatsappJid(whatsappJid) === "phone";
@@ -43,19 +50,28 @@ export function PatientHeader({
           </h1>
           {!name ? <HeaderNameButton patientId={patientId} phoneLabel={phoneLabel} /> : null}
         </div>
-        {chatUrl ? (
-          <a
-            href={chatUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(buttonVariants({ variant: "secondary" }), "shrink-0")}
-          >
-            <MessageCircle aria-hidden />
-            {T.whatsapp}
-            <ExternalLink className="text-muted-foreground" aria-hidden />
-            <span className="sr-only"> {T.opensInNewTab}</span>
-          </a>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1">
+          {chatUrl ? (
+            <a
+              href={chatUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(buttonVariants({ variant: "secondary" }), "shrink-0")}
+            >
+              <MessageCircle aria-hidden />
+              {T.whatsapp}
+              <ExternalLink className="text-muted-foreground" aria-hidden />
+              <span className="sr-only"> {T.opensInNewTab}</span>
+            </a>
+          ) : null}
+          <PatientArchiveControls
+            patientId={patientId}
+            name={name?.trim() || null}
+            contactLabel={phoneLabel ?? HIDDEN_NUMBER_TEXT}
+            archived={archived}
+            pendingBlockedText={pendingBlockedText}
+          />
+        </div>
       </div>
 
       <p className="mt-1 text-callout text-muted-foreground">

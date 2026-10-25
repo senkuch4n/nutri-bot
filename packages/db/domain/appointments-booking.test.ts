@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     $transaction: vi.fn(), $queryRaw: vi.fn(),
     professional: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() },
     service: { findUniqueOrThrow: vi.fn(), findUnique: vi.fn() },
-    patient: { findUniqueOrThrow: vi.fn() },
+    patient: { findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
     availabilityRule: { findMany: vi.fn() }, availabilityException: { findMany: vi.fn() },
     appointment: { findMany: vi.fn(), create: vi.fn() },
   },
@@ -55,6 +55,11 @@ describe("booking with the existing availability domain", () => {
     expect(appointment.status).toBe("CONFIRMED");
     expect(appointment.needsGoogleSync).toBe(true);
     expect(mocks.enqueue).toHaveBeenCalledTimes(2);
+    // HU-019 (T4): reservar desarchiva a la paciente.
+    expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith({
+      where: { id: "patient", archivedAt: { not: null } },
+      data: { archivedAt: null },
+    });
   });
 
   it("holds a deposit reservation without confirming or syncing Google", async () => {
@@ -63,6 +68,10 @@ describe("booking with the existing availability domain", () => {
     expect(appointment.status).toBe("AWAITING_PAYMENT");
     expect(appointment.needsGoogleSync).toBe(false);
     expect(mocks.enqueue).not.toHaveBeenCalled();
+    expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith({
+      where: { id: "patient", archivedAt: { not: null } },
+      data: { archivedAt: null },
+    });
     expect(await checkSlotAvailable(params)).toBe(false);
     appointment.status = "CANCELLED";
     expect(await checkSlotAvailable(params)).toBe(true);
@@ -85,6 +94,8 @@ describe("booking with the existing availability domain", () => {
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(results.find((r) => r.status === "rejected")).toMatchObject({ reason: expect.any(SlotUnavailableError) });
     expect(mocks.prisma.appointment.create).toHaveBeenCalledTimes(1);
+    // HU-019: solo la reserva que entró desarchiva; la rechazada no escribe.
+    expect(mocks.prisma.patient.updateMany).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(mocks.prisma.$queryRaw.mock.calls[0]?.[0].join("")).toContain('FROM "Professional" WHERE id = 1 FOR UPDATE');
     expect(mocks.prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(mocks.prisma.appointment.findMany.mock.invocationCallOrder[0]!);

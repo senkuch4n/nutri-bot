@@ -18,6 +18,14 @@ export class InvalidBookingReasonError extends Error {
   }
 }
 
+/** HU-019: desarchiva a la paciente dentro de una transacción (no-op si está activa). */
+function unarchiveInTx(tx: Prisma.TransactionClient, patientId: string) {
+  return tx.patient.updateMany({
+    where: { id: patientId, archivedAt: { not: null } },
+    data: { archivedAt: null },
+  });
+}
+
 /** Crea un turno confirmado, revalidando el horario, y encola la confirmación. */
 export async function createAppointment(params: {
   patientId: string;
@@ -55,7 +63,7 @@ export async function createAppointment(params: {
     const ok = await checkSlotAvailable({ serviceId: params.serviceId, startsAt: params.startsAt }, tx);
     if (!ok) throw new SlotUnavailableError();
 
-    return tx.appointment.create({
+    const created = await tx.appointment.create({
       data: {
         patientId: params.patientId,
         serviceId: params.serviceId,
@@ -70,6 +78,9 @@ export async function createAppointment(params: {
         reason: r.reason,
       },
     });
+    // HU-019 (T4, D7): reservar desarchiva a la paciente (panel y bot, con o sin seña).
+    await unarchiveInTx(tx, params.patientId);
+    return created;
   });
 
   if (!awaitingPayment && params.notifyPatient !== false) {
@@ -213,6 +224,11 @@ export async function setAppointmentStatus(params: {
         where: { id: params.id },
         data: { status: params.status },
       });
+      // HU-019 (T5): volver un turno futuro a CONFIRMED mantiene el invariante "una archivada no
+      // tiene turnos pendientes".
+      if (params.status === "CONFIRMED" && prev.startsAt >= new Date()) {
+        await unarchiveInTx(tx, prev.patientId);
+      }
 
       let consultation: SetAppointmentStatusResult["consultation"] = null;
       let removedEmptyConsultation = false;

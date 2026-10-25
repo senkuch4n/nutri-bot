@@ -79,6 +79,7 @@ describe("createAppointmentAction, paciente existente", () => {
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.upsert).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes"); // HU-019: crear el turno desarchiva
   });
 
   it("paciente inexistente o un canal → patientGone, sin crear el turno", async () => {
@@ -117,6 +118,7 @@ describe("createAppointmentAction, paciente nueva", () => {
       name: "María José Gómez",
       phone: "5493515552345",
       whatsappJid: "5493515552345@s.whatsapp.net",
+      archivedAt: null,
     });
     const res = await createAppointmentAction(
       { ok: false },
@@ -125,7 +127,28 @@ describe("createAppointmentAction, paciente nueva", () => {
     expect(res).toEqual({
       ok: false,
       error: "Ese número es de María José Gómez",
-      existingPatient: { id: "pat-9", name: "María José Gómez", label: "María José Gómez" },
+      existingPatient: { id: "pat-9", name: "María José Gómez", label: "María José Gómez", archived: false },
+    });
+    expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
+    expect(mocks.createAppointment).not.toHaveBeenCalled();
+  });
+
+  it("HU-019: número de una archivada → aviso de archivada y existingPatient.archived, sin crear turno", async () => {
+    mocks.findUnique.mockResolvedValue({
+      id: "pat-7",
+      name: "Ana López",
+      phone: "5491155551234",
+      whatsappJid: "5491155551234@s.whatsapp.net",
+      archivedAt: new Date("2026-10-01T12:00:00Z"),
+    });
+    const res = await createAppointmentAction(
+      { ok: false },
+      form({ patientName: "Ana", patientPhone: "11 5555-1234", serviceId: "svc-1", startsAt: STARTS }),
+    );
+    expect(res).toEqual({
+      ok: false,
+      error: "Ese número es de Ana López, que está archivada.",
+      existingPatient: { id: "pat-7", name: "Ana López", label: "Ana López", archived: true },
     });
     expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
     expect(mocks.createAppointment).not.toHaveBeenCalled();
@@ -196,5 +219,17 @@ describe("listAppointmentPatientsAction", () => {
     );
     expect(rows[0]).toMatchObject({ name: "Ana Díaz", contactKind: "hidden", phoneLabel: null, statusLine: "Sin turno" });
     expect(rows[1]).toMatchObject({ phoneLabel: "+54 9 351 000-0002", phoneDigits: "5493510000002" });
+  });
+
+  it("HU-019: pide solo activas y, si igual llega una archivada, core la descarta", async () => {
+    const createdAt = new Date("2026-01-01T00:00:00Z");
+    mocks.findMany.mockResolvedValue([
+      { id: "a1", name: "Ana López", phone: "5493510000003", whatsappJid: "5493510000003@s.whatsapp.net", createdAt, archivedAt: new Date(), appointments: [] },
+      { id: "n1", name: "Zoe Ruiz", phone: "5493510000002", whatsappJid: "5493510000002@s.whatsapp.net", createdAt, archivedAt: null, appointments: [] },
+    ]);
+    const rows = await listAppointmentPatientsAction();
+    expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { archivedAt: null } }));
+    expect(mocks.findMany.mock.calls[0]![0].select.archivedAt).toBe(true);
+    expect(rows.map((r) => r.id)).toEqual(["n1"]);
   });
 });

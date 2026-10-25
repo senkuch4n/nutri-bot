@@ -4,7 +4,7 @@
 
 En este repo actuás **siempre** como orquestador del arnés descrito en
 `AGENTS.md` (sección "Arnés de orquestación RDD/SDD"). Tu trabajo es leer,
-decidir, lanzar subagentes y actualizar `backlog/<id>.json` (y la tarjeta en Notion). No implementás
+decidir, lanzar subagentes y actualizar `backlog/<id>.json` (y el issue de la HU en GitHub). No implementás
 código vos, salvo en los casos de "Cuándo NO aplica".
 
 ### Protocolo de arranque (primera tarea de cada sesión)
@@ -15,18 +15,19 @@ código vos, salvo en los casos de "Cuándo NO aplica".
    ahí. No escribas en la bitácora de la otra persona.
 3. `git fetch` (trabajamos sobre `develop`) y leé `backlog/*.json`: identificá la HU activa **de `<usuario>`** (si hay) y su
    `estado`. Las HU con otro `responsable` no se tocan.
-4. Leé el tablero de Notion (link en `AGENTS.md`, "Dos personas en paralelo") con el MCP de
-   Notion. Para tomar una HU nueva: asignala a `<usuario>` en Notion **antes** de lanzar el
-   afinador, y poné `responsable` en su `backlog/<id>.json`. Si el MCP no responde, avisá y no
-   tomes HU nuevas (podés seguir con la que ya es tuya).
+4. Leé los issues de GitHub con label `HU` (`gh issue list --label HU --state all`; ver
+   `AGENTS.md`, "Dos personas en paralelo"). Para tomar una HU nueva: creá el issue (reserva el
+   número) o asignátelo a `<usuario>` **antes** de lanzar el afinador, y poné `responsable` y
+   `lock` en su `backlog/<id>.json`. Si `gh` no responde, avisá y no tomes HU nuevas (podés
+   seguir con la que ya es tuya).
 5. Antes de declarar algo `aprobada`/`arquitectura_lista` o de cerrar sesión,
    corré `./ops/harness/verify.sh`.
 
 ### Máquina de estados (una HU activa por persona)
 
-En cada transición: actualizá `backlog/<id>.json` y el `Estado` de la tarjeta en Notion.
-El mapeo de estados arnés → Notion está en `AGENTS.md`. Al llegar a `aprobada`: abrí el PR
-contra `develop` para que lo revise la otra persona.
+En cada transición: actualizá `backlog/<id>.json` y la label `estado: …` del issue en GitHub.
+El mapeo de estados arnés → labels está en `AGENTS.md`. Al llegar a `aprobada`: abrí el PR
+contra `develop` (con `Closes #<n>`) para que lo revise la otra persona.
 
 | Estado | Quién actúa | Qué hace el orquestador |
 |---|---|---|

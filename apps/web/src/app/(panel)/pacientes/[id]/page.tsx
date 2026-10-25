@@ -3,12 +3,14 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
 import {
+  archiveBlockedText,
   capitalizeFirst,
   computeAgeYears,
   appointmentHistoryText,
   consultationRecordedItems,
   dayKeyInTz,
   formatAppointmentWhen,
+  formatArchivedDate,
   formatConsultationDay,
   formatDate,
   formatDateTime,
@@ -32,6 +34,7 @@ import {
 import { getProfessional } from "@/lib/professional";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { AppointmentsSection } from "./appointments-section";
+import { ArchivedBanner } from "./archived-banner";
 import { ConsultationsSection } from "./consultations-section";
 import { DiarySection } from "./diary-section";
 import { EvolutionSection } from "./evolution-section";
@@ -81,9 +84,12 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
   // ── Resumen ──
   const todayConsultation = pickConsultationForDay(consultations.filter((c) => dayKeyInTz(c.consultedAt, tz) === todayKey));
   // `appts` viene ordenado por startsAt desc: el próximo turno es el último de los futuros.
-  const next = appts
-    .filter((a) => (a.status === "CONFIRMED" || a.status === "AWAITING_PAYMENT") && a.startsAt >= now)
-    .at(-1);
+  const pending = appts.filter((a) => (a.status === "CONFIRMED" || a.status === "AWAITING_PAYMENT") && a.startsAt >= now);
+  const next = pending.at(-1);
+  // HU-019 (D3, T2): con turnos pendientes no se archiva; el aviso sale sin ir al servidor.
+  const pendingBlockedText = next
+    ? archiveBlockedText({ name: patient.name, startsAt: next.startsAt, moreCount: pending.length - 1, now, tz })
+    : null;
   const last = consultations[0];
   // Plan activo más reciente; "desde" = la primera consulta que lo indicó o, si ninguna, su alta.
   const activePlan = plans
@@ -130,14 +136,21 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
 
       <PatientTabs
         header={
-          <PatientHeader
-            patientId={patient.id}
-            name={patient.name}
-            phone={patient.phone}
-            whatsappJid={patient.whatsappJid}
-            ageYears={ageYears}
-            riskBackground={riskBackground}
-          />
+          <>
+            {patient.archivedAt ? (
+              <ArchivedBanner patientId={patient.id} archivedLabel={formatArchivedDate(patient.archivedAt, tz)} />
+            ) : null}
+            <PatientHeader
+              patientId={patient.id}
+              name={patient.name}
+              phone={patient.phone}
+              whatsappJid={patient.whatsappJid}
+              ageYears={ageYears}
+              riskBackground={riskBackground}
+              archived={patient.archivedAt !== null}
+              pendingBlockedText={pendingBlockedText}
+            />
+          </>
         }
         consultationCount={consultations.length}
         diaryHasRecent={diaryHasRecent}

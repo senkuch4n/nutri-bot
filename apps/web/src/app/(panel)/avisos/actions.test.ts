@@ -24,12 +24,12 @@ function form(body: string): FormData {
 }
 
 const PEOPLE = [
-  { whatsappJid: "5493510000001@s.whatsapp.net" },
-  { whatsappJid: "120363000000000001@newsletter" },
-  { whatsappJid: "123456789@lid" },
-  { whatsappJid: "1203630000-1600000000@g.us" },
-  { whatsappJid: "status@broadcast" },
-  { whatsappJid: "5493510000002@s.whatsapp.net" },
+  { whatsappJid: "5493510000001@s.whatsapp.net", archivedAt: null },
+  { whatsappJid: "120363000000000001@newsletter", archivedAt: null },
+  { whatsappJid: "123456789@lid", archivedAt: null },
+  { whatsappJid: "1203630000-1600000000@g.us", archivedAt: null },
+  { whatsappJid: "status@broadcast", archivedAt: null },
+  { whatsappJid: "5493510000002@s.whatsapp.net", archivedAt: null },
 ];
 
 beforeEach(() => {
@@ -54,6 +54,27 @@ describe("broadcastMessageAction", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
   });
 
+  it("HU-019 (D5): pide solo activas y descarta archivadas → 10 activas + 2 archivadas = 10", async () => {
+    const ARCH = new Date("2026-10-24T15:00:00Z");
+    const actives = Array.from({ length: 10 }, (_, i) => ({
+      whatsappJid: `54935100001${String(i).padStart(2, "0")}@s.whatsapp.net`,
+      archivedAt: null,
+    }));
+    mocks.findMany.mockResolvedValue([
+      ...actives,
+      { whatsappJid: "5493519999901@s.whatsapp.net", archivedAt: ARCH },
+      { whatsappJid: "5493519999902@s.whatsapp.net", archivedAt: ARCH },
+    ]);
+    const res = await broadcastMessageAction({ ok: false }, form("Vacaciones del 10 al 20"));
+    expect(mocks.findMany).toHaveBeenCalledWith({
+      where: { archivedAt: null },
+      select: { whatsappJid: true, archivedAt: true },
+    });
+    expect(res).toEqual({ ok: true, sent: 10 });
+    const data = mocks.createMany.mock.calls[0]![0].data as Array<{ toJid: string }>;
+    expect(data.map((d) => d.toJid)).toEqual(actives.map((a) => a.whatsappJid));
+  });
+
   it("deduplica el mismo JID", async () => {
     mocks.findMany.mockResolvedValue([PEOPLE[0], PEOPLE[0]]);
     const res = await broadcastMessageAction({ ok: false }, form("Hola a todas"));
@@ -61,7 +82,10 @@ describe("broadcastMessageAction", () => {
   });
 
   it("sin destinatarios persona → error y no encola nada", async () => {
-    mocks.findMany.mockResolvedValue([{ whatsappJid: "1@newsletter" }, { whatsappJid: "2@g.us" }]);
+    mocks.findMany.mockResolvedValue([
+      { whatsappJid: "1@newsletter", archivedAt: null },
+      { whatsappJid: "2@g.us", archivedAt: null },
+    ]);
     const res = await broadcastMessageAction({ ok: false }, form("Hola a todas"));
     expect(res.ok).toBe(false);
     expect(res.error).toBe("Todavía no hay pacientes con WhatsApp para mandarles el aviso.");
