@@ -4,7 +4,7 @@
   "slug": "archivar-pacientes",
   "titulo": "Archivar pacientes (sacarlas de la lista sin perder su historia)",
   "origen": "Pedido de la nutricionista (2026-10-24): CRUD de pacientes. Alta resuelta como tarea directa (PR #44); para la baja el usuario eligió archivar en vez de borrar.",
-  "estado": "implementando",
+  "estado": "aprobada",
   "intentos_revision": 0,
   "hu": "docs/hu-archivar-pacientes.md",
   "sdd": "Refactorizaciones/archivar-pacientes.md",
@@ -20,5 +20,6 @@
     "migracion-prisma",
     "apple-design",
     "ui-ux-pro-max"
-  ]
+  ],
+  "modelo_reviewer": "opus"
 }

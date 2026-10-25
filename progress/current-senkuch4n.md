@@ -331,3 +331,4 @@ orquestador, para que las revise a la mañana:
   tablero. Labels `HU` + `estado: …` creados en el repo (mapeo igual al de Notion en AGENTS.md).
 - **HU-019 archivar-pacientes** → issue #45, rama feat/HU-019-archivar-pacientes, `afinando` (afinador, Opus).
 - HU-019: HU validada (D1–D12 como recomendadas) y SDD lista (Refactorizaciones/archivar-pacientes.md). → `implementando` (Opus; migracion-prisma, apple-design, ui-ux-pro-max). Migrar Neon a mano antes del merge (10.3).
+- **HU-019 aprobada** (reviewer Opus, 1ª ronda). PR a develop con `Closes #45`; migrar Neon antes del merge.

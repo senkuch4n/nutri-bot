@@ -493,3 +493,7 @@
 ## HU-017d-3 — Portal: plan (aprobada 2026-10-05, senkuch4n) · HU-017d cerrada
 - Plan del portal sin kcal ni macros, "Hoy" en el selector de días, comidas legibles, "Ver receta" como fila entera con sheet inferior y medida casera (rama con merge de 018d).
 - Implementer Opus, reviewer Opus: APPROVED en la 1ª revisión. HU-017d completa (PR #39 → #40 → #41; #41 después de #28).
+
+## HU-019 — Archivar pacientes (aprobada 2026-10-24, senkuch4n)
+- `Patient.archivedAt` (migración aditiva). Archivar desde la ficha (menú «Más», bloqueado si tiene turnos pendientes, lock compartido con la reserva), fila «Archivadas (N)» y vista `/pacientes?vista=archivadas`, banner + «Desarchivar». Crear un turno (panel o bot) o volverlo a CONFIRMED desarchiva. Archivadas fuera de la lista, del buscador de Nuevo turno y de los comunicados; el asistente IA las ve marcadas; portal y recordatorios sin cambios. «Nuevo paciente» con número de archivada ofrece desarchivarla.
+- Primera HU con lock en GitHub (issue #45) en vez de Notion. Implementer Opus (migracion-prisma, apple-design, ui-ux-pro-max), reviewer Opus: APPROVED en la 1ª revisión. Dudas menores en progress/review_HU-019.md (doble aviso en Nuevo turno, texto de «Número oculto»). Migrar Neon antes del merge.
