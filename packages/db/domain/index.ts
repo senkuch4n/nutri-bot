@@ -25,3 +25,5 @@ export * from "./anthropometricReports";
 export * from "./inquiries";
 export * from "./botAi";
 export * from "./professionalSelect";
+export * from "./planSections";
+export * from "./planTemplateImport";

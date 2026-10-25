@@ -284,7 +284,7 @@ describe("nutritionPlans / planTemplates", () => {
   it("applyTemplateToPatient copia mode, isOptions y weekday", async () => {
     p().templateMeal; // los delegados existen
     mocks.prisma.planTemplate = { findUnique: vi.fn().mockResolvedValue({
-      id: "t1", title: "Semanal", notes: null,
+      id: "t1", title: "Semanal", notes: null, status: "PUBLISHED", sections: [],
       meals: [
         { name: "Desayuno", order: 0, mode: "PER_DAY", isOptions: false, items: [
           { ...item("a", "TUE"), quantityGrams: 120, recipeId: null, portions: null },

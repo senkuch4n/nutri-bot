@@ -5,14 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ prisma: {} as Record<string, any> }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 
-import { applyTemplateToPatient } from "./planTemplates";
+import { TemplateNotPublishedError, applyTemplateToPatient, listTemplates } from "./planTemplates";
 
 const p = () => mocks.prisma;
 const dec = (v: number) => ({ toString: () => String(v) });
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.prisma.planTemplate = { findUnique: vi.fn() };
+  mocks.prisma.planTemplate = { findUnique: vi.fn(), findMany: vi.fn() };
   mocks.prisma.nutritionPlan = { create: vi.fn(), findUnique: vi.fn() };
   mocks.prisma.$transaction = vi.fn((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
 });
@@ -21,6 +21,8 @@ const template = {
   id: "tpl1",
   title: "Plantilla",
   notes: null,
+  status: "PUBLISHED",
+  sections: [] as { title: string; body: string; order: number }[],
   meals: [
     {
       id: "m1",
@@ -75,5 +77,60 @@ describe("applyTemplateToPatient", () => {
     p().planTemplate.findUnique.mockResolvedValue(null);
     await expect(applyTemplateToPatient("nope", "pat1")).rejects.toThrow(/Plantilla no encontrada/);
     expect(p().nutritionPlan.create).not.toHaveBeenCalled();
+  });
+});
+
+// HU-020: listar por estado, rechazar borradores y copiar los textos del plan.
+describe("HU-020 listTemplates", () => {
+  const select = { id: true, title: true, notes: true, status: true, origin: true, reviewedAt: true };
+
+  it("sin filtro: borradores primero y los 6 campos", async () => {
+    p().planTemplate.findMany.mockResolvedValue([]);
+    await listTemplates();
+    const args = p().planTemplate.findMany.mock.calls[0][0];
+    expect(args.where).toBeUndefined();
+    expect(args.orderBy).toEqual([{ status: "asc" }, { title: "asc" }]);
+    expect(args.select).toEqual(select);
+  });
+
+  it("con status: filtra", async () => {
+    p().planTemplate.findMany.mockResolvedValue([]);
+    await listTemplates({ status: "PUBLISHED" });
+    expect(p().planTemplate.findMany.mock.calls[0][0].where).toEqual({ status: "PUBLISHED" });
+  });
+});
+
+describe("HU-020 applyTemplateToPatient", () => {
+  it("un borrador → TemplateNotPublishedError, sin crear el plan", async () => {
+    p().planTemplate.findUnique.mockResolvedValue({ ...template, status: "DRAFT" });
+    await expect(applyTemplateToPatient("tpl1", "pat1")).rejects.toBeInstanceOf(TemplateNotPublishedError);
+    expect(p().nutritionPlan.create).not.toHaveBeenCalled();
+  });
+
+  it("copia las secciones en el orden de la plantilla", async () => {
+    p().planTemplate.findUnique.mockResolvedValue({
+      ...template,
+      sections: [
+        { id: "s1", title: "Recomendaciones", body: "a\nb", order: 0 },
+        { id: "s2", title: "Reemplazos", body: "c", order: 1 },
+      ],
+    });
+    p().nutritionPlan.create.mockResolvedValue({ id: "plan1" });
+    p().nutritionPlan.findUnique.mockResolvedValue({ id: "plan1" });
+    await applyTemplateToPatient("tpl1", "pat1");
+    expect(p().nutritionPlan.create.mock.calls[0][0].data.sections).toEqual({
+      create: [
+        { title: "Recomendaciones", body: "a\nb", order: 0 },
+        { title: "Reemplazos", body: "c", order: 1 },
+      ],
+    });
+  });
+
+  it("sin secciones → create: []", async () => {
+    p().planTemplate.findUnique.mockResolvedValue(template);
+    p().nutritionPlan.create.mockResolvedValue({ id: "plan1" });
+    p().nutritionPlan.findUnique.mockResolvedValue({ id: "plan1" });
+    await applyTemplateToPatient("tpl1", "pat1");
+    expect(p().nutritionPlan.create.mock.calls[0][0].data.sections).toEqual({ create: [] });
   });
 });
