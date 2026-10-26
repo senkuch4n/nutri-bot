@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeDepositAmount } from "./deposits";
+import { computeDepositAmount, DEPOSIT_AUTO_CANCEL_REASONS } from "./deposits";
 
 describe("computeDepositAmount", () => {
   it("calcula una seña fija", () => expect(computeDepositAmount(1000, "FIXED", 250)).toBe(250));
@@ -20,5 +20,14 @@ describe("computeDepositAmount", () => {
   it("devuelve cero para valores no positivos", () => {
     expect(computeDepositAmount(0, "FIXED", 100)).toBe(0);
     expect(computeDepositAmount(1000, "PERCENT", -1)).toBe(0);
+  });
+});
+
+describe("DEPOSIT_AUTO_CANCEL_REASONS", () => {
+  it("keeps the exact literals already stored in cancelled appointments", () => {
+    expect(DEPOSIT_AUTO_CANCEL_REASONS).toEqual({
+      expired: "Venció el tiempo para pagar la seña",
+      checkoutFailed: "No se pudo generar el checkout de la seña",
+    });
   });
 });

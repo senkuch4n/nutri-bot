@@ -8,3 +8,10 @@ export function computeDepositAmount(price: number, kind: DepositKind, value: nu
   const amount = kind === "FIXED" ? Math.min(price, value) : (price * value) / 100;
   return Math.round(amount * 100) / 100;
 }
+
+/** HU-021 (T3). Motivos con que payments.ts cancela sola una reserva con seña. NO cambiar los textos:
+ *  hay filas guardadas con estos valores y appointment-list.ts los usa para reconocerlas. */
+export const DEPOSIT_AUTO_CANCEL_REASONS = {
+  expired: "Venció el tiempo para pagar la seña",
+  checkoutFailed: "No se pudo generar el checkout de la seña",
+} as const;
