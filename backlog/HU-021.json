@@ -1,0 +1,20 @@
+{
+  "id": "HU-021",
+  "responsable": "imleticio",
+  "slug": "lista-turnos",
+  "titulo": "Lista de turnos con estado y pagos registrados",
+  "origen": "Pedido del usuario (2026-10-26): pantalla «Citas» de otro proyecto (Melon Mind), adaptada como «Turnos» para no romper el vocabulario del producto.",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-lista-turnos.md",
+  "sdd": "Refactorizaciones/lista-turnos.md",
+  "rama": "feat/HU-021-lista-turnos",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/50",
+  "notas": "Rama sacada de feat/morph-dialog (local, misma persona) porque «Abrir» usa MorphDialog. El usuario pidió no hacer push ni PR hasta que lo pida (2026-10-26). HU validada por el usuario 2026-10-26 (sin tarjeta Por cobrar; queda fuera de alcance). Implementer sin skills de UI: la referencia visual es la captura que pasó el usuario (decisión 2026-10-26). Aprobada en la 1ª revisión (2026-10-26). PR sin abrir: el usuario pidió no tocar GitHub hasta que lo pida.",
+  "skills_architect": [
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [],
+  "modelo_reviewer": "opus"
+}
