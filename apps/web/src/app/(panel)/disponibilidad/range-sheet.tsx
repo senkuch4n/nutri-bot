@@ -4,15 +4,14 @@ import { startTransition, useActionState, useEffect, useId, useRef, useState, ty
 import { Trash2 } from "lucide-react";
 import { AVAILABILITY_TEXT, WEEKDAY_NAMES, WEEKDAY_ORDER, hhmmToMinutes } from "@nutri-bot/core";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/primitives/sheet";
+  MorphDialog,
+  MorphDialogContent,
+  MorphDialogDescription,
+  MorphDialogHeader,
+  MorphDialogTitle,
+} from "@/components/primitives/morph-dialog";
 import { Button, Input, Select } from "@/components/ui";
 import { notify } from "@/lib/notify";
-import { useMediaQuery } from "@/lib/use-media-query";
 import { addRuleAction, updateRuleAction, type FormState } from "./actions";
 import { addRangeButtonId, type Rule } from "./schedule";
 
@@ -40,28 +39,29 @@ export function suggestedRange(dayRules: readonly Rule[]): { startTime: string; 
 /**
  * Panel "Horario del lunes" (HU-017b-2): Día, "Desde", "Hasta" (inputs nativos de 44 px) y "Guardar";
  * al editar, además "Borrar este horario". La superposición se valida en el servidor (solo contra las
- * reglas activas) y el mensaje queda junto a los campos. Lateral derecho; desde abajo en < 640 px.
+ * reglas activas) y el mensaje queda junto a los campos. Diálogo centrado que crece desde el horario o
+ * el botón que lo abrió (`MorphDialog`) y vuelve a él al cerrar.
  */
 export function RangeSheet({
   target,
+  origin = null,
   open,
   onOpenChange,
   onDelete,
 }: {
   target: RangeTarget | null;
+  /** Elemento desde el que crece el diálogo (el horario o "Agregar horario" tocado). */
+  origin?: HTMLElement | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Pide la confirmación y programa el borrado diferido. Devuelve true si se confirmó. */
   onDelete: (rule: Rule) => Promise<boolean>;
 }) {
-  const compact = useMediaQuery("(max-width: 639px)");
   const fallbackFocus = useRef<HTMLElement | null>(null);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side={compact ? "bottom" : "right"}
-        className={compact ? undefined : "w-full sm:max-w-md"}
+    <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin}>
+      <MorphDialogContent
         onCloseAutoFocus={(event) => {
           // Si el horario que abrió el panel se borró, el foco va a "Agregar horario" de ese día.
           const el = fallbackFocus.current;
@@ -87,8 +87,8 @@ export function RangeSheet({
             }}
           />
         ) : null}
-      </SheetContent>
-    </Sheet>
+      </MorphDialogContent>
+    </MorphDialog>
   );
 }
 
@@ -142,12 +142,12 @@ function RangeForm({
 
   return (
     <>
-      <SheetHeader>
-        <SheetTitle>{`Horario del ${dayLower(weekday)}`}</SheetTitle>
-        <SheetDescription>
+      <MorphDialogHeader>
+        <MorphDialogTitle>{`Horario del ${dayLower(weekday)}`}</MorphDialogTitle>
+        <MorphDialogDescription>
           {editing ? "Cambiá las horas y guardá. El bot ofrece turnos solo en tu horario." : "El bot ofrece turnos solo en tu horario."}
-        </SheetDescription>
-      </SheetHeader>
+        </MorphDialogDescription>
+      </MorphDialogHeader>
 
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-6 space-y-5">
         {editing ? <input type="hidden" name="id" value={editing.id} /> : null}

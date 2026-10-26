@@ -43,6 +43,8 @@ export function DisponibilidadView({
 }) {
   const [rangeTarget, setRangeTarget] = useState<RangeTarget | null>(null);
   const [rangeOpen, setRangeOpen] = useState(false);
+  // Desde dónde crece el diálogo del horario (el horario o el "Agregar horario" tocado).
+  const [rangeOrigin, setRangeOrigin] = useState<HTMLElement | null>(null);
   const [excOpen, setExcOpen] = useState(false);
   const confirm = useConfirm();
   const deferredDelete = useDeferredDelete();
@@ -50,13 +52,15 @@ export function DisponibilidadView({
   const visibleRules = rules.filter((r) => !pending.has(ruleDeletionKey(r.id)));
   const visibleExceptions = exceptions.filter((e) => !pending.has(exceptionDeletionKey(e.id)));
 
-  const openAdd = (weekday: number) => {
+  const openAdd = (weekday: number, origin: HTMLElement) => {
     const day = visibleRules.filter((r) => r.weekday === weekday);
     setRangeTarget({ mode: "add", weekday, ...suggestedRange(day) });
+    setRangeOrigin(origin);
     setRangeOpen(true);
   };
-  const openEdit = (rule: Rule) => {
+  const openEdit = (rule: Rule, origin: HTMLElement) => {
     setRangeTarget({ mode: "edit", rule });
+    setRangeOrigin(origin);
     setRangeOpen(true);
   };
 
@@ -130,7 +134,13 @@ export function DisponibilidadView({
         </div>
       </div>
 
-      <RangeSheet target={rangeTarget} open={rangeOpen} onOpenChange={setRangeOpen} onDelete={deleteRule} />
+      <RangeSheet
+        target={rangeTarget}
+        origin={rangeOrigin}
+        open={rangeOpen}
+        onOpenChange={setRangeOpen}
+        onDelete={deleteRule}
+      />
 
       <ExceptionSheet open={excOpen} onOpenChange={setExcOpen} todayKey={todayKey} />
     </div>

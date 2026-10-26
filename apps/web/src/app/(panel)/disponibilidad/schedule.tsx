@@ -28,7 +28,7 @@ export function addRangeButtonId(weekday: number): string {
 
 /**
  * "Horario de todas las semanas" (HU-017b-2): los siete días, de lunes a domingo, en todos los anchos.
- * Cada horario es un botón de 44 px que abre el panel de edición; "Agregar horario" en cada día. Si dos
+ * Cada horario es un botón de 44 px que abre el diálogo de edición (crece desde el botón); "Agregar horario" en cada día. Si dos
  * horarios del mismo día se pisan (cargas viejas), el día lo marca con "Se superponen" y esos botones
  * quedan resaltados para editarlos.
  */
@@ -38,8 +38,9 @@ export function WeeklySchedule({
   onEdit,
 }: {
   rules: readonly Rule[];
-  onAdd: (weekday: number) => void;
-  onEdit: (rule: Rule) => void;
+  /** `origin`: el botón tocado, desde donde crece el diálogo. */
+  onAdd: (weekday: number, origin: HTMLElement) => void;
+  onEdit: (rule: Rule, origin: HTMLElement) => void;
 }) {
   return (
     <GroupedList header={T.weeklyTitle}>
@@ -75,7 +76,7 @@ export function WeeklySchedule({
                   <button
                     key={r.id}
                     type="button"
-                    onClick={() => onEdit(r)}
+                    onClick={(e) => onEdit(r, e.currentTarget)}
                     aria-label={`Editar el horario del ${day.toLowerCase()} ${timeRangePhrase(r)}`}
                     className={cn(
                       "inline-flex min-h-11 items-center gap-1 rounded-full bg-secondary pl-4 pr-3 text-callout tabular-nums text-foreground",
@@ -95,7 +96,7 @@ export function WeeklySchedule({
               id={addRangeButtonId(weekday)}
               type="button"
               variant="tinted"
-              onClick={() => onAdd(weekday)}
+              onClick={(e) => onAdd(weekday, e.currentTarget)}
               aria-label={`${T.addRange} el ${day.toLowerCase()}`}
               className="justify-self-end"
             >
