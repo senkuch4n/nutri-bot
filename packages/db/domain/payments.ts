@@ -1,4 +1,4 @@
-import { computeDepositAmount, mapMercadoPagoStatus, messages } from "@nutri-bot/core";
+import { computeDepositAmount, DEPOSIT_AUTO_CANCEL_REASONS, mapMercadoPagoStatus, messages } from "@nutri-bot/core";
 import { MercadoPagoConfig, Payment as MercadoPagoPayment, Preference } from "mercadopago";
 import { prisma, type Payment as DbPayment } from "../index";
 import { getProfessional } from "./availability";
@@ -70,7 +70,7 @@ export async function createDepositCheckout(
       await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${appointmentId} ORDER BY id FOR UPDATE`;
       const cancelled = await tx.appointment.updateMany({
         where: { id: appointmentId, status: "AWAITING_PAYMENT" },
-        data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: "No se pudo generar el checkout de la seña" },
+        data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: DEPOSIT_AUTO_CANCEL_REASONS.checkoutFailed },
       });
       if (cancelled.count > 0) {
         await tx.payment.updateMany({ where: { appointmentId, status: "PENDING" }, data: { status: "CANCELLED" } });
@@ -208,7 +208,7 @@ export async function expireStalePendingPayments(olderThanMinutes = 15): Promise
       await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${appointment.id} ORDER BY id FOR UPDATE`;
       const cancelled = await tx.appointment.updateMany({
         where: { id: appointment.id, status: "AWAITING_PAYMENT" },
-        data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: "Venció el tiempo para pagar la seña" },
+        data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: DEPOSIT_AUTO_CANCEL_REASONS.expired },
       });
       if (cancelled.count === 0) return 0;
       await tx.payment.updateMany({ where: { appointmentId: appointment.id, status: "PENDING" }, data: { status: "EXPIRED" } });
