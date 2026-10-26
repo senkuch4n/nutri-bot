@@ -1,19 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarX, ChevronLeft, ChevronRight, Plus, Search, SearchX } from "lucide-react";
 import {
   AGENDA_TEXT,
   APPOINTMENT_LIST_TEXT,
   DEFAULT_APPOINTMENT_LIST_FILTERS,
+  activeAppointmentFilterCount,
   appointmentDayTime,
+  appointmentListQuery,
   buildAppointmentListRows,
   countAppointmentCards,
   matchesAppointmentFilters,
   monthName,
   monthTitle,
+  parseAppointmentListFilters,
   shiftMonthKey,
   type AppointmentListFilters,
   type AppointmentListInput,
@@ -22,6 +25,7 @@ import {
 import { Button, EmptyState, Input, Metric, PageHeader } from "@/components/ui";
 import { usePendingDeletions } from "@/lib/deferred-delete";
 import { notify } from "@/lib/notify";
+import { replaceUrlInRouter } from "@/lib/patient-tab-route";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { setStatusAction } from "../actions";
 import { appointmentCancelKey, useScheduleAppointmentCancel } from "../appointment-cancel";
@@ -32,6 +36,7 @@ import type { TurnosAppointment } from "./data";
 import { AppointmentDetailDialog } from "./appointment-detail-dialog";
 import { AppointmentsMobileList } from "./appointments-mobile-list";
 import { AppointmentsTable, openButtonId, type AppointmentRowActions } from "./appointments-table";
+import { TurnosFilters } from "./turnos-filters";
 
 const T = APPOINTMENT_LIST_TEXT;
 
@@ -86,8 +91,10 @@ function toInput(a: TurnosAppointment): AppointmentListInput {
   };
 }
 
-function monthHref(key: string, currentMonth: string): string {
-  return key === currentMonth ? "/turnos" : `/turnos?mes=${key}`;
+/** T10/T11: "/turnos" + query de mes y filtros (el mes en curso se escribe sin ?mes). */
+function turnosHref(month: string, currentMonth: string, filters: AppointmentListFilters): string {
+  const q = appointmentListQuery(month === currentMonth ? null : month, filters);
+  return q ? `/turnos?${q}` : "/turnos";
 }
 
 /** HU-021 (SDD 7.1). Pantalla "Turnos": tarjetas, buscador y lista del mes. Toda la derivación es de core. */
@@ -100,6 +107,7 @@ export function TurnosClient({
   currency,
   todayKey,
   services,
+  filterServices,
 }: {
   appointments: TurnosAppointment[];
   /** "yyyy-MM" que se muestra. */
@@ -117,9 +125,25 @@ export function TurnosClient({
   filterServices: { id: string; name: string }[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const wide = useMediaQuery("(min-width: 640px)", true);
   const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState("");
+
+  // T10: estado, pago y servicio salen de la URL (fuente de verdad). El buscador usa estado local (para
+  // no mover el cursor) y escribe la URL en cada cambio.
+  const urlFilters = parseAppointmentListFilters({
+    estado: searchParams.get("estado"),
+    pago: searchParams.get("pago"),
+    servicio: searchParams.get("servicio"),
+    q: searchParams.get("q"),
+  });
+  const [query, setQuery] = useState(urlFilters.query);
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  // Si la URL cambia desde afuera (p. ej. tocar "Turnos" en la sidebar), el buscador se resincroniza.
+  useEffect(() => {
+    if (urlFilters.query.trim() !== queryRef.current.trim()) setQuery(urlFilters.query);
+  }, [urlFilters.query]);
   const [busy, setBusy] = useState<AppointmentRowActions["busy"]>(null);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -135,10 +159,24 @@ export function TurnosClient({
     () => buildAppointmentListRows(effective.map(toInput), now, tz, currency),
     [effective, now, tz, currency],
   );
-  const filters: AppointmentListFilters = { ...DEFAULT_APPOINTMENT_LIST_FILTERS, query };
+  const filters: AppointmentListFilters = { ...urlFilters, query };
   const filtered = rows.filter((r) => matchesAppointmentFilters(r, filters));
   const cards = countAppointmentCards(filtered);
-  const filtering = query.trim() !== "";
+  const filtering = activeAppointmentFilterCount(filters) > 0 || query.trim() !== "";
+
+  function writeFilters(next: AppointmentListFilters) {
+    replaceUrlInRouter(turnosHref(month, currentMonth, next));
+  }
+
+  function changeQuery(value: string) {
+    setQuery(value);
+    writeFilters({ ...filters, query: value });
+  }
+
+  function showAll() {
+    setQuery("");
+    writeFilters(DEFAULT_APPOINTMENT_LIST_FILTERS);
+  }
 
   const selected = useMemo((): SelectedAppointment | null => {
     if (!selectedId) return null;
@@ -204,11 +242,20 @@ export function TurnosClient({
 
   return (
     <div>
-      <PageHeader title={T.title} description={T.description} action={newAppointmentButton} />
+      <PageHeader
+        title={T.title}
+        description={T.description}
+        action={
+          <>
+            <TurnosFilters filters={filters} services={filterServices} wide={wide} onChange={writeFilters} />
+            {newAppointmentButton}
+          </>
+        }
+      />
 
       <nav aria-label={T.monthNav.label} className="mb-6 flex items-center gap-1">
         <Link
-          href={monthHref(prevMonth, currentMonth)}
+          href={turnosHref(prevMonth, currentMonth, filters)}
           className={navButton}
           aria-label={T.monthNav.prev(monthTitle(prevMonth))}
           title="Mes anterior"
@@ -219,7 +266,7 @@ export function TurnosClient({
           {title}
         </h2>
         <Link
-          href={monthHref(nextMonth, currentMonth)}
+          href={turnosHref(nextMonth, currentMonth, filters)}
           className={navButton}
           aria-label={T.monthNav.next(monthTitle(nextMonth))}
           title="Mes siguiente"
@@ -262,7 +309,7 @@ export function TurnosClient({
               id="turnos-buscar"
               type="search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => changeQuery(e.target.value)}
               placeholder={T.searchPlaceholder}
               spellCheck={false}
               className="h-11 pl-9"
@@ -281,7 +328,7 @@ export function TurnosClient({
                 icon={SearchX}
                 title={T.noMatches}
                 action={
-                  <Button variant="tinted" size="lg" onClick={() => setQuery("")}>
+                  <Button variant="tinted" size="lg" onClick={showAll}>
                     {T.seeAll}
                   </Button>
                 }
