@@ -14,12 +14,28 @@ const templateMealInclude = {
   },
 };
 
-export function listTemplates() {
-  return prisma.planTemplate.findMany({ orderBy: { title: "asc" } });
+/** HU-020: borradores primero (orden del enum: DRAFT < PUBLISHED). `status` filtra (la ficha usa PUBLISHED). */
+export function listTemplates(params?: { status?: "DRAFT" | "PUBLISHED" }) {
+  return prisma.planTemplate.findMany({
+    ...(params?.status ? { where: { status: params.status } } : {}),
+    orderBy: [{ status: "asc" }, { title: "asc" }],
+    select: { id: true, title: true, notes: true, status: true, origin: true, reviewedAt: true },
+  });
 }
 
 export function getTemplate(id: string) {
-  return prisma.planTemplate.findUnique({ where: { id }, include: { meals: templateMealInclude } });
+  return prisma.planTemplate.findUnique({
+    where: { id },
+    include: { meals: templateMealInclude, sections: { orderBy: { order: "asc" } } },
+  });
+}
+
+/** HU-020 (T13): un borrador no se aplica a una paciente. */
+export class TemplateNotPublishedError extends Error {
+  constructor(templateId: string) {
+    super(`La plantilla ${templateId} es un borrador`);
+    this.name = "TemplateNotPublishedError";
+  }
 }
 
 /** HU-018b (12-D4): la plantilla nueva trae las mismas comidas por defecto que un plan nuevo. */
@@ -88,6 +104,7 @@ export function deleteTemplateMealItem(itemId: string) {
 export async function applyTemplateToPatient(templateId: string, patientId: string) {
   const template = await getTemplate(templateId);
   if (!template) throw new Error(`Plantilla no encontrada: ${templateId}`);
+  if (template.status === "DRAFT") throw new TemplateNotPublishedError(templateId);
 
   const plan = await prisma.$transaction(async (tx) => {
     return tx.nutritionPlan.create({
@@ -120,6 +137,14 @@ export async function applyTemplateToPatient(templateId: string, patientId: stri
                 measureGrams: item.measureGrams,
               })),
             },
+          })),
+        },
+        // HU-020 (D9): los textos del plan se copian con su orden.
+        sections: {
+          create: (template.sections ?? []).map((section) => ({
+            title: section.title,
+            body: section.body,
+            order: section.order,
           })),
         },
       },

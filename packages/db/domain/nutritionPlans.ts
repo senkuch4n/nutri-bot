@@ -27,7 +27,8 @@ export function listPatientPlans(patientId: string) {
 export function getPlan(planId: string) {
   return prisma.nutritionPlan.findUnique({
     where: { id: planId },
-    include: { meals: mealInclude },
+    // HU-020 (D9): textos del plan.
+    include: { meals: mealInclude, sections: { orderBy: { order: "asc" } } },
   });
 }
 

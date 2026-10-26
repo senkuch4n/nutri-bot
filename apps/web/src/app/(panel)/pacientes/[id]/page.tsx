@@ -63,7 +63,7 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
       },
     }),
     listPatientPlans(id),
-    listTemplates(),
+    listTemplates({ status: "PUBLISHED" }),
     listDiaryEntries(id),
     getLatestFormulaMeasurements(id),
     listPatientConsultations(id),

@@ -659,6 +659,8 @@ model NutritionPlan {
   updatedAt      DateTime          @updatedAt
 
   meals          PlanMeal[]
+  /// HU-020 (D9): textos del plan (recomendaciones, reemplazos…).
+  sections       PlanSection[]
   messages       OutboundMessage[]
   consultations  Consultation[]
 
@@ -715,13 +717,68 @@ model PlanMealItem {
   @@index([recipeId])
 }
 
+/// HU-020: estado de una plantilla. Solo PUBLISHED se ofrece en "Aplicar plantilla".
+enum TemplateStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// HU-020: MANUAL = creada en el panel. IMPORT = vino de plans:import (PDF).
+enum TemplateOrigin {
+  MANUAL
+  IMPORT
+}
+
 model PlanTemplate {
-  id        String   @id @default(cuid())
+  id          String                @id @default(cuid())
+  title       String
+  notes       String?
+  /// HU-020. Default PUBLISHED: las existentes y las creadas a mano se siguen ofreciendo.
+  status      TemplateStatus        @default(PUBLISHED)
+  origin      TemplateOrigin        @default(MANUAL)
+  /// HU-020 (D12): "pdf-sha256:<hex>" del contenido del PDF (planImportKey de core). Nunca el nombre
+  /// del archivo. Hace idempotente la importación. No se guarda el PDF ni su texto.
+  importKey   String?               @unique
+  /// HU-020: TemplateImportHint[] de core (avisos para la revisión). Se vacía al publicar.
+  importHints Json?
+  /// HU-020: primera vez que se cambió el borrador desde el panel. Desde ahí la importación no lo pisa.
+  reviewedAt  DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  meals       TemplateMeal[]
+  sections    PlanTemplateSection[]
+
+  @@index([status, title])
+}
+
+/// HU-020 (D9): textos de la plantilla (recomendaciones, consumo diario, reemplazos…). Se copian al plan.
+model PlanTemplateSection {
+  id         String       @id @default(cuid())
+  template   PlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId String
+  /// 1..80 (PLAN_SECTION_LIMITS de core).
+  title      String
+  /// 1..20000. Texto plano con saltos de línea.
+  body       String
+  order      Int
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([templateId, order])
+}
+
+/// HU-020 (D9): textos del plan de la paciente. Copia de los de la plantilla al aplicarla; editables.
+model PlanSection {
+  id        String        @id @default(cuid())
+  plan      NutritionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId    String
   title     String
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  meals     TemplateMeal[]
+  body      String
+  order     Int
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([planId, order])
 }
 
 model TemplateMeal {

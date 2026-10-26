@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { createPlan, applyTemplateToPatient, getTemplate } from "@nutri-bot/db/domain";
+import { createPlan, applyTemplateToPatient, getTemplate, TemplateNotPublishedError } from "@nutri-bot/db/domain";
+import { PLAN_IMPORT_TEXT } from "@nutri-bot/core";
 
 export type PlanListState = { ok: boolean; error?: string };
 
@@ -36,10 +37,18 @@ export async function applyTemplateAction(
   if (!parsed.success) return { ok: false, error: "Elegí una plantilla" };
   const template = await getTemplate(parsed.data.templateId);
   if (!template) return { ok: false, error: "Plantilla no encontrada" };
+  // HU-020 (T13): un borrador importado no se aplica hasta publicarlo.
+  if (template.status === "DRAFT") return { ok: false, error: PLAN_IMPORT_TEXT.draftNotApplicable };
   if (template.meals.some((meal) => meal.items.some((item) => item.food && item.food.source !== "SARA2"))) {
     return { ok: false, error: "Esta plantilla contiene alimentos PROPIO históricos. Para crear un plan nuevo, usá una plantilla con alimentos SARA 2." };
   }
-  const plan = await applyTemplateToPatient(parsed.data.templateId, parsed.data.patientId);
+  let plan: Awaited<ReturnType<typeof applyTemplateToPatient>>;
+  try {
+    plan = await applyTemplateToPatient(parsed.data.templateId, parsed.data.patientId);
+  } catch (err) {
+    if (err instanceof TemplateNotPublishedError) return { ok: false, error: PLAN_IMPORT_TEXT.draftNotApplicable };
+    throw err;
+  }
   if (!plan) return { ok: false, error: "No se pudo aplicar la plantilla" };
   revalidatePath(`/pacientes/${parsed.data.patientId}`);
   redirect(`/pacientes/${parsed.data.patientId}/planes/${plan.id}`);
