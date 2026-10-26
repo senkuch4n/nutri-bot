@@ -110,6 +110,7 @@ export async function createAppointmentAction(
   }
 
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   // HU-019 (T4): crear el turno desarchiva a la paciente; la lista tiene que mostrarla de nuevo.
   revalidatePath("/pacientes");
   return { ok: true };
@@ -182,6 +183,7 @@ export async function cancelAppointmentAction(id: string, reason?: string): Prom
     return { ok: false, error: "No se pudo cancelar el turno." };
   }
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   return { ok: true };
 }
 
@@ -231,6 +233,7 @@ export async function setStatusAction(
     return { ok: false, error: "No se pudo actualizar el turno." };
   }
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   if (result.consultation || result.removedEmptyConsultation) {
     revalidatePath(`/pacientes/${result.appointment.patientId}`);
   }
@@ -256,6 +259,7 @@ export async function saveAppointmentReasonAction(
     return { ok: false, error: "No se pudo guardar el motivo." };
   }
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   revalidatePath(`/pacientes/${updated.patientId}`, "layout");
   return { ok: true, reason: updated.reason };
 }

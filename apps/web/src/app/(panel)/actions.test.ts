@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(),
     upsert: vi.fn(),
     createAppointment: vi.fn(),
+    setAppointmentStatus: vi.fn(),
+    cancelAppointment: vi.fn(),
+    updateAppointmentReason: vi.fn(),
     findOrCreatePatient: vi.fn(),
     getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
     SlotUnavailableError,
@@ -31,10 +34,10 @@ vi.mock("@nutri-bot/db/domain", () => ({
   getProfessional: mocks.getProfessional,
 }));
 vi.mock("@/lib/appointments", () => ({
-  cancelAppointment: vi.fn(),
+  cancelAppointment: mocks.cancelAppointment,
   createAppointment: mocks.createAppointment,
-  setAppointmentStatus: vi.fn(),
-  updateAppointmentReason: vi.fn(),
+  setAppointmentStatus: mocks.setAppointmentStatus,
+  updateAppointmentReason: mocks.updateAppointmentReason,
   SlotUnavailableError: mocks.SlotUnavailableError,
   InvalidBookingReasonError: mocks.InvalidBookingReasonError,
 }));
@@ -43,7 +46,13 @@ vi.mock("@/lib/patients", () => ({
   phoneToJid: (phone: string) => `${phone.replace(/\D/g, "")}@s.whatsapp.net`,
 }));
 
-import { createAppointmentAction, listAppointmentPatientsAction } from "./actions";
+import {
+  cancelAppointmentAction,
+  createAppointmentAction,
+  listAppointmentPatientsAction,
+  saveAppointmentReasonAction,
+  setStatusAction,
+} from "./actions";
 
 const T = AGENDA_TEXT.create;
 const STARTS = "2026-10-08T13:00:00.000Z";
@@ -80,6 +89,7 @@ describe("createAppointmentAction, paciente existente", () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes"); // HU-019: crear el turno desarchiva
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos"); // HU-021
   });
 
   it("paciente inexistente o un canal → patientGone, sin crear el turno", async () => {
@@ -231,5 +241,40 @@ describe("listAppointmentPatientsAction", () => {
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { archivedAt: null } }));
     expect(mocks.findMany.mock.calls[0]![0].select.archivedAt).toBe(true);
     expect(rows.map((r) => r.id)).toEqual(["n1"]);
+  });
+});
+
+describe("HU-021: las actions del turno revalidan /turnos", () => {
+  it("setStatusAction ok → revalida el calendario y la lista de turnos", async () => {
+    mocks.setAppointmentStatus.mockResolvedValue({
+      appointment: { patientId: "pat-1" },
+      consultation: null,
+      removedEmptyConsultation: false,
+    });
+    expect(await setStatusAction("appt-1", "COMPLETED")).toEqual({ ok: true, consultation: null });
+    expect(mocks.setAppointmentStatus).toHaveBeenCalledWith({ id: "appt-1", status: "COMPLETED" });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+  });
+
+  it("setStatusAction con error del dominio → mensaje y sin revalidar", async () => {
+    mocks.setAppointmentStatus.mockRejectedValue(new Error("db down"));
+    expect(await setStatusAction("appt-1", "NO_SHOW")).toEqual({ ok: false, error: "No se pudo actualizar el turno." });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("cancelAppointmentAction ok → revalida el calendario y la lista de turnos", async () => {
+    mocks.cancelAppointment.mockResolvedValue(undefined);
+    expect(await cancelAppointmentAction("appt-1")).toEqual({ ok: true });
+    expect(mocks.cancelAppointment).toHaveBeenCalledWith({ id: "appt-1", by: "PROFESSIONAL", reason: undefined });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+  });
+
+  it("saveAppointmentReasonAction ok → también revalida /turnos", async () => {
+    mocks.updateAppointmentReason.mockResolvedValue({ patientId: "pat-1", reason: "Control" });
+    expect(await saveAppointmentReasonAction("appt-1", "Control")).toEqual({ ok: true, reason: "Control" });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
   });
 });
