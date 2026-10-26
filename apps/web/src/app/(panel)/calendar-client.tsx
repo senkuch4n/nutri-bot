@@ -13,7 +13,6 @@ import {
   AGENDA_TEXT,
   APPOINTMENT_STATUS_TEXT,
   calendarPeriodTitle,
-  firstName,
   fromZonedTime,
   type CalendarView,
 } from "@nutri-bot/core";
@@ -24,12 +23,12 @@ import {
   calendarViewFromFc,
   resolveCalendarRoute,
 } from "@/lib/calendar-route";
-import { useDeferredDelete, usePendingDeletions } from "@/lib/deferred-delete";
+import { usePendingDeletions } from "@/lib/deferred-delete";
 import { notify } from "@/lib/notify";
-import { cancelAppointmentAction } from "./actions";
 import { replaceUrlInRouter } from "@/lib/patient-tab-route";
 import { NewAppointmentModal, type ServiceOption } from "./new-appointment-modal";
 import { AppointmentDetailSheet, type SelectedAppointment } from "./appointment-detail-sheet";
+import { appointmentCancelKey, useScheduleAppointmentCancel } from "./appointment-cancel";
 import { CalendarGridSkeleton, CalendarToolbar, CalendarToolbarSkeleton } from "./calendar-toolbar";
 
 // Referencias estables: si se crean inline en el render, FullCalendar cree que
@@ -70,16 +69,11 @@ function isoFromDateStr(dateStr: string, tz: string): string {
   return (hasOffset ? new Date(dateStr) : fromZonedTime(dateStr, tz)).toISOString();
 }
 
-/** Key del "Deshacer" de la cancelación de un turno. */
-function cancelKey(appointmentId: string): string {
-  return `appointment-cancel:${appointmentId}`;
-}
-
 /** Oculta los turnos con cancelación pendiente (Q6). Solo toca los que cambian: setProp dispara
  *  eventsSet, y sin esta guarda habría un loop. */
 function applyPendingCancellations(api: CalendarApi, pending: ReadonlySet<string>) {
   for (const ev of api.getEvents()) {
-    const display = pending.has(cancelKey(ev.id)) ? "none" : "auto";
+    const display = pending.has(appointmentCancelKey(ev.id)) ? "none" : "auto";
     if (ev.display !== display) ev.setProp("display", display);
   }
 }
@@ -135,7 +129,6 @@ export function CalendarClient({
   const pendingDeletions = usePendingDeletions();
   const pendingRef = useRef(pendingDeletions);
   pendingRef.current = pendingDeletions;
-  const deferredDelete = useDeferredDelete();
 
   useEffect(() => {
     const api = calRef.current?.getApi();
@@ -242,20 +235,13 @@ export function CalendarClient({
 
   // D5: el turno se oculta al instante; la cancelación (y el WhatsApp) salen al vencer el "Deshacer".
   // Como el turno ya no se ve, al cerrarse el panel el foco va al título de la barra.
+  const scheduleAppointmentCancel = useScheduleAppointmentCancel({ onCommitted: refetch });
   const scheduleCancel = useCallback(
     (appt: SelectedAppointment) => {
       lastEventElRef.current = titleRef.current;
-      deferredDelete({
-        key: cancelKey(appt.id),
-        message: AGENDA_TEXT.cancel.scheduled(firstName(appt.patientName)),
-        undoneMessage: AGENDA_TEXT.cancel.undone,
-        commit: () => cancelAppointmentAction(appt.id),
-        guardUnload: true,
-        errorMessage: AGENDA_TEXT.cancel.error,
-        onCommitted: refetch,
-      });
+      scheduleAppointmentCancel(appt);
     },
-    [deferredDelete, refetch],
+    [scheduleAppointmentCancel],
   );
 
   // Q4: un toque (sin mantener apretado) en una franja abre "Nuevo turno" con ese horario.
