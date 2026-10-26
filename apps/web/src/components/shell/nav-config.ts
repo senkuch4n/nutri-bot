@@ -5,6 +5,7 @@ import {
   Clock,
   Files,
   Inbox,
+  ListChecks,
   Megaphone,
   Settings,
   Sparkles,
@@ -27,6 +28,8 @@ export const navGroups: NavGroup[] = [
     label: "Agenda",
     items: [
       { href: "/", label: "Calendario", icon: CalendarDays },
+      // HU-021: lista de turnos del mes con su estado y lo registrado como pagado.
+      { href: "/turnos", label: "Turnos", icon: ListChecks },
       { href: "/disponibilidad", label: "Disponibilidad", icon: Clock },
       { href: "/servicios", label: "Servicios", icon: Tag },
     ],
