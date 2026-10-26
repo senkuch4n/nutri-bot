@@ -1,9 +1,8 @@
 // HU-021 (SDD 5.1). Lista de turnos del panel (/turnos): estado visible de cada fila, lo registrado
 // como pagado, filtros, URL y tarjetas. Todo puro: el cliente lo deriva en memoria sobre el mes.
-import { es as esLocale } from "date-fns/locale";
 import { firstName, patientDisplayName } from "./agenda";
 import { DEPOSIT_AUTO_CANCEL_REASONS } from "./deposits";
-import { formatPrice, formatTime } from "./format";
+import { formatPrice } from "./format";
 import { matchesPatientQuery } from "./patient-directory";
 import type { AppointmentStatusLike } from "./patient-summary";
 import { formatInTimeZone } from "./time";
@@ -126,11 +125,11 @@ export interface AppointmentListRow {
   phoneDigits: string | null;
   serviceId: string;
   serviceName: string;
-  /** "jue 29/10" (T20). */
+  /** "29 Oct" (día + mes corto, zona de la profesional). */
   dateLabel: string;
-  /** "10:00". */
+  /** "8:00" / "17:30" (24 h, sin cero adelante). */
   timeLabel: string;
-  /** formatPrice(price, currency) o "Sin cargo" si price es 0. */
+  /** formatPrice(price, currency) o "—" si price es 0. */
   priceLabel: string;
   payment: AppointmentPaymentSummary;
   /** appointmentPaymentText(payment, currency). */
@@ -139,6 +138,14 @@ export interface AppointmentListRow {
   /** rowStatus === "unclosed": la fila ofrece "Vino" / "No vino". */
   canClose: boolean;
   reason: string | null;
+}
+
+const SHORT_MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"] as const;
+
+/** "23 Oct": día sin cero + mes corto, en la zona de la profesional. */
+function shortDayMonth(instant: Date, tz: string): string {
+  const [day, month] = formatInTimeZone(instant, tz, "d M").split(" ");
+  return `${day} ${SHORT_MONTHS[Number(month) - 1]}`;
 }
 
 /** Arma y ordena (startsAt asc, empate por id) TODAS las filas del mes, incluidas deposit_unpaid. */
@@ -167,8 +174,8 @@ export function buildAppointmentListRows(
       phoneDigits: classifyWhatsappJid(a.patient.whatsappJid) === "phone" ? a.patient.phone.replace(/\D/g, "") : null,
       serviceId: a.serviceId,
       serviceName: a.serviceName,
-      dateLabel: formatInTimeZone(a.startsAt, tz, "EEE dd/MM", { locale: esLocale }),
-      timeLabel: formatTime(a.startsAt, tz),
+      dateLabel: shortDayMonth(a.startsAt, tz),
+      timeLabel: formatInTimeZone(a.startsAt, tz, "H:mm"),
       priceLabel: payment.state === "free" ? APPOINTMENT_LIST_TEXT.free : formatPrice(a.price, currency),
       payment,
       paymentText: appointmentPaymentText(payment, currency),
@@ -335,7 +342,8 @@ export const APPOINTMENT_LIST_TEXT = {
     none: "Sin pagos registrados",
     free: "—",
   },
-  free: "Sin cargo",
+  /** Precio de un turno sin cargo (como «Nota» vacía). */
+  free: "—",
   archived: "Archivada",
   noReason: "—",
   columns: {
@@ -346,7 +354,7 @@ export const APPOINTMENT_LIST_TEXT = {
     time: "Hora",
     price: "Precio",
     payment: "Pago",
-    reason: "Motivo",
+    reason: "Nota",
     actions: "Acciones",
   },
   filterGroups: { status: "Estado", payment: "Pago", service: "Servicio", allServices: "Todos los servicios" },
@@ -375,7 +383,7 @@ export const APPOINTMENT_LIST_TEXT = {
     noShow: "No vino",
     registerPayment: "Registrar pago",
     open: "Abrir",
-    /** aria-label: "Abrir el turno de Carla López, mar 20/10 10:00". */
+    /** aria-label: "Abrir el turno de Carla López, 20 Oct 10:00". */
     openLabel: (patient: string, date: string, time: string) => `Abrir el turno de ${patient}, ${date} ${time}`,
     attendedLabel: (patient: string) => `Marcar que ${patient} vino`,
     noShowLabel: (patient: string) => `Marcar que ${patient} no vino`,

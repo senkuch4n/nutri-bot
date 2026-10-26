@@ -1,13 +1,13 @@
 "use client";
 
 import { APPOINTMENT_LIST_TEXT, type AppointmentListRow } from "@nutri-bot/core";
-import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { cn } from "@/components/ui";
-import { ROW_STATUS_VISUAL } from "./appointments-table";
+import { PaymentPill, StatusPill } from "./appointments-table";
 
 const T = APPOINTMENT_LIST_TEXT;
 
-/** HU-021 (SDD 7.4). Lista del celular (< 640 px): sin botones ni motivo; tocar la fila abre el detalle. */
+/** HU-021 V1. Lista del celular (< 640 px): filas planas con divisores, mismas pastillas neutras que la
+ *  tabla, sin botones ni motivo; tocar la fila abre el detalle. */
 export function AppointmentsMobileList({
   rows,
   onOpen,
@@ -17,56 +17,53 @@ export function AppointmentsMobileList({
   onOpen?: (id: string, origin: HTMLElement) => void;
 }) {
   return (
-    <GroupedList>
+    <ul className="border-t border-border/60">
       {rows.map((row) => {
-        const visual = ROW_STATUS_VISUAL[row.rowStatus];
-        const Icon = visual.icon;
-        return (
-          <GroupedListRow
-            key={row.id}
-            size="lg"
-            onClick={onOpen ? (e) => onOpen(row.id, e.currentTarget) : undefined}
-            label={
-              <span className="block truncate">
+        const body = (
+          <>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-callout text-foreground">
                 {row.patientLabel}
-                <span className="font-normal text-muted-foreground"> · {row.serviceName}</span>
+                {row.patientArchived ? <span className="text-muted-foreground"> · {T.archived}</span> : null}
               </span>
-            }
-            description={
-              <span className="flex flex-wrap items-center gap-x-1">
-                <span className={cn("inline-flex items-center gap-1 font-medium", visual.text)}>
-                  <Icon className="size-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
-                  {row.statusLabel}
-                </span>
-                <span aria-hidden>·</span>
-                <span className="tabular-nums">
-                  {row.dateLabel}, {row.timeLabel}
-                </span>
-                {row.statusNote ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span>{row.statusNote}</span>
-                  </>
-                ) : null}
-                {row.patientArchived ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span>{T.archived}</span>
-                  </>
-                ) : null}
+              <span className="mt-0.5 block text-footnote tabular-nums text-muted-foreground">
+                {row.dateLabel} · {row.timeLabel}
               </span>
-            }
-            accessory={
-              <span className="flex flex-col items-end text-right">
-                <span className={cn("text-headline tabular-nums", row.payment.state === "free" && "text-muted-foreground")}>
-                  {row.priceLabel}
-                </span>
-                <span className="text-footnote text-muted-foreground">{row.paymentText}</span>
+              <span className="mt-2 flex flex-wrap items-start gap-1.5">
+                <StatusPill row={row} />
+                <PaymentPill row={row} />
               </span>
-            }
-          />
+            </span>
+            <span
+              className={cn(
+                "shrink-0 text-callout tabular-nums",
+                row.payment.state === "free" ? "text-muted-foreground" : "text-foreground",
+              )}
+            >
+              {row.priceLabel}
+            </span>
+          </>
+        );
+        const rowClass = "relative -mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-4 text-left";
+        return (
+          <li key={row.id} className="border-b border-border/60">
+            {onOpen ? (
+              <button
+                type="button"
+                onClick={(e) => onOpen(row.id, e.currentTarget)}
+                className={cn(
+                  rowClass,
+                  "press-none transition-colors duration-hover hover:bg-overlay-hover pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                )}
+              >
+                {body}
+              </button>
+            ) : (
+              <div className={rowClass}>{body}</div>
+            )}
+          </li>
         );
       })}
-    </GroupedList>
+    </ul>
   );
 }

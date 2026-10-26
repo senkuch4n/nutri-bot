@@ -194,7 +194,7 @@ describe("buildAppointmentListRows", () => {
       patientLabel: "Dora Paz",
       serviceId: "s2",
       serviceName: "Antropometría",
-      dateLabel: "jue 29/10",
+      dateLabel: "29 Oct",
       timeLabel: "10:00",
       priceLabel: formatPrice(20000, "ARS"),
       paymentText: "Sin pagos registrados",
@@ -221,7 +221,32 @@ describe("buildAppointmentListRows", () => {
 
   it("shows free appointments without payment actions", () => {
     const free = buildAppointmentListRows([input("Gala", oct(28), "CONFIRMED", { price: 0 })], now, tz, "ARS")[0]!;
-    expect(free).toMatchObject({ priceLabel: "Sin cargo", paymentText: "—", canRegisterPayment: false });
+    expect(free).toMatchObject({ priceLabel: "—", paymentText: "—", canRegisterPayment: false });
+  });
+
+  it("formats the date as day + short month and the time in 24 h without a leading zero", () => {
+    const [early, late] = buildAppointmentListRows(
+      [
+        input("Ivo", new Date("2026-10-05T08:00:00-03:00"), "CONFIRMED"),
+        input("Juli", new Date("2026-10-23T17:30:00-03:00"), "CONFIRMED"),
+      ],
+      now,
+      tz,
+      "ARS",
+    );
+    expect([early!.dateLabel, early!.timeLabel]).toEqual(["5 Oct", "8:00"]);
+    expect([late!.dateLabel, late!.timeLabel]).toEqual(["23 Oct", "17:30"]);
+  });
+
+  it("uses the professional's time zone for the date label, across months", () => {
+    // 31/12 23:30 en Argentina es 1/1 en UTC: la etiqueta sigue siendo la del día local.
+    const nye = buildAppointmentListRows(
+      [input("Kim", new Date("2026-12-31T23:30:00-03:00"), "CONFIRMED"), input("Lu", new Date("2026-08-03T09:15:00-03:00"), "CONFIRMED")],
+      now,
+      tz,
+      "ARS",
+    );
+    expect(nye.map((r) => `${r.dateLabel} ${r.timeLabel}`)).toEqual(["3 Ago 9:15", "31 Dic 23:30"]);
   });
 
   it("breaks ties at the same time by id", () => {

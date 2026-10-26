@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState, type ReactNode } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { ListFilter, Search } from "lucide-react";
 import {
   APPOINTMENT_LIST_TEXT,
   DEFAULT_APPOINTMENT_LIST_FILTERS,
@@ -14,7 +14,7 @@ import { Label } from "@/components/primitives/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/primitives/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/primitives/radio-group";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/primitives/sheet";
-import { Button, Select } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 
 const T = APPOINTMENT_LIST_TEXT;
 
@@ -73,34 +73,49 @@ function RadioOptions<V extends string>({
   );
 }
 
-/** HU-021 (SDD 7.5). Botón "Filtros" con popover (≥ 640 px) o sheet inferior (< 640 px). Cada cambio se
- *  aplica al instante (sin "Aplicar"); quien llama lo escribe en la URL. */
+/** HU-021 (SDD 7.5 + V1). Botón "Filtros" con popover (≥ 640 px) o sheet inferior (< 640 px). Adentro van
+ *  el buscador por paciente y los filtros de estado, pago y servicio. Cada cambio se aplica al instante (sin
+ *  "Aplicar"); quien llama lo escribe en la URL. */
 export function TurnosFilters({
   filters,
   services,
   wide,
+  resultCount,
   onChange,
+  onQueryChange,
 }: {
   filters: AppointmentListFilters;
   /** Todos los servicios; el grupo "Servicio" solo se muestra si hay más de uno. */
   services: { id: string; name: string }[];
   wide: boolean;
+  /** Turnos visibles con los filtros actuales (pie del panel). */
+  resultCount: number;
   onChange: (next: AppointmentListFilters) => void;
+  /** El buscador tiene estado propio en quien llama (para no mover el cursor). */
+  onQueryChange: (query: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const serviceSelectId = useId();
+  const searchId = useId();
   const count = activeAppointmentFilterCount(filters);
+  // El buscador vive dentro del panel: el indicador del botón también lo cuenta.
+  const shown = count + (filters.query.trim() ? 1 : 0);
 
   const trigger = (
-    <Button variant="secondary" aria-label={T.filtersLabel(count)} onClick={wide ? undefined : () => setOpen(true)}>
-      <SlidersHorizontal aria-hidden />
+    <Button
+      variant="ghost"
+      className="font-normal"
+      aria-label={T.filtersLabel(shown)}
+      onClick={wide ? undefined : () => setOpen(true)}
+    >
+      <ListFilter aria-hidden />
       {T.filters}
-      {count > 0 ? (
+      {shown > 0 ? (
         <span
           aria-hidden
-          className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-footnote font-semibold tabular-nums text-primary-foreground"
+          className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-foreground px-1.5 text-footnote font-semibold tabular-nums text-background"
         >
-          {count}
+          {shown}
         </span>
       ) : null}
     </Button>
@@ -108,6 +123,28 @@ export function TurnosFilters({
 
   const body = (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <label htmlFor={searchId} className="block text-caption uppercase text-muted-foreground">
+          {T.columns.patient}
+        </label>
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            id={searchId}
+            type="search"
+            aria-label={T.searchLabel}
+            value={filters.query}
+            onChange={(e) => onQueryChange(e.target.value)}
+            placeholder={T.searchPlaceholder}
+            spellCheck={false}
+            className="h-11 pl-9"
+            autoComplete="off"
+          />
+        </div>
+      </div>
       <FilterGroup legend={T.filterGroups.status}>
         <RadioOptions
           name="estado"
@@ -148,7 +185,8 @@ export function TurnosFilters({
           </Select>
         </div>
       ) : null}
-      <div className="flex justify-end border-t pt-3">
+      <div className="flex items-center justify-between gap-3 border-t pt-3">
+        <p className="text-subheadline tabular-nums text-muted-foreground">{T.count(resultCount)}</p>
         <Button
           variant="plain"
           size="sm"

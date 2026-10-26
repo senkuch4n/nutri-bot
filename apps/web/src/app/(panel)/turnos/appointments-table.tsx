@@ -2,17 +2,26 @@
 
 import {
   ArrowUpRight,
+  BadgeCheck,
   Banknote,
-  CalendarCheck,
-  CalendarClock,
+  BanknoteX,
   Check,
+  Circle,
+  CircleAlert,
   CircleCheck,
   CircleSlash,
+  CircleX,
   Clock,
+  Coins,
   UserX,
   type LucideIcon,
 } from "lucide-react";
-import { APPOINTMENT_LIST_TEXT, type AppointmentListRow, type AppointmentRowStatus } from "@nutri-bot/core";
+import {
+  APPOINTMENT_LIST_TEXT,
+  type AppointmentListRow,
+  type AppointmentPaymentState,
+  type AppointmentRowStatus,
+} from "@nutri-bot/core";
 import {
   Table,
   TableBody,
@@ -26,52 +35,57 @@ import { AppointmentReasonCell } from "../pacientes/[id]/appointment-reason-cell
 
 const T = APPOINTMENT_LIST_TEXT;
 
-/** HU-021 (SDD 7.3). Ícono y colores de cada estado: el color nunca es el único indicador. `pill` = pastilla
- *  suave de la tabla; `text` = texto con color de la lista del celular. */
-export const ROW_STATUS_VISUAL: Record<AppointmentRowStatus, { icon: LucideIcon; pill: string; text: string }> = {
-  upcoming: { icon: CalendarCheck, pill: "bg-info-muted text-info", text: "text-info" },
-  unclosed: { icon: CalendarClock, pill: "bg-warning-muted text-warning", text: "text-warning" },
-  completed: { icon: CircleCheck, pill: "bg-success-muted text-success", text: "text-success" },
-  no_show: { icon: UserX, pill: "bg-destructive-muted text-destructive", text: "text-destructive" },
-  cancelled: { icon: CircleSlash, pill: "bg-secondary text-muted-foreground", text: "text-muted-foreground" },
-  deposit_unpaid: { icon: CircleSlash, pill: "bg-secondary text-muted-foreground", text: "text-muted-foreground" },
-  awaiting_deposit: { icon: Clock, pill: "bg-warning-muted text-warning", text: "text-warning" },
+/** HU-021 V1 (referencia visual). Ícono de cada estado: las pastillas son neutras, así que el ícono y el
+ *  texto son los que distinguen el estado (el color nunca es el indicador). */
+export const ROW_STATUS_ICON: Record<AppointmentRowStatus, LucideIcon> = {
+  upcoming: Circle,
+  unclosed: CircleAlert,
+  completed: CircleCheck,
+  no_show: CircleX,
+  cancelled: CircleSlash,
+  deposit_unpaid: CircleSlash,
+  awaiting_deposit: Clock,
 };
+
+/** Ícono de lo registrado como pagado. "free" ("—") va sin pastilla. */
+const PAYMENT_ICON: Record<Exclude<AppointmentPaymentState, "free">, LucideIcon> = {
+  paid: BadgeCheck,
+  partial: Coins,
+  none: BanknoteX,
+};
+
+/** Pastilla neutra con borde fino (Estado y Pago, tabla y celular). */
+const pillClass =
+  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-background px-2.5 py-0.5 text-footnote text-foreground more-contrast:border-input";
+
+/** Acción de la fila con aspecto de texto gris («Abrir ↗», «Vino», «Registrar pago»). */
+const textActionClass = "px-2 font-normal text-muted-foreground hover:text-foreground";
 
 /** Id del botón "Abrir" de la fila: al cerrar el detalle o marcar "Vino", el foco vuelve ahí. */
 export function openButtonId(appointmentId: string): string {
   return `turno-abrir-${appointmentId}`;
 }
 
-function StatusPill({ row }: { row: AppointmentListRow }) {
-  const visual = ROW_STATUS_VISUAL[row.rowStatus];
-  const Icon = visual.icon;
+export function StatusPill({ row }: { row: AppointmentListRow }) {
+  const Icon = ROW_STATUS_ICON[row.rowStatus];
   return (
-    <div className="flex flex-col items-start gap-0.5">
-      <span
-        className={cn(
-          "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-footnote font-semibold more-contrast:border more-contrast:border-current",
-          visual.pill,
-        )}
-      >
-        <Icon className="size-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
+    <span className="inline-flex flex-col items-start gap-0.5">
+      <span className={pillClass}>
+        <Icon className="size-3.5 shrink-0" strokeWidth={2} aria-hidden />
         {row.statusLabel}
       </span>
       {row.statusNote ? <span className="text-footnote text-muted-foreground">{row.statusNote}</span> : null}
-    </div>
+    </span>
   );
 }
 
-/** R8: texto neutro, sin tonos de advertencia. "—" (sin cargo) va sin pastilla. */
-function PaymentPill({ row }: { row: AppointmentListRow }) {
+/** R8: neutra, sin tonos de advertencia. "—" (sin cargo) va sin pastilla. */
+export function PaymentPill({ row }: { row: AppointmentListRow }) {
   if (row.payment.state === "free") return <span className="text-muted-foreground">{row.paymentText}</span>;
+  const Icon = PAYMENT_ICON[row.payment.state];
   return (
-    <span
-      className={cn(
-        "inline-flex whitespace-nowrap rounded-full bg-secondary px-2.5 py-0.5 text-footnote font-medium more-contrast:border more-contrast:border-input",
-        row.payment.state === "none" ? "text-muted-foreground" : "text-foreground",
-      )}
-    >
+    <span className={pillClass}>
+      <Icon className="size-3.5 shrink-0" strokeWidth={2} aria-hidden />
       {row.paymentText}
     </span>
   );
@@ -85,7 +99,8 @@ export interface AppointmentRowActions {
   onRegisterPayment: (row: AppointmentListRow) => void;
 }
 
-/** HU-021 (SDD 7.3). Tabla de escritorio (≥ 640 px). La fila no es clickeable; "Abrir" sí. */
+/** HU-021 V1. Tabla de escritorio (≥ 640 px), plana sobre el fondo de la página. La fila no es
+ *  clickeable; "Abrir" sí. */
 export function AppointmentsTable({
   rows,
   caption,
@@ -97,112 +112,114 @@ export function AppointmentsTable({
   /** Sin acciones, la columna queda vacía. */
   actions?: AppointmentRowActions;
 }) {
+  const head = "h-10 font-normal";
   return (
-    <div className="overflow-hidden rounded-xl bg-card shadow-card more-contrast:border more-contrast:border-input">
-      <Table>
-        <caption className="sr-only">{caption}</caption>
-        <TableHeader className="bg-card">
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="pl-4">{T.columns.status}</TableHead>
-            <TableHead>{T.columns.patient}</TableHead>
-            <TableHead>{T.columns.service}</TableHead>
-            <TableHead>{T.columns.date}</TableHead>
-            <TableHead>{T.columns.time}</TableHead>
-            <TableHead numeric>{T.columns.price}</TableHead>
-            <TableHead>{T.columns.payment}</TableHead>
-            <TableHead>{T.columns.reason}</TableHead>
-            <TableHead className="pr-4">
-              <span className="sr-only">{T.columns.actions}</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row) => {
-            const busy = actions?.busy?.id === row.id;
-            const disabled = actions?.busy != null;
-            return (
-              <TableRow key={row.id}>
-                <TableCell className="pl-4">
-                  <StatusPill row={row} />
-                </TableCell>
-                <TableCell>
-                  <span className="inline-flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{row.patientLabel}</span>
-                    {row.patientArchived ? <Badge tone="neutral">{T.archived}</Badge> : null}
-                  </span>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{row.serviceName}</TableCell>
-                <TableCell className="whitespace-nowrap tabular-nums">{row.dateLabel}</TableCell>
-                <TableCell className="tabular-nums">{row.timeLabel}</TableCell>
-                <TableCell numeric className={cn("whitespace-nowrap", row.payment.state === "free" && "text-muted-foreground")}>
-                  {row.priceLabel}
-                </TableCell>
-                <TableCell>
-                  <PaymentPill row={row} />
-                </TableCell>
-                <TableCell className="max-w-[14rem]">
-                  <AppointmentReasonCell reason={row.reason} />
-                </TableCell>
-                <TableCell className="pr-4">
-                  {actions ? (
-                    <div className="flex items-center justify-end gap-1">
-                      {row.canClose ? (
-                        <>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={disabled}
-                            loading={busy && actions.busy?.status === "COMPLETED"}
-                            aria-label={T.actions.attendedLabel(row.patientLabel)}
-                            onClick={() => actions.onCloseAppointment(row, "COMPLETED")}
-                          >
-                            {busy && actions.busy?.status === "COMPLETED" ? null : <Check aria-hidden />}
-                            {T.actions.attended}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={disabled}
-                            loading={busy && actions.busy?.status === "NO_SHOW"}
-                            aria-label={T.actions.noShowLabel(row.patientLabel)}
-                            onClick={() => actions.onCloseAppointment(row, "NO_SHOW")}
-                          >
-                            {busy && actions.busy?.status === "NO_SHOW" ? null : <UserX aria-hidden />}
-                            {T.actions.noShow}
-                          </Button>
-                        </>
-                      ) : null}
-                      {row.canRegisterPayment ? (
+    <Table>
+      <caption className="sr-only">{caption}</caption>
+      <TableHeader className="bg-background [&_tr]:border-border/60">
+        <TableRow className="hover:bg-transparent">
+          <TableHead className={cn(head, "pl-0")}>{T.columns.status}</TableHead>
+          <TableHead className={head}>{T.columns.patient}</TableHead>
+          <TableHead className={head}>{T.columns.date}</TableHead>
+          <TableHead className={head}>{T.columns.time}</TableHead>
+          <TableHead className={head}>{T.columns.price}</TableHead>
+          <TableHead className={head}>{T.columns.payment}</TableHead>
+          <TableHead className={head}>{T.columns.reason}</TableHead>
+          <TableHead className={cn(head, "pr-0")}>
+            <span className="sr-only">{T.columns.actions}</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody className="[&_tr:last-child]:border-b">
+        {rows.map((row) => {
+          const busy = actions?.busy?.id === row.id;
+          const disabled = actions?.busy != null;
+          return (
+            <TableRow key={row.id} className="border-border/60 hover:bg-transparent">
+              <TableCell className="h-16 py-3 pl-0">
+                <StatusPill row={row} />
+              </TableCell>
+              <TableCell className="py-3">
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <span>{row.patientLabel}</span>
+                  {row.patientArchived ? <Badge tone="neutral">{T.archived}</Badge> : null}
+                </span>
+              </TableCell>
+              <TableCell className="whitespace-nowrap py-3 tabular-nums">{row.dateLabel}</TableCell>
+              <TableCell className="whitespace-nowrap py-3 tabular-nums">{row.timeLabel}</TableCell>
+              <TableCell
+                className={cn("whitespace-nowrap py-3 tabular-nums", row.payment.state === "free" && "text-muted-foreground")}
+              >
+                {row.priceLabel}
+              </TableCell>
+              <TableCell className="py-3">
+                <PaymentPill row={row} />
+              </TableCell>
+              <TableCell className="max-w-[14rem] py-3">
+                <AppointmentReasonCell reason={row.reason} />
+              </TableCell>
+              <TableCell className="py-3 pr-0">
+                {actions ? (
+                  <div className="flex items-center justify-end gap-0.5">
+                    {row.canClose ? (
+                      <>
                         <Button
-                          variant="plain"
+                          variant="ghost"
                           size="sm"
+                          className={textActionClass}
                           disabled={disabled}
-                          aria-label={T.actions.registerPaymentLabel(row.patientLabel)}
-                          onClick={() => actions.onRegisterPayment(row)}
+                          loading={busy && actions.busy?.status === "COMPLETED"}
+                          aria-label={T.actions.attendedLabel(row.patientLabel)}
+                          onClick={() => actions.onCloseAppointment(row, "COMPLETED")}
                         >
-                          <Banknote aria-hidden />
-                          {T.actions.registerPayment}
+                          {busy && actions.busy?.status === "COMPLETED" ? null : <Check aria-hidden />}
+                          {T.actions.attended}
                         </Button>
-                      ) : null}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={textActionClass}
+                          disabled={disabled}
+                          loading={busy && actions.busy?.status === "NO_SHOW"}
+                          aria-label={T.actions.noShowLabel(row.patientLabel)}
+                          onClick={() => actions.onCloseAppointment(row, "NO_SHOW")}
+                        >
+                          {busy && actions.busy?.status === "NO_SHOW" ? null : <UserX aria-hidden />}
+                          {T.actions.noShow}
+                        </Button>
+                      </>
+                    ) : null}
+                    {row.canRegisterPayment ? (
                       <Button
-                        id={openButtonId(row.id)}
                         variant="ghost"
                         size="sm"
-                        className="text-muted-foreground hover:text-foreground"
-                        aria-label={T.actions.openLabel(row.patientLabel, row.dateLabel, row.timeLabel)}
-                        onClick={(e) => actions.onOpen(row.id, e.currentTarget)}
+                        className={textActionClass}
+                        disabled={disabled}
+                        aria-label={T.actions.registerPaymentLabel(row.patientLabel)}
+                        onClick={() => actions.onRegisterPayment(row)}
                       >
-                        {T.actions.open}
-                        <ArrowUpRight aria-hidden />
+                        <Banknote aria-hidden />
+                        {T.actions.registerPayment}
                       </Button>
-                    </div>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+                    ) : null}
+                    <Button
+                      id={openButtonId(row.id)}
+                      variant="ghost"
+                      size="sm"
+                      className={textActionClass}
+                      aria-label={T.actions.openLabel(row.patientLabel, row.dateLabel, row.timeLabel)}
+                      onClick={(e) => actions.onOpen(row.id, e.currentTarget)}
+                    >
+                      {T.actions.open}
+                      <ArrowUpRight aria-hidden />
+                    </Button>
+                  </div>
+                ) : null}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

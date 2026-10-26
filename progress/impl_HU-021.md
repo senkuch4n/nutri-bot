@@ -137,3 +137,96 @@ abrir el detalle en escritorio y en celular, Escape y foco en «Abrir».
 - Recorrido visual manual (ver «Sin verificar visualmente»).
 - §12 de la SDD sigue igual: seña vencida reconocida por texto (sin migración) y la diferencia T6 entre el calendario
   y `/turnos` en «Registrar pago».
+
+## Ajuste visual (V1), 2026-10-26
+
+Pedido del usuario: `/turnos` tiene que copiar la referencia (`/tmp/hu-021-referencia-2.png`, pantalla «Citas»).
+Donde la §7 de la SDD contradice la referencia, manda la referencia (decisión explícita del usuario). Solo
+cambia la presentación: datos, server actions, filtros en la URL, `MorphDialog`, «Deshacer» y el foco quedan
+igual.
+
+### Qué cambió
+
+- **Encabezado** (`turnos-client.tsx`): sale `PageHeader` (y su descripción). A la izquierda `h1` «Turnos» y al
+  lado el selector de mes chico (`‹ Octubre 2026 ›`, mismos `turnosHref`, `nav aria-label="Mes"`, `h2
+  aria-live="polite"`; chevrons de 32 px con `touch-target` de 44 px en puntero grueso). A la derecha «Filtros»
+  (ghost, ícono `ListFilter`) y «+ Nuevo turno» en pastilla negra (`rounded-full bg-foreground text-background`).
+  Sin selector lista/grilla. Se sacaron del cuerpo la fila del mes y la fila buscador + contador.
+- **Filtros** (`turnos-filters.tsx`): el buscador por paciente pasa adentro del popover (sheet inferior en el
+  celular), arriba de Estado / Pago / Servicio. Sigue escribiendo `?q=` igual que antes (estado local en el
+  cliente + `replaceUrlInRouter`). El indicador del botón cuenta los filtros activos **más** el buscador si tiene
+  texto (el buscador ya no se ve, así que hace falta avisar que está filtrando); `aria-label` =
+  `filtersLabel(n)`. El pie muestra «N turnos» al lado de «Limpiar filtros».
+- **Tarjetas**: una fila de 4 (2 columnas en el celular), `bg-muted rounded-xl`, sin sombra ni tarjeta blanca;
+  etiqueta chica arriba y número grande abajo. «Totales» con la etiqueta en `text-foreground`; su «N sin cerrar»
+  queda como renglón gris chico. `more-contrast` agrega borde.
+- **Tabla** (`appointments-table.tsx`): plana sobre el fondo, sin contenedor, sombra ni borde. Encabezados
+  chicos grises sin fondo; filas de 64 px separadas por `border-border/60` (también debajo de la última).
+  Columnas: Estado · Paciente · Fecha · Hora · Precio · Pago · Nota · «Abrir ↗». **Sin «Servicio».** «Nota»
+  sigue siendo `AppointmentReasonCell` (motivo truncado, expandible, «—» si no hay). Precio alineado a la
+  izquierda, como la referencia.
+- **Pastillas** Estado y Pago: neutras, `border border-border rounded-full`, texto chico e ícono a la
+  izquierda, sin fondos de color. Íconos de estado: Pendiente `Circle` (el «○» de la referencia), Sin cerrar
+  `CircleAlert`, Completado `CircleCheck`, No vino `CircleX`, Canceló `CircleSlash`, Esperando seña `Clock`.
+  Pago: Pagado `BadgeCheck`, Seña pagada `Coins`, Sin pagos registrados `BanknoteX`; «—» (sin cargo) sin
+  pastilla. El estado se distingue por ícono + texto, nunca por color.
+- **Acciones de la fila**: «Vino», «No vino» (solo «Sin cerrar») y «Registrar pago» pasan a texto gris ghost,
+  igual que «Abrir». Mismos `aria-label`, `loading`/`disabled`, y el foco vuelve a «Abrir»
+  (`openButtonId`) después de «Vino» / «No vino». «Abrir» sigue abriendo el `MorphDialog` con la fila como
+  origen.
+- **Celular** (`appointments-mobile-list.tsx`): deja `GroupedList`; filas planas con divisores, paciente,
+  «23 Oct · 8:00», las mismas pastillas neutras y el precio a la derecha. Cada fila sigue siendo un `button`
+  que abre el detalle con origen en la fila.
+- **`loading.tsx`**: esqueleto del layout nuevo (título + mes, dos botones, 4 tarjetas grises, filas planas).
+- **Core** (`packages/core/src/appointment-list.ts`, con su test): `dateLabel` = «23 Oct» (día sin cero + mes
+  corto, zona de la profesional; antes «jue 29/10»); `timeLabel` = «8:00» (24 h sin cero adelante; antes
+  `formatTime` → «08:00»; `formatTime` no se tocó); `APPOINTMENT_LIST_TEXT.free` = «—» (antes «Sin cargo»);
+  `columns.reason` = «Nota» (antes «Motivo»). `openLabel` usa el `dateLabel` nuevo («Abrir el turno de Carla
+  López, 20 Oct 10:00»).
+
+### Test-first
+
+`packages/core/src/appointment-list.test.ts`: primero se cambiaron las expectativas (`dateLabel` «29 Oct»,
+`priceLabel` «—» en sin cargo) y se agregaron dos tests nuevos (8:00 sin cero y 17:30; fechas en la zona de
+la profesional en agosto y el 31/12 a las 23:30, que en UTC ya es 1/1). RED observado: 4 fallos
+(«lun 03/08 09:15» en vez de «3 Ago 9:15», etc.). Después de implementar: 38/38 en verde. No se relajó
+ninguna aserción.
+
+### Verificación (desde la raíz)
+
+- `npm run typecheck`: exit 0 (core, db, bot y web sin errores).
+- `npx vitest run apps/web packages/core`: 129 archivos, 2147 tests, todos en verde.
+- Sin base ni WhatsApp: no se tocó la base de desarrollo ni se mandaron mensajes.
+- **Sin verificación visual en el navegador**: el panel exige login con Google; queda para el recorrido del
+  usuario.
+
+### Desvíos respecto de la referencia (y por qué)
+
+- **Hora en 24 h** («8:00», no «8:00 AM»): aprobado por el usuario.
+- **Sin «Por cobrar» ni selector lista/grilla**: «Por cobrar» quedó fuera de alcance en la HU (Resoluciones
+  2026-10-26) y la grilla también; son 4 tarjetas en vez de 5.
+- **Selector de mes al lado del título**: no está en la referencia (que no tiene período); lo pidió el usuario.
+- **Vacío como «—» (raya) y no «-» (guion)**: es el mismo carácter que ya usan «Nota» vacía
+  (`AppointmentReasonCell`) y Pago sin cargo; así las tres columnas muestran lo mismo. Es un cambio de un
+  carácter en `APPOINTMENT_LIST_TEXT.free` si se prefiere el guion.
+- **Texto de Pago**: sigue siendo «Sin pagos registrados» / «Seña pagada · $ X» / «Pagado» (R8 de la HU), no
+  «Cobro pendiente» de la referencia.
+- **Celular**: sin servicio en la fila, igual que la tabla (la columna «Servicio» salió); el servicio se ve en
+  el detalle.
+- **Peso tipográfico**: título y números de las tarjetas en `font-medium` (la referencia no usa negrita), sobre
+  los tamaños del sistema (`text-title-1`, `text-metric-md`).
+
+### Skills
+
+Los skills de UI que pide el protocolo (`ui-ux-pro-max`, `ui-styling`, `web-design-guidelines`) no están
+instalados en esta sesión. Se aplicó `refactoring-ui` y se hizo el autochequeo a mano: foco visible en todo lo
+interactivo, `aria-live` del mes y del contador (este último ahora `sr-only`), nombres accesibles que contienen
+el texto visible («Paciente» ⊂ `searchLabel`), objetivo táctil de 44 px, `more-contrast` con borde en tarjetas y
+pastillas, sin animaciones nuevas (el esqueleto sigue con `motion-safe:animate-pulse`). Contraste de
+`muted-foreground` (#636366) sobre `muted` (#F5F5F7) ≈ 5,6:1.
+
+### Contrato compartido
+
+Sin cambios de firmas de core: `AppointmentListRow` conserva sus campos (cambia el formato de `dateLabel`,
+`timeLabel` y el texto de `priceLabel` sin cargo). En web, `ROW_STATUS_VISUAL` pasa a `ROW_STATUS_ICON` (solo lo
+usaban la tabla y la lista del celular) y `TurnosFilters` suma las props `resultCount` y `onQueryChange`.

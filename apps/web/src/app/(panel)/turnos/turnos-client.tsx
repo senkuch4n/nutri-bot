@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CalendarX, ChevronLeft, ChevronRight, Plus, Search, SearchX } from "lucide-react";
+import { CalendarX, ChevronLeft, ChevronRight, Plus, SearchX } from "lucide-react";
 import {
   AGENDA_TEXT,
   APPOINTMENT_LIST_TEXT,
@@ -22,7 +22,7 @@ import {
   type AppointmentListInput,
   type AppointmentListRow,
 } from "@nutri-bot/core";
-import { Button, EmptyState, Input, Metric, PageHeader } from "@/components/ui";
+import { Button, EmptyState, cn } from "@/components/ui";
 import { usePendingDeletions } from "@/lib/deferred-delete";
 import { notify } from "@/lib/notify";
 import { replaceUrlInRouter } from "@/lib/patient-tab-route";
@@ -40,10 +40,33 @@ import { TurnosFilters } from "./turnos-filters";
 
 const T = APPOINTMENT_LIST_TEXT;
 
-const navButton =
-  "inline-flex size-11 items-center justify-center rounded-full text-primary press-none transition-colors duration-hover hover:bg-overlay-hover pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+/** ‹ › del selector de mes: chico y discreto (44 px de objetivo táctil con puntero grueso). */
+const monthNavButton =
+  "relative inline-flex size-8 items-center justify-center rounded-full text-muted-foreground press-none touch-target transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
-const cardClass = "rounded-xl bg-card px-5 py-4 shadow-card more-contrast:border more-contrast:border-input";
+const countFormat = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+
+/** HU-021 V1. Tarjeta gris suave: etiqueta chica arriba y número grande abajo. */
+function StatCard({
+  label,
+  value,
+  caption,
+  primary = false,
+}: {
+  label: string;
+  value: number;
+  caption?: string;
+  /** «Totales»: la etiqueta va en el color del texto, no en gris. */
+  primary?: boolean;
+}) {
+  return (
+    <div className="rounded-xl bg-muted px-5 py-4 sm:px-6 sm:py-5 more-contrast:border more-contrast:border-input">
+      <p className={cn("text-subheadline", primary ? "text-foreground" : "text-muted-foreground")}>{label}</p>
+      <p className="mt-1 text-metric-md font-medium tabular-nums">{countFormat.format(value)}</p>
+      {caption ? <p className="mt-0.5 text-footnote text-muted-foreground">{caption}</p> : null}
+    </div>
+  );
+}
 
 /** T15: mientras la cancelación con "Deshacer" está pendiente, el turno se ve como cancelado. */
 function withPendingCancel(a: TurnosAppointment, pending: ReadonlySet<string>): TurnosAppointment {
@@ -97,7 +120,8 @@ function turnosHref(month: string, currentMonth: string, filters: AppointmentLis
   return q ? `/turnos?${q}` : "/turnos";
 }
 
-/** HU-021 (SDD 7.1). Pantalla "Turnos": tarjetas, buscador y lista del mes. Toda la derivación es de core. */
+/** HU-021 (SDD 7.1 + V1). Pantalla "Turnos": encabezado con mes y «Filtros», tarjetas y lista del mes. Toda
+ *  la derivación es de core. */
 export function TurnosClient({
   appointments,
   month,
@@ -234,7 +258,10 @@ export function TurnosClient({
   const nextMonth = shiftMonthKey(month, 1);
 
   const newAppointmentButton = (
-    <Button onClick={() => setCreating(true)}>
+    <Button
+      className="rounded-full bg-foreground text-background hover:bg-foreground/85 pressed:bg-foreground/75"
+      onClick={() => setCreating(true)}
+    >
       <Plus aria-hidden />
       {T.newAppointment}
     </Button>
@@ -242,87 +269,64 @@ export function TurnosClient({
 
   return (
     <div>
-      <PageHeader
-        title={T.title}
-        description={T.description}
-        action={
-          <>
-            <TurnosFilters filters={filters} services={filterServices} wide={wide} onChange={writeFilters} />
-            {newAppointmentButton}
-          </>
-        }
-      />
-
-      <nav aria-label={T.monthNav.label} className="mb-6 flex items-center gap-1">
-        <Link
-          href={turnosHref(prevMonth, currentMonth, filters)}
-          className={navButton}
-          aria-label={T.monthNav.prev(monthTitle(prevMonth))}
-          title="Mes anterior"
-        >
-          <ChevronLeft className="size-5" strokeWidth={2} aria-hidden />
-        </Link>
-        <h2 className="min-w-40 text-center text-title-3 tabular-nums" aria-live="polite">
-          {title}
-        </h2>
-        <Link
-          href={turnosHref(nextMonth, currentMonth, filters)}
-          className={navButton}
-          aria-label={T.monthNav.next(monthTitle(nextMonth))}
-          title="Mes siguiente"
-        >
-          <ChevronRight className="size-5" strokeWidth={2} aria-hidden />
-        </Link>
-      </nav>
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+          <h1 className="text-title-1 font-medium">{T.title}</h1>
+          <nav aria-label={T.monthNav.label} className="flex items-center">
+            <Link
+              href={turnosHref(prevMonth, currentMonth, filters)}
+              className={monthNavButton}
+              aria-label={T.monthNav.prev(monthTitle(prevMonth))}
+              title="Mes anterior"
+            >
+              <ChevronLeft className="size-4" strokeWidth={2} aria-hidden />
+            </Link>
+            <h2 className="min-w-32 text-center text-subheadline tabular-nums text-muted-foreground" aria-live="polite">
+              {title}
+            </h2>
+            <Link
+              href={turnosHref(nextMonth, currentMonth, filters)}
+              className={monthNavButton}
+              aria-label={T.monthNav.next(monthTitle(nextMonth))}
+              title="Mes siguiente"
+            >
+              <ChevronRight className="size-4" strokeWidth={2} aria-hidden />
+            </Link>
+          </nav>
+        </div>
+        <div className="flex items-center gap-2">
+          <TurnosFilters
+            filters={filters}
+            services={filterServices}
+            wide={wide}
+            resultCount={filtered.length}
+            onChange={writeFilters}
+            onQueryChange={changeQuery}
+          />
+          {newAppointmentButton}
+        </div>
+      </header>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className={cardClass}>
-          <Metric
-            label={T.cards.total}
-            value={cards.total}
-            decimals={0}
-            caption={cards.unclosed > 0 ? T.cards.unclosed(cards.unclosed) : undefined}
-          />
-        </div>
-        <div className={cardClass}>
-          <Metric label={T.cards.pending} value={cards.pending} decimals={0} />
-        </div>
-        <div className={cardClass}>
-          <Metric label={T.cards.completed} value={cards.completed} decimals={0} />
-        </div>
-        <div className={cardClass}>
-          <Metric label={T.cards.cancelled} value={cards.cancelled} decimals={0} />
-        </div>
+        <StatCard
+          label={T.cards.total}
+          value={cards.total}
+          caption={cards.unclosed > 0 ? T.cards.unclosed(cards.unclosed) : undefined}
+          primary
+        />
+        <StatCard label={T.cards.pending} value={cards.pending} />
+        <StatCard label={T.cards.completed} value={cards.completed} />
+        <StatCard label={T.cards.cancelled} value={cards.cancelled} />
       </div>
 
       <section aria-label={T.tableCaption(title)}>
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="relative w-full sm:max-w-xs">
-            <label htmlFor="turnos-buscar" className="sr-only">
-              {T.searchLabel}
-            </label>
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              id="turnos-buscar"
-              type="search"
-              value={query}
-              onChange={(e) => changeQuery(e.target.value)}
-              placeholder={T.searchPlaceholder}
-              spellCheck={false}
-              className="h-11 pl-9"
-              autoComplete="off"
-            />
-          </div>
-          <p className="shrink-0 text-subheadline tabular-nums text-muted-foreground" aria-live="polite">
-            {T.count(filtered.length)}
-          </p>
-        </div>
+        {/* El contador ya no se ve en la pantalla (vive en el pie de «Filtros»), pero se sigue anunciando. */}
+        <p className="sr-only" aria-live="polite">
+          {T.count(filtered.length)}
+        </p>
 
         {filtered.length === 0 ? (
-          <div className="rounded-xl bg-card shadow-card more-contrast:border more-contrast:border-input">
+          <div className="border-t border-border/60">
             {filtering ? (
               <EmptyState
                 icon={SearchX}
