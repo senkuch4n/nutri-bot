@@ -60,7 +60,8 @@ export function RangeSheet({
   const fallbackFocus = useRef<HTMLElement | null>(null);
 
   return (
-    <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin}>
+    // `originLabel`: el texto del horario (o "Agregar horario") viaja con la tarjeta mientras crece.
+    <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin} originLabel>
       <MorphDialogContent
         onCloseAutoFocus={(event) => {
           // Si el horario que abrió el panel se borró, el foco va a "Agregar horario" de ese día.
