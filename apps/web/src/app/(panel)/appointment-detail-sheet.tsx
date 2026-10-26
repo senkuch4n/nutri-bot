@@ -6,7 +6,9 @@ import {
   Bell,
   CalendarCheck,
   Check,
+  CircleSlash,
   ClipboardList,
+  Clock,
   ExternalLink,
   MessageCircle,
   Pencil,
@@ -17,6 +19,7 @@ import {
 } from "lucide-react";
 import {
   AGENDA_TEXT,
+  APPOINTMENT_LIST_TEXT,
   APPOINTMENT_STATUS_TEXT,
   BOOKING_REASON_MAX,
   HIDDEN_NUMBER_TEXT,
@@ -27,7 +30,9 @@ import {
   formatInTimeZone,
   formatPhone,
   formatPrice,
+  isUnpaidDepositCancellation,
   whatsappChatUrl,
+  type AppointmentStatusLike,
 } from "@nutri-bot/core";
 import { buttonVariants } from "@/components/primitives/button";
 import { Separator } from "@/components/primitives/separator";
@@ -53,7 +58,8 @@ export interface SelectedAppointment {
   id: string;
   start: string;
   end: string;
-  status: "CONFIRMED" | "COMPLETED" | "NO_SHOW";
+  /** HU-021: también CANCELLED y AWAITING_PAYMENT (solo los abre /turnos, en modo lectura). */
+  status: AppointmentStatusLike;
   patientName: string | null;
   patientPhone: string;
   serviceName: string;
@@ -70,18 +76,63 @@ export interface SelectedAppointment {
   patientLabel: string;
   /** HU-017b-1 (D9): ya tiene un pago total aprobado → no se ofrece "Registrar pago". */
   hasFullPayment: boolean;
+  /** HU-021 (opcionales; solo /turnos los manda): */
+  cancelledBy?: "PATIENT" | "PROFESSIONAL" | null;
+  cancelReason?: string | null;
+  /** appointmentPaymentText: se muestra como fila "Pagos" del detalle. */
+  paymentText?: string;
+  /** D9: saldo (string numérico) para precargar "Registrar pago". */
+  balance?: string;
+  /** Seña configurada del servicio, para el tipo "Seña" del pago. */
+  depositAmount?: string;
 }
 
 const T = AGENDA_TEXT.sheet;
 
 const statusBadge: Record<
-  SelectedAppointment["status"],
-  { tone: "info" | "success" | "danger"; icon: LucideIcon }
+  AppointmentStatusLike,
+  { tone: "info" | "success" | "danger" | "neutral" | "warning"; icon: LucideIcon; text: string }
 > = {
-  CONFIRMED: { tone: "info", icon: CalendarCheck },
-  COMPLETED: { tone: "success", icon: Check },
-  NO_SHOW: { tone: "danger", icon: UserX },
+  CONFIRMED: { tone: "info", icon: CalendarCheck, text: APPOINTMENT_STATUS_TEXT.CONFIRMED },
+  COMPLETED: { tone: "success", icon: Check, text: APPOINTMENT_STATUS_TEXT.COMPLETED },
+  NO_SHOW: { tone: "danger", icon: UserX, text: APPOINTMENT_STATUS_TEXT.NO_SHOW },
+  // HU-021: solo los muestra el detalle en modo lectura de /turnos.
+  CANCELLED: { tone: "neutral", icon: CircleSlash, text: APPOINTMENT_LIST_TEXT.status.cancelled },
+  AWAITING_PAYMENT: { tone: "warning", icon: Clock, text: APPOINTMENT_LIST_TEXT.status.awaiting_deposit },
 };
+
+function StatusBadge({ status }: { status: AppointmentStatusLike }) {
+  const badge = statusBadge[status];
+  const BadgeIcon = badge.icon;
+  return (
+    <Badge tone={badge.tone}>
+      <span className="inline-flex items-center gap-1">
+        <BadgeIcon className="size-3.5" strokeWidth={2.25} aria-hidden />
+        {badge.text}
+      </span>
+    </Badge>
+  );
+}
+
+type AppointmentDetailBodyProps = {
+  appt: SelectedAppointment;
+  tz: string;
+  currency: string;
+  onClose: () => void;
+  onChanged: () => void;
+  onUpdated: (next: SelectedAppointment) => void;
+  onCancel: (appt: SelectedAppointment) => void;
+};
+
+/** HU-021 (T14). Cuerpo del detalle, sin contenedor. Lo usan AppointmentDetailSheet (calendario) y
+ *  AppointmentDetailDialog (/turnos). CANCELLED / AWAITING_PAYMENT → modo lectura. La rama se elige
+ *  antes de cualquier hook (cada rama es un componente propio). */
+export function AppointmentDetailBody(props: AppointmentDetailBodyProps) {
+  if (props.appt.status === "CANCELLED" || props.appt.status === "AWAITING_PAYMENT") {
+    return <ReadOnlyAppointmentBody appt={props.appt} tz={props.tz} currency={props.currency} />;
+  }
+  return <ActiveAppointmentBody {...props} />;
+}
 
 /**
  * Panel lateral **no modal** (reordenamiento 4): sin overlay, el calendario sigue usable y tocar
@@ -147,7 +198,7 @@ export function AppointmentDetailSheet({
         }}
       >
         {shown ? (
-          <AppointmentBody
+          <AppointmentDetailBody
             key={shown.id}
             appt={shown}
             tz={tz}
@@ -166,7 +217,7 @@ export function AppointmentDetailSheet({
 
 type Busy = null | "reminder" | "completed" | "no_show" | "confirm";
 
-function AppointmentBody({
+function ActiveAppointmentBody({
   appt,
   tz,
   currency,
@@ -174,15 +225,7 @@ function AppointmentBody({
   onChanged,
   onUpdated,
   onCancel,
-}: {
-  appt: SelectedAppointment;
-  tz: string;
-  currency: string;
-  onClose: () => void;
-  onChanged: () => void;
-  onUpdated: (next: SelectedAppointment) => void;
-  onCancel: (appt: SelectedAppointment) => void;
-}) {
+}: AppointmentDetailBodyProps) {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
@@ -325,8 +368,6 @@ function AppointmentBody({
     onCancel(appt);
   }
 
-  const badge = statusBadge[appt.status];
-  const BadgeIcon = badge.icon;
   const disabled = busy !== null || savingReason;
   const chatUrl = whatsappChatUrl({ whatsappJid: appt.patientJid, phone: appt.patientPhone });
   const phoneLine =
@@ -357,12 +398,7 @@ function AppointmentBody({
       </SheetHeader>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Badge tone={badge.tone}>
-          <span className="inline-flex items-center gap-1">
-            <BadgeIcon className="size-3.5" strokeWidth={2.25} aria-hidden />
-            {APPOINTMENT_STATUS_TEXT[appt.status]}
-          </span>
-        </Badge>
+        <StatusBadge status={appt.status} />
         {appt.googleSynced ? <span className="text-footnote text-muted-foreground">{T.inGoogle}</span> : null}
       </div>
 
@@ -390,6 +426,12 @@ function AppointmentBody({
       <dl className="mt-5 grid grid-cols-[7rem_1fr] gap-y-3 text-callout">
         <dt className="text-muted-foreground">{T.price}</dt>
         <dd className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</dd>
+        {appt.paymentText !== undefined ? (
+          <>
+            <dt className="text-muted-foreground">{APPOINTMENT_LIST_TEXT.readOnly.payments}</dt>
+            <dd>{appt.paymentText}</dd>
+          </>
+        ) : null}
         <dt className="text-muted-foreground">{T.reason}</dt>
         <dd className="min-w-0">
           {editingReason ? (
@@ -559,6 +601,9 @@ function AppointmentBody({
             label: `${appt.patientLabel} · ${appt.serviceName} · ${whenLabel}`,
             priceSnapshot: appt.price,
             patientLabel: appt.patientLabel,
+            // HU-021 (D9): desde /turnos llegan el saldo y la seña; desde el calendario, undefined.
+            balanceAmount: appt.balance,
+            depositAmount: appt.depositAmount,
           }}
           onDone={(r) => {
             setPaying(false);
@@ -567,6 +612,81 @@ function AppointmentBody({
           }}
         />
       ) : null}
+    </>
+  );
+}
+
+/** HU-021 (D8). Turno CANCELLED o AWAITING_PAYMENT abierto desde /turnos: solo lectura, sin acciones de
+ *  estado, recordatorio, motivo, cancelación ni "Registrar pago". */
+function ReadOnlyAppointmentBody({
+  appt,
+  tz,
+  currency,
+}: {
+  appt: SelectedAppointment;
+  tz: string;
+  currency: string;
+}) {
+  const L = APPOINTMENT_LIST_TEXT.readOnly;
+  const whenLabel = appointmentDayTime(new Date(appt.start), new Date(), tz);
+  const cancelledByText = isUnpaidDepositCancellation(appt.cancelReason)
+    ? L.byDepositExpiry
+    : appt.cancelledBy === "PATIENT"
+      ? L.byPatient
+      : appt.cancelledBy === "PROFESSIONAL"
+        ? L.byProfessional
+        : null;
+
+  return (
+    <>
+      <SheetHeader>
+        <SheetTitle
+          data-appointment-title=""
+          tabIndex={-1}
+          className="rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {appt.patientLabel}
+        </SheetTitle>
+        <SheetDescription>
+          {appt.serviceName} · {capitalizeFirst(whenLabel)}
+        </SheetDescription>
+      </SheetHeader>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <StatusBadge status={appt.status} />
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        <ButtonLink variant="secondary" href={`/pacientes/${appt.patientId}`}>
+          <User aria-hidden />
+          {T.seeProfile}
+        </ButtonLink>
+      </div>
+
+      <dl className="mt-5 grid grid-cols-[7rem_1fr] gap-y-3 text-callout">
+        <dt className="text-muted-foreground">{T.price}</dt>
+        <dd className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</dd>
+        <dt className="text-muted-foreground">{L.payments}</dt>
+        <dd>{appt.paymentText ?? "—"}</dd>
+        <dt className="text-muted-foreground">{T.reason}</dt>
+        <dd className={cn("min-w-0 whitespace-pre-wrap break-words", appt.reason ? "font-medium" : "text-muted-foreground")}>
+          {appt.reason ?? T.noReason}
+        </dd>
+        {appt.status === "CANCELLED" ? (
+          <>
+            {cancelledByText ? (
+              <>
+                <dt className="text-muted-foreground">{L.cancelledBy}</dt>
+                <dd>{cancelledByText}</dd>
+              </>
+            ) : null}
+            <dt className="text-muted-foreground">{L.cancelReason}</dt>
+            <dd className={cn("min-w-0 break-words", appt.cancelReason ? undefined : "text-muted-foreground")}>
+              {appt.cancelReason ?? L.noCancelReason}
+            </dd>
+          </>
+        ) : null}
+      </dl>
     </>
   );
 }
