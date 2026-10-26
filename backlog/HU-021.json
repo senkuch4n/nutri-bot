@@ -10,7 +10,7 @@
   "sdd": "Refactorizaciones/lista-turnos.md",
   "rama": "feat/HU-021-lista-turnos",
   "lock": "https://github.com/senkuch4n/nutri-bot/issues/50",
-  "notas": "Rama sacada de feat/morph-dialog (local, misma persona) porque «Abrir» usa MorphDialog. El usuario pidió no hacer push ni PR hasta que lo pida (2026-10-26). HU validada por el usuario 2026-10-26 (sin tarjeta Por cobrar; queda fuera de alcance). Implementer sin skills de UI: la referencia visual es la captura que pasó el usuario (decisión 2026-10-26). Aprobada en la 1ª revisión (2026-10-26). PR sin abrir: el usuario pidió no tocar GitHub hasta que lo pida.",
+  "notas": "Rama sacada de feat/morph-dialog (local, misma persona) porque «Abrir» usa MorphDialog. El usuario pidió no hacer push ni PR hasta que lo pida (2026-10-26). HU validada por el usuario 2026-10-26 (sin tarjeta Por cobrar; queda fuera de alcance). Implementer sin skills de UI: la referencia visual es la captura que pasó el usuario (decisión 2026-10-26). Aprobada en la 1ª revisión (2026-10-26). PR sin abrir: el usuario pidió no tocar GitHub hasta que lo pida. Ajuste visual V1 (02a464a) para copiar la captura de referencia, pedido por el usuario después de aprobada; sin re-revisión del reviewer (solo UI), verificado por el orquestador.",
   "skills_architect": [
     "ui"
   ],
