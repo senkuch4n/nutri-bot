@@ -1,8 +1,14 @@
 // HU-021 (SDD 5.1). Lista de turnos del panel (/turnos): estado visible de cada fila, lo registrado
 // como pagado, filtros, URL y tarjetas. Todo puro: el cliente lo deriva en memoria sobre el mes.
+import { es as esLocale } from "date-fns/locale";
+import { firstName, patientDisplayName } from "./agenda";
 import { DEPOSIT_AUTO_CANCEL_REASONS } from "./deposits";
-import { formatPrice } from "./format";
+import { formatPrice, formatTime } from "./format";
+import { matchesPatientQuery } from "./patient-directory";
 import type { AppointmentStatusLike } from "./patient-summary";
+import { formatInTimeZone } from "./time";
+import { normalize } from "./wake";
+import { classifyWhatsappJid } from "./whatsapp-contact";
 
 export type AppointmentRowStatus =
   | "upcoming" // CONFIRMED, startsAt > now
@@ -85,6 +91,217 @@ export function canRegisterAppointmentPayment(
   s: AppointmentPaymentSummary,
 ): boolean {
   return (status === "CONFIRMED" || status === "COMPLETED") && (s.state === "partial" || s.state === "none");
+}
+
+/** Lo que el cliente arma desde el DTO del loader (startsAt ya como Date). */
+export interface AppointmentListInput {
+  id: string;
+  startsAt: Date;
+  status: AppointmentStatusLike;
+  cancelReason: string | null;
+  price: number;
+  approvedAmounts: readonly number[];
+  reason: string | null;
+  serviceId: string;
+  serviceName: string;
+  patient: { id: string; name: string | null; phone: string; whatsappJid: string; archived: boolean };
+}
+
+export interface AppointmentListRow {
+  id: string;
+  startsAt: Date;
+  rowStatus: AppointmentRowStatus;
+  /** APPOINTMENT_LIST_TEXT.status[rowStatus]. */
+  statusLabel: string;
+  /** "Seña sin pagar" solo para deposit_unpaid; si no, null. */
+  statusNote: string | null;
+  patientId: string;
+  /** patientDisplayName(patient). */
+  patientLabel: string;
+  /** firstName(patient.name) ?? patientLabel (para el toast de "Vino"). */
+  patientShortName: string;
+  patientArchived: boolean;
+  /** Para matchesPatientQuery (T21). */
+  searchName: string;
+  phoneDigits: string | null;
+  serviceId: string;
+  serviceName: string;
+  /** "jue 29/10" (T20). */
+  dateLabel: string;
+  /** "10:00". */
+  timeLabel: string;
+  /** formatPrice(price, currency) o "Sin cargo" si price es 0. */
+  priceLabel: string;
+  payment: AppointmentPaymentSummary;
+  /** appointmentPaymentText(payment, currency). */
+  paymentText: string;
+  canRegisterPayment: boolean;
+  /** rowStatus === "unclosed": la fila ofrece "Vino" / "No vino". */
+  canClose: boolean;
+  reason: string | null;
+}
+
+/** Arma y ordena (startsAt asc, empate por id) TODAS las filas del mes, incluidas deposit_unpaid. */
+export function buildAppointmentListRows(
+  input: readonly AppointmentListInput[],
+  now: Date,
+  tz: string,
+  currency: string,
+): AppointmentListRow[] {
+  const rows = input.map((a): AppointmentListRow => {
+    const rowStatus = appointmentRowStatus(a, now);
+    const payment = summarizeAppointmentPayments(a.price, a.approvedAmounts);
+    const patientLabel = patientDisplayName(a.patient);
+    const name = a.patient.name?.trim() || null;
+    return {
+      id: a.id,
+      startsAt: a.startsAt,
+      rowStatus,
+      statusLabel: APPOINTMENT_LIST_TEXT.status[rowStatus],
+      statusNote: rowStatus === "deposit_unpaid" ? APPOINTMENT_LIST_TEXT.depositUnpaidNote : null,
+      patientId: a.patient.id,
+      patientLabel,
+      patientShortName: firstName(a.patient.name) ?? patientLabel,
+      patientArchived: a.patient.archived,
+      searchName: normalize(name ?? ""),
+      phoneDigits: classifyWhatsappJid(a.patient.whatsappJid) === "phone" ? a.patient.phone.replace(/\D/g, "") : null,
+      serviceId: a.serviceId,
+      serviceName: a.serviceName,
+      dateLabel: formatInTimeZone(a.startsAt, tz, "EEE dd/MM", { locale: esLocale }),
+      timeLabel: formatTime(a.startsAt, tz),
+      priceLabel: payment.state === "free" ? APPOINTMENT_LIST_TEXT.free : formatPrice(a.price, currency),
+      payment,
+      paymentText: appointmentPaymentText(payment, currency),
+      canRegisterPayment: canRegisterAppointmentPayment(a.status, payment),
+      canClose: rowStatus === "unclosed",
+      reason: a.reason,
+    };
+  });
+  return rows.sort(
+    (x, y) => x.startsAt.getTime() - y.startsAt.getTime() || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0),
+  );
+}
+
+export type AppointmentStatusFilter =
+  | "all"
+  | "upcoming"
+  | "unclosed"
+  | "completed"
+  | "no_show"
+  | "cancelled"
+  | "awaiting_deposit";
+export type AppointmentPaymentFilter = "all" | "paid" | "partial" | "none";
+
+export interface AppointmentListFilters {
+  status: AppointmentStatusFilter;
+  payment: AppointmentPaymentFilter;
+  /** null = todos los servicios. */
+  serviceId: string | null;
+  /** Texto del buscador, sin recortar. */
+  query: string;
+}
+
+export const DEFAULT_APPOINTMENT_LIST_FILTERS: AppointmentListFilters = {
+  status: "all",
+  payment: "all",
+  serviceId: null,
+  query: "",
+};
+
+const STATUS_URL: Record<Exclude<AppointmentStatusFilter, "all">, string> = {
+  upcoming: "pendientes",
+  unclosed: "sin-cerrar",
+  completed: "completados",
+  no_show: "no-vino",
+  cancelled: "cancelados",
+  awaiting_deposit: "esperando-sena",
+};
+
+const PAYMENT_URL: Record<Exclude<AppointmentPaymentFilter, "all">, string> = {
+  paid: "pagados",
+  partial: "con-sena",
+  none: "sin-pagos",
+};
+
+function fromUrl<K extends string>(map: Record<K, string>, value: string | null | undefined): K | null {
+  if (!value) return null;
+  const hit = (Object.keys(map) as K[]).find((k) => map[k] === value);
+  return hit ?? null;
+}
+
+/** Valores de la URL ↔ filtros. Desconocido o ausente → "all" / null / "".
+ *  estado: pendientes | sin-cerrar | completados | no-vino | cancelados | esperando-sena
+ *  pago:   pagados | con-sena | sin-pagos
+ *  servicio: id del servicio (string no vacío) · q: texto libre */
+export function parseAppointmentListFilters(params: {
+  estado?: string | null;
+  pago?: string | null;
+  servicio?: string | null;
+  q?: string | null;
+}): AppointmentListFilters {
+  return {
+    status: fromUrl(STATUS_URL, params.estado) ?? "all",
+    payment: fromUrl(PAYMENT_URL, params.pago) ?? "all",
+    serviceId: params.servicio ? params.servicio : null,
+    query: params.q ?? "",
+  };
+}
+
+/** Query string de /turnos SIN "?" y sin vacíos, en este orden: mes, estado, pago, servicio, q.
+ *  `month` null = mes en curso (no se escribe). Ej.: "mes=2026-11&estado=sin-cerrar". "" si no hay nada. */
+export function appointmentListQuery(month: string | null, f: AppointmentListFilters): string {
+  const params = new URLSearchParams();
+  if (month) params.set("mes", month);
+  if (f.status !== "all") params.set("estado", STATUS_URL[f.status]);
+  if (f.payment !== "all") params.set("pago", PAYMENT_URL[f.payment]);
+  if (f.serviceId) params.set("servicio", f.serviceId);
+  if (f.query.trim()) params.set("q", f.query);
+  return params.toString();
+}
+
+/** Cantidad de filtros del botón "Filtros": status ≠ all, payment ≠ all, serviceId ≠ null (el buscador no cuenta). */
+export function activeAppointmentFilterCount(f: AppointmentListFilters): number {
+  return (f.status !== "all" ? 1 : 0) + (f.payment !== "all" ? 1 : 0) + (f.serviceId !== null ? 1 : 0);
+}
+
+function matchesStatus(rowStatus: AppointmentRowStatus, status: AppointmentStatusFilter): boolean {
+  if (status === "all") return rowStatus !== "deposit_unpaid";
+  if (status === "cancelled") return rowStatus === "cancelled" || rowStatus === "deposit_unpaid";
+  return rowStatus === status;
+}
+
+/** T13 + pago + servicio + matchesPatientQuery. Con status "all", deposit_unpaid no pasa.
+ *  "cancelled" deja pasar cancelled y deposit_unpaid. El filtro de pago nunca deja pasar "free". */
+export function matchesAppointmentFilters(row: AppointmentListRow, f: AppointmentListFilters): boolean {
+  if (!matchesStatus(row.rowStatus, f.status)) return false;
+  if (f.payment !== "all" && row.payment.state !== f.payment) return false;
+  if (f.serviceId !== null && row.serviceId !== f.serviceId) return false;
+  return matchesPatientQuery(row, f.query);
+}
+
+export interface AppointmentListCards {
+  total: number;
+  pending: number;
+  completed: number;
+  cancelled: number;
+  unclosed: number;
+}
+
+/** T12, sobre las filas ya filtradas. */
+export function countAppointmentCards(
+  rows: readonly Pick<AppointmentListRow, "rowStatus">[],
+): AppointmentListCards {
+  const cards: AppointmentListCards = { total: 0, pending: 0, completed: 0, cancelled: 0, unclosed: 0 };
+  for (const { rowStatus } of rows) {
+    if (rowStatus === "upcoming" || rowStatus === "unclosed" || rowStatus === "completed" || rowStatus === "no_show") {
+      cards.total += 1;
+    }
+    if (rowStatus === "upcoming") cards.pending += 1;
+    if (rowStatus === "unclosed") cards.unclosed += 1;
+    if (rowStatus === "completed") cards.completed += 1;
+    if (rowStatus === "cancelled") cards.cancelled += 1;
+  }
+  return cards;
 }
 
 export const APPOINTMENT_LIST_TEXT = {
