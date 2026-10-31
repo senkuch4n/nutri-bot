@@ -14,17 +14,9 @@ import { isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { validateRecipeBundle } from "@nutri-bot/core/recipe-import";
+import { describeDbTarget } from "../lib/cli";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-function target(url: string): string {
-  try {
-    const u = new URL(url);
-    return `${u.hostname}:${u.port || "5432"}${u.pathname}`;
-  } catch {
-    return "(no se pudo leer la URL)";
-  }
-}
 
 async function main() {
   const write = process.argv.includes("--write");
@@ -47,7 +39,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Base: ${target(url)}`);
+  console.log(`Base: ${describeDbTarget(url)}`);
   console.log(`Bundle: ${valid.bundle.recipes.length} recetas (exportado ${valid.bundle.exportedAt}).`);
   if (write) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });

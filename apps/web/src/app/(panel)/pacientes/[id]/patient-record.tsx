@@ -78,7 +78,7 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
         },
       }),
       listPatientPlans(id),
-      listTemplates(),
+      listTemplates({ status: "PUBLISHED" }),
       listDiaryEntries(id),
       getLatestFormulaMeasurements(id),
       listPatientConsultations(id),

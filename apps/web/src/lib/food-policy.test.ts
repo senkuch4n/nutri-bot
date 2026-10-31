@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   listMeasuresForPicker: vi.fn().mockResolvedValue({}), resolveMeasureItem: vi.fn(),
   // 018d-1b (R4): la action traduce este error a un mensaje amable.
   FoodMeasureNotFoundError: class FoodMeasureNotFoundError extends Error {},
+  // HU-020: touchTemplate marca el borrador importado como revisado; un borrador no se aplica.
+  markTemplateReviewed: vi.fn(),
+  TemplateNotPublishedError: class TemplateNotPublishedError extends Error {},
 }));
 
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -31,6 +34,9 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/app/(panel)/recipe-picker-actions", () => ({}));
 // HU-018d: el editor monta el cuadro de medida casera; sus actions no se usan en este test.
 vi.mock("@/app/(panel)/food-measure-actions", () => ({}));
+// HU-020: las páginas montan "Textos del plan" y la revisión del borrador; sus actions no se usan acá.
+vi.mock("@/app/(panel)/plan-section-actions", () => ({}));
+vi.mock("@/app/(panel)/plantillas/import-actions", () => ({}));
 vi.mock("server-only", () => ({})); // lib/revalidate-menu-owner (HU-018c)
 vi.mock("next/navigation", () => ({ notFound: vi.fn(), redirect: vi.fn() }));
 vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
@@ -70,8 +76,8 @@ beforeEach(() => {
     const foods = [sara, own];
     return params.source ? foods.filter((food) => food.source === params.source) : foods;
   });
-  mocks.getPlan.mockResolvedValue({ id: "plan", patientId: "patient", title: "Plan", meals: [] });
-  mocks.getTemplate.mockResolvedValue({ id: "template", title: "Template", meals: [] });
+  mocks.getPlan.mockResolvedValue({ id: "plan", patientId: "patient", title: "Plan", meals: [], sections: [] });
+  mocks.getTemplate.mockResolvedValue({ id: "template", title: "Template", status: "PUBLISHED", meals: [], sections: [] });
   mocks.patient.mockResolvedValue({ id: "patient", name: "Patient", birthDate: null, sex: null });
   mocks.evolution.mockResolvedValue(null);
   mocks.clinical.mockResolvedValue(null);
@@ -81,7 +87,7 @@ beforeEach(() => {
 
 describe("SARA2-only new food selections", () => {
   it("passes only active SARA2 to the plan picker while retaining historical meals", async () => {
-    mocks.getPlan.mockResolvedValue({ id: "plan", patientId: "patient", title: "Plan", meals: [{
+    mocks.getPlan.mockResolvedValue({ id: "plan", patientId: "patient", title: "Plan", sections: [], meals: [{
       id: "meal", name: "Historical", items: [{ id: "item", foodId: "own", food: { ...own, fiberPer100: null, alcoholPer100: null, nutrients: null, sodiumMgPer100: null }, quantityGrams: 100, customLabel: null, notes: null }],
     }] });
     const page = await PlanPage({ params: Promise.resolve({ id: "patient", planId: "plan" }) });
@@ -95,7 +101,7 @@ describe("SARA2-only new food selections", () => {
   });
 
   it("passes only active SARA2 to the template picker", async () => {
-    mocks.getTemplate.mockResolvedValue({ id: "template", title: "Historical template", meals: [{
+    mocks.getTemplate.mockResolvedValue({ id: "template", title: "Historical template", sections: [], meals: [{
       id: "meal", name: "Historical", items: [{ id: "item", foodId: "own", food: { ...own, fiberPer100: null, alcoholPer100: null }, quantityGrams: 100, customLabel: null, notes: null }],
     }] });
     const page = await TemplatePage({ params: Promise.resolve({ id: "template" }) });

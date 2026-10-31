@@ -2,13 +2,15 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@nutri-bot/db";
 import type { MealOwnerKind } from "@nutri-bot/db/domain";
+import { touchTemplate } from "./touch-template";
 
 // HU-018c: revalidación de las páginas de un plan o una plantilla después de cambiar sus comidas. La
 // comparten las actions del editor semanal (018b) y las del buscador de recetas (018c).
 
 export async function revalidateMenuOwner(kind: MealOwnerKind, ownerId: string): Promise<void> {
   if (kind === "template") {
-    revalidatePath(`/plantillas/${ownerId}`);
+    // HU-020 (T10): un cambio en un borrador importado lo marca revisado.
+    await touchTemplate(ownerId);
     return;
   }
   const plan = await prisma.nutritionPlan.findUnique({ where: { id: ownerId }, select: { patientId: true } });

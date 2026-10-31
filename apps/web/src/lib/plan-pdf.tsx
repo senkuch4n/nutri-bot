@@ -71,6 +71,8 @@ export interface PlanPdfInput {
   generatedAtLabel: string;
   accentColor?: string | null;
   footerText?: string | null;
+  /** HU-020 (D9): textos del plan (recomendaciones, reemplazos…). Opcional. Provisional hasta HU-015/017e. */
+  sections?: { title: string; body: string }[];
 }
 
 type PlanStyles = ReturnType<typeof buildStyles>;
@@ -206,6 +208,16 @@ export function PlanDocument({ input }: { input: PlanPdfInput }) {
               <Text style={styles.totalsLine}>{formatMacrosLine(totals.macros)}</Text>
             </View>
           ) : null}
+
+          {/* HU-020 (D9): un bloque por texto del plan; el cuerpo puede cortarse entre páginas. */}
+          {(input.sections ?? []).map((section, i) => (
+            <View key={`${i}-${section.title}`}>
+              <Text style={styles.notesTitle} minPresenceAhead={40}>
+                {section.title}
+              </Text>
+              <Text style={styles.notes}>{section.body}</Text>
+            </View>
+          ))}
 
           {input.planNotes ? (
             <View wrap={false}>

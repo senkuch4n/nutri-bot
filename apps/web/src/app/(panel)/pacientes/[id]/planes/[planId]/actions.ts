@@ -159,6 +159,8 @@ async function buildAndSavePdf(planId: string) {
     generatedAtLabel: new Intl.DateTimeFormat("es-AR", { dateStyle: "medium" }).format(new Date()),
     accentColor: pro.pdfAccentColor,
     footerText: pro.pdfFooterText,
+    // HU-020 (D9): textos del plan.
+    sections: plan.sections.map(({ title, body }) => ({ title, body })),
   });
 
   const fileName = `plan-${plan.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}.pdf`;

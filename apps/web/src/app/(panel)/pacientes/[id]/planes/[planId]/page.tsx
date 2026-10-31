@@ -10,6 +10,7 @@ import { initialDayFor } from "@/components/weekly-menu/day-param";
 import type { PlanTargetView } from "@/components/weekly-menu/day-target-strip";
 import { toMealView, toMicronutrientItems } from "@/lib/meal-view";
 import { PlanMicronutrientsSection } from "@/components/plan-micronutrients";
+import { PlanSectionsEditor } from "@/components/plan-sections/plan-sections-editor";
 import { PlanMetaForm } from "./plan-meta-form";
 import { PlanPdfActions } from "./plan-pdf-actions";
 import { DeletePlanButton } from "./delete-plan-button";
@@ -118,6 +119,12 @@ export default async function PlanDetailPage({
             initialDay={initialDayFor(query.dia, plan.meals)}
           />
           <PlanMicronutrientsSection result={micronutrients} />
+          {/* HU-020 (D9): textos del plan (recomendaciones, reemplazos…). */}
+          <PlanSectionsEditor
+            kind="plan"
+            ownerId={plan.id}
+            sections={plan.sections.map(({ id: sectionId, title, body }) => ({ id: sectionId, title, body }))}
+          />
         </div>
 
         <div className="space-y-6">

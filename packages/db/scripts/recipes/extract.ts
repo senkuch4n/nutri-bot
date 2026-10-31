@@ -15,11 +15,9 @@
  * revisados) y guarda la corrida en docs/recetarios/_extraccion/corrida-<ISO>.json para poder
  * deshacerla con `recipes:undo`. --limit N: solo los primeros N borradores (muestra chica).
  */
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { foodSearchText } from "@nutri-bot/core";
 import {
@@ -31,36 +29,12 @@ import {
   type SuggestableFood,
 } from "@nutri-bot/core/recipe-import";
 import { parseBboxXhtml } from "@nutri-bot/core/sara2";
+import { argValues, confirmWrite, hasFlag, run } from "../lib/cli";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const recipesDir = resolve(repoRoot, "docs/recetarios");
 const outDir = resolve(recipesDir, "_extraccion");
 const sara2File = new URL("../../data/sara2/alimentos.json", import.meta.url);
-
-function argValues(flag: string): string[] {
-  const out: string[] = [];
-  process.argv.forEach((a, i) => {
-    if (a === flag && process.argv[i + 1]) out.push(process.argv[i + 1]!);
-  });
-  return out;
-}
-const hasFlag = (flag: string) => process.argv.includes(flag);
-
-function run(cmd: string, args: string[], encoding: "utf8" | "buffer" = "utf8"): string {
-  try {
-    return execFileSync(cmd, args, {
-      maxBuffer: 256 * 1024 * 1024,
-      encoding: encoding === "utf8" ? "utf8" : undefined,
-      stdio: ["ignore", "pipe", "ignore"],
-    }) as unknown as string;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.error(`Falta ${cmd} (poppler). En macOS: brew install poppler`);
-      process.exit(1);
-    }
-    throw err;
-  }
-}
 
 // ── Garantía D5: ningún gramo sin un token en el texto ────────────────────────────────────────
 
@@ -266,27 +240,6 @@ function renderReport(results: readonly FileResult[], skippedFiles: { file: stri
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────────────────────
-
-async function confirmWrite(): Promise<boolean> {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    console.error("--write necesita DATABASE_URL.");
-    process.exit(1);
-  }
-  let target = "(no se pudo leer la URL)";
-  try {
-    const u = new URL(url);
-    target = `${u.hostname}:${u.port || "5432"}${u.pathname}`;
-  } catch {
-    // se muestra el texto genérico
-  }
-  console.log(`Base: ${target}`);
-  if (hasFlag("--yes")) return true;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question("Se van a crear o actualizar borradores en esa base. Escribí SI para seguir: ");
-  rl.close();
-  return answer.trim() === "SI";
-}
 
 async function main() {
   const write = hasFlag("--write");

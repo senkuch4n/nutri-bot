@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Copy, Plus, Search, UtensilsCrossed } from "lucide-react";
 import {
   WEEKDAY_LABELS,
@@ -10,6 +10,9 @@ import {
   itemsForDay,
   mealTotalForDay,
   openPickerAriaLabel,
+  hasAnyItem,
+  hasQuantifiedItems,
+  PLAN_IMPORT_TEXT,
   RECIPE_PICKER_TEXT,
   type AtwaterBreakdown,
   type Macros,
@@ -171,13 +174,19 @@ export function MealsEditor({
 
         {meals.length > 0 ? (
           <div className="material-bar z-10 -mx-2 rounded-xl px-2 py-3 md:sticky md:top-14 lg:top-0">
-            <DayTargetStrip
-              title={strip.title}
-              totals={strip.totals}
-              target={target}
-              targetMissingHref={targetMissingHref}
-              weeklyAverageKcal={strip.average}
-            />
+            {/* HU-020 (D10): con ítems pero ninguno con cantidad (p. ej. importado de PDF), un aviso en
+                vez de macros en cero. */}
+            {hasAnyItem(meals) && !hasQuantifiedItems(meals) ? (
+              <Alert tone="info">{PLAN_IMPORT_TEXT.noQuantities(kind)}</Alert>
+            ) : (
+              <DayTargetStrip
+                title={strip.title}
+                totals={strip.totals}
+                target={target}
+                targetMissingHref={targetMissingHref}
+                weeklyAverageKcal={strip.average}
+              />
+            )}
           </div>
         ) : null}
 
@@ -435,7 +444,11 @@ function MealCard({
               return (
                 <li key={item.id} className="flex items-start justify-between gap-4 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-medium">{itemName}</p>
+                    {item.foodId ? (
+                      <p className="break-words text-sm font-medium">{itemName}</p>
+                    ) : (
+                      <TextItemLabel text={itemName} />
+                    )}
                     {item.notes ? <p className="mt-0.5 text-xs text-muted-foreground">{item.notes}</p> : null}
                     {showMacros && item.macros ? (
                       <p className="mt-1 text-xs tabular-nums text-muted-foreground">
@@ -500,5 +513,35 @@ function MealCard({
         />
       </Card>
     </section>
+  );
+}
+
+/** Más largo que esto, el texto de un ítem libre se pliega en 2 renglones con "Ver completo" (HU-020). */
+const LONG_TEXT_ITEM = 120;
+
+/** HU-020 (SDD 7.3): nombre de un ítem de texto (p. ej. una combinación importada de PDF), plegable. */
+function TextItemLabel({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const long = text.length > LONG_TEXT_ITEM;
+  return (
+    <>
+      <p id={id} className={`break-words text-sm font-medium${long && !expanded ? " line-clamp-2" : ""}`}>
+        {text}
+      </p>
+      {long ? (
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="mt-0.5"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? PLAN_IMPORT_TEXT.showLess : PLAN_IMPORT_TEXT.showMore}
+        </Button>
+      ) : null}
+    </>
   );
 }

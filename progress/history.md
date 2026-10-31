@@ -501,3 +501,11 @@
 ## HU-021 — Lista de turnos (aprobada 2026-10-26, imleticio)
 - Pantalla `/turnos`: 4 tarjetas del período (Totales, Pendientes, Completadas, Canceladas), tabla/lista mobile con estado de fila («Esperando seña», «Sin cerrar»), columna «Pago» con lo registrado en tono neutro, «Vino»/«No vino» con Deshacer, «Registrar pago» con saldo precargado, «Abrir» con `MorphDialog` (detalle de solo lectura para cancelados/esperando seña) y filtros en la URL. Señas vencidas detectadas por el texto exacto del motivo (constantes en core, sin migración).
 - «Por cobrar» fuera de alcance hasta saber si la nutricionista registra los cobros. Implementer Opus (sin skills, UI según captura de referencia), reviewer Opus: APPROVED en la 1ª revisión. Dudas menores en progress/review_HU-021.md (buscador vs URL al tipear rápido, foco si la fila sale del filtro). Rama sobre `feat/morph-dialog`; sin PR por pedido del usuario.
+## HU-020 · importar-planes-pdf — aprobada (2026-10-25, senkuch4n)
+- Carga asistida de planes alimentarios en PDF (formato Canva) como **plantillas en borrador**: parser puro sin IA
+  en `@nutri-bot/core/plan-import`, scripts `plans:import`/`plans:undo` (seco por defecto, `--write` con SI),
+  estado `DRAFT/PUBLISHED` y origen en `PlanTemplate`, secciones de texto `PlanTemplateSection`/`PlanSection`
+  (D9, también para HU-015), revisión en `/plantillas/[id]`, secciones en portal y PDF. Sin datos de la paciente
+  en la base ni en el repo (D12). D6 provisoria (tandas numeradas); D12/D14/D15 esperan más PDF de la nutricionista.
+- Migración `plan_template_import` (aditiva). Implementer Opus, reviewer Sonnet: APPROVED en la 1ª ronda.
+- Pendiente: migrar Neon antes del merge; recorrido visual con sesión de Google; importar en producción.

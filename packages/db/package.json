@@ -34,7 +34,11 @@
     "recipes:extract": "dotenv -e ../../.env -- tsx scripts/recipes/extract.ts",
     "recipes:undo": "dotenv -e ../../.env -- tsx scripts/recipes/undo.ts",
     "recipes:export": "dotenv -e ../../.env -- tsx scripts/recipes/export.ts",
-    "recipes:import:prod": "tsx scripts/recipes/import.ts"
+    "recipes:import:prod": "tsx scripts/recipes/import.ts",
+    "plans:import": "dotenv -e ../../.env -- tsx scripts/plans/import.ts",
+    "plans:import:prod": "tsx scripts/plans/import.ts",
+    "plans:undo": "dotenv -e ../../.env -- tsx scripts/plans/undo.ts",
+    "plans:undo:prod": "tsx scripts/plans/undo.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
