@@ -18,9 +18,12 @@ export function AppointmentDetailDialog({
   onChanged,
   onUpdated,
   onCancel,
+  anchored = false,
 }: {
   appt: SelectedAppointment | null;
   origin: HTMLElement | null;
+  /** Calendario: el turno se transforma en el diálogo, en su lugar (sin ir al centro). */
+  anchored?: boolean;
   tz: string;
   currency: string;
   onClose: () => void;
@@ -41,7 +44,11 @@ export function AppointmentDetailDialog({
       origin={origin}
     >
       <MorphDialogContent
-        className="w-[min(100%,28rem)]"
+        // Fondo claro y ✕ a la izquierda; la barra de íconos del cuerpo le deja lugar (pl-14). Ancho para las
+        // dos columnas del detalle (Fecha y hora · Estado / Finanzas · Más).
+        className="w-[min(100%,46rem)] bg-[#f9f8fa] [&_[data-appointment-header]]:pl-14"
+        closeSide="left"
+        anchor={anchored ? "origin" : "center"}
         onOpenAutoFocus={(e) => {
           // Igual que el Sheet del calendario: el foco inicial va al nombre, no a "Editar motivo".
           const title = (e.target as HTMLElement | null)?.querySelector<HTMLElement>("[data-appointment-title]");

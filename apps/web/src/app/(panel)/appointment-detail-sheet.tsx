@@ -5,14 +5,18 @@ import {
   Banknote,
   Bell,
   CalendarCheck,
+  CalendarDays,
   Check,
+  ChevronDown,
   CircleSlash,
   ClipboardList,
   Clock,
-  ExternalLink,
+  Cloud,
+  FileText,
+  Loader2,
   MessageCircle,
-  Pencil,
-  Undo2,
+  Phone,
+  Trash2,
   User,
   UserX,
   type LucideIcon,
@@ -25,17 +29,20 @@ import {
   HIDDEN_NUMBER_TEXT,
   appointmentDayAtTime,
   appointmentDayTime,
+  appointmentDurationMinutes,
+  appointmentShortDate,
   capitalizeFirst,
   classifyWhatsappJid,
   formatInTimeZone,
   formatPhone,
   formatPrice,
+  formatTime,
   isUnpaidDepositCancellation,
   whatsappChatUrl,
   type AppointmentStatusLike,
 } from "@nutri-bot/core";
 import { buttonVariants } from "@/components/primitives/button";
-import { Separator } from "@/components/primitives/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/primitives/tooltip";
 import {
   Sheet,
   SheetContent,
@@ -44,7 +51,7 @@ import {
   SheetTitle,
 } from "@/components/primitives/sheet";
 import { useConfirm } from "@/components/confirm";
-import { Badge, Button, ButtonLink, FormError, Textarea, cn } from "@/components/ui";
+import { Badge, Button, ButtonLink, FormError, Textarea, cn, filledInputClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import {
   getAppointmentRemindersAction,
@@ -176,7 +183,7 @@ export function AppointmentDetailSheet({
     >
       <SheetContent
         side="right"
-        className="w-full sm:max-w-sm"
+        className="w-full sm:max-w-sm [&_[data-appointment-header]]:pr-10"
         onInteractOutside={(e) => {
           // Un clic dentro del calendario elige otro turno o una franja: no cierra el panel.
           if (interactionAreaRef?.current?.contains(e.target as Node)) e.preventDefault();
@@ -214,6 +221,120 @@ export function AppointmentDetailSheet({
   );
 }
 
+
+// Diseño de la referencia (2026-10-31): secciones con etiqueta suave y filas con una línea debajo. Dos
+// columnas cuando entran (diálogo); una sola en la hoja angosta.
+const SECTIONS = "mt-6 grid gap-x-10 gap-y-7 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))]";
+const FIELD = "flex min-h-12 items-center gap-3 border-b border-black/[0.06] py-2.5 text-body";
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="min-w-0">
+      <h3 className="text-callout font-normal text-muted-foreground/80">{label}</h3>
+      {children}
+    </section>
+  );
+}
+
+function Field({
+  icon: Icon,
+  action,
+  className,
+  children,
+}: {
+  icon?: LucideIcon;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn(FIELD, className)}>
+      {Icon ? <Icon className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} aria-hidden /> : null}
+      <div className="flex min-w-0 flex-1 items-center">{children}</div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+/** Ícono de la barra superior (ficha, WhatsApp, cancelar) con su nombre en un tooltip. */
+function HeaderAction({
+  label,
+  icon: Icon,
+  href,
+  external,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: LucideIcon;
+  href?: string;
+  external?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  const cls = cn(buttonVariants({ variant: "ghost", size: "icon" }), "size-10 rounded-full text-muted-foreground");
+  const icon = <Icon className="size-[1.125rem]" strokeWidth={2} aria-hidden />;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {href && external ? (
+          <a href={href} target="_blank" rel="noopener noreferrer" aria-label={label} className={cls}>
+            {icon}
+          </a>
+        ) : href ? (
+          <ButtonLink href={href} variant="ghost" size="icon" aria-label={label} className={cls}>
+            {icon}
+          </ButtonLink>
+        ) : (
+          <Button type="button" variant="ghost" size="icon" aria-label={label} disabled={disabled} onClick={onClick} className={cls}>
+            {icon}
+          </Button>
+        )}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** "Paciente:", el nombre (título del diálogo) y los chips de servicio, fecha y hora. */
+function AppointmentHeading({ appt, tz, whenLabel }: { appt: SelectedAppointment; tz: string; whenLabel: string }) {
+  const start = new Date(appt.start);
+  return (
+    <>
+      <p className="mt-4 text-callout text-muted-foreground">{T.patient}</p>
+      <SheetTitle
+        data-appointment-title=""
+        tabIndex={-1}
+        className="mt-0.5 rounded-md text-title-1 font-semibold outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        {appt.patientLabel}
+      </SheetTitle>
+      <SheetDescription className="sr-only">
+        {appt.serviceName} · {capitalizeFirst(whenLabel)}
+      </SheetDescription>
+      <div className="mt-3 flex items-center gap-2 border-b border-black/[0.06] pb-4">
+        <div aria-hidden className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+          {[appt.serviceName, appointmentShortDate(start, tz), formatTime(start, tz)].map((chip, i) => (
+            <span key={i} className="rounded-lg bg-black/[0.04] px-2.5 py-1 text-callout tabular-nums">
+              {chip}
+            </span>
+          ))}
+        </div>
+        {appt.googleSynced ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} className="grid size-8 place-items-center rounded-full text-muted-foreground">
+                <Cloud className="size-[1.125rem]" strokeWidth={2} aria-hidden />
+                <span className="sr-only">{T.inGoogle}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{T.inGoogle}</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
+    </>
+  );
+}
 
 type Busy = null | "reminder" | "completed" | "no_show" | "confirm";
 
@@ -375,67 +496,119 @@ function ActiveAppointmentBody({
   const canPay = (appt.status === "CONFIRMED" || appt.status === "COMPLETED") && !appt.hasFullPayment;
   const whenLabel = appointmentDayTime(start, now, tz);
 
-  const payButton = canPay ? (
-    <Button variant="secondary" disabled={disabled} onClick={() => setPaying(true)}>
-      <Banknote aria-hidden />
-      {T.registerPayment}
-    </Button>
-  ) : null;
+  // Estado: las mismas transiciones que los botones de antes (confirmado → vino / no vino; y de vuelta).
+  const statusOptions: AppointmentStatusLike[] =
+    appt.status === "CONFIRMED" ? ["CONFIRMED", "COMPLETED", "NO_SHOW"] : [appt.status, "CONFIRMED"];
+  function changeStatus(next: AppointmentStatusLike) {
+    if (next === appt.status) return;
+    if (next === "COMPLETED") markCompleted();
+    else if (next === "NO_SHOW") run("no_show", () => setStatusAction(appt.id, "NO_SHOW"), T.toastNoShow);
+    else if (next === "CONFIRMED") void backToConfirmed();
+  }
+  const statusBusy = busy === "completed" || busy === "no_show" || busy === "confirm";
 
   return (
     <>
-      <SheetHeader>
-        <SheetTitle
-          data-appointment-title=""
-          tabIndex={-1}
-          className="rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          {appt.patientLabel}
-        </SheetTitle>
-        <SheetDescription>
-          {appt.serviceName} · {capitalizeFirst(whenLabel)}
-        </SheetDescription>
-      </SheetHeader>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <StatusBadge status={appt.status} />
-        {appt.googleSynced ? <span className="text-footnote text-muted-foreground">{T.inGoogle}</span> : null}
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        <ButtonLink variant="secondary" href={`/pacientes/${appt.patientId}`}>
-          <User aria-hidden />
-          {T.seeProfile}
-        </ButtonLink>
+      <div data-appointment-header="" className="flex min-h-10 items-center justify-end gap-1">
+        <HeaderAction label={T.seeProfile} href={`/pacientes/${appt.patientId}`} icon={User} />
         {chatUrl ? (
-          <a
-            href={chatUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={buttonVariants({ variant: "secondary" })}
-          >
-            <MessageCircle aria-hidden />
-            {T.whatsapp}
-            <ExternalLink className="!size-3.5 text-muted-foreground" aria-hidden />
-            <span className="sr-only">(se abre en otra pestaña)</span>
-          </a>
+          <HeaderAction label={`${T.whatsapp} (se abre en otra pestaña)`} href={chatUrl} external icon={MessageCircle} />
+        ) : null}
+        {appt.status === "CONFIRMED" ? (
+          <HeaderAction label={T.cancel} icon={Trash2} disabled={disabled} onClick={cancelAppointment} />
         ) : null}
       </div>
-      <p className="mt-2 text-footnote tabular-nums text-muted-foreground">{phoneLine}</p>
 
-      <dl className="mt-5 grid grid-cols-[7rem_1fr] gap-y-3 text-callout">
-        <dt className="text-muted-foreground">{T.price}</dt>
-        <dd className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</dd>
-        {appt.paymentText !== undefined ? (
-          <>
-            <dt className="text-muted-foreground">{APPOINTMENT_LIST_TEXT.readOnly.payments}</dt>
-            <dd>{appt.paymentText}</dd>
-          </>
-        ) : null}
-        <dt className="text-muted-foreground">{T.reason}</dt>
-        <dd className="min-w-0">
+      <AppointmentHeading appt={appt} tz={tz} whenLabel={whenLabel} />
+
+      <div className={SECTIONS}>
+        <Section label={T.sections.when}>
+          <Field icon={CalendarDays}>{appointmentShortDate(start, tz)}</Field>
+          <div className="flex gap-6">
+            <Field icon={Clock} className="flex-1">
+              <span className="tabular-nums">{formatTime(start, tz)}</span>
+            </Field>
+            <Field className="flex-1">
+              <span className="tabular-nums">{T.minutes(appointmentDurationMinutes(appt.start, appt.end))}</span>
+            </Field>
+          </div>
+        </Section>
+
+        <Section label={T.sections.status}>
+          <div className="relative">
+            <select
+              aria-label={T.statusLabel}
+              value={appt.status}
+              disabled={disabled}
+              onChange={(e) => changeStatus(e.target.value as AppointmentStatusLike)}
+              className={cn(FIELD, "w-full cursor-pointer appearance-none bg-transparent pr-8 disabled:cursor-default")}
+            >
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {APPOINTMENT_STATUS_TEXT[s]}
+                </option>
+              ))}
+            </select>
+            {statusBusy ? (
+              <Loader2 className="pointer-events-none absolute right-1 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-hidden />
+            ) : (
+              <ChevronDown className="pointer-events-none absolute right-1 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            )}
+          </div>
+          {appt.status === "CONFIRMED" ? (
+            <Field
+              icon={Bell}
+              action={
+                isPast ? null : (
+                  <Button variant="plain" size="sm" className="-mr-3" disabled={disabled} loading={busy === "reminder"} onClick={sendReminder}>
+                    {T.sendReminderShort}
+                  </Button>
+                )
+              }
+            >
+              <span aria-live="polite" className={cn("min-w-0", (isPast || remindersText === null) && "text-muted-foreground")}>
+                <span className="sr-only">{T.reminders}: </span>
+                {isPast ? T.pastAppointment : (remindersText ?? "…")}
+              </span>
+            </Field>
+          ) : null}
+          {appt.status === "COMPLETED" && appt.consultation ? (
+            <Field
+              icon={ClipboardList}
+              action={
+                <ButtonLink variant="plain" size="sm" className="-mr-3" href={`/pacientes/${appt.patientId}/consultas/${appt.consultation.id}`}>
+                  {T.openConsultation}
+                </ButtonLink>
+              }
+            >
+              <span className="text-muted-foreground">{T.consultation}</span>
+            </Field>
+          ) : null}
+        </Section>
+
+        <Section label={T.sections.finance}>
+          <Field action={<span className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</span>}>
+            <span className="min-w-0 truncate">{appt.serviceName}</span>
+          </Field>
+          <Field
+            icon={Banknote}
+            action={
+              canPay ? (
+                <Button variant="plain" size="sm" className="-mr-3" disabled={disabled} onClick={() => setPaying(true)}>
+                  {T.registerPayment}
+                </Button>
+              ) : null
+            }
+          >
+            <span className={cn("min-w-0", !appt.hasFullPayment && "text-muted-foreground")}>
+              {appt.paymentText ?? (appt.hasFullPayment ? T.paid : AGENDA_TEXT.dayPanel.pendingPayment)}
+            </span>
+          </Field>
+        </Section>
+
+        <Section label={T.sections.more}>
           {editingReason ? (
-            <form onSubmit={submitReason} className="space-y-2">
+            <form onSubmit={submitReason} className="space-y-2 pt-2">
               <label htmlFor={`motivo-${appt.id}`} className="sr-only">
                 Motivo de consulta
               </label>
@@ -443,6 +616,7 @@ function ActiveAppointmentBody({
                 id={`motivo-${appt.id}`}
                 rows={4}
                 maxLength={BOOKING_REASON_MAX}
+                className={`${filledInputClass} h-auto bg-background px-4 py-3`}
                 autoFocus
                 value={reasonDraft}
                 onChange={(e) => setReasonDraft(e.target.value)}
@@ -466,130 +640,42 @@ function ActiveAppointmentBody({
               </div>
             </form>
           ) : (
-            <div className="space-y-1">
-              <p
-                className={cn(
-                  "whitespace-pre-wrap break-words",
-                  appt.reason ? "font-medium" : "text-muted-foreground",
-                )}
-              >
-                {appt.reason ?? T.noReason}
-              </p>
-              <Button
-                type="button"
-                variant="plain"
-                size="sm"
-                className="-ml-3"
-                disabled={disabled}
-                onClick={() => {
-                  setReasonDraft(appt.reason ?? "");
-                  setReasonError(null);
-                  setEditingReason(true);
-                }}
-              >
-                <Pencil aria-hidden />
-                {T.editReason}
-              </Button>
-            </div>
-          )}
-        </dd>
-
-        {appt.status === "CONFIRMED" ? (
-          <>
-            <dt className="text-muted-foreground">{T.reminders}</dt>
-            <dd aria-live="polite">
-              {isPast ? (
-                <span className="text-muted-foreground">{T.pastAppointment}</span>
-              ) : remindersText === null ? (
-                <span className="text-muted-foreground">…</span>
-              ) : (
-                remindersText
-              )}
-            </dd>
-          </>
-        ) : null}
-      </dl>
-
-      <div className="mt-6 space-y-3">
-        {appt.status === "CONFIRMED" ? (
-          <>
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={disabled}
-              loading={busy === "completed"}
-              onClick={markCompleted}
-            >
-              {busy === "completed" ? null : <Check aria-hidden />}
-              {T.completed}
-            </Button>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                disabled={disabled}
-                loading={busy === "no_show"}
-                onClick={() => run("no_show", () => setStatusAction(appt.id, "NO_SHOW"), T.toastNoShow)}
-              >
-                {busy === "no_show" ? null : <UserX aria-hidden />}
-                {T.noShow}
-              </Button>
-              {isPast ? null : (
+            <Field
+              icon={FileText}
+              action={
                 <Button
-                  variant="secondary"
+                  type="button"
+                  variant="plain"
+                  size="sm"
+                  className="-mr-3"
                   disabled={disabled}
-                  loading={busy === "reminder"}
-                  onClick={sendReminder}
+                  aria-label={T.editReason}
+                  onClick={() => {
+                    setReasonDraft(appt.reason ?? "");
+                    setReasonError(null);
+                    setEditingReason(true);
+                  }}
                 >
-                  {busy === "reminder" ? null : <Bell aria-hidden />}
-                  {T.sendReminder}
+                  {T.edit}
                 </Button>
-              )}
-              {payButton}
-            </div>
-          </>
-        ) : (
-          <>
-            {appt.status === "COMPLETED" && appt.consultation ? (
-              <ButtonLink
-                size="lg"
-                className="w-full"
-                href={`/pacientes/${appt.patientId}/consultas/${appt.consultation.id}`}
-              >
-                <ClipboardList aria-hidden />
-                {T.openConsultation}
-              </ButtonLink>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                disabled={disabled}
-                loading={busy === "confirm"}
-                onClick={backToConfirmed}
-              >
-                {busy === "confirm" ? null : <Undo2 aria-hidden />}
-                {T.backToConfirmed}
-              </Button>
-              {payButton}
-            </div>
-          </>
-        )}
-        <FormError message={error} />
+              }
+            >
+              <span className={cn("min-w-0 whitespace-pre-wrap break-words", !appt.reason && "text-muted-foreground")}>
+                <span className="sr-only">{T.reason}: </span>
+                {appt.reason ?? T.noReason}
+              </span>
+            </Field>
+          )}
+          <Field icon={Phone}>
+            <span className="tabular-nums">
+              <span className="sr-only">{T.phone}: </span>
+              {phoneLine}
+            </span>
+          </Field>
+        </Section>
       </div>
 
-      {appt.status === "CONFIRMED" ? (
-        <>
-          <Separator className="my-6" />
-          <Button
-            variant="ghost"
-            className="-ml-4 text-destructive"
-            disabled={disabled}
-            onClick={cancelAppointment}
-          >
-            {T.cancel}
-          </Button>
-          <p className="mt-1 text-footnote text-muted-foreground">{T.cancelHint}</p>
-        </>
-      ) : null}
+      <FormError message={error} />
 
       {canPay ? (
         <AppointmentPaymentModal
@@ -639,54 +725,47 @@ function ReadOnlyAppointmentBody({
 
   return (
     <>
-      <SheetHeader>
-        <SheetTitle
-          data-appointment-title=""
-          tabIndex={-1}
-          className="rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          {appt.patientLabel}
-        </SheetTitle>
-        <SheetDescription>
-          {appt.serviceName} · {capitalizeFirst(whenLabel)}
-        </SheetDescription>
-      </SheetHeader>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <StatusBadge status={appt.status} />
+      <div data-appointment-header="" className="flex min-h-10 items-center justify-end gap-1">
+        <HeaderAction label={T.seeProfile} href={`/pacientes/${appt.patientId}`} icon={User} />
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <ButtonLink variant="secondary" href={`/pacientes/${appt.patientId}`}>
-          <User aria-hidden />
-          {T.seeProfile}
-        </ButtonLink>
-      </div>
+      <AppointmentHeading appt={appt} tz={tz} whenLabel={whenLabel} />
 
-      <dl className="mt-5 grid grid-cols-[7rem_1fr] gap-y-3 text-callout">
-        <dt className="text-muted-foreground">{T.price}</dt>
-        <dd className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</dd>
-        <dt className="text-muted-foreground">{L.payments}</dt>
-        <dd>{appt.paymentText ?? "—"}</dd>
-        <dt className="text-muted-foreground">{T.reason}</dt>
-        <dd className={cn("min-w-0 whitespace-pre-wrap break-words", appt.reason ? "font-medium" : "text-muted-foreground")}>
-          {appt.reason ?? T.noReason}
-        </dd>
-        {appt.status === "CANCELLED" ? (
-          <>
-            {cancelledByText ? (
-              <>
-                <dt className="text-muted-foreground">{L.cancelledBy}</dt>
-                <dd>{cancelledByText}</dd>
-              </>
-            ) : null}
-            <dt className="text-muted-foreground">{L.cancelReason}</dt>
-            <dd className={cn("min-w-0 break-words", appt.cancelReason ? undefined : "text-muted-foreground")}>
-              {appt.cancelReason ?? L.noCancelReason}
-            </dd>
-          </>
-        ) : null}
-      </dl>
+      <div className={SECTIONS}>
+        <Section label={T.sections.status}>
+          <Field>
+            <StatusBadge status={appt.status} />
+          </Field>
+          {appt.status === "CANCELLED" && cancelledByText ? <Field>{cancelledByText}</Field> : null}
+          {appt.status === "CANCELLED" ? (
+            <Field>
+              <span className={cn("min-w-0 break-words", !appt.cancelReason && "text-muted-foreground")}>
+                <span className="sr-only">{L.cancelReason}: </span>
+                {appt.cancelReason ?? L.noCancelReason}
+              </span>
+            </Field>
+          ) : null}
+        </Section>
+
+        <Section label={T.sections.finance}>
+          <Field action={<span className="font-medium tabular-nums">{formatPrice(appt.price, currency)}</span>}>
+            <span className="min-w-0 truncate">{appt.serviceName}</span>
+          </Field>
+          <Field icon={Banknote}>
+            <span className="sr-only">{L.payments}: </span>
+            {appt.paymentText ?? "—"}
+          </Field>
+        </Section>
+
+        <Section label={T.sections.more}>
+          <Field icon={FileText}>
+            <span className={cn("min-w-0 whitespace-pre-wrap break-words", !appt.reason && "text-muted-foreground")}>
+              <span className="sr-only">{T.reason}: </span>
+              {appt.reason ?? T.noReason}
+            </span>
+          </Field>
+        </Section>
+      </div>
     </>
   );
 }

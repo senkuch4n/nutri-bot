@@ -11,9 +11,15 @@ import {
   parsePhoneInput,
 } from "@nutri-bot/core";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/primitives/dialog";
+import {
+  MorphDialog,
+  MorphDialogContent,
+  MorphDialogHeader,
+  MorphDialogTitle,
+} from "@/components/primitives/morph-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/primitives/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
-import { Button, FormError, Input, Select, Textarea } from "@/components/ui";
+import { Button, FormError, Input, Select, Textarea, filledInputClass, filledSurfaceClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { createAppointmentAction, listAppointmentPatientsAction, type AppointmentPatientOption } from "./actions";
@@ -60,6 +66,7 @@ export function NewAppointmentModal({
   initialDate,
   initialStart,
   initialPatient,
+  origin,
 }: {
   open: boolean;
   onClose: () => void;
@@ -73,6 +80,8 @@ export function NewAppointmentModal({
   initialStart?: string;
   /** Paciente ya elegido (p. ej. «Agendar turno» desde la ficha). */
   initialPatient?: AppointmentPatientOption;
+  /** Elemento desde el que crece el diálogo (p. ej. la casilla del día en Mes). Sin origen: diálogo común. */
+  origin?: HTMLElement | null;
 }) {
   const compact = useMediaQuery("(max-width: 639px)");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -120,6 +129,24 @@ export function NewAppointmentModal({
       </Sheet>
     );
   }
+  if (origin) {
+    return (
+      <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin}>
+        <MorphDialogContent
+          className="w-[min(100%,32rem)] bg-[#f9f8fa]"
+          closeSide="left"
+          aria-describedby={undefined}
+          onOpenAutoFocus={(e) => focusFirstField(e, searchRef)}
+          onEscapeKeyDown={keepOpenWhileSearching}
+        >
+          <MorphDialogHeader className="min-h-10 justify-center pl-14 pr-0">
+            <MorphDialogTitle className="text-title-2 font-normal text-muted-foreground">{T.title}</MorphDialogTitle>
+          </MorphDialogHeader>
+          <div className="mt-4">{form}</div>
+        </MorphDialogContent>
+      </MorphDialog>
+    );
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -137,16 +164,13 @@ export function NewAppointmentModal({
   );
 }
 
-function Step({ n, title, id, children }: { n: number; title: string; id: string; children: ReactNode }) {
+/** Rótulo de sección: texto gris chico sobre los campos rellenos. */
+const SECTION_LABEL = "block px-1 text-subheadline font-normal text-muted-foreground";
+
+function Step({ title, id, children }: { title: string; id: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={id} className="space-y-3">
-      <h3 id={id} className="flex items-center gap-2 text-headline">
-        <span
-          aria-hidden
-          className="inline-flex size-6 items-center justify-center rounded-full bg-secondary text-footnote font-semibold tabular-nums"
-        >
-          {n}
-        </span>
+    <section aria-labelledby={id} className="space-y-2">
+      <h3 id={id} className={SECTION_LABEL}>
         {title}
       </h3>
       {children}
@@ -307,7 +331,7 @@ function NewAppointmentForm({
 
   return (
     <form onSubmit={submit} className="space-y-6" noValidate>
-      <Step n={1} title={T.who} id="nuevo-turno-quien">
+      <Step title={T.who} id="nuevo-turno-quien">
         <PatientPicker
           options={options}
           loadError={loadError}
@@ -322,13 +346,13 @@ function NewAppointmentForm({
         />
       </Step>
 
-      <Step n={2} title={T.service} id="nuevo-turno-servicio">
+      <Step title={T.service} id="nuevo-turno-servicio">
         <label htmlFor="nuevo-turno-servicio-select" className="sr-only">
           {T.service}
         </label>
         <Select
           id="nuevo-turno-servicio-select"
-          className="h-11"
+          className={`${filledInputClass} pr-10`}
           value={serviceId}
           onChange={(e) => setServiceId(e.target.value)}
         >
@@ -341,7 +365,7 @@ function NewAppointmentForm({
         </Select>
       </Step>
 
-      <Step n={3} title={T.day} id="nuevo-turno-dia">
+      <Step title={T.day} id="nuevo-turno-dia">
         <div className="flex flex-wrap items-center gap-2">
           {[
             { key: todayKey, label: AGENDA_TEXT.today },
@@ -352,7 +376,7 @@ function NewAppointmentForm({
               type="button"
               variant={date === d.key ? "tinted" : "secondary"}
               aria-pressed={date === d.key}
-              className="h-11 rounded-lg px-4"
+              className="h-[3.25rem] rounded-2xl px-5 text-body"
               onClick={() => changeDate(d.key)}
             >
               {d.label}
@@ -364,7 +388,7 @@ function NewAppointmentForm({
           <Input
             id="nuevo-turno-fecha"
             type="date"
-            className="h-11 w-auto min-w-40 flex-1"
+            className={`${filledInputClass} w-auto min-w-40 flex-1`}
             value={date}
             min={todayKey}
             onChange={(e) => e.target.value && changeDate(e.target.value)}
@@ -372,7 +396,7 @@ function NewAppointmentForm({
         </div>
 
         <div className="space-y-2 pt-1">
-          <p id="nuevo-turno-horario" className="text-subheadline font-medium">
+          <p id="nuevo-turno-horario" className={SECTION_LABEL}>
             {T.time}
           </p>
           {slotNotice ? (
@@ -406,7 +430,7 @@ function NewAppointmentForm({
                 <ToggleGroupItem
                   key={s}
                   value={s}
-                  className="h-11 text-headline tabular-nums data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                  className={`${filledSurfaceClass} h-12 border-transparent text-headline tabular-nums data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground`}
                 >
                   {formatInTimeZone(new Date(s), tz, "H:mm")}
                 </ToggleGroupItem>
@@ -416,20 +440,21 @@ function NewAppointmentForm({
         </div>
       </Step>
 
-      <div className="space-y-1.5">
-        <label htmlFor="nuevo-turno-motivo" className="block text-subheadline font-medium">
+      <div className="space-y-2">
+        <label htmlFor="nuevo-turno-motivo" className={SECTION_LABEL}>
           {T.reasonLabel}
         </label>
         <Textarea
           id="nuevo-turno-motivo"
           name="reason"
           rows={3}
+          className={`${filledInputClass} h-auto py-3.5`}
           maxLength={BOOKING_REASON_MAX}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           aria-describedby="nuevo-turno-motivo-ayuda"
         />
-        <div id="nuevo-turno-motivo-ayuda" className="flex justify-between gap-2 text-footnote text-muted-foreground">
+        <div id="nuevo-turno-motivo-ayuda" className="flex justify-between gap-2 px-1 text-footnote text-muted-foreground">
           <span>{T.reasonHint}</span>
           <span className="tabular-nums" aria-live="polite">
             {reason.length}/{BOOKING_REASON_MAX}
@@ -441,10 +466,10 @@ function NewAppointmentForm({
 
       <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:items-center sm:justify-end">
         <p className="text-footnote text-muted-foreground sm:mr-auto">{T.whatsappNotice}</p>
-        <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={onCancel}>
+        <Button type="button" variant="secondary" className="h-12 w-full rounded-2xl px-5 sm:w-auto" onClick={onCancel}>
           {T.cancel}
         </Button>
-        <Button type="submit" className="w-full sm:w-auto" loading={submitting} disabled={!ready}>
+        <Button type="submit" className="h-12 w-full rounded-2xl px-5 sm:w-auto" loading={submitting} disabled={!ready}>
           {submitLabel}
         </Button>
       </div>

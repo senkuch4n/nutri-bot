@@ -2,7 +2,6 @@
 
 import {
   ArrowUpRight,
-  Banknote,
   BanknoteX,
   Check,
   Circle,
@@ -11,7 +10,6 @@ import {
   CircleX,
   Clock,
   Coins,
-  UserX,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -71,11 +69,12 @@ const STATUS_TONE: Record<AppointmentRowStatus, PillTone> = {
 
 /** Mismo padding en los cuatro estilos, así el ícono queda alineado aunque no haya pastilla visible. */
 const pillClass =
-  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-subheadline font-medium";
+  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-footnote font-medium";
 
 const PILL_TONE_CLASS: Record<PillTone, string> = {
   outlined: "border-border bg-background text-foreground shadow-card more-contrast:border-input",
-  plain: "border-transparent bg-background text-foreground",
+  // Halo suave en vez de borde (referencia V3): la pastilla se despega apenas del fondo de la tabla.
+  plain: "border-transparent bg-background text-foreground shadow-[0_1px_4px_rgb(0_0_0/0.07)]",
   danger: "border-transparent bg-destructive-muted-hover text-destructive",
   success:
     "border-transparent bg-success-muted text-success more-contrast:border-success",
@@ -92,10 +91,10 @@ function PillIcon({ icon: Icon, tone }: { icon: LucideIcon; tone: PillTone }) {
   return <Icon className={cn("size-3.5 shrink-0", filled)} strokeWidth={filled ? 2.5 : 2} aria-hidden />;
 }
 
-/** Acción de la fila con aspecto de texto gris («Abrir ↗», «Vino», «Registrar pago»). */
+/** «Abrir ↗» de la fila, con aspecto de texto gris. */
 const textActionClass = "px-2 font-normal text-muted-foreground hover:text-foreground";
 
-/** Id del botón "Abrir" de la fila: al cerrar el detalle o marcar "Vino", el foco vuelve ahí. */
+/** Id del botón "Abrir" de la fila: al cerrar el detalle, el foco vuelve ahí. */
 export function openButtonId(appointmentId: string): string {
   return `turno-abrir-${appointmentId}`;
 }
@@ -126,17 +125,13 @@ export function PaymentPill({ row }: { row: AppointmentListRow }) {
 }
 
 export interface AppointmentRowActions {
-  /** Fila con una acción en curso: sus botones quedan deshabilitados. */
-  busy: { id: string; status: "COMPLETED" | "NO_SHOW" } | null;
   onOpen: (id: string, origin: HTMLElement) => void;
-  onCloseAppointment: (row: AppointmentListRow, status: "COMPLETED" | "NO_SHOW") => void;
-  onRegisterPayment: (row: AppointmentListRow) => void;
 }
 
-/** HU-021 V2. Tabla de escritorio (≥ 640 px) dentro de un panel gris claro con borde fino; el
- *  encabezado va sobre una franja gris y las pastillas, blancas encima. Sin líneas divisorias,
- *  columnas de datos ajustadas a su contenido y Nota con el espacio que sobra.
- *  La fila no es clickeable; "Abrir" sí. */
+/** HU-021 V3 (referencia visual 2026-10-31). Tabla de escritorio (≥ 640 px) en un panel casi blanco con
+ *  un contorno muy fino; el encabezado sin franja, sin líneas divisorias y filas amplias. Columnas de datos al ancho
+ *  de su contenido y Nota con el espacio que sobra. Las acciones (Vino, No vino, Registrar pago) viven en el
+ *  detalle; la fila solo tiene «Abrir ↗». */
 export function AppointmentsTable({
   rows,
   caption,
@@ -149,13 +144,14 @@ export function AppointmentsTable({
   actions?: AppointmentRowActions;
 }) {
   // Columnas de datos al ancho de su contenido más un espacio fijo; Nota se queda con el resto.
-  const head = "h-12 text-body font-normal first:rounded-l-xl last:rounded-r-xl";
-  const fit = "w-px whitespace-nowrap pr-10";
-  const cell = "py-3 text-body";
+  const head = "h-11 text-callout font-normal text-muted-foreground";
+  const fit = "w-px whitespace-nowrap pr-8";
+  const cell = "py-2 text-callout";
   return (
-    <Table containerClassName="rounded-2xl border border-border bg-muted/30 p-2 more-contrast:border-input">
+    <Table containerClassName="rounded-[1.25rem] border border-black/[0.05] bg-[#fcfbfd] px-2 pt-1 shadow-[0_1px_2px_rgb(0_0_0/0.03)] more-contrast:border-input">
       <caption className="sr-only">{caption}</caption>
-      <TableHeader className="bg-muted/70">
+      {/* Sin el fondo blanco ni la línea del encabezado de la tabla base: el panel es uno solo. */}
+      <TableHeader className="bg-transparent [&_tr]:border-0">
         <TableRow className="border-0 hover:bg-transparent">
           <TableHead className={cn(head, fit, "pl-4")}>{T.columns.status}</TableHead>
           <TableHead className={cn(head, fit)}>{T.columns.patient}</TableHead>
@@ -170,92 +166,47 @@ export function AppointmentsTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row) => {
-          const busy = actions?.busy?.id === row.id;
-          const disabled = actions?.busy != null;
-          return (
-            <TableRow key={row.id} className="border-0 hover:bg-transparent">
-              <TableCell className={cn(cell, fit, "h-16 pl-4")}>
-                <StatusPill row={row} />
-              </TableCell>
-              <TableCell className={cn(cell, fit)}>
-                <span className="inline-flex items-center gap-2">
-                  <span>{row.patientLabel}</span>
-                  {row.patientArchived ? <Badge tone="neutral">{T.archived}</Badge> : null}
-                </span>
-              </TableCell>
-              <TableCell className={cn(cell, fit, "tabular-nums")}>{row.dateLabel}</TableCell>
-              <TableCell className={cn(cell, fit, "tabular-nums")}>{row.timeLabel}</TableCell>
-              <TableCell className={cn(cell, fit, "tabular-nums", row.payment.state === "free" && "text-muted-foreground")}>
-                {row.priceLabel}
-              </TableCell>
-              <TableCell className={cn(cell, fit)}>
-                <PaymentPill row={row} />
-              </TableCell>
-              <TableCell className={cell}>
-                <AppointmentReasonCell reason={row.reason} />
-              </TableCell>
-              <TableCell className={cn(cell, "pr-4")}>
-                {actions ? (
-                  <div className="flex items-center justify-end gap-0.5 whitespace-nowrap">
-                    {row.canClose ? (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={textActionClass}
-                          disabled={disabled}
-                          loading={busy && actions.busy?.status === "COMPLETED"}
-                          aria-label={T.actions.attendedLabel(row.patientLabel)}
-                          onClick={() => actions.onCloseAppointment(row, "COMPLETED")}
-                        >
-                          {busy && actions.busy?.status === "COMPLETED" ? null : <Check aria-hidden />}
-                          {T.actions.attended}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={textActionClass}
-                          disabled={disabled}
-                          loading={busy && actions.busy?.status === "NO_SHOW"}
-                          aria-label={T.actions.noShowLabel(row.patientLabel)}
-                          onClick={() => actions.onCloseAppointment(row, "NO_SHOW")}
-                        >
-                          {busy && actions.busy?.status === "NO_SHOW" ? null : <UserX aria-hidden />}
-                          {T.actions.noShow}
-                        </Button>
-                      </>
-                    ) : null}
-                    {row.canRegisterPayment ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={textActionClass}
-                        disabled={disabled}
-                        aria-label={T.actions.registerPaymentLabel(row.patientLabel)}
-                        onClick={() => actions.onRegisterPayment(row)}
-                      >
-                        <Banknote aria-hidden />
-                        {T.actions.registerPayment}
-                      </Button>
-                    ) : null}
-                    <Button
-                      id={openButtonId(row.id)}
-                      variant="ghost"
-                      size="sm"
-                      className={textActionClass}
-                      aria-label={T.actions.openLabel(row.patientLabel, row.dateLabel, row.timeLabel)}
-                      onClick={(e) => actions.onOpen(row.id, e.currentTarget)}
-                    >
-                      {T.actions.open}
-                      <ArrowUpRight aria-hidden />
-                    </Button>
-                  </div>
-                ) : null}
-              </TableCell>
-            </TableRow>
-          );
-        })}
+        {rows.map((row) => (
+          <TableRow key={row.id} className="border-0 hover:bg-transparent">
+            <TableCell className={cn(cell, fit, "h-14 pl-4")}>
+              <StatusPill row={row} />
+            </TableCell>
+            <TableCell className={cn(cell, fit)}>
+              <span className="inline-flex items-center gap-2">
+                <span>{row.patientLabel}</span>
+                {row.patientArchived ? <Badge tone="neutral">{T.archived}</Badge> : null}
+              </span>
+            </TableCell>
+            <TableCell className={cn(cell, fit, "tabular-nums")}>{row.dateLabel}</TableCell>
+            <TableCell className={cn(cell, fit, "tabular-nums")}>{row.timeLabel}</TableCell>
+            <TableCell className={cn(cell, fit, "tabular-nums", row.payment.state === "free" && "text-muted-foreground")}>
+              {row.priceLabel}
+            </TableCell>
+            <TableCell className={cn(cell, fit)}>
+              <PaymentPill row={row} />
+            </TableCell>
+            <TableCell className={cell}>
+              <AppointmentReasonCell reason={row.reason} />
+            </TableCell>
+            <TableCell className={cn(cell, "pr-4")}>
+              {actions ? (
+                <div className="flex items-center justify-end whitespace-nowrap">
+                  <Button
+                    id={openButtonId(row.id)}
+                    variant="ghost"
+                    size="sm"
+                    className={textActionClass}
+                    aria-label={T.actions.openLabel(row.patientLabel, row.dateLabel, row.timeLabel)}
+                    onClick={(e) => actions.onOpen(row.id, e.currentTarget)}
+                  >
+                    {T.actions.open}
+                    <ArrowUpRight aria-hidden />
+                  </Button>
+                </div>
+              ) : null}
+            </TableCell>
+          </TableRow>
+        ))}
       </TableBody>
     </Table>
   );

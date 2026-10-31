@@ -193,12 +193,18 @@ export function PatientTabs({
               variant === "modal" ? "top-0 -mx-6 px-6 pt-2" : "top-14 -mx-6 px-6 lg:top-0 lg:-mx-10 lg:px-10 lg:pt-2",
             )}
           >
+            {/* Pestañas en píldora (referencia 2026-10-31): el indicador compartido se vuelve un fondo gris que
+                se desliza detrás de la activa, en vez del subrayado. */}
             <TabsList
               aria-label="Secciones de la ficha"
-              className="max-sm:grid max-sm:grid-cols-4 max-sm:gap-1 sm:gap-8"
+              className="h-12 border-0 max-sm:grid max-sm:grid-cols-4 max-sm:gap-1 sm:gap-2"
             >
               {PATIENT_TABS.map((value) => (
-                <TabsTrigger key={value} value={value} className="max-sm:justify-center max-sm:text-subheadline">
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="isolate h-10 rounded-full px-4 font-normal max-sm:justify-center max-sm:px-2 max-sm:text-subheadline data-[state=active]:font-medium [&>[data-tab-indicator]]:inset-0 [&>[data-tab-indicator]]:bottom-0 [&>[data-tab-indicator]]:-z-10 [&>[data-tab-indicator]]:h-auto [&>[data-tab-indicator]]:bg-black/[0.05]"
+                >
                   {TAB_LABELS[value]}
                   {value === "consultas" && consultationCount > 0 ? (
                     <>
@@ -223,7 +229,12 @@ export function PatientTabs({
           </div>
 
           {PATIENT_TABS.map((value) => (
-            <TabsContent key={value} value={value} forceMount className="data-[state=inactive]:hidden">
+            <TabsContent
+              key={value}
+              value={value}
+              forceMount
+              className="mt-4 rounded-[1.75rem] border border-black/[0.05] bg-[#fcfbfd] p-5 data-[state=inactive]:hidden sm:p-7"
+            >
               {panels[value]}
             </TabsContent>
           ))}

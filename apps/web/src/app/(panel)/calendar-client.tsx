@@ -1,25 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin, { type DateClickArg } from "@fullcalendar/interaction";
 import luxonPlugin from "@fullcalendar/luxon3";
-import type { CalendarApi, DatesSetArg, EventApi, EventClickArg } from "@fullcalendar/core";
-import { Plus } from "lucide-react";
+// Con locale="es" (texto) FullCalendar no carga sus traducciones ("+1 more"): va el objeto del idioma.
+import esLocale from "@fullcalendar/core/locales/es";
+import type {
+  CalendarApi,
+  DatesSetArg,
+  DayCellMountArg,
+  EventApi,
+  EventClickArg,
+  EventContentArg,
+  EventMountArg,
+} from "@fullcalendar/core";
 import {
   AGENDA_TEXT,
-  APPOINTMENT_STATUS_TEXT,
+  calendarDayPanelTitle,
+  calendarFilterHides,
   calendarPeriodTitle,
   fromZonedTime,
+  type CalendarFilters as Filters,
   type CalendarView,
 } from "@nutri-bot/core";
-import { Button, PageHeader } from "@/components/ui";
 import {
   FC_VIEW,
   calendarHref,
+  createCalendarReveal,
   calendarViewFromFc,
   resolveCalendarRoute,
 } from "@/lib/calendar-route";
@@ -28,13 +39,19 @@ import { notify } from "@/lib/notify";
 import { replaceUrlInRouter } from "@/lib/patient-tab-route";
 import { NewAppointmentModal, type ServiceOption } from "./new-appointment-modal";
 import { AppointmentDetailSheet, type SelectedAppointment } from "./appointment-detail-sheet";
+import { AppointmentDetailDialog } from "./turnos/appointment-detail-dialog";
 import { appointmentCancelKey, useScheduleAppointmentCancel } from "./appointment-cancel";
 import { CalendarGridSkeleton, CalendarToolbar, CalendarToolbarSkeleton } from "./calendar-toolbar";
+import { CalendarFilters } from "./calendar-filters";
+import { AppointmentStatusDot } from "./appointment-status-dot";
+import { CalendarDayPanel, type DayAppointment } from "./calendar-day-panel";
 
 // Referencias estables: si se crean inline en el render, FullCalendar cree que
 // la config cambió y vuelve a pedir los eventos → loop infinito con `loading`.
 // luxonPlugin: sin él, FullCalendar no puede convertir a una zona con nombre (timeZone={tz}) y muestra UTC.
 const PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin, luxonPlugin];
+// "11:00" y no "11": por defecto FullCalendar omite los minutos en punto.
+const EVENT_TIME_FORMAT = { hour: "numeric", minute: "2-digit", hour12: false } as const;
 const EVENT_SOURCE = {
   url: "/api/appointments",
   method: "GET" as const,
@@ -45,13 +62,6 @@ interface BusinessHours {
   daysOfWeek: number[];
   startTime: string;
   endTime: string;
-}
-
-/** Textos ya armados en el servidor (solo datos, T9a). */
-interface Summary {
-  todayText: string;
-  weekText: string;
-  nextText: string | null;
 }
 
 /** Lo que se resolvió al montar: el ancho no se vuelve a leer (Q15). */
@@ -69,13 +79,87 @@ function isoFromDateStr(dateStr: string, tz: string): string {
   return (hasOffset ? new Date(dateStr) : fromZonedTime(dateStr, tz)).toISOString();
 }
 
-/** Oculta los turnos con cancelación pendiente (Q6). Solo toca los que cambian: setProp dispara
- *  eventsSet, y sin esta guarda habría un loop. */
-function applyPendingCancellations(api: CalendarApi, pending: ReadonlySet<string>) {
+const NO_FILTERS: Filters = { hiddenServices: [], hiddenStatuses: [] };
+
+/** Oculta los turnos con cancelación pendiente (Q6) y los que sacan los Filtros. Solo toca los que
+ *  cambian: setProp dispara eventsSet, y sin esta guarda habría un loop. */
+function applyVisibility(api: CalendarApi, pending: ReadonlySet<string>, filters: Filters) {
   for (const ev of api.getEvents()) {
-    const display = pending.has(appointmentCancelKey(ev.id)) ? "none" : "auto";
+    const p = ev.extendedProps;
+    const hidden =
+      pending.has(appointmentCancelKey(ev.id)) ||
+      calendarFilterHides({ serviceName: String(p.serviceName), status: String(p.status) }, filters);
+    const display = hidden ? "none" : "auto";
     if (ev.display !== display) ev.setProp("display", display);
   }
+}
+
+function eventClassNames(arg: EventContentArg): string[] {
+  return ["appt-event", `appt-event--${String(arg.event.extendedProps.status).toLowerCase()}`];
+}
+
+/** Pastilla del turno, un renglón: punto (servicio + estado) · paciente · hora. El servicio completo
+ *  queda en el nombre accesible. */
+function renderEventContent(arg: EventContentArg) {
+  const p = arg.event.extendedProps;
+  return (
+    <div className="appt-pill" title={`${p.patientLabel} · ${p.serviceName}`}>
+      <AppointmentStatusDot status={String(p.status)} color={String(p.serviceColor)} />
+      <span className="min-w-0 flex-1 truncate">{p.patientLabel}</span>
+      <span className="shrink-0 tabular-nums">{arg.timeText}</span>
+    </div>
+  );
+}
+
+/** Lo que necesita el panel del turno, desde el evento del calendario. */
+function selectedFromEvent(event: EventApi): SelectedAppointment {
+  const p = event.extendedProps;
+  return {
+    id: event.id,
+    start: event.startStr,
+    end: event.endStr,
+    status: p.status,
+    patientName: p.patientName ?? null,
+    patientPhone: p.patientPhone,
+    serviceName: p.serviceName,
+    price: p.price,
+    googleSynced: p.googleSynced,
+    patientId: p.patientId,
+    consultation: p.consultation ?? null,
+    reason: p.reason ?? null,
+    patientJid: p.patientJid,
+    patientLabel: p.patientLabel,
+    hasFullPayment: Boolean(p.hasFullPayment),
+  };
+}
+
+/** Turnos visibles de un día (los ocultos por Filtros o por una cancelación pendiente no van). */
+function dayAppointments(events: readonly EventApi[], dayKey: string): DayAppointment[] {
+  return events
+    .filter((ev) => ev.display !== "none" && ev.startStr.slice(0, 10) === dayKey)
+    .sort((a, b) => (a.start?.getTime() ?? 0) - (b.start?.getTime() ?? 0))
+    .map((ev) => {
+      const p = ev.extendedProps;
+      return {
+        id: ev.id,
+        start: ev.startStr,
+        end: ev.endStr,
+        status: String(p.status),
+        patientLabel: String(p.patientLabel),
+        serviceName: String(p.serviceName),
+        serviceColor: String(p.serviceColor),
+        hasFullPayment: Boolean(p.hasFullPayment),
+        hasNote: Boolean(p.reason),
+      };
+    });
+}
+
+// Ícono "agrandar" (Maximize2 de lucide) para el botón que FullCalendar no deja poner con JSX en la casilla.
+const EXPAND_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>';
+
+function isActivationKey(e: KeyboardEvent) {
+  return e.key === "Enter" || e.key === " ";
 }
 
 function prefersReducedMotion(): boolean {
@@ -88,7 +172,6 @@ export function CalendarClient({
   tz,
   currency,
   todayKey,
-  summary,
   businessHours,
   slotMin,
   slotMax,
@@ -99,7 +182,6 @@ export function CalendarClient({
   currency: string;
   /** "yyyy-MM-dd" de hoy en la zona de la profesional. */
   todayKey: string;
-  summary: Summary;
   businessHours: BusinessHours[];
   slotMin: string;
   slotMax: string;
@@ -119,21 +201,35 @@ export function CalendarClient({
   const [mounted, setMounted] = useState<Mounted | null>(null);
   const mountedRef = useRef<Mounted | null>(null);
   const scrollPendingRef = useRef(false);
-  const [view, setView] = useState<CalendarView>("semana");
+  const [view, setView] = useState<CalendarView>("mes");
   const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
+  // Casilla del día (Mes) desde la que crece "Nuevo turno". No se limpia al cerrar: el diálogo la
+  // necesita para volver a ella en la animación de salida.
+  const [createOrigin, setCreateOrigin] = useState<HTMLElement | null>(null);
+  // Pastilla del turno desde la que crece su detalle (escritorio); tampoco se limpia al cerrar.
+  const [detailOrigin, setDetailOrigin] = useState<HTMLElement | null>(null);
   const [initialDate, setInitialDate] = useState<string | undefined>();
   const [initialStart, setInitialStart] = useState<string | undefined>();
   const [selected, setSelected] = useState<SelectedAppointment | null>(null);
   const [loading, setLoading] = useState(false);
+  // Eventos que cargó el calendario (para el panel del día).
+  const [calEvents, setCalEvents] = useState<EventApi[]>([]);
+  // Panel del día: el día y la casilla se conservan al cerrar (animación de salida).
+  const [dayOpen, setDayOpen] = useState(false);
+  const [dayKey, setDayKey] = useState<string | null>(null);
+  const [dayOrigin, setDayOrigin] = useState<HTMLElement | null>(null);
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
   const pendingDeletions = usePendingDeletions();
   const pendingRef = useRef(pendingDeletions);
   pendingRef.current = pendingDeletions;
 
   useEffect(() => {
     const api = calRef.current?.getApi();
-    if (api) applyPendingCancellations(api, pendingDeletions);
-  }, [pendingDeletions, mounted]);
+    if (api) applyVisibility(api, pendingDeletions, filters);
+  }, [pendingDeletions, filters, mounted]);
 
   // Montaje solo en el cliente (Q1): recién acá se conoce el ancho; mientras, el esqueleto.
   useEffect(() => {
@@ -195,9 +291,26 @@ export function CalendarClient({
     [todayKey],
   );
 
+  // Entrada del calendario (cada vez que se entra a la página): las pastillas aparecen en orden, de
+  // borrosas a nítidas. Solo la primera carga; refrescos y cambios de mes, sin animación.
+  // Se cierra dos cuadros después de montar la primera pastilla: para entonces ya se montó toda la tanda.
+  const revealRef = useRef<ReturnType<typeof createCalendarReveal> | null>(null);
+  revealRef.current ??= createCalendarReveal((fn) => requestAnimationFrame(() => requestAnimationFrame(fn)));
+  const onEventDidMount = useCallback((arg: EventMountArg) => {
+    if (prefersReducedMotion()) return;
+    const delay = revealRef.current?.next() ?? null;
+    if (delay === null) return;
+    const el = arg.el;
+    el.style.setProperty("--reveal-delay", `${delay}ms`);
+    el.classList.add("appt-reveal");
+    // Sin la clase después: la animación ya no pisa la opacidad del hover.
+    el.addEventListener("animationend", () => el.classList.remove("appt-reveal"), { once: true });
+  }, []);
+
   const onEventsSet = useCallback((events: EventApi[]) => {
+    setCalEvents([...events]);
     const api = calRef.current?.getApi();
-    if (api) applyPendingCancellations(api, pendingRef.current);
+    if (api) applyVisibility(api, pendingRef.current, filtersRef.current);
     // Deep link (Q5): el primer turno del día, a la vista una sola vez (y solo si no se ve ya).
     if (!scrollPendingRef.current || events.length === 0) return;
     scrollPendingRef.current = false;
@@ -212,26 +325,66 @@ export function CalendarClient({
   }, []);
 
   const onEventClick = useCallback((arg: EventClickArg) => {
-    const p = arg.event.extendedProps;
     lastEventElRef.current = arg.el;
-    setSelected({
-      id: arg.event.id,
-      start: arg.event.startStr,
-      end: arg.event.endStr,
-      status: p.status,
-      patientName: p.patientName ?? null,
-      patientPhone: p.patientPhone,
-      serviceName: p.serviceName,
-      price: p.price,
-      googleSynced: p.googleSynced,
-      patientId: p.patientId,
-      consultation: p.consultation ?? null,
-      reason: p.reason ?? null,
-      patientJid: p.patientJid,
-      patientLabel: p.patientLabel,
-      hasFullPayment: Boolean(p.hasFullPayment),
-    });
+    setDetailOrigin(arg.el);
+    setSelected(selectedFromEvent(arg.event));
   }, []);
+
+  // Panel del día: crece desde la casilla (su marco redondeado) del día elegido.
+  const openDay = useCallback((key: string, cell: HTMLElement) => {
+    setSelected(null);
+    setDayKey(key);
+    setDayOrigin(cell.querySelector<HTMLElement>(".fc-daygrid-day-frame") ?? cell);
+    setDayOpen(true);
+  }, []);
+  const openDayRef = useRef(openDay);
+  openDayRef.current = openDay;
+
+  // Botón "agrandar" en cada casilla del Mes. El clic con el mouse ya lo atiende dateClick (toda la
+  // casilla abre el día); el botón suma el acceso por teclado y el nombre accesible.
+  const onDayCellDidMount = useCallback(
+    (arg: DayCellMountArg) => {
+      if (arg.view.type !== FC_VIEW.mes) return;
+      const key = arg.el.getAttribute("data-date");
+      const frame = arg.el.querySelector<HTMLElement>(".fc-daygrid-day-frame");
+      if (!key || !frame) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "day-expand";
+      button.setAttribute("aria-label", `${AGENDA_TEXT.dayPanel.expand}: ${calendarDayPanelTitle(key, todayKey)}`);
+      button.innerHTML = EXPAND_ICON;
+      button.addEventListener("click", (e) => {
+        if (e.detail === 0) openDayRef.current(key, arg.el); // teclado (Enter/Espacio)
+      });
+      frame.appendChild(button);
+    },
+    [todayKey],
+  );
+
+  // "+N más" abre el mismo panel en vez del popover de FullCalendar. FullCalendar (Preact) escucha el clic
+  // en el mismo link y con una función igual abre su popover: se corta en captura, desde el contenedor.
+  useEffect(() => {
+    const area = calendarAreaRef.current;
+    if (!area || !mounted) return;
+    const intercept = (e: Event) => {
+      if (e instanceof KeyboardEvent && !isActivationKey(e)) return;
+      const link = (e.target as HTMLElement | null)?.closest?.(".fc-more-link");
+      const cell = link?.closest<HTMLElement>("td[data-date]");
+      const key = cell?.getAttribute("data-date");
+      if (!cell || !key) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openDayRef.current(key, cell);
+    };
+    area.addEventListener("click", intercept, true);
+    area.addEventListener("keydown", intercept, true);
+    return () => {
+      area.removeEventListener("click", intercept, true);
+      area.removeEventListener("keydown", intercept, true);
+    };
+  }, [mounted]);
+
+  const dayItems = useMemo(() => (dayKey ? dayAppointments(calEvents, dayKey) : []), [calEvents, dayKey]);
 
   // D5: el turno se oculta al instante; la cancelación (y el WhatsApp) salen al vencer el "Deshacer".
   // Como el turno ya no se ve, al cerrarse el panel el foco va al título de la barra.
@@ -244,15 +397,21 @@ export function CalendarClient({
     [scheduleAppointmentCancel],
   );
 
-  // Q4: un toque (sin mantener apretado) en una franja abre "Nuevo turno" con ese horario.
+  // Mes: tocar una casilla abre el panel del día. Semana/Día (Q4): un toque en una franja abre
+  // "Nuevo turno" con ese horario.
   const onDateClick = useCallback(
     (arg: DateClickArg) => {
+      if (arg.view.type === FC_VIEW.mes) {
+        openDay(arg.dateStr.slice(0, 10), arg.dayEl);
+        return;
+      }
       setSelected(null);
       setInitialDate(arg.dateStr.slice(0, 10));
       setInitialStart(arg.allDay ? undefined : isoFromDateStr(arg.dateStr, tz));
+      setCreateOrigin(null);
       setCreating(true);
     },
-    [tz],
+    [tz, openDay],
   );
 
   const withApi = (fn: (api: CalendarApi) => void) => {
@@ -262,45 +421,11 @@ export function CalendarClient({
 
   return (
     <div>
-      <PageHeader
-        title="Calendario"
-        action={
-          <Button
-            onClick={() => {
-              setInitialDate(undefined);
-              setInitialStart(undefined);
-              setCreating(true);
-            }}
-          >
-            <Plus aria-hidden />
-            Nuevo turno
-          </Button>
-        }
-      />
-
-      {/* Franja de resumen en palabras (D8, Q11): en el celular se apila, sin cortar el nombre. */}
-      <dl
-        aria-label="Resumen de turnos"
-        className="mb-4 flex flex-col gap-y-1.5 rounded-lg border bg-card px-4 py-3 text-callout sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-6"
-      >
-        <div className="tabular-nums">
-          <dt className="sr-only">Turnos de hoy</dt>
-          <dd className="font-semibold">{summary.todayText}</dd>
-        </div>
-        <div className="tabular-nums">
-          <dt className="sr-only">Turnos de esta semana</dt>
-          <dd>{summary.weekText}</dd>
-        </div>
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-          <dt className="text-muted-foreground">{AGENDA_TEXT.next}:</dt>
-          <dd className={summary.nextText ? "min-w-0 break-words" : "text-muted-foreground"}>
-            {summary.nextText ?? AGENDA_TEXT.noNext}
-          </dd>
-        </div>
-      </dl>
+      {/* Sin encabezado ni resumen (2026-10-31): el título del período es la cabecera visible. */}
+      <h1 className="sr-only">Calendario</h1>
 
       {/* Calendario */}
-      <div ref={calendarAreaRef} className="relative overflow-hidden rounded-lg border bg-card p-4">
+      <div ref={calendarAreaRef} className="relative">
         {loading ? (
           <span
             role="status"
@@ -318,6 +443,7 @@ export function CalendarClient({
               onNext={() => withApi((api) => api.next())}
               onToday={() => withApi((api) => api.today())}
               onViewChange={(v) => withApi((api) => api.changeView(FC_VIEW[v]))}
+              filters={<CalendarFilters services={legend} filters={filters} wide={mounted.wide} onChange={setFilters} />}
             />
             <FullCalendar
               ref={calRef}
@@ -325,7 +451,7 @@ export function CalendarClient({
               initialView={FC_VIEW[mounted.view]}
               initialDate={mounted.dayKey}
               headerToolbar={false}
-              locale="es"
+              locale={esLocale}
               firstDay={1}
               nowIndicator
               allDaySlot={false}
@@ -337,7 +463,14 @@ export function CalendarClient({
               height="auto"
               timeZone={tz}
               dayMaxEvents={3}
+              eventDisplay="block"
+              displayEventEnd={false}
+              eventTimeFormat={EVENT_TIME_FORMAT}
+              eventClassNames={eventClassNames}
+              eventContent={renderEventContent}
+              eventDidMount={onEventDidMount}
               dateClick={onDateClick}
+              dayCellDidMount={onDayCellDidMount}
               eventClick={onEventClick}
               eventInteractive
               datesSet={onDatesSet}
@@ -354,29 +487,31 @@ export function CalendarClient({
         )}
       </div>
 
-      {/* Leyenda: color del servicio (dato) y de los estados cerrados (Q22) */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-footnote text-muted-foreground">
-        {legend.length > 0 ? (
-          <>
-            <span className="font-medium text-foreground">{AGENDA_TEXT.legendServices}</span>
-            {legend.map((s) => (
-              <span key={s.name} className="inline-flex items-center gap-1.5">
-                <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
-                {s.name}
-              </span>
-            ))}
-          </>
-        ) : null}
-        <span className="font-medium text-foreground">{AGENDA_TEXT.legendStates}</span>
-        <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden className="h-2.5 w-2.5 rounded-sm bg-success" />
-          {APPOINTMENT_STATUS_TEXT.COMPLETED}
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden className="h-2.5 w-2.5 rounded-sm bg-destructive" />
-          {APPOINTMENT_STATUS_TEXT.NO_SHOW}
-        </span>
-      </div>
+      <CalendarDayPanel
+        open={dayOpen}
+        dayKey={dayKey}
+        origin={dayOrigin}
+        wide={mounted?.wide ?? true}
+        todayKey={todayKey}
+        tz={tz}
+        slotMin={slotMin}
+        slotMax={slotMax}
+        items={dayItems}
+        onClose={() => setDayOpen(false)}
+        onCreate={(key, from) => {
+          setInitialDate(key);
+          setInitialStart(undefined);
+          setCreateOrigin(from);
+          setCreating(true);
+        }}
+        onOpenAppointment={(id, from) => {
+          const ev = calRef.current?.getApi().getEventById(id);
+          if (!ev) return;
+          lastEventElRef.current = from;
+          setDetailOrigin(from);
+          setSelected(selectedFromEvent(ev));
+        }}
+      />
 
       <NewAppointmentModal
         open={creating}
@@ -387,19 +522,35 @@ export function CalendarClient({
         todayKey={todayKey}
         initialDate={initialDate}
         initialStart={initialStart}
+        origin={createOrigin}
       />
 
-      <AppointmentDetailSheet
-        appt={selected}
-        tz={tz}
-        currency={currency}
-        onClose={() => setSelected(null)}
-        onChanged={refetch}
-        onUpdated={setSelected}
-        onCancel={scheduleCancel}
-        interactionAreaRef={calendarAreaRef}
-        returnFocusRef={lastEventElRef}
-      />
+      {/* Escritorio: la pastilla se transforma en su detalle, en su lugar. Celular: la hoja de siempre. */}
+      {mounted?.wide ? (
+        <AppointmentDetailDialog
+          appt={selected}
+          origin={detailOrigin}
+          anchored
+          tz={tz}
+          currency={currency}
+          onClose={() => setSelected(null)}
+          onChanged={refetch}
+          onUpdated={setSelected}
+          onCancel={scheduleCancel}
+        />
+      ) : (
+        <AppointmentDetailSheet
+          appt={selected}
+          tz={tz}
+          currency={currency}
+          onClose={() => setSelected(null)}
+          onChanged={refetch}
+          onUpdated={setSelected}
+          onCancel={scheduleCancel}
+          interactionAreaRef={calendarAreaRef}
+          returnFocusRef={lastEventElRef}
+        />
+      )}
     </div>
   );
 }

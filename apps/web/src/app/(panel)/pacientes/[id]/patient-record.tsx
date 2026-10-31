@@ -221,7 +221,7 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
               contactLabel={(isPhone ? row?.phoneLabel : null) ?? HIDDEN_NUMBER_TEXT}
               riskBackground={riskBackground}
               archived={patient.archivedAt !== null}
-              className={variant === "modal" ? "pt-1" : "mt-2"}
+              className={variant === "modal" ? undefined : "mt-2"}
               inDialog={variant === "modal"}
               actions={{
                 pendingBlockedText,

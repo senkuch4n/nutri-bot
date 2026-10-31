@@ -1,17 +1,75 @@
 {
   "$schema_comment": "Hooks del arnés RDD/SDD. Corren por fuera del control del agente, así que no se pueden saltear con instrucciones en el chat.",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "gentle-ai review stop-hook --agent claude-code",
+            "timeout": 30,
+            "type": "command"
+          }
+        ],
+        "matcher": "startup|resume|clear|compact"
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "./ops/harness/verify.sh > /tmp/nutribot_harness_verify.log 2>&1 && echo '[harness] verify.sh OK' || (echo '[harness] verify.sh FALLÓ — revisar /tmp/nutribot_harness_verify.log antes de declarar nada aprobada/lista' && tail -30 /tmp/nutribot_harness_verify.log)"
+            "command": "./ops/harness/verify.sh \u003e /tmp/nutribot_harness_verify.log 2\u003e\u00261 \u0026\u0026 echo '[harness] verify.sh OK' || (echo '[harness] verify.sh FALLÓ — revisar /tmp/nutribot_harness_verify.log antes de declarar nada aprobada/lista' \u0026\u0026 tail -30 /tmp/nutribot_harness_verify.log)",
+            "type": "command"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "gentle-ai review stop-hook --agent claude-code",
+            "timeout": 60,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      },
+      {
+        "hooks": [
+          {
+            "async": true,
+            "command": "gentle-ai telemetry runtime claude --json",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "async": true,
+            "command": "gentle-ai telemetry runtime claude --json",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "gentle-ai skill-registry refresh --quiet --no-gitignore --cwd \"${CLAUDE_PROJECT_DIR:-$PWD}\" || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
       }
     ]
   },
+  "outputStyle": "Gentleman",
   "permissions": {
     "allow": [
       "Bash(./ops/harness/verify.sh)"

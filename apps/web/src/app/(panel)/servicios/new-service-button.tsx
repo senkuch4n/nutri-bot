@@ -15,15 +15,25 @@ export function NewServiceButton({
   variant?: "primary" | "tinted";
 }) {
   const [open, setOpen] = useState(false);
+  // El diálogo nace en el lugar del botón.
+  const [origin, setOrigin] = useState<HTMLElement | null>(null);
   return (
     <>
-      <Button variant={variant} size={variant === "primary" ? "lg" : "md"} onClick={() => setOpen(true)}>
+      <Button
+        variant={variant}
+        onClick={(e) => {
+          setOrigin(e.currentTarget);
+          setOpen(true);
+        }}
+        className="rounded-full"
+      >
         <Plus aria-hidden />
         {label}
       </Button>
       <ServiceSheet
         open={open}
         onOpenChange={setOpen}
+        origin={origin}
         currency={currency}
         title="Nuevo servicio"
         description="El bot lo ofrece a los pacientes por WhatsApp."

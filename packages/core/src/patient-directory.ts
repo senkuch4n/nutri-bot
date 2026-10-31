@@ -275,3 +275,15 @@ export const PATIENT_DIRECTORY_TEXT = {
   cards: { total: "Total", inProgress: "En proceso", dropped: "De baja", archived: "Archivados" },
   openArchived: (n: number) => `Ver archivados (${n})`,
 } as const;
+
+/** "Recientes" de "Nuevo turno" con el buscador vacío: las de actividad más reciente (`recentAt`, ISO)
+ *  primero, hasta `limit`. Las sin nombre no van (se encuentran buscando por teléfono). Orden estable:
+ *  en un empate queda el de entrada. No modifica `rows`. */
+export function recentPatients<T extends { name: string | null; recentAt?: string }>(rows: readonly T[], limit: number): T[] {
+  // Sin recentAt ("") queda después de cualquier fecha ISO.
+  const key = (r: T) => r.recentAt ?? "";
+  return rows
+    .filter((r) => r.name !== null)
+    .sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0))
+    .slice(0, limit);
+}

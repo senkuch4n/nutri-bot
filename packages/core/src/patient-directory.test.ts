@@ -7,6 +7,7 @@ import {
   buildPatientDirectory,
   matchesPatientQuery,
   patientCountLabel,
+  recentPatients,
   patientInitials,
   patientStageCounts,
   type PatientDirectoryInput,
@@ -286,5 +287,39 @@ describe("Pacientes rediseño: etapa e iniciales", () => {
       dropped: 1,
     });
     expect(patientStageCounts([])).toEqual({ total: 0, inProgress: 0, dropped: 0 });
+  });
+});
+
+describe("recentPatients", () => {
+  const opt = (id: string, recentAt: string, name: string | null = `P ${id}`) => ({ id, name, recentAt });
+
+  it("las de actividad más reciente primero, hasta el límite", () => {
+    const rows = [
+      opt("a", "2026-01-01T00:00:00.000Z"),
+      opt("b", "2026-10-20T00:00:00.000Z"),
+      opt("c", "2026-06-01T00:00:00.000Z"),
+      opt("d", "2026-10-29T00:00:00.000Z"),
+    ];
+    expect(recentPatients(rows, 3).map((r) => r.id)).toEqual(["d", "b", "c"]);
+  });
+
+  it("sin nombre no aparecen (se encuentran buscando); empate: queda el orden de entrada", () => {
+    const rows = [
+      opt("u", "2026-10-30T00:00:00.000Z", null),
+      opt("x", "2026-10-01T00:00:00.000Z"),
+      opt("y", "2026-10-01T00:00:00.000Z"),
+    ];
+    expect(recentPatients(rows, 5).map((r) => r.id)).toEqual(["x", "y"]);
+  });
+
+  it("sin recentAt van al final", () => {
+    const rows = [{ id: "s", name: "Sin dato" }, opt("a", "2020-01-01T00:00:00.000Z")];
+    expect(recentPatients(rows, 5).map((r) => r.id)).toEqual(["a", "s"]);
+  });
+
+  it("no modifica la lista recibida", () => {
+    const rows = [opt("a", "2026-01-01T00:00:00.000Z"), opt("b", "2026-02-01T00:00:00.000Z")];
+    recentPatients(rows, 5);
+    expect(rows.map((r) => r.id)).toEqual(["a", "b"]);
   });
 });

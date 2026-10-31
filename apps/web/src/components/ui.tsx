@@ -397,6 +397,12 @@ export function FormError({ message }: { message?: string | null }) {
 export const inputClass =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-callout text-foreground placeholder:text-placeholder transition-[border-color,box-shadow] duration-hover ease-out-soft focus-visible:border-ring focus-visible:shadow-focus focus-visible:outline-none aria-[invalid=true]:border-destructive disabled:cursor-not-allowed disabled:bg-secondary disabled:text-tertiary";
 
+/** Superficie gris de los formularios "rellenos" (campos, lista de opciones). */
+export const filledSurfaceClass = "rounded-2xl bg-[#ebe9ec]";
+/** Campo "relleno": gris, sin borde, más alto y redondeado. Se suma a Input/Select/Textarea por `className`
+ *  (cn resuelve los choques con inputClass; el foco y el error siguen pintando el borde). */
+export const filledInputClass = `${filledSurfaceClass} h-[3.25rem] border-transparent px-5 text-body`;
+
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input {...props} className={cn(inputClass, className)} />;
 }

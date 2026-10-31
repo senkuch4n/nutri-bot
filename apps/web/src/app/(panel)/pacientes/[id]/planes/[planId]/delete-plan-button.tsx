@@ -31,7 +31,7 @@ export function DeletePlanButton({ planId, patientId }: { planId: string; patien
       size="sm"
       loading={pending}
       onClick={handleClick}
-      className="text-destructive hover:bg-destructive-muted hover:text-destructive"
+      className="rounded-full text-destructive hover:bg-destructive-muted hover:text-destructive"
     >
       {pending ? null : <Trash2 aria-hidden />}
       {pending ? "Borrando…" : "Borrar plan"}

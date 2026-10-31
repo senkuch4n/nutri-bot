@@ -10,7 +10,7 @@ import {
   MorphDialogHeader,
   MorphDialogTitle,
 } from "@/components/primitives/morph-dialog";
-import { Button, Input, Select } from "@/components/ui";
+import { Button, Input, Select, filledInputClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { addRuleAction, updateRuleAction, type FormState } from "./actions";
 import { addRangeButtonId, type Rule } from "./schedule";
@@ -63,6 +63,10 @@ export function RangeSheet({
     // `originLabel`: el texto del horario (o "Agregar horario") viaja con la tarjeta mientras crece.
     <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin} originLabel>
       <MorphDialogContent
+        className="w-[min(100%,28rem)] bg-[#f9f8fa]"
+        closeSide="left"
+        // anchor="origin": se transforma en el lugar del horario tocado (no viaja al centro).
+        anchor="origin"
         onCloseAutoFocus={(event) => {
           // Si el horario que abrió el panel se borró, el foco va a "Agregar horario" de ese día.
           const el = fallbackFocus.current;
@@ -94,6 +98,9 @@ export function RangeSheet({
 }
 
 const initial: FormState = { ok: false };
+
+/** Rótulo de campo: texto gris chico sobre los campos rellenos (como en "Nuevo turno"). */
+export const FIELD_LABEL = "mb-2 block px-1 text-subheadline font-normal text-muted-foreground";
 
 function RangeForm({
   target,
@@ -143,19 +150,19 @@ function RangeForm({
 
   return (
     <>
-      <MorphDialogHeader>
-        <MorphDialogTitle>{`Horario del ${dayLower(weekday)}`}</MorphDialogTitle>
-        <MorphDialogDescription>
-          {editing ? "Cambiá las horas y guardá. El bot ofrece turnos solo en tu horario." : "El bot ofrece turnos solo en tu horario."}
-        </MorphDialogDescription>
+      <MorphDialogHeader className="min-h-10 justify-center pl-14 pr-0">
+        <MorphDialogTitle className="text-title-2 font-normal text-muted-foreground">{`Horario del ${dayLower(weekday)}`}</MorphDialogTitle>
       </MorphDialogHeader>
+      <MorphDialogDescription className="mt-4 px-1">
+        {editing ? "Cambiá las horas y guardá. El bot ofrece turnos solo en tu horario." : "El bot ofrece turnos solo en tu horario."}
+      </MorphDialogDescription>
 
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-6 space-y-5">
         {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
 
         <label className="block">
-          <span className="mb-1.5 block text-subheadline font-medium text-foreground">Día</span>
-          <Select name="weekday" value={String(weekday)} onChange={(e) => setWeekday(Number(e.target.value))} className="h-11">
+          <span className={FIELD_LABEL}>Día</span>
+          <Select name="weekday" value={String(weekday)} onChange={(e) => setWeekday(Number(e.target.value))} className={filledInputClass}>
             {WEEKDAY_ORDER.map((d) => (
               <option key={d} value={d}>
                 {WEEKDAY_NAMES[d]}
@@ -166,51 +173,51 @@ function RangeForm({
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="mb-1.5 block text-subheadline font-medium text-foreground">{T.from}</span>
+            <span className={FIELD_LABEL}>{T.from}</span>
             <Input
               name="startTime"
               type="time"
               required
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
-              className="h-11 tabular-nums"
+              className={`${filledInputClass} tabular-nums`}
               aria-invalid={invalid}
               aria-describedby={error ? errorId : undefined}
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-subheadline font-medium text-foreground">{T.to}</span>
+            <span className={FIELD_LABEL}>{T.to}</span>
             <Input
               name="endTime"
               type="time"
               required
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
-              className="h-11 tabular-nums"
+              className={`${filledInputClass} tabular-nums`}
               aria-invalid={invalid}
               aria-describedby={error ? errorId : undefined}
             />
           </label>
         </div>
         {error ? (
-          <p id={errorId} role="alert" className="-mt-2 text-footnote text-destructive">
+          <p id={errorId} role="alert" className="-mt-2 px-1 text-footnote text-destructive">
             {error}
           </p>
         ) : null}
 
-        <Button type="submit" size="lg" loading={pending} className="w-full">
+        <Button type="submit" size="lg" loading={pending} className="w-full rounded-full">
           {pending ? "Guardando…" : T.save}
         </Button>
 
         {editing ? (
-          <div className="border-t pt-4">
+          <div className="-mt-2">
             <Button
               type="button"
               variant="ghost"
               size="lg"
               disabled={pending}
               onClick={() => void onDelete(editing)}
-              className="w-full text-destructive hover:text-destructive"
+              className="w-full rounded-full text-destructive hover:text-destructive"
             >
               <Trash2 aria-hidden />
               {T.deleteRange}

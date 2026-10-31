@@ -65,7 +65,7 @@ export function PatientDirectory({
   unnamed: PatientDirectoryRow[];
   /** HU-019 (D2): cantidad de archivadas; la tarjeta «Archivados» lleva a esa vista si hay alguna. */
   archivedCount?: number;
-  /** Botón «Nuevo» (Sheet de alta), armado por la página. */
+  /** Botón «Nuevo» (diálogo de alta que crece desde él), armado por la página. */
   newPatient?: ReactNode;
 }) {
   const router = useRouter();

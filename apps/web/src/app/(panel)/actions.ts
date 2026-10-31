@@ -122,11 +122,15 @@ export async function createAppointmentAction(
 export type AppointmentPatientOption = Pick<
   PatientDirectoryRow,
   "id" | "name" | "contactKind" | "phoneLabel" | "phoneDigits" | "searchName" | "statusLine"
->;
+> & {
+  /** Última actividad (ISO): el último turno ya pasado (no cancelado) o el alta, el más nuevo. Ordena
+   *  "Recientes". Opcional: las opciones armadas a mano (paciente ya elegida) no la necesitan. */
+  recentAt?: string;
+};
 
 export async function listAppointmentPatientsAction(): Promise<AppointmentPatientOption[]> {
   const now = new Date();
-  const [pro, patients] = await Promise.all([
+  const [pro, patients, lastVisits] = await Promise.all([
     getProfessional(),
     prisma.patient.findMany({
       // HU-019 (T8): solo activas; core además descarta archivadas.
@@ -146,7 +150,20 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
         },
       },
     }),
+    prisma.appointment.groupBy({
+      by: ["patientId"],
+      where: { startsAt: { lt: now }, status: { not: "CANCELLED" } },
+      _max: { startsAt: true },
+    }),
   ]);
+  const lastVisitById = new Map(lastVisits.map((v) => [v.patientId, v._max.startsAt]));
+  const recentAtById = new Map(
+    patients.map((p) => {
+      const visit = lastVisitById.get(p.id);
+      const latest = visit && visit > p.createdAt ? visit : p.createdAt;
+      return [p.id, latest.toISOString()];
+    }),
+  );
   const inputs: PatientDirectoryInput[] = patients.map((p) => {
     const next = p.appointments[0];
     return {
@@ -173,6 +190,7 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
     phoneDigits: row.phoneDigits,
     searchName: row.searchName,
     statusLine: row.statusLine,
+    recentAt: recentAtById.get(row.id)!,
   }));
 }
 

@@ -19,7 +19,8 @@ export function PatientModalSkeleton() {
   const later = preview ? "animate-fade-in [animation-delay:500ms]" : undefined;
   return (
     <div aria-busy="true">
-      <div className="relative pt-1">
+      {/* El mismo panel tintado que el encabezado real: al llegar la ficha no salta. */}
+      <div className="relative rounded-[1.75rem] bg-[#f6f5f8] p-5 sm:p-7">
         {preview ? (
           <PatientHeaderIdentity
             initials={preview.initials}
@@ -45,8 +46,12 @@ export function PatientModalSkeleton() {
         </div>
       </div>
       <div className={later}>
-        <Skeleton className="mt-6 h-11 w-full" />
-        <Skeleton className="mt-4 h-48 w-full" />
+        <div className="mt-6 flex h-12 items-center gap-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-10 w-24 rounded-full" />
+          ))}
+        </div>
+        <Skeleton className="mt-4 h-48 w-full rounded-[1.75rem]" />
       </div>
     </div>
   );

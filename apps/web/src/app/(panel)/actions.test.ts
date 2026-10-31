@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     revalidatePath: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn(),
+    groupBy: vi.fn(),
     update: vi.fn(),
     upsert: vi.fn(),
     createAppointment: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
   prisma: {
     patient: { findUnique: mocks.findUnique, findMany: mocks.findMany, update: mocks.update, upsert: mocks.upsert },
+    appointment: { groupBy: mocks.groupBy },
   },
 }));
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -65,6 +67,7 @@ function form(fields: Record<string, string>): FormData {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.groupBy.mockResolvedValue([]);
   mocks.createAppointment.mockResolvedValue({ id: "appt-1" });
   mocks.findOrCreatePatient.mockResolvedValue({ id: "pat-new" });
 });
@@ -225,10 +228,35 @@ describe("listAppointmentPatientsAction", () => {
     const rows = await listAppointmentPatientsAction();
     expect(rows.map((r) => r.id)).toEqual(["n2", "n1", "u1"]);
     expect(Object.keys(rows[0]!).sort()).toEqual(
-      ["contactKind", "id", "name", "phoneDigits", "phoneLabel", "searchName", "statusLine"].sort(),
+      ["contactKind", "id", "name", "phoneDigits", "phoneLabel", "recentAt", "searchName", "statusLine"].sort(),
     );
     expect(rows[0]).toMatchObject({ name: "Ana Díaz", contactKind: "hidden", phoneLabel: null, statusLine: "Sin turno" });
     expect(rows[1]).toMatchObject({ phoneLabel: "+54 9 351 000-0002", phoneDigits: "5493510000002" });
+  });
+
+  it("recentAt: el último turno ya pasado (no cancelado) o el alta, el que sea más nuevo", async () => {
+    const old = new Date("2026-01-01T00:00:00Z");
+    const fresh = new Date("2026-10-28T00:00:00Z");
+    mocks.findMany.mockResolvedValue([
+      { id: "seen", name: "Ana Díaz", phone: "5493510000001", whatsappJid: "5493510000001@s.whatsapp.net", createdAt: old, appointments: [] },
+      { id: "new", name: "Bea Gil", phone: "5493510000002", whatsappJid: "5493510000002@s.whatsapp.net", createdAt: fresh, appointments: [] },
+      { id: "none", name: "Cami Paz", phone: "5493510000003", whatsappJid: "5493510000003@s.whatsapp.net", createdAt: old, appointments: [] },
+    ]);
+    mocks.groupBy.mockResolvedValue([
+      { patientId: "seen", _max: { startsAt: new Date("2026-10-20T13:00:00Z") } },
+      { patientId: "new", _max: { startsAt: new Date("2026-03-01T13:00:00Z") } },
+    ]);
+    const rows = await listAppointmentPatientsAction();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r.recentAt]));
+    expect(byId).toEqual({
+      seen: "2026-10-20T13:00:00.000Z",
+      new: "2026-10-28T00:00:00.000Z",
+      none: "2026-01-01T00:00:00.000Z",
+    });
+    const args = mocks.groupBy.mock.calls[0]![0];
+    expect(args.by).toEqual(["patientId"]);
+    expect(args.where.status).toEqual({ not: "CANCELLED" });
+    expect(args.where.startsAt.lt).toBeInstanceOf(Date);
   });
 
   it("HU-019: pide solo activas y, si igual llega una archivada, core la descarta", async () => {

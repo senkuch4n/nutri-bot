@@ -1,6 +1,6 @@
 import { Tag } from "lucide-react";
 import { formatPrice, parseServiceReminders, serviceSummaryLine } from "@nutri-bot/core";
-import { Card, EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
 import { NewServiceButton } from "./new-service-button";
@@ -48,22 +48,25 @@ export default async function ServiciosPage() {
   });
 
   return (
-    <div>
-      <PageHeader
-        title="Servicios"
-        description="Lo que el bot les ofrece a tus pacientes."
-        action={<NewServiceButton currency={pro.currency} />}
-      />
+    // Acento en negro, como la ficha y el resumen (globals.css, .ink-accent).
+    <div className="ink-accent">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="text-title-1 font-medium">Servicios</h1>
+          <p className="mt-1 text-subheadline text-muted-foreground">Lo que el bot les ofrece a tus pacientes.</p>
+        </div>
+        <NewServiceButton currency={pro.currency} />
+      </header>
 
       {views.length === 0 ? (
-        <Card>
+        <div className="rounded-[1.75rem] bg-[#f6f5f8]">
           <EmptyState
             icon={Tag}
             title="Todavía no hay servicios"
             description="Cargá el primero para que el bot pueda ofrecerlo."
             action={<NewServiceButton currency={pro.currency} label="Crear el primer servicio" variant="tinted" />}
           />
-        </Card>
+        </div>
       ) : (
         <ServiceSections services={views} currency={pro.currency} />
       )}

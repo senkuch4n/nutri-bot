@@ -6,46 +6,53 @@ import { useRouter } from "next/navigation";
 import { ArchiveRestore, Plus } from "lucide-react";
 import { PATIENT_ARCHIVE_TEXT, PATIENT_DIRECTORY_TEXT } from "@nutri-bot/core";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/primitives/sheet";
-import { Button, Field, FormError, Input } from "@/components/ui";
+  MorphDialog,
+  MorphDialogContent,
+  MorphDialogDescription,
+  MorphDialogHeader,
+  MorphDialogTitle,
+} from "@/components/primitives/morph-dialog";
+import { Button, Field, FormError, Input, filledInputClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
-import { useMediaQuery } from "@/lib/use-media-query";
 import { createPatientAction, unarchivePatientAction, type CreatePatientState } from "./actions";
 
 const T = PATIENT_DIRECTORY_TEXT;
 const initial: CreatePatientState = { ok: false };
 
-/** "Nuevo paciente": nombre + WhatsApp. Al guardar abre la ficha para completar el resto. */
-export function NewPatientSheet() {
-  const compact = useMediaQuery("(max-width: 639px)");
+/**
+ * "Nuevo paciente": nombre + WhatsApp. Al guardar abre la ficha para completar el resto. El diálogo crece
+ * desde «+ Nuevo» y se queda en su lugar (MorphDialog anclado al origen), con el diseño de "Nuevo turno": ✕ a la izquierda del título liviano,
+ * campos rellenos y la acción en negro (ink-accent).
+ */
+export function NewPatientDialog() {
   const [open, setOpen] = useState(false);
+  // El botón tocado: el diálogo crece desde ahí y vuelve ahí al cerrar.
+  const [origin, setOrigin] = useState<HTMLElement | null>(null);
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          aria-label={T.newPatient}
-          className="rounded-full bg-foreground text-background hover:bg-foreground/85 pressed:bg-foreground/75"
-        >
-          <Plus aria-hidden />
-          {T.newShort}
-        </Button>
-      </SheetTrigger>
-      <SheetContent side={compact ? "bottom" : "right"} className={compact ? undefined : "w-full sm:max-w-md"}>
-        <SheetHeader>
-          <SheetTitle>{T.newPatient}</SheetTitle>
-          <SheetDescription>{T.newPatientDescription}</SheetDescription>
-        </SheetHeader>
-        {/* Se monta al abrir: cada apertura arranca con el form vacío. */}
-        {open ? <NewPatientForm onClose={() => setOpen(false)} /> : null}
-      </SheetContent>
-    </Sheet>
+    <>
+      <Button
+        aria-label={T.newPatient}
+        className="rounded-full bg-foreground text-background hover:bg-foreground/85 pressed:bg-foreground/75"
+        onClick={(e) => {
+          setOrigin(e.currentTarget);
+          setOpen(true);
+        }}
+      >
+        <Plus aria-hidden />
+        {T.newShort}
+      </Button>
+      <MorphDialog open={open} onOpenChange={setOpen} origin={origin}>
+        {/* anchor="origin": se transforma en el lugar del botón (no viaja al centro). */}
+        <MorphDialogContent className="ink-accent w-[min(100%,30rem)] bg-[#f9f8fa]" closeSide="left" anchor="origin">
+          <MorphDialogHeader className="min-h-10 justify-center pl-14 pr-0">
+            <MorphDialogTitle className="text-title-2 font-normal text-muted-foreground">{T.newPatient}</MorphDialogTitle>
+          </MorphDialogHeader>
+          <MorphDialogDescription className="mt-4 px-1">{T.newPatientDescription}</MorphDialogDescription>
+          {/* Se monta al abrir: cada apertura arranca con el form vacío. */}
+          {open ? <NewPatientForm onClose={() => setOpen(false)} /> : null}
+        </MorphDialogContent>
+      </MorphDialog>
+    </>
   );
 }
 
@@ -76,6 +83,8 @@ function NewPatientForm({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (state.ok && state.id) {
       notify.saved(T.setNameDone(state.name ?? ""));
+      // La ficha se abre en el modal de la lista (ruta interceptada): este diálogo se cierra antes.
+      onClose();
       router.push(`/pacientes/${state.id}`);
     } else if (state.fieldErrors?.name) nameRef.current?.focus();
     else if (state.fieldErrors?.phone) phoneRef.current?.focus();
@@ -86,7 +95,7 @@ function NewPatientForm({ onClose }: { onClose: () => void }) {
   const errors = state.ok ? undefined : state.fieldErrors;
 
   return (
-    <form action={formAction} noValidate className="mt-6 space-y-6">
+    <form action={formAction} noValidate className="mt-6 space-y-5">
       <Field label={T.setNameField} error={errors?.name}>
         <Input
           ref={nameRef}
@@ -96,7 +105,7 @@ function NewPatientForm({ onClose }: { onClose: () => void }) {
           autoFocus
           maxLength={120}
           autoComplete="off"
-          className="h-11"
+          className={filledInputClass}
           aria-invalid={errors?.name ? true : undefined}
         />
       </Field>
@@ -111,7 +120,7 @@ function NewPatientForm({ onClose }: { onClose: () => void }) {
             onChange={(e) => setPhone(e.target.value)}
             autoComplete="off"
             enterKeyHint="done"
-            className="h-11 tabular-nums"
+            className={`${filledInputClass} tabular-nums`}
             aria-invalid={errors?.phone ? true : undefined}
           />
         </Field>
@@ -121,7 +130,7 @@ function NewPatientForm({ onClose }: { onClose: () => void }) {
             variant="secondary"
             loading={unarchiving}
             onClick={() => void unarchiveAndOpen(state.existingId!)}
-            className="mt-2 w-full sm:w-auto"
+            className="mt-2 w-full rounded-full sm:w-auto"
           >
             <ArchiveRestore aria-hidden />
             {PATIENT_ARCHIVE_TEXT.unarchiveAndOpen}
@@ -129,6 +138,7 @@ function NewPatientForm({ onClose }: { onClose: () => void }) {
         ) : !state.ok && state.existingId ? (
           <Link
             href={`/pacientes/${state.existingId}`}
+            onClick={onClose}
             className="mt-1.5 inline-block text-footnote text-primary underline-offset-2 hover:underline"
           >
             {T.openExisting}
@@ -136,15 +146,24 @@ function NewPatientForm({ onClose }: { onClose: () => void }) {
         ) : null}
       </div>
       <FormError message={state.ok ? null : state.error} />
-      <div className="flex flex-col gap-2 sm:flex-row-reverse sm:justify-start">
-        <Button type="submit" size="lg" loading={pending || state.ok} className="w-full sm:w-auto">
+      <div className="flex flex-col gap-2 pt-1 sm:flex-row-reverse sm:justify-start">
+        <Button
+          type="submit"
+          size="lg"
+          loading={pending || state.ok}
+          className="w-full rounded-full bg-foreground text-background hover:bg-foreground/85 pressed:bg-foreground/75 sm:w-auto"
+        >
           {T.save}
         </Button>
-        <SheetClose asChild>
-          <Button type="button" variant="secondary" size="lg" className="w-full sm:w-auto">
-            {T.cancel}
-          </Button>
-        </SheetClose>
+        <Button
+          type="button"
+          variant="ghost"
+          size="lg"
+          className="w-full rounded-full hover:bg-black/[0.05] sm:w-auto"
+          onClick={onClose}
+        >
+          {T.cancel}
+        </Button>
       </div>
     </form>
   );

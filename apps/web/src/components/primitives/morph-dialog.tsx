@@ -19,6 +19,7 @@ import { closeButtonClass } from "@/components/primitives/dialog"
 import { ModalScrim } from "@/components/primitives/modal-scrim"
 import {
   MORPH_RADIUS,
+  anchorOnOrigin,
   ORIGIN_BLUR,
   backdropOpacity,
   blurFilter,
@@ -165,6 +166,11 @@ const morphSizes = {
 
 type MorphDialogContentProps = Omit<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>, "forceMount"> & {
   size?: keyof typeof morphSizes
+  /** Dónde va la ✕: arriba a la derecha (por defecto) o a la izquierda, junto al título (el encabezado deja lugar con `pl-14`). */
+  closeSide?: "left" | "right"
+  /** Dónde queda el diálogo: centrado (por defecto), anclado sobre su origen, que se transforma en él
+   *  (`anchorOnOrigin`; sin origen, centrado), o "end": panel acoplado a la derecha, de todo el alto. */
+  anchor?: "center" | "origin" | "end"
 }
 
 const MorphDialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, MorphDialogContentProps>(
@@ -352,7 +358,9 @@ const MorphPanel = React.forwardRef<
     lift: boolean
     cascade: boolean
   }
->(({ origin, originLabel, lift: liftProp, cascade, size = "md", className, children, style, onCloseAutoFocus, onPointerDownOutside, ...props }, forwardedRef) => {
+>(({ origin, originLabel, lift: liftProp, cascade, size = "md", closeSide = "right", anchor = "center", className, children, style, onCloseAutoFocus, onPointerDownOutside, ...props }, forwardedRef) => {
+  const anchored = anchor === "origin" && origin !== null
+  const docked = anchor === "end"
   const openInfo = React.useContext(OverlayOpenInfoContext)
   const reduced = Boolean(useReducedMotionConfig())
   const [isPresent, safeToRemove] = usePresence()
@@ -547,6 +555,17 @@ const MorphPanel = React.forwardRef<
     if (isPresent) {
       cancelExit.current?.()
       cancelExit.current = null
+      // Anclado: la tarjeta nace sobre el origen (no al centro) antes de que se la mida para la animación.
+      const anchorShell = shellRef.current
+      if (anchored && anchorShell && origin?.isConnected) {
+        const at = anchorOnOrigin(
+          viewportRect(origin),
+          { width: anchorShell.offsetWidth, height: anchorShell.offsetHeight },
+          { width: window.innerWidth, height: window.innerHeight }
+        )
+        anchorShell.style.left = `${at.x}px`
+        anchorShell.style.top = `${at.y}px`
+      }
       const resumed = phase.current === "closing"
       stopAnimations()
       phase.current = "open"
@@ -848,8 +867,13 @@ const MorphPanel = React.forwardRef<
   return (
     <>
       <ModalScrim opacity={backdrop} overlay={<DialogPrimitive.Overlay forceMount className="fixed inset-0 z-50" />} />
-      {/* Capa fija que centra el shell; el clic afuera cae en el Overlay de Radix. */}
-      <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-6">
+      {/* Capa fija que centra el shell (o lo deja donde lo puso `anchorOnOrigin`); el clic afuera cae en el Overlay de Radix. */}
+      <div
+        className={cn(
+          "pointer-events-none fixed inset-0 z-50",
+          anchored ? "overflow-hidden" : docked ? "flex items-stretch justify-end p-4" : "flex items-center justify-center p-6"
+        )}
+      >
         <DialogPrimitive.Content
           asChild
           ref={setRefs}
@@ -866,7 +890,9 @@ const MorphPanel = React.forwardRef<
         >
           <m.div
             className={cn(
-              "pointer-events-auto relative max-h-[85dvh] overflow-hidden bg-background text-foreground shadow-modal outline-none",
+              "pointer-events-auto max-h-[85dvh] overflow-hidden bg-background text-foreground shadow-modal outline-none",
+              anchored ? "absolute" : "relative",
+              docked && "h-full max-h-none",
               "more-contrast:border more-contrast:border-input",
               morphSizes[size],
               // Durante la salida el shell ya no recibe punteros.
@@ -879,10 +905,10 @@ const MorphPanel = React.forwardRef<
             // Saliendo: fuera del orden de foco y del árbol de accesibilidad.
             inert={!isPresent || undefined}
           >
-            <m.div className="relative" style={{ scaleX: invSx, scaleY: invSy, originX: 0, originY: 0 }}>
+            <m.div className={cn("relative", docked && "h-full")} style={{ scaleX: invSx, scaleY: invSy, originX: 0, originY: 0 }}>
               <m.div
                 ref={bodyRef}
-                className="relative max-h-[85dvh] overflow-y-auto overscroll-contain p-6"
+                className={cn("relative max-h-[85dvh] overflow-y-auto overscroll-contain p-6", docked && "h-full max-h-none")}
                 style={{
                   opacity: contentOpacity,
                   y: contentY,
@@ -893,7 +919,9 @@ const MorphPanel = React.forwardRef<
                 }}
               >
                 <MorphRevealContext.Provider value={replayReveal}>{children}</MorphRevealContext.Provider>
-                <DialogPrimitive.Close className={closeButtonClass}>
+                <DialogPrimitive.Close
+                  className={cn(closeButtonClass, closeSide === "left" && "left-6 right-auto top-6 size-10 text-foreground [&>svg]:size-4")}
+                >
                   <X className="size-3.5" strokeWidth={2.25} aria-hidden />
                   <span className="sr-only">Cerrar</span>
                 </DialogPrimitive.Close>

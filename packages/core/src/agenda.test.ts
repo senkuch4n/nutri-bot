@@ -3,13 +3,25 @@ import {
   AGENDA_TEXT,
   appointmentDayAtTime,
   appointmentDayTime,
+  appointmentDurationMinutes,
   appointmentEventTitle,
+  appointmentShortDate,
+  calendarFilterCount,
+  calendarFilterHides,
   calendarNavLabels,
+  calendarDayPanelTitle,
   calendarPeriodTitle,
   countAgendaDay,
+  dayTimelineBlock,
+  dayTimelineRange,
   firstName,
+  HOME_TEXT,
+  homeDayStatus,
+  minutesOfDay,
   nextAppointmentText,
   patientDisplayName,
+  readableTextOn,
+  toggleCalendarFilter,
   todaySummaryText,
   weekSummaryText,
 } from "./agenda";
@@ -154,7 +166,7 @@ describe("calendarPeriodTitle", () => {
     expect(calendarPeriodTitle("semana", "2027-10-04", "2027-10-11", today)).toBe("4 – 10 de octubre de 2027");
   });
   it("mes", () => {
-    expect(calendarPeriodTitle("mes", "2026-10-01", "2026-11-01", today)).toBe("Octubre 2026");
+    expect(calendarPeriodTitle("mes", "2026-10-01", "2026-11-01", today)).toBe("Octubre de 2026");
   });
 });
 
@@ -184,5 +196,113 @@ describe("AGENDA_TEXT", () => {
     expect(AGENDA_TEXT.create.noResults("ana")).toBe("No encontramos a «ana»");
     expect(AGENDA_TEXT.create.existing("María José Gómez")).toBe("Ese número es de María José Gómez");
     expect(AGENDA_TEXT.create.chooseExisting("María")).toBe("Elegir a María");
+  });
+});
+
+describe("readableTextOn", () => {
+  it("texto blanco sobre colores oscuros o saturados", () => {
+    expect(readableTextOn("#2563eb")).toBe("#ffffff");
+    expect(readableTextOn("#0a0a0a")).toBe("#ffffff");
+    expect(readableTextOn("#7c3aed")).toBe("#ffffff");
+  });
+  it("texto casi negro sobre colores claros", () => {
+    expect(readableTextOn("#facc15")).toBe("#0a0a0a");
+    expect(readableTextOn("#ffffff")).toBe("#0a0a0a");
+    expect(readableTextOn("#a7f3d0")).toBe("#0a0a0a");
+  });
+  it("acepta #rgb y mayúsculas; un color inválido cae en blanco", () => {
+    expect(readableTextOn("#FFF")).toBe("#0a0a0a");
+    expect(readableTextOn("azul")).toBe("#ffffff");
+  });
+});
+
+describe("filtros del calendario", () => {
+  const none = { hiddenServices: [], hiddenStatuses: [] };
+  const ev = { serviceName: "Control", status: "CONFIRMED" };
+
+  it("sin filtros no oculta nada", () => {
+    expect(calendarFilterHides(ev, none)).toBe(false);
+    expect(calendarFilterCount(none)).toBe(0);
+  });
+
+  it("oculta por servicio o por estado", () => {
+    expect(calendarFilterHides(ev, { hiddenServices: ["Control"], hiddenStatuses: [] })).toBe(true);
+    expect(calendarFilterHides(ev, { hiddenServices: [], hiddenStatuses: ["CONFIRMED"] })).toBe(true);
+    expect(calendarFilterHides(ev, { hiddenServices: ["Antro"], hiddenStatuses: ["NO_SHOW"] })).toBe(false);
+    expect(calendarFilterCount({ hiddenServices: ["Antro"], hiddenStatuses: ["NO_SHOW"] })).toBe(2);
+  });
+
+  it("toggleCalendarFilter agrega o saca sin mutar la lista", () => {
+    const list = ["Antro"];
+    expect(toggleCalendarFilter(list, "Control")).toEqual(["Antro", "Control"]);
+    expect(toggleCalendarFilter(list, "Antro")).toEqual([]);
+    expect(list).toEqual(["Antro"]);
+  });
+});
+
+describe("panel del día", () => {
+  it("título: día de la semana, día y mes; el año solo si no es el actual", () => {
+    expect(calendarDayPanelTitle("2026-10-05", "2026-10-31")).toBe("Lunes, 5 de octubre");
+    expect(calendarDayPanelTitle("2027-01-04", "2026-10-31")).toBe("Lunes, 4 de enero de 2027");
+  });
+
+  it("minutesOfDay lee la hora local del ISO con offset (no la convierte a UTC)", () => {
+    expect(minutesOfDay("2026-10-05T08:30:00-03:00")).toBe(510);
+    expect(minutesOfDay("2026-10-05T00:00:00Z")).toBe(0);
+  });
+
+  it("la agenda va de la franja configurada, ampliada a horas enteras si un turno queda afuera", () => {
+    expect(dayTimelineRange("08:00:00", "20:00:00", [{ startMin: 540, endMin: 585 }])).toEqual({ fromMin: 480, toMin: 1200 });
+    expect(dayTimelineRange("08:00:00", "20:00:00", [{ startMin: 450, endMin: 1230 }])).toEqual({ fromMin: 420, toMin: 1260 });
+  });
+
+  it("cada turno ocupa su porción de la agenda, en porcentaje y recortado al rango", () => {
+    const range = { fromMin: 480, toMin: 1080 }; // 10 h
+    expect(dayTimelineBlock({ startMin: 540, endMin: 600 }, range)).toEqual({ top: 10, height: 10 });
+    expect(dayTimelineBlock({ startMin: 1050, endMin: 1140 }, range)).toEqual({ top: 95, height: 5 });
+  });
+
+  it("textos del panel", () => {
+    expect(AGENDA_TEXT.dayPanel.list).toBe("Lista");
+    expect(AGENDA_TEXT.dayPanel.agenda).toBe("Agenda");
+    expect(AGENDA_TEXT.dayPanel.pendingPayment).toBe("Cobro pendiente");
+    expect(AGENDA_TEXT.dayPanel.hasNote).toBe("Tiene nota");
+  });
+});
+
+describe("detalle del turno", () => {
+  it("fecha corta en la zona de la profesional: «5 oct 26»", () => {
+    expect(appointmentShortDate(new Date("2026-10-05T13:00:00Z"), "America/Argentina/Buenos_Aires")).toBe("5 oct 26");
+    // 01:00 UTC del 6 es todavía el 5 en Buenos Aires.
+    expect(appointmentShortDate(new Date("2026-10-06T01:00:00Z"), "America/Argentina/Buenos_Aires")).toBe("5 oct 26");
+  });
+
+  it("duración en minutos", () => {
+    expect(appointmentDurationMinutes("2026-10-05T10:00:00-03:00", "2026-10-05T11:00:00-03:00")).toBe(60);
+    expect(appointmentDurationMinutes("2026-10-05T10:00:00-03:00", "2026-10-05T10:45:00-03:00")).toBe(45);
+  });
+
+  it("textos de las secciones", () => {
+    expect(AGENDA_TEXT.sheet.patient).toBe("Paciente:");
+    expect(AGENDA_TEXT.sheet.sections).toEqual({ when: "Fecha y hora", status: "Estado", finance: "Finanzas", more: "Más" });
+    expect(AGENDA_TEXT.sheet.minutes(60)).toBe("60 min");
+  });
+});
+
+describe("Inicio", () => {
+  it("estado del día: sin turnos, los que quedan o ya terminaste", () => {
+    expect(homeDayStatus({ total: 0, remaining: 0 })).toBe("Sin turnos");
+    expect(homeDayStatus({ total: 3, remaining: 2 })).toBe("Quedan 2");
+    expect(homeDayStatus({ total: 3, remaining: 1 })).toBe("Queda 1");
+    expect(homeDayStatus({ total: 3, remaining: 0 })).toBe("Ya terminaste");
+  });
+
+  it("textos del Inicio", () => {
+    expect(HOME_TEXT.greeting("Daiana")).toBe("Hola Daiana");
+    expect(HOME_TEXT.greeting(null)).toBe("Hola");
+    expect(HOME_TEXT.todayCount(1)).toBe("1 turno");
+    expect(HOME_TEXT.todayCount(4)).toBe("4 turnos");
+    expect(HOME_TEXT.todayCount(0)).toBe("Sin turnos");
+    expect(HOME_TEXT.awaitingEmpty).toBe("No hay turnos esperando la seña.");
   });
 });

@@ -6,6 +6,7 @@ import {
   WEEKDAY_ORDER,
   dayScheduleText,
   exceptionDayLabel,
+  exceptionDetail,
   exceptionFields,
   exceptionKindOf,
   exceptionLine,
@@ -152,6 +153,18 @@ describe("exceptionLine", () => {
       exceptionLine({ dayKey: "2027-01-04", type: "BLOCKED", startTime: null, endTime: null, reason: "Vacaciones" }, today),
     ).toBe("Lunes 4 de enero de 2027 · No atendés · Vacaciones");
     expect(exceptionDayLabel("2027-01-04", today)).toBe("Lunes 4 de enero de 2027");
+  });
+});
+
+describe("exceptionDetail", () => {
+  it("qué pasa ese día y el motivo, sin la fecha", () => {
+    expect(exceptionDetail({ type: "BLOCKED", startTime: null, endTime: null, reason: "Feriado" })).toBe("No atendés · Feriado");
+    expect(exceptionDetail({ type: "BLOCKED", startTime: "14:00", endTime: "16:00", reason: null })).toBe(
+      "No atendés de 14:00 a 16:00",
+    );
+    expect(exceptionDetail({ type: "CUSTOM_HOURS", startTime: "14:00", endTime: "18:00", reason: "  " })).toBe(
+      "Atendés de 14:00 a 18:00",
+    );
   });
 });
 

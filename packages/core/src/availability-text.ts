@@ -132,12 +132,22 @@ export function exceptionLine(
   e: { dayKey: string; type: ExceptionType; startTime: string | null; endTime: string | null; reason: string | null },
   todayKey: string,
 ): string {
+  return `${exceptionDayLabel(e.dayKey, todayKey)} · ${exceptionDetail(e)}`;
+}
+
+/** `exceptionLine` sin la fecha: "No atendés · Feriado" · "Atendés de 14:00 a 18:00". */
+export function exceptionDetail(e: {
+  type: ExceptionType;
+  startTime: string | null;
+  endTime: string | null;
+  reason: string | null;
+}): string {
   const kind = exceptionKindOf(e);
   const range = e.startTime && e.endTime ? timeRangePhrase({ startTime: e.startTime, endTime: e.endTime }) : "";
   const what =
     kind === "closed_day" ? "No atendés" : kind === "closed_range" ? `No atendés ${range}` : `Atendés ${range}`;
   const reason = e.reason?.trim();
-  return [exceptionDayLabel(e.dayKey, todayKey), what, ...(reason ? [reason] : [])].join(" · ");
+  return [what, ...(reason ? [reason] : [])].join(" · ");
 }
 
 /** upcoming: dayKey >= todayKey, ascendente; past: dayKey < todayKey, descendente. */

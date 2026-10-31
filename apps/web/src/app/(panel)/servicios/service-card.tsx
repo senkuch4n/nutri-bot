@@ -6,7 +6,7 @@ import { Pencil } from "lucide-react";
 import { SERVICE_TEXT } from "@nutri-bot/core";
 import { Label } from "@/components/primitives/label";
 import { Switch } from "@/components/primitives/switch";
-import { Button, Card, cn } from "@/components/ui";
+import { cn, filledSurfaceClass } from "@/components/ui";
 import { springs } from "@/lib/motion";
 import { notify } from "@/lib/notify";
 import { ServiceSheet, type EditableService } from "./service-form";
@@ -119,11 +119,11 @@ export function ServiceSections({ services, currency }: { services: readonly Ser
 function Section({ title, empty, children }: { title: string; empty?: string; children: ReactNode[] }) {
   return (
     <section>
-      <m.h2 layout="position" className="mb-3 text-headline text-foreground">
+      <m.h2 layout="position" className="mb-3 px-1 text-subheadline font-medium text-muted-foreground">
         {title}
       </m.h2>
       {children.length === 0 && empty ? (
-        <p className="text-callout text-muted-foreground">{empty}</p>
+        <p className="rounded-[1.75rem] bg-[#f6f5f8] px-5 py-6 text-callout text-muted-foreground sm:px-7">{empty}</p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</div>
       )}
@@ -144,30 +144,56 @@ function ServiceCard({
 }) {
   const { service, priceLabel, summary } = view;
   const [editing, setEditing] = useState(false);
+  // "Editar" tocado: el diálogo nace ahí.
+  const [origin, setOrigin] = useState<HTMLElement | null>(null);
   const id = switchId(service.id);
 
   return (
     <m.div layoutId={`servicio-${service.id}`} layout transition={springs.standard} className="h-full min-w-0">
-      <Card className={cn("flex h-full flex-col", !active && "bg-muted/40")}>
+      <article
+        className={cn(
+          "flex h-full flex-col rounded-[1.75rem] p-5 sm:p-6",
+          active ? "border border-black/[0.05] bg-[#fcfbfd]" : "bg-[#f6f5f8]",
+        )}
+      >
         <div className="flex min-w-0 items-center gap-2">
-          <span className="size-2.5 shrink-0 rounded-full" style={{ background: service.color }} aria-hidden />
-          <h3 className="truncate text-headline" title={service.name}>
+          <span
+            className={cn("size-2.5 shrink-0 rounded-full", !active && "opacity-50")}
+            style={{ background: service.color }}
+            aria-hidden
+          />
+          <h3 className={cn("truncate text-headline", !active && "text-muted-foreground")} title={service.name}>
             {service.name}
           </h3>
         </div>
 
-        <p className="mt-2 flex items-baseline justify-between gap-3 tabular-nums">
-          <span className="text-title-3 text-foreground">{priceLabel}</span>
+        <p className="mt-4 flex items-baseline justify-between gap-3 tabular-nums">
+          <span className={cn("text-title-2 font-medium", active ? "text-foreground" : "text-muted-foreground")}>
+            {priceLabel}
+          </span>
           <span className="text-callout text-muted-foreground">{`${service.durationMin} min`}</span>
         </p>
 
-        <p className="mt-2 text-footnote text-muted-foreground">{summary}</p>
+        <p className="mb-5 mt-2 text-footnote text-muted-foreground">{summary}</p>
 
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
-          <Button variant="secondary" onClick={() => setEditing(true)} aria-label={`${T.edit} ${service.name}`}>
-            <Pencil aria-hidden />
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-black/[0.05] pt-4">
+          <button
+            type="button"
+            onClick={(e) => {
+              setOrigin(e.currentTarget);
+              setEditing(true);
+            }}
+            aria-label={`${T.edit} ${service.name}`}
+            className={cn(
+              filledSurfaceClass,
+              "inline-flex min-h-10 items-center gap-1.5 rounded-full px-4 text-callout text-foreground touch-target",
+              "press-none transition-colors duration-hover hover:bg-[#e2e0e4] pressed:bg-[#d9d7dc]",
+              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+            )}
+          >
+            <Pencil className="size-4" strokeWidth={1.75} aria-hidden />
             {T.edit}
-          </Button>
+          </button>
           <div className="flex min-h-11 items-center gap-3">
             <Label htmlFor={id} className="text-callout text-muted-foreground">
               {T.offeredByBot}
@@ -175,11 +201,12 @@ function ServiceCard({
             <Switch id={id} checked={active} onCheckedChange={onToggle} aria-label={`${T.offeredByBot}: ${service.name}`} />
           </div>
         </div>
-      </Card>
+      </article>
 
       <ServiceSheet
         open={editing}
         onOpenChange={setEditing}
+        origin={origin}
         editing={service}
         currency={currency}
         title={`${T.edit} · ${service.name}`}

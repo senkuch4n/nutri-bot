@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@nutri-bot/db";
+import { prisma, type Prisma } from "@nutri-bot/db";
 import {
   computeDepositAmount,
   isConsultationEmpty,
@@ -8,7 +8,7 @@ import {
   type DepositKind,
 } from "@nutri-bot/core";
 
-// HU-021 (SDD 6.2, T8). Turnos de un mes para /turnos. Solo lo usa la web (mismo criterio que /pagos):
+// HU-021 (SDD 6.2, T8). Turnos de un mes para /turnos (y del día para el Inicio). Solo lo usa la web (mismo criterio que /pagos):
 // no va a packages/db/domain. Devuelve DTOs serializables (sin Date ni Decimal).
 
 export interface TurnosAppointment {
@@ -40,8 +40,14 @@ export interface TurnosAppointment {
 /** Turnos con startsAt ∈ monthRangeInTz(month, tz) = [from, to), TODOS los estados. */
 export async function loadTurnosMonth(month: string, tz: string): Promise<TurnosAppointment[]> {
   const { from, to } = monthRangeInTz(month, tz);
+  return loadTurnos({ startsAt: { gte: from, lt: to } });
+}
+
+/** Turnos con cualquier filtro (lo usa también el Inicio), en orden de inicio; `take` limita la cantidad. */
+export async function loadTurnos(where: Prisma.AppointmentWhereInput, take?: number): Promise<TurnosAppointment[]> {
   const rows = await prisma.appointment.findMany({
-    where: { startsAt: { gte: from, lt: to } },
+    where,
+    take,
     select: {
       id: true,
       startsAt: true,

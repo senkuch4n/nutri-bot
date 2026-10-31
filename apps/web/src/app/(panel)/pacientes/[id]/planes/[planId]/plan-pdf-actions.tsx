@@ -41,8 +41,9 @@ export function PlanPdfActions({
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
-          variant="secondary"
+          variant="ghost"
           size="sm"
+          className="rounded-full hover:bg-black/[0.05]"
           disabled={pending}
           loading={pending && running === "pdf"}
           onClick={() => run("pdf", generatePlanPdfAction, () => notify.saved("PDF generado"))}
@@ -53,6 +54,7 @@ export function PlanPdfActions({
         <Button
           type="button"
           size="sm"
+          className="rounded-full bg-foreground text-background hover:bg-foreground/85 pressed:bg-foreground/75"
           disabled={pending}
           loading={pending && running === "whatsapp"}
           onClick={() =>
@@ -65,7 +67,7 @@ export function PlanPdfActions({
           {pending && running === "whatsapp" ? "Enviando…" : "Enviar por WhatsApp"}
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-footnote text-muted-foreground">
         {hasPdf ? `Último PDF: ${pdfGeneratedAtLabel}` : "Todavía no generaste el PDF."}
       </p>
       <FormError message={error} />

@@ -10,12 +10,15 @@ import {
   formatPhone,
   matchesPatientQuery,
   parsePhoneInput,
+  recentPatients,
 } from "@nutri-bot/core";
-import { Button, Field, Input, cn } from "@/components/ui";
+import { Button, Field, Input, cn, filledInputClass, filledSurfaceClass } from "@/components/ui";
 import type { AppointmentPatientOption } from "./actions";
 
 const T = AGENDA_TEXT.create;
 const MAX_RESULTS = 8;
+/** Con el buscador vacío: las de actividad más reciente; al resto se llega escribiendo. */
+const MAX_RECENT = 5;
 const UNNAMED = "Sin nombre";
 
 /** Para quién es el turno: buscando, una paciente existente o una nueva (nombre + teléfono escrito a mano). */
@@ -63,7 +66,7 @@ export function PatientPicker({
   if (choice.kind === "existing") {
     const o = choice.option;
     return (
-      <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg bg-secondary px-3 py-2">
+      <div className={cn(filledSurfaceClass, "flex min-h-[3.25rem] items-center justify-between gap-3 py-2 pl-5 pr-3")}>
         <p className="min-w-0 text-callout">
           <span className="font-semibold">{o.name ?? UNNAMED}</span>
           <span className="text-muted-foreground"> · {o.phoneLabel ?? HIDDEN_NUMBER_TEXT}</span>
@@ -100,7 +103,7 @@ function PatientSearch({
 
   const results = useMemo(() => {
     if (!options) return [];
-    if (!query.trim()) return options.filter((o) => o.name !== null).slice(0, MAX_RESULTS);
+    if (!query.trim()) return recentPatients(options, MAX_RECENT);
     return options.filter((o) => matchesPatientQuery(o, query)).slice(0, MAX_RESULTS);
   }, [options, query]);
   const activeIndex = Math.min(active, Math.max(results.length - 1, 0));
@@ -138,7 +141,7 @@ function PatientSearch({
         {T.searchLabel}
       </label>
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <Search className="pointer-events-none absolute left-5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input
           ref={searchRef}
           id={`${id}-buscar`}
@@ -151,7 +154,7 @@ function PatientSearch({
           autoComplete="off"
           enterKeyHint="search"
           placeholder={T.searchPlaceholder}
-          className="h-11 pl-9"
+          className={`${filledInputClass} pl-12`}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -176,7 +179,17 @@ function PatientSearch({
         )
       ) : (
         <>
-          <ul id={listId} role="listbox" aria-label={T.who} className="divide-y divide-border overflow-hidden rounded-lg border empty:hidden">
+          {!query.trim() && results.length > 0 ? (
+            <p aria-hidden className="px-1 text-footnote font-medium text-muted-foreground">
+              {T.recent}
+            </p>
+          ) : null}
+          <ul
+            id={listId}
+            role="listbox"
+            aria-label={query.trim() ? T.who : T.recent}
+            className={cn(filledSurfaceClass, "divide-y divide-[#f9f8fa] overflow-hidden empty:hidden")}
+          >
             {results.map((o, i) => (
               <li
                 key={o.id}
@@ -184,7 +197,7 @@ function PatientSearch({
                 role="option"
                 aria-selected={i === activeIndex}
                 className={cn(
-                  "flex min-h-11 cursor-pointer flex-col justify-center px-3 py-1.5 text-callout",
+                  "flex min-h-[3.25rem] cursor-pointer flex-col justify-center px-5 py-2 text-callout",
                   i === activeIndex ? "bg-overlay-hover" : "hover:bg-overlay-hover",
                 )}
                 // mousedown: elige antes de que el input pierda el foco.
@@ -205,7 +218,7 @@ function PatientSearch({
               {T.noResults(query.trim())}
             </p>
           ) : null}
-          <Button type="button" variant="tinted" onClick={startNew}>
+          <Button type="button" variant="tinted" className="h-12 rounded-2xl px-5" onClick={startNew}>
             <Plus aria-hidden />
             {T.newPatient}
           </Button>
@@ -247,6 +260,7 @@ function NewPatientFields({
       </div>
       <Field label={T.nameLabel} error={nameError}>
         <Input
+          className={filledInputClass}
           autoComplete="name"
           value={choice.name}
           aria-invalid={nameError ? true : undefined}
@@ -257,6 +271,7 @@ function NewPatientFields({
       <div>
         <Field label={T.phoneLabel} error={phoneError} hint={PHONE_INPUT_TEXT.foreignHint}>
           <Input
+            className={filledInputClass}
             type="tel"
             inputMode="tel"
             autoComplete="tel"

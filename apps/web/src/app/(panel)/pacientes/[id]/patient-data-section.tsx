@@ -18,7 +18,6 @@ import {
   type NutritionGoal,
   type Sex,
 } from "@nutri-bot/core";
-import { GroupedList } from "@/components/grouped-list";
 import { Alert, Quantity } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ClinicalAlert } from "./clinical-alert";
@@ -43,27 +42,21 @@ export interface PatientDataSectionProps {
   prescription: { kcal: number; proteinG: number; fatG: number; carbG: number; dateLabel: string } | null;
 }
 
-/** Una fila de la lista agrupada: dato a la izquierda y valor a la derecha (o debajo, si es texto largo
- *  o no entra). Lo que falta va en gris, sin aspecto de botón. */
+/** Un dato (referencia 2026-10-31): la etiqueta chica y gris arriba, el valor debajo. Los textos largos
+ *  (`stacked`) ocupan las dos columnas. Lo que falta va en gris, sin aspecto de botón. */
 function DataRow({ label, value, stacked = false }: { label: string; value: ReactNode | null; stacked?: boolean }) {
   return (
-    <li className="relative after:absolute after:bottom-0 after:left-4 after:right-0 after:h-px after:bg-border last:after:hidden">
-      <div
+    <li className={cn("min-w-0", stacked && "sm:col-span-2")}>
+      <span className="block text-footnote text-muted-foreground">{label}</span>
+      <span
         className={cn(
-          "flex min-h-11 px-4 py-2.5 text-callout",
-          stacked ? "flex-col gap-0.5" : "flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5",
+          "mt-0.5 block text-body",
+          value === null ? "text-muted-foreground" : "text-foreground",
+          stacked ? "whitespace-pre-wrap break-words" : "tabular-nums",
         )}
       >
-        <span className="text-foreground">{label}</span>
-        <span
-          className={cn(
-            value === null ? "text-muted-foreground" : "text-foreground",
-            stacked ? "whitespace-pre-wrap break-words" : "text-right tabular-nums",
-          )}
-        >
-          {value ?? T.notLoaded}
-        </span>
-      </div>
+        {value ?? T.notLoaded}
+      </span>
     </li>
   );
 }
@@ -144,7 +137,7 @@ export function PatientDataSection({
         </div>
       ) : null}
 
-      <GroupedList>
+      <ul className="grid gap-x-8 gap-y-5 px-1 py-2 sm:grid-cols-2">
         <DataRow label="Edad" value={ageYears !== null ? T.ageYears(ageYears) : null} />
         <DataRow label="Sexo" value={sexLabel(values.sex)} />
         <DataRow label="Objetivo" value={nutritionGoalLabel(values.nutritionGoal)} />
@@ -164,9 +157,9 @@ export function PatientDataSection({
           stacked={Boolean(background)}
         />
         <DataRow label="Objetivos clínicos" value={goals} stacked={Boolean(goals)} />
-      </GroupedList>
+      </ul>
 
-      <div className="mt-2 px-1">
+      <div className="mt-4 px-1">
         <DetailDisclosure label={T.seeDetail}>
           <div className="mt-1 space-y-4 rounded-xl bg-secondary/60 px-4 py-4 text-callout">
             <p className="text-muted-foreground">{T.dataDescription}</p>

@@ -8,7 +8,7 @@ import {
 import { PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { ArchivedPatientList } from "../archived-patient-list";
-import { NewPatientSheet } from "../new-patient-sheet";
+import { NewPatientDialog } from "../new-patient-dialog";
 import { PatientDirectory } from "../patient-directory";
 
 export const dynamic = "force-dynamic";
@@ -78,7 +78,7 @@ export default async function PacientesPage({
       named={named}
       unnamed={unnamed}
       archivedCount={archivedCount}
-      newPatient={<NewPatientSheet />}
+      newPatient={<NewPatientDialog />}
     />
   );
 }

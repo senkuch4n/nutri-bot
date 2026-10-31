@@ -44,6 +44,7 @@ vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () =>
 vi.mock("@/lib/plan-pdf", () => ({ renderPlanPdf: vi.fn() }));
 
 import PlanPage from "../app/(panel)/pacientes/[id]/planes/[planId]/page";
+import { PlanDetail } from "../app/(panel)/pacientes/[id]/planes/[planId]/plan-detail";
 import TemplatePage from "../app/(panel)/plantillas/[id]/page";
 import FoodsPage from "../app/(panel)/alimentos/page";
 import { generateAiPlanAction } from "../app/(panel)/pacientes/[id]/planes/[planId]/ai-actions";
@@ -90,7 +91,11 @@ describe("SARA2-only new food selections", () => {
     mocks.getPlan.mockResolvedValue({ id: "plan", patientId: "patient", title: "Plan", sections: [], meals: [{
       id: "meal", name: "Historical", items: [{ id: "item", foodId: "own", food: { ...own, fiberPer100: null, alcoholPer100: null, nutrients: null, sodiumMgPer100: null }, quantityGrams: 100, customLabel: null, notes: null }],
     }] });
-    const page = await PlanPage({ params: Promise.resolve({ id: "patient", planId: "plan" }) });
+    // La página delega en PlanDetail (compartido con el modal de la ficha).
+    const pageEl = await PlanPage({ params: Promise.resolve({ id: "patient", planId: "plan" }) });
+    expect(isValidElement(pageEl) && pageEl.type).toBe(PlanDetail);
+    expect(isValidElement(pageEl) && pageEl.props).toMatchObject({ id: "patient", planId: "plan", variant: "page" });
+    const page = await PlanDetail({ id: "patient", planId: "plan", dia: undefined, variant: "page" });
     expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
     const editor = propsWith(page, "ownerField")[0]!;
     expect(editor.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);

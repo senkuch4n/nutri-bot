@@ -491,3 +491,26 @@ export function sharedOpenKeyframes(piece: Rect, src: Rect, end: Rect): Record<k
     scale: [s.scale, s.scale, 1],
   };
 }
+
+/** Distancia mínima del diálogo anclado a los bordes de la pantalla. */
+export const ANCHOR_MARGIN = 16;
+
+/**
+ * Dónde queda un diálogo anclado a su origen (no centrado): el origen se transforma en el diálogo, así que
+ * nace en su misma esquina de arriba a la izquierda y no viaja. Si hacia la derecha no entra (un botón
+ * arriba a la derecha, un turno del domingo), nace de la esquina de arriba a la derecha: bordes derechos
+ * alineados. Solo se corre lo necesario para no salirse de la pantalla, nunca más allá del margen.
+ */
+export function anchorOnOrigin(
+  src: Rect,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+): Point {
+  const maxX = viewport.width - ANCHOR_MARGIN - size.width;
+  const maxY = viewport.height - ANCHOR_MARGIN - size.height;
+  const x = src.left <= maxX ? src.left : src.left + src.width - size.width;
+  return {
+    x: Math.max(ANCHOR_MARGIN, Math.min(x, maxX)),
+    y: Math.max(ANCHOR_MARGIN, Math.min(src.top, maxY)),
+  };
+}

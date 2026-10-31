@@ -15,6 +15,13 @@ import { useConfirm } from "@/components/confirm";
 import { NumberInput } from "@/components/number-input";
 import { Label } from "@/components/primitives/label";
 import {
+  MorphDialog,
+  MorphDialogContent,
+  MorphDialogDescription,
+  MorphDialogHeader,
+  MorphDialogTitle,
+} from "@/components/primitives/morph-dialog";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -23,7 +30,7 @@ import {
 } from "@/components/primitives/sheet";
 import { Switch } from "@/components/primitives/switch";
 import { SegmentedControl } from "@/components/segmented-control";
-import { Button, Field, FormError, Input, Textarea, cn } from "@/components/ui";
+import { Button, Field, FormError, Input, Textarea, cn, filledInputClass, filledSurfaceClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -59,7 +66,8 @@ const LEAVE_OPTIONS = {
 };
 
 /**
- * Panel del formulario de servicio (HU-017b-2): lateral derecho; desde abajo en < 640 px. Si hay
+ * Formulario de servicio (HU-017b-2): diálogo que nace en el lugar del botón que lo abrió ("Editar" o
+ * "Nuevo servicio") y se queda ahí; desde abajo en < 640 px. Campos rellenos y acento en negro. Si hay
  * cambios sin guardar, cerrarlo (X, Esc, tocar afuera, arrastrar) pregunta "¿Salir sin guardar?" con
  * "Seguir editando" como opción segura; salir de la página o recargar también avisa.
  */
@@ -70,6 +78,7 @@ export function ServiceSheet({
   title,
   description,
   currency,
+  origin = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -77,6 +86,8 @@ export function ServiceSheet({
   title: string;
   description: string;
   currency: string;
+  /** Botón desde el que nace el diálogo. */
+  origin?: HTMLElement | null;
 }) {
   const compact = useMediaQuery("(max-width: 639px)");
   const confirm = useConfirm();
@@ -104,38 +115,59 @@ export function ServiceSheet({
     [confirm, dirty, onOpenChange],
   );
 
-  return (
-    <Sheet open={open} onOpenChange={(next) => void requestOpenChange(next)}>
-      <SheetContent
-        side={compact ? "bottom" : "right"}
-        className={compact ? undefined : "w-full sm:max-w-xl"}
-        onOpenAutoFocus={(e) => {
-          // En el celular el foco va al panel, no al primer campo: que no se abra el teclado solo.
-          if (!compact) return;
-          e.preventDefault();
-          (e.currentTarget as HTMLElement | null)?.focus();
-        }}
-      >
-        <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{description}</SheetDescription>
-        </SheetHeader>
-        <ServiceForm
-          key={formKey}
-          editing={editing}
-          currency={currency}
-          onDirtyChange={setDirty}
-          onDone={() => {
-            setDirty(false);
-            onOpenChange(false);
+  const form = (
+    <ServiceForm
+      key={formKey}
+      editing={editing}
+      currency={currency}
+      onDirtyChange={setDirty}
+      onDone={() => {
+        setDirty(false);
+        onOpenChange(false);
+      }}
+    />
+  );
+
+  if (compact) {
+    return (
+      <Sheet open={open} onOpenChange={(next) => void requestOpenChange(next)}>
+        <SheetContent
+          side="bottom"
+          className="ink-accent bg-[#f9f8fa]"
+          onOpenAutoFocus={(e) => {
+            // En el celular el foco va al panel, no al primer campo: que no se abra el teclado solo.
+            e.preventDefault();
+            (e.currentTarget as HTMLElement | null)?.focus();
           }}
-        />
-      </SheetContent>
-    </Sheet>
+        >
+          <SheetHeader>
+            <SheetTitle>{title}</SheetTitle>
+            <SheetDescription>{description}</SheetDescription>
+          </SheetHeader>
+          {form}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+  return (
+    <MorphDialog open={open} onOpenChange={(next) => void requestOpenChange(next)} origin={origin}>
+      {/* anchor="origin": se transforma en el lugar del botón (no viaja al centro). */}
+      <MorphDialogContent className="ink-accent w-[min(100%,36rem)] bg-[#f9f8fa]" closeSide="left" anchor="origin">
+        <MorphDialogHeader className="min-h-10 justify-center pl-14 pr-0">
+          <MorphDialogTitle className="truncate text-title-2 font-normal text-muted-foreground">{title}</MorphDialogTitle>
+        </MorphDialogHeader>
+        <MorphDialogDescription className="mt-4 px-1">{description}</MorphDialogDescription>
+        {form}
+      </MorphDialogContent>
+    </MorphDialog>
   );
 }
 
 const initial: ServiceFormState = { ok: false };
+
+/** Campo numérico relleno: `pr-12` deja lugar a la unidad (min, h, %, $) que NumberInput pone a la derecha. */
+const FILLED_NUMBER = `${filledInputClass} pr-12`;
+const FILLED_TEXTAREA = `${filledInputClass} h-auto py-3.5`;
 
 // Colores del servicio (datos que se guardan, no tokens del sistema).
 const PRESET_COLORS = ["#5aa832", "#2563eb", "#db2777", "#d97706", "#7c3aed", "#0891b2"];
@@ -159,9 +191,9 @@ function snapshot(form: HTMLFormElement): string {
 
 function Group({ legend, children }: { legend: string; children: ReactNode }) {
   return (
-    <fieldset className="space-y-4">
-      <legend className="mb-3 text-headline text-foreground">{legend}</legend>
-      <div className="space-y-4 rounded-xl bg-secondary/50 p-4 more-contrast:border more-contrast:border-input">
+    <fieldset>
+      <legend className="mb-2 px-1 text-subheadline font-normal text-muted-foreground">{legend}</legend>
+      <div className="space-y-4 rounded-[1.25rem] bg-background p-4 more-contrast:border more-contrast:border-input">
         {children}
       </div>
     </fieldset>
@@ -282,21 +314,21 @@ export function ServiceForm({
       onChange={checkDirty}
       // Agregar o quitar un recordatorio son botones: se mira después de que el editor se actualice.
       onClickCapture={() => requestAnimationFrame(checkDirty)}
-      className="mt-6 space-y-8"
+      className="mt-6 space-y-6"
     >
       {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
       <input type="hidden" name="color" value={color} />
 
       <Group legend={T.groups.data}>
         <Field label="Nombre">
-          <Input name="name" defaultValue={editing?.name} required minLength={2} autoComplete="off" className="h-11" />
+          <Input name="name" defaultValue={editing?.name} required minLength={2} autoComplete="off" className={filledInputClass} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Precio">
             <div className="relative">
               <span
                 aria-hidden
-                className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-callout text-muted-foreground"
+                className="pointer-events-none absolute inset-y-0 left-5 flex items-center text-callout text-muted-foreground"
               >
                 {symbol}
               </span>
@@ -309,7 +341,7 @@ export function ServiceForm({
                 defaultValue={editing?.price}
                 required
                 aria-label={`Precio en ${symbol}`}
-                className="h-11 pl-10 tabular-nums"
+                className={`${filledInputClass} pl-11 tabular-nums`}
               />
             </div>
           </Field>
@@ -322,12 +354,12 @@ export function ServiceForm({
               inputMode="numeric"
               defaultValue={editing?.durationMin ?? 30}
               required
-              className="h-11"
+              className={FILLED_NUMBER}
             />
           </Field>
         </div>
         <div>
-          <p className="mb-1.5 text-subheadline font-medium text-foreground" id={`${idBase}-color`}>
+          <p className="mb-1.5 block text-subheadline font-medium text-foreground" id={`${idBase}-color`}>
             Color en el calendario
           </p>
           <div role="group" aria-labelledby={`${idBase}-color`} className="flex flex-wrap items-center gap-2">
@@ -348,7 +380,7 @@ export function ServiceForm({
                 />
               );
             })}
-            <label className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-full bg-background px-3 text-callout shadow-card hover:bg-overlay-hover">
+            <label className={cn(filledSurfaceClass, "inline-flex h-11 cursor-pointer items-center gap-2 rounded-full px-4 text-callout hover:bg-[#e2e0e4]")}>
               Otro
               <input
                 type="color"
@@ -360,7 +392,7 @@ export function ServiceForm({
           </div>
         </div>
         <Field label="Descripción (opcional)">
-          <Textarea name="description" rows={2} defaultValue={editing?.description ?? ""} />
+          <Textarea name="description" rows={2} defaultValue={editing?.description ?? ""} className={FILLED_TEXTAREA} />
         </Field>
       </Group>
 
@@ -395,7 +427,7 @@ export function ServiceForm({
                 step="0.01"
                 defaultValue={editing?.depositValue ?? ""}
                 required
-                className="h-11"
+                className={FILLED_NUMBER}
               />
             </Field>
           </div>
@@ -419,6 +451,7 @@ export function ServiceForm({
                 defaultValue={editing?.prepInstructions ?? ""}
                 required
                 placeholder="Ej: Vení en ayunas de 4 h y sin haber entrenado ese día."
+                className={FILLED_TEXTAREA}
               />
             </Field>
             <Field label="Horas antes">
@@ -430,7 +463,7 @@ export function ServiceForm({
                 max={168}
                 defaultValue={editing?.prepLeadHours ?? 24}
                 required
-                className="h-11 w-28"
+                className={`${FILLED_NUMBER} w-28`}
               />
             </Field>
           </div>
@@ -464,7 +497,7 @@ export function ServiceForm({
       {/* Sin "Servicio activo": lo cambia solo el switch "Lo ofrece el bot" de la tarjeta (Q17). */}
       <div className="space-y-3">
         <FormError message={state.ok ? undefined : state.error} />
-        <Button type="submit" size="lg" loading={pending} className="w-full sm:w-auto">
+        <Button type="submit" size="lg" loading={pending} className="w-full rounded-full">
           {pending ? "Guardando…" : editing ? "Guardar cambios" : "Crear servicio"}
         </Button>
       </div>

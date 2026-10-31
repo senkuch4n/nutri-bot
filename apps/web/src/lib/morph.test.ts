@@ -8,6 +8,7 @@ import {
   MORPH_CLOSE_MS,
   MORPH_DIM,
   MORPH_LIFT_CLOSE_MS,
+  anchorOnOrigin,
   MORPH_RADIUS,
   MORPH_STACK_DIM,
   backdropOpacity,
@@ -443,5 +444,41 @@ describe("ficha del paciente (video de referencia de /pacientes)", () => {
     expect(t.cascade).toMatchObject({ duration: morphTimingBrisk.cascade, delay: brisk.contentAt });
     // Sin `brisk` todo sigue igual que antes.
     expect(openTransitions("lift").shellOpacity.duration).toBe(morphTiming.lift);
+  });
+});
+
+describe("anchorOnOrigin", () => {
+  const viewport = { width: 1440, height: 900 };
+  const size = { width: 448, height: 500 };
+
+  it("el diálogo nace donde está el origen: misma esquina de arriba a la izquierda", () => {
+    const src = { left: 300, top: 200, width: 240, height: 56 };
+    expect(anchorOnOrigin(src, size, viewport)).toEqual({ x: 300, y: 200 });
+  });
+
+  it("si no entra hacia la derecha, nace de la esquina derecha del origen (bordes derechos alineados)", () => {
+    const src = { left: 1200, top: 200, width: 200, height: 56 };
+    expect(anchorOnOrigin(src, size, viewport)).toEqual({ x: 1400 - 448, y: 200 });
+  });
+
+  it("un botón arriba a la derecha («+ Nuevo»): el diálogo crece hacia abajo y a la izquierda desde él", () => {
+    const src = { left: 1300, top: 60, width: 120, height: 44 };
+    expect(anchorOnOrigin(src, size, viewport)).toEqual({ x: 1420 - 448, y: 60 });
+  });
+
+  it("alineado a la derecha, igual no pasa el margen derecho", () => {
+    const src = { left: 1380, top: 200, width: 56, height: 40 };
+    expect(anchorOnOrigin(src, size, viewport).x).toBe(1440 - 16 - 448);
+  });
+
+  it("sube lo necesario para no salirse por abajo, sin pasar el margen de arriba", () => {
+    const src = { left: 300, top: 700, width: 240, height: 56 };
+    expect(anchorOnOrigin(src, size, viewport)).toEqual({ x: 300, y: 900 - 16 - 500 });
+    expect(anchorOnOrigin(src, { width: 448, height: 2000 }, viewport).y).toBe(16);
+  });
+
+  it("nunca por encima ni a la izquierda del margen", () => {
+    const src = { left: 4, top: 2, width: 100, height: 40 };
+    expect(anchorOnOrigin(src, size, viewport)).toEqual({ x: 16, y: 16 });
   });
 });

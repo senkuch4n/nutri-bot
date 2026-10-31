@@ -5,11 +5,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarX, ChevronLeft, ChevronRight, Plus, SearchX } from "lucide-react";
 import {
-  AGENDA_TEXT,
   APPOINTMENT_LIST_TEXT,
   DEFAULT_APPOINTMENT_LIST_FILTERS,
   activeAppointmentFilterCount,
-  appointmentDayTime,
   appointmentListQuery,
   buildAppointmentListRows,
   countAppointmentCards,
@@ -19,24 +17,21 @@ import {
   parseAppointmentListFilters,
   shiftMonthKey,
   type AppointmentListFilters,
-  type AppointmentListInput,
   type AppointmentListRow,
 } from "@nutri-bot/core";
 import { StatCard } from "@/components/stat-card";
 import { Button, EmptyState } from "@/components/ui";
 import { usePendingDeletions } from "@/lib/deferred-delete";
-import { notify } from "@/lib/notify";
 import { replaceUrlInRouter } from "@/lib/patient-tab-route";
 import { useMediaQuery } from "@/lib/use-media-query";
-import { setStatusAction } from "../actions";
 import { appointmentCancelKey, useScheduleAppointmentCancel } from "../appointment-cancel";
 import type { SelectedAppointment } from "../appointment-detail-sheet";
-import { AppointmentPaymentModal } from "../appointment-payment-modal";
 import { NewAppointmentModal, type ServiceOption } from "../new-appointment-modal";
 import type { TurnosAppointment } from "./data";
+import { toListInput, toSelectedAppointment } from "./appointment-dto";
 import { AppointmentDetailDialog } from "./appointment-detail-dialog";
 import { AppointmentsMobileList } from "./appointments-mobile-list";
-import { AppointmentsTable, openButtonId, type AppointmentRowActions } from "./appointments-table";
+import { AppointmentsTable, type AppointmentRowActions } from "./appointments-table";
 import { TurnosFilters } from "./turnos-filters";
 
 const T = APPOINTMENT_LIST_TEXT;
@@ -48,47 +43,6 @@ const monthNavButton =
 /** T15: mientras la cancelación con "Deshacer" está pendiente, el turno se ve como cancelado. */
 function withPendingCancel(a: TurnosAppointment, pending: ReadonlySet<string>): TurnosAppointment {
   return pending.has(appointmentCancelKey(a.id)) ? { ...a, status: "CANCELLED", cancelReason: null } : a;
-}
-
-/** SDD 7.6: el turno del detalle, con los datos del DTO y lo derivado de la fila (T6, D9). */
-function toSelectedAppointment(dto: TurnosAppointment, row: AppointmentListRow): SelectedAppointment {
-  return {
-    id: dto.id,
-    start: dto.startsAt,
-    end: dto.endsAt,
-    status: dto.status,
-    patientName: dto.patient.name,
-    patientPhone: dto.patient.phone,
-    serviceName: dto.service.name,
-    price: dto.priceSnapshot,
-    googleSynced: dto.googleSynced,
-    patientId: dto.patient.id,
-    consultation: dto.consultation,
-    reason: dto.reason,
-    patientJid: dto.patient.whatsappJid,
-    patientLabel: row.patientLabel,
-    hasFullPayment: row.payment.state === "paid" || row.payment.state === "free",
-    cancelledBy: dto.cancelledBy,
-    cancelReason: dto.cancelReason,
-    paymentText: row.paymentText,
-    balance: String(row.payment.balance),
-    depositAmount: dto.depositAmount ?? undefined,
-  };
-}
-
-function toInput(a: TurnosAppointment): AppointmentListInput {
-  return {
-    id: a.id,
-    startsAt: new Date(a.startsAt),
-    status: a.status,
-    cancelReason: a.cancelReason,
-    price: a.price,
-    approvedAmounts: a.approvedAmounts,
-    reason: a.reason,
-    serviceId: a.service.id,
-    serviceName: a.service.name,
-    patient: a.patient,
-  };
 }
 
 /** T10/T11: "/turnos" + query de mes y filtros (el mes en curso se escribe sin ?mes). */
@@ -145,8 +99,6 @@ export function TurnosClient({
   useEffect(() => {
     if (urlFilters.query.trim() !== queryRef.current.trim()) setQuery(urlFilters.query);
   }, [urlFilters.query]);
-  const [busy, setBusy] = useState<AppointmentRowActions["busy"]>(null);
-  const [payingId, setPayingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [origin, setOrigin] = useState<HTMLElement | null>(null);
   // T16: cambios del detalle mostrados al instante; se descartan cuando llegan DTOs nuevos (refresh).
@@ -157,7 +109,7 @@ export function TurnosClient({
   const effective = useMemo(() => appointments.map((a) => withPendingCancel(a, pending)), [appointments, pending]);
   const now = useMemo(() => new Date(nowISO), [nowISO]);
   const rows = useMemo(
-    () => buildAppointmentListRows(effective.map(toInput), now, tz, currency),
+    () => buildAppointmentListRows(effective.map(toListInput), now, tz, currency),
     [effective, now, tz, currency],
   );
   const filters: AppointmentListFilters = { ...urlFilters, query };
@@ -188,47 +140,14 @@ export function TurnosClient({
     return toSelectedAppointment(dto, row);
   }, [selectedId, effective, rows, override, appointments]);
 
-  // El modal de pago conserva el último turno mientras dura su animación de cierre.
-  const [payingShown, setPayingShown] = useState<string | null>(null);
-  if (payingId && payingId !== payingShown) setPayingShown(payingId);
-  const payingDto = payingShown ? effective.find((a) => a.id === payingShown) : undefined;
-  const payingRow = payingShown ? rows.find((r) => r.id === payingShown) : undefined;
-
   function openDetail(id: string, el: HTMLElement) {
     setOverride(null);
     setOrigin(el);
     setSelectedId(id);
   }
 
-  // T17: sin estado optimista. Si falla, la fila no cambia.
-  async function closeAppointment(row: AppointmentListRow, status: "COMPLETED" | "NO_SHOW") {
-    setBusy({ id: row.id, status });
-    const res = await setStatusAction(row.id, status);
-    setBusy(null);
-    if (!res.ok) {
-      notify.error(res.error ?? T.toast.error);
-      return;
-    }
-    router.refresh();
-    requestAnimationFrame(() => document.getElementById(openButtonId(row.id))?.focus());
-    notify.undo(
-      status === "COMPLETED" ? T.toast.completed(row.patientShortName) : AGENDA_TEXT.sheet.toastNoShow,
-      async () => {
-        const back = await setStatusAction(row.id, "CONFIRMED");
-        if (back.ok) {
-          notify.saved(AGENDA_TEXT.sheet.toastBackToConfirmed);
-          router.refresh();
-        } else notify.error(back.error ?? T.toast.error);
-      },
-    );
-  }
-
-  const rowActions: AppointmentRowActions = {
-    busy,
-    onOpen: openDetail,
-    onCloseAppointment: (row, status) => void closeAppointment(row, status),
-    onRegisterPayment: (row) => setPayingId(row.id),
-  };
+  // Vino / No vino / Registrar pago se hacen desde el detalle (2026-10-31); la fila solo lo abre.
+  const rowActions: AppointmentRowActions = { onOpen: openDetail };
 
   const title = monthTitle(month);
   const prevMonth = shiftMonthKey(month, -1);
@@ -333,26 +252,6 @@ export function TurnosClient({
         tz={tz}
         todayKey={todayKey}
       />
-
-      {payingDto && payingRow ? (
-        <AppointmentPaymentModal
-          open={payingId !== null}
-          onClose={() => setPayingId(null)}
-          currency={currency}
-          appointment={{
-            id: payingDto.id,
-            label: `${payingRow.patientLabel} · ${payingRow.serviceName} · ${appointmentDayTime(payingRow.startsAt, now, tz)}`,
-            priceSnapshot: payingDto.priceSnapshot,
-            patientLabel: payingRow.patientLabel,
-            depositAmount: payingDto.depositAmount ?? undefined,
-            balanceAmount: String(payingRow.payment.balance),
-          }}
-          onDone={() => {
-            setPayingId(null);
-            router.refresh();
-          }}
-        />
-      ) : null}
 
       <AppointmentDetailDialog
         appt={selected}

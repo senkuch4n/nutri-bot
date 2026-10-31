@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { Plus } from "lucide-react";
 import { AVAILABILITY_TEXT, WEEKDAY_NAMES, exceptionDayLabel } from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
-import { Button, PageHeader } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { useDeferredDelete, usePendingDeletions } from "@/lib/deferred-delete";
 import { WeeklySchedule, type Rule } from "./schedule";
 import { RangeSheet, suggestedRange, type RangeTarget } from "./range-sheet";
@@ -46,6 +46,12 @@ export function DisponibilidadView({
   // Desde dónde crece el diálogo del horario (el horario o el "Agregar horario" tocado).
   const [rangeOrigin, setRangeOrigin] = useState<HTMLElement | null>(null);
   const [excOpen, setExcOpen] = useState(false);
+  // Desde dónde crece el diálogo del día especial (el botón del encabezado o el "+" del panel).
+  const [excOrigin, setExcOrigin] = useState<HTMLElement | null>(null);
+  const openException = (origin: HTMLElement) => {
+    setExcOrigin(origin);
+    setExcOpen(true);
+  };
   const confirm = useConfirm();
   const deferredDelete = useDeferredDelete();
   const pending = usePendingDeletions();
@@ -110,25 +116,28 @@ export function DisponibilidadView({
 
   return (
     <div>
-      <PageHeader
-        title="Disponibilidad"
-        description="Tu horario de todas las semanas y los días especiales."
-        action={
-          <Button size="lg" onClick={() => setExcOpen(true)}>
-            <Plus aria-hidden />
-            {T.addException}
-          </Button>
-        }
-      />
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="text-title-1 font-medium">Disponibilidad</h1>
+          <p className="mt-1 text-subheadline text-muted-foreground">Tu horario de todas las semanas y los días especiales.</p>
+        </div>
+        <Button
+          className="rounded-full bg-foreground text-background hover:bg-foreground/85 pressed:bg-foreground/75"
+          onClick={(e) => openException(e.currentTarget)}
+        >
+          <Plus aria-hidden />
+          {T.addException}
+        </Button>
+      </header>
 
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] xl:items-start">
         <WeeklySchedule rules={visibleRules} onAdd={openAdd} onEdit={openEdit} />
 
-        <div className="xl:sticky xl:top-8">
+        <div className="xl:sticky xl:top-6">
           <ExceptionsSection
             exceptions={visibleExceptions}
             todayKey={todayKey}
-            onAdd={() => setExcOpen(true)}
+            onAdd={openException}
             onDelete={deleteException}
           />
         </div>
@@ -142,7 +151,7 @@ export function DisponibilidadView({
         onDelete={deleteRule}
       />
 
-      <ExceptionSheet open={excOpen} onOpenChange={setExcOpen} todayKey={todayKey} />
+      <ExceptionSheet open={excOpen} onOpenChange={setExcOpen} origin={excOrigin} todayKey={todayKey} />
     </div>
   );
 }

@@ -14,8 +14,10 @@ import { usePatientTabs } from "./patient-tabs";
 
 const T = PATIENT_SUMMARY_TEXT;
 
-/** Botones redondeados del encabezado (gris suave, como en la referencia). */
+/** Botones redondeados del encabezado. Las acciones secundarias van como texto, sin fondo (referencia
+ *  2026-10-31); el gris aparece al pasar el mouse. */
 const pill = "rounded-full";
+const quiet = "rounded-full font-normal hover:bg-black/[0.05]";
 
 /** Acciones del encabezado de la ficha: «Agendar turno», «Editar datos», «Archivar» / «Desarchivar»,
  *  «Ver historial» y WhatsApp. Todas reutilizan lo que ya existía en la ficha. */
@@ -55,22 +57,22 @@ export function PatientHeaderActions({
           {T.scheduleAppointment}
         </Button>
       ) : null}
-      <Button variant="secondary" className={pill} onClick={editPatient}>
+      <Button variant="ghost" className={quiet} onClick={editPatient}>
         <Pencil aria-hidden />
         {T.editData}
       </Button>
       {archived ? (
-        <Button variant="secondary" className={pill} onClick={unarchive}>
+        <Button variant="ghost" className={quiet} onClick={unarchive}>
           <ArchiveRestore aria-hidden />
           {PATIENT_ARCHIVE_TEXT.menuUnarchive}
         </Button>
       ) : (
-        <Button variant="secondary" className={pill} onClick={() => void archive()}>
+        <Button variant="ghost" className={quiet} onClick={() => void archive()}>
           <Archive aria-hidden />
           {T.archive}
         </Button>
       )}
-      <Button variant="secondary" className={pill} onClick={() => go({ tab: "historial" })}>
+      <Button variant="ghost" className={quiet} onClick={() => go({ tab: "historial" })}>
         <History aria-hidden />
         {T.viewHistory}
       </Button>
@@ -79,7 +81,7 @@ export function PatientHeaderActions({
           href={chatUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex h-9 items-center gap-2 rounded-full bg-secondary px-4 text-callout font-medium text-foreground press-none transition-colors duration-hover hover:bg-fill-hover pressed:bg-fill-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&_svg]:size-4"
+          className="inline-flex h-9 items-center gap-2 rounded-full px-4 text-callout text-foreground press-none transition-colors duration-hover hover:bg-black/[0.05] pressed:bg-fill-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&_svg]:size-4"
         >
           <MessageCircle aria-hidden />
           {T.whatsapp}

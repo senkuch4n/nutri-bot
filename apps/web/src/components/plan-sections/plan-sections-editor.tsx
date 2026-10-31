@@ -14,7 +14,7 @@ import { MoreActionsMenu } from "@/components/more-actions-menu";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
-import { SectionSheet } from "./section-sheet";
+import { SectionDialog } from "./section-dialog";
 import type { PlanSectionView } from "./types";
 
 /** Cuerpos más largos que esto se muestran plegados (line-clamp-4) con "Ver completo". */
@@ -34,12 +34,17 @@ export function PlanSectionsEditor({
   sections: PlanSectionView[];
 }) {
   const confirm = useConfirm();
-  const [sheet, setSheet] = useState<{ open: boolean; section: PlanSectionView | null }>({ open: false, section: null });
+  // `origin`: el botón «Agregar texto» desde el que crece el diálogo (al editar desde el menú, null: centrado).
+  const [sheet, setSheet] = useState<{ open: boolean; section: PlanSectionView | null; origin: HTMLElement | null }>({
+    open: false,
+    section: null,
+    origin: null,
+  });
   const [, startTransition] = useTransition();
   const atLimit = sections.length >= PLAN_SECTION_LIMITS.maxPerOwner;
   const limitId = useId();
 
-  const openNew = () => setSheet({ open: true, section: null });
+  const openNew = (e: React.MouseEvent<HTMLButtonElement>) => setSheet({ open: true, section: null, origin: e.currentTarget });
 
   function save(input: { title: string; body: string }) {
     const editing = sheet.section;
@@ -91,7 +96,7 @@ export function PlanSectionsEditor({
               key={section.id}
               section={section}
               actions={[
-                { key: "edit", label: PLAN_SECTION_TEXT.edit, icon: <Pencil />, onSelect: () => setSheet({ open: true, section }) },
+                { key: "edit", label: PLAN_SECTION_TEXT.edit, icon: <Pencil />, onSelect: () => setSheet({ open: true, section, origin: null }) },
                 ...(i > 0
                   ? [{ key: "up", label: PLAN_SECTION_TEXT.moveUp, icon: <ArrowUp />, onSelect: () => run(() => movePlanSectionAction({ kind, ownerId, sectionId: section.id, direction: -1 })) }]
                   : []),
@@ -104,10 +109,11 @@ export function PlanSectionsEditor({
           ))}
         </ul>
       )}
-      <SectionSheet
+      <SectionDialog
         open={sheet.open}
         onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}
         section={sheet.section}
+        origin={sheet.origin}
         onSave={save}
         description={PLAN_SECTION_TEXT.cardDescription(kind)}
       />

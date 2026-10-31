@@ -4,6 +4,7 @@ import {
   ChefHat,
   Clock,
   Files,
+  House,
   Inbox,
   ListChecks,
   Megaphone,
@@ -27,6 +28,7 @@ export const navGroups: NavGroup[] = [
   {
     label: "Agenda",
     items: [
+      { href: "/resumen", label: "Inicio", icon: House },
       { href: "/", label: "Calendario", icon: CalendarDays },
       // HU-021: lista de turnos del mes con su estado y lo registrado como pagado.
       { href: "/turnos", label: "Turnos", icon: ListChecks },

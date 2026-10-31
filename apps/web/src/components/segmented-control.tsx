@@ -82,7 +82,7 @@ export function SegmentedControl<T extends string>({
                 />
               ) : null}
               {Icon ? <Icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden /> : null}
-              <span className="truncate">{option.label}</span>
+              {option.label != null ? <span className="truncate">{option.label}</span> : null}
             </ToggleGroupPrimitive.Item>
           );
         })}

@@ -8,9 +8,9 @@ import { PatientHeaderIdentity } from "./patient-header-identity";
 
 const T = PATIENT_SUMMARY_TEXT;
 
-/** Encabezado de la ficha (server), con el diseño de referencia: avatar con iniciales, nombre, sexo,
- *  edad y nacimiento, el estado arriba a la derecha y las acciones debajo. Va antes de las pestañas
- *  de PatientTabs (que son lo único que se pega arriba al scrollear). */
+/** Encabezado de la ficha (server), con el diseño de referencia: sobre un panel tintado, avatar con
+ *  iniciales, nombre, sexo, edad y nacimiento, el estado arriba a la derecha y las acciones debajo. Va
+ *  antes de las pestañas de PatientTabs (que son lo único que se pega arriba al scrollear). */
 export function PatientHeader({
   patientId,
   name,
@@ -51,7 +51,7 @@ export function PatientHeader({
     (f): f is string => Boolean(f),
   );
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative rounded-[1.75rem] bg-[#f6f5f8] p-5 sm:p-7", className)}>
       <PatientHeaderIdentity
         initials={initials}
         stage={stage}
@@ -61,7 +61,7 @@ export function PatientHeader({
         nameAside={!name ? <HeaderNameButton patientId={patientId} phoneLabel={phoneLabel} /> : null}
       />
 
-      <ul className="mt-2 space-y-0.5 text-callout text-muted-foreground">
+      <ul className="mt-2 space-y-0.5 text-callout text-foreground">
         {facts.map((f) => (
           <li key={f}>{f}</li>
         ))}
