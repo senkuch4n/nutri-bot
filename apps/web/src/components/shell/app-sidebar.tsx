@@ -75,7 +75,7 @@ export function AppSidebar({
           ref={sidebar}
           id={SIDEBAR_ID}
           aria-label="Navegación principal"
-          className="panel-sidebar group/sidebar flex flex-col bg-sidebar"
+          className="panel-sidebar group/sidebar flex flex-col bg-[#f6f5f8]"
           data-collapsed={collapsed}
         >
           <div className="panel-sidebar-header relative flex h-14 shrink-0 items-center gap-2">

@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { AnimatePresence, m, useReducedMotionConfig } from "motion/react";
-import { Ban, CalendarOff, ChevronRight, Clock, Plus, Trash2 } from "lucide-react";
+import { Ban, CalendarOff, ChevronRight, Clock, Trash2 } from "lucide-react";
 import { AVAILABILITY_TEXT, exceptionDayLabel, exceptionDetail, exceptionKindOf, splitExceptions } from "@nutri-bot/core";
 import { MoreActionsMenu } from "@/components/more-actions-menu";
 import { cn } from "@/components/ui";
@@ -10,9 +10,6 @@ import { fades, springs } from "@/lib/motion";
 import type { ExceptionData } from "./view";
 
 const T = AVAILABILITY_TEXT;
-
-const addButtonClass =
-  "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-callout text-muted-foreground press-none touch-target transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 /**
  * "Días especiales" (HU-017b-2): panel tintado con solo las próximas (hoy incluido), la más cercana
@@ -22,31 +19,19 @@ const addButtonClass =
 export function ExceptionsSection({
   exceptions,
   todayKey,
-  onAdd,
   onDelete,
 }: {
   exceptions: readonly ExceptionData[];
   todayKey: string;
-  onAdd: (origin: HTMLElement) => void;
   onDelete: (e: ExceptionData) => Promise<unknown>;
 }) {
   const { upcoming, past } = splitExceptions(exceptions, todayKey);
   return (
     <section aria-labelledby="dias-especiales" className="rounded-[1.75rem] bg-[#f6f5f8] p-5 sm:p-7">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="dias-especiales" className="text-headline text-foreground">
-          {T.exceptionsTitle}
-        </h2>
-        <button
-          type="button"
-          onClick={(e) => onAdd(e.currentTarget)}
-          aria-label={T.addException}
-          title={T.addException}
-          className={cn(addButtonClass, "-mr-2 px-0 size-11 justify-center")}
-        >
-          <Plus className="size-4" strokeWidth={2} aria-hidden />
-        </button>
-      </div>
+      {/* Sin "+" propio: se agrega desde «Agregar día especial» del encabezado de la pantalla. */}
+      <h2 id="dias-especiales" className="text-headline text-foreground">
+        {T.exceptionsTitle}
+      </h2>
 
       {upcoming.length === 0 ? (
         <div className="mt-4 flex flex-col items-center rounded-2xl bg-background/70 px-5 py-8 text-center">

@@ -66,7 +66,7 @@ export const navGroups: NavGroup[] = [
 export const settingsItem: NavItem = { href: "/ajustes", label: "Ajustes", icon: Settings };
 
 /** Anchos de la sidebar de escritorio (los mismos que --panel-sidebar-* de sidebar-layout.css). */
-export const SIDEBAR_WIDTH = { collapsed: "3rem", expanded: "14rem" } as const;
+export const SIDEBAR_WIDTH = { collapsed: "3.5rem", expanded: "14rem" } as const;
 
 /** Cookie con el estado de la sidebar: "collapsed" | "expanded". */
 export const SIDEBAR_COOKIE = "nb-sidebar";
@@ -82,4 +82,4 @@ export function isActive(pathname: string, href: string): boolean {
  * (`density="touch"` en `SidebarContent`). El foco va hacia adentro para no recortarse en el rail.
  */
 export const sidebarItemClass =
-  "relative isolate flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-callout text-foreground press-sm hover:bg-overlay-hover pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring group-data-[density=touch]/nav:h-11 [&>svg]:text-muted-foreground";
+  "relative isolate flex h-9 w-full items-center gap-2.5 rounded-xl px-2 text-callout text-foreground press-sm transition-colors duration-hover hover:bg-black/[0.04] pressed:bg-black/[0.07] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring group-data-[density=touch]/nav:h-11 [&>svg]:size-[1.125rem] [&>svg]:text-muted-foreground";

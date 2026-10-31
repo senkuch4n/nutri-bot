@@ -6,22 +6,23 @@
 
 @media (min-width: 1024px) {
   .panel-sidebar-layout {
-    --panel-sidebar-collapsed: 3rem;
+    --panel-sidebar-collapsed: 3.5rem;
     --panel-sidebar-expanded: 14rem;
     height: 100dvh;
     min-height: 0;
     padding: 0.5rem;
     overflow: hidden;
-    background: hsl(var(--sidebar));
+    background: #f6f5f8; /* el gris tintado de los paneles (ficha, días especiales) */
   }
 
   .panel-sidebar-workspace {
     min-height: 0;
     margin-top: 0.5rem;
     overflow-y: auto;
-    border-radius: 1.375rem; /* radii["2xl"] (workspace: radio de sheet/dialog) */
+    border-radius: 1.75rem; /* el radio de los paneles de la app */
     background: hsl(var(--background));
-    box-shadow: theme("boxShadow.card");
+    /* Borde finito en vez de sombra marcada, como los paneles hairline. */
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.04);
   }
 
   .panel-sidebar-slot {
@@ -61,7 +62,7 @@
 
   .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle {
     right: auto;
-    left: 0.25rem;
+    left: 0.5rem; /* alineado con los ítems del rail (nav px-2) */
     background: transparent;
   }
 
@@ -99,14 +100,15 @@
   .panel-sidebar > div:last-child > a,
   .panel-sidebar button[type="submit"] {
     position: relative;
-    padding-left: 0.5rem;
+    /* Ícono de 18 px centrado en el ítem de 40 px del rail: (40 − 18) / 2. */
+    padding-left: 0.6875rem;
     justify-content: flex-start;
   }
 
   .panel-sidebar .panel-sidebar-label {
     position: absolute;
-    left: 2.5rem;
-    width: calc(var(--panel-sidebar-expanded) - 4rem);
+    left: 2.75rem;
+    width: calc(var(--panel-sidebar-expanded) - 4.25rem);
     white-space: nowrap;
   }
 
@@ -132,13 +134,13 @@
   .panel-sidebar[data-collapsed="true"] nav a,
   .panel-sidebar[data-collapsed="true"] > div:last-child > a,
   .panel-sidebar[data-collapsed="true"] button[type="submit"] {
-    width: 2rem;
+    width: 2.5rem;
   }
 
   .panel-sidebar .panel-sidebar-account {
     position: relative;
-    min-height: 2rem;
-    padding-top: 2rem;
+    min-height: 2.25rem;
+    padding-top: 2.25rem;
   }
 
   .panel-sidebar .panel-sidebar-signout {
@@ -156,7 +158,7 @@
 /* Más contraste: el workspace suma un borde visible (§7.7). */
 @media (min-width: 1024px) and (prefers-contrast: more) {
   .panel-sidebar-workspace {
-    box-shadow: theme("boxShadow.card"), 0 0 0 1px hsl(var(--input));
+    box-shadow: 0 0 0 1px hsl(var(--input));
   }
 }
 

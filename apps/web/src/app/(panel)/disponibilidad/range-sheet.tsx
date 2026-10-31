@@ -63,7 +63,8 @@ export function RangeSheet({
     // `originLabel`: el texto del horario (o "Agregar horario") viaja con la tarjeta mientras crece.
     <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin} originLabel>
       <MorphDialogContent
-        className="w-[min(100%,28rem)] bg-[#f9f8fa]"
+        // ink-accent: el modal va en un portal y no hereda el acento negro de la pantalla.
+        className="ink-accent w-[min(100%,28rem)] bg-[#f9f8fa]"
         closeSide="left"
         // anchor="origin": se transforma en el lugar del horario tocado (no viaja al centro).
         anchor="origin"

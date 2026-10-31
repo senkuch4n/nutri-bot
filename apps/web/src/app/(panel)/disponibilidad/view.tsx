@@ -46,7 +46,7 @@ export function DisponibilidadView({
   // Desde dónde crece el diálogo del horario (el horario o el "Agregar horario" tocado).
   const [rangeOrigin, setRangeOrigin] = useState<HTMLElement | null>(null);
   const [excOpen, setExcOpen] = useState(false);
-  // Desde dónde crece el diálogo del día especial (el botón del encabezado o el "+" del panel).
+  // Desde dónde crece el diálogo del día especial (el botón «Agregar día especial» del encabezado).
   const [excOrigin, setExcOrigin] = useState<HTMLElement | null>(null);
   const openException = (origin: HTMLElement) => {
     setExcOrigin(origin);
@@ -115,7 +115,8 @@ export function DisponibilidadView({
   );
 
   return (
-    <div>
+    // Acento en negro, como el resto del panel rediseñado (globals.css, .ink-accent).
+    <div className="ink-accent">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           <h1 className="text-title-1 font-medium">Disponibilidad</h1>
@@ -137,7 +138,6 @@ export function DisponibilidadView({
           <ExceptionsSection
             exceptions={visibleExceptions}
             todayKey={todayKey}
-            onAdd={openException}
             onDelete={deleteException}
           />
         </div>

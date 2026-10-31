@@ -57,7 +57,7 @@ export function ExceptionSheet({
   if (compact) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" className="bg-[#f9f8fa]">
+        <SheetContent side="bottom" className="ink-accent bg-[#f9f8fa]">
           <SheetHeader>
             <SheetTitle>{T.addException}</SheetTitle>
             <SheetDescription>{description}</SheetDescription>
@@ -70,7 +70,7 @@ export function ExceptionSheet({
   return (
     <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin}>
       {/* anchor="origin": se transforma en el lugar del botón (no viaja al centro). */}
-      <MorphDialogContent className="w-[min(100%,30rem)] bg-[#f9f8fa]" closeSide="left" anchor="origin">
+      <MorphDialogContent className="ink-accent w-[min(100%,30rem)] bg-[#f9f8fa]" closeSide="left" anchor="origin">
         <MorphDialogHeader className="min-h-10 justify-center pl-14 pr-0">
           <MorphDialogTitle className="text-title-2 font-normal text-muted-foreground">{T.addException}</MorphDialogTitle>
         </MorphDialogHeader>
