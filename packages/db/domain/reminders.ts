@@ -59,6 +59,13 @@ export async function enqueuePrepInstructions(windowMinutes = 20, scope: Enqueue
 // ── HU-014: recordatorios por servicio ──────────────────────────────────────────────────────
 
 const DAY_MS = 86_400_000;
+/** HU-022: prefijo del dedupeKey de los mensajes ya enviados de un horario anterior del turno
+ *  (lo pone rescheduleAppointment). No cuentan para el horario vigente. */
+export const PREVIOUS_SCHEDULE_KEY_PREFIX = "prev:";
+
+function isCurrentScheduleMessage(m: { dedupeKey: string }): boolean {
+  return !m.dedupeKey.startsWith(PREVIOUS_SCHEDULE_KEY_PREFIX);
+}
 /** Horizonte de búsqueda: 14 días de máximo + margen del corrimiento nocturno (D6). */
 const REMINDERS_HORIZON_MS = 15 * DAY_MS;
 
@@ -106,9 +113,11 @@ export async function enqueueServiceReminders(
   const errors: unknown[] = [];
   for (const appt of appts) {
     try {
+      // HU-022 (S6): los del horario anterior (prev:) no cuentan para ningún chequeo.
+      const msgs = appt.messages.filter(isCurrentScheduleMessage);
       // Mensajes automáticos ya encolados (los manuales no cuentan, D8). SDD §15: cubren cualquier
       // recordatorio con momento ≤ su createdAt (cambio de config con avisos ya enviados).
-      const autoMsgs = appt.messages.filter(
+      const autoMsgs = msgs.filter(
         (m) => m.kind === "CONFIRMATION_REQUEST" || (m.kind === "REMINDER" && m.dedupeKey.startsWith("auto:")),
       );
       const pick = pickDueReminder({
@@ -120,7 +129,7 @@ export async function enqueueServiceReminders(
         sent: {
           autoKeys: new Set(autoMsgs.filter((m) => m.kind === "REMINDER").map((m) => m.dedupeKey)),
           confirmationSent:
-            appt.messages.some((m) => m.kind === "CONFIRMATION_REQUEST") || appt.confirmationRequestedAt !== null,
+            msgs.some((m) => m.kind === "CONFIRMATION_REQUEST") || appt.confirmationRequestedAt !== null,
           autoSentAt: [
             ...autoMsgs.map((m) => m.createdAt),
             ...(appt.confirmationRequestedAt ? [appt.confirmationRequestedAt] : []),
@@ -253,7 +262,8 @@ export async function getAppointmentReminderStatus(
     tz: pro.timezone,
     now: opts.now ?? new Date(),
     confirmationRequestedAt: appt.confirmationRequestedAt,
-    messages: appt.messages.map((m) => ({
+    // HU-022: los del horario anterior (prev:) no son del turno tal como está ahora.
+    messages: appt.messages.filter(isCurrentScheduleMessage).map((m) => ({
       kind: m.kind as "REMINDER" | "CONFIRMATION_REQUEST",
       dedupeKey: m.dedupeKey,
       status: m.status,

@@ -1,7 +1,9 @@
 import {
   dayKeyFromDbDate,
+  dayRangeUtc,
   getAvailableSlots,
   isSlotAvailable,
+  isValidDayKey,
   type BusyInterval,
   type Exception,
   type Rule,
@@ -69,6 +71,8 @@ export async function getAvailableSlotsForService(params: {
   from: Date;
   to: Date;
   now?: Date;
+  /** HU-022: turno que no cuenta como ocupado (el que se está reprogramando). */
+  excludeAppointmentId?: string;
 }): Promise<Date[]> {
   const now = params.now ?? new Date();
   const [pro, service] = await Promise.all([
@@ -78,7 +82,7 @@ export async function getAvailableSlotsForService(params: {
   if (!service || !service.active) return [];
 
   const { coreRules, coreExceptions } = await loadRulesAndExceptions(pro.timezone);
-  const busy = await loadBusy(params.from, params.to);
+  const busy = await loadBusy(params.from, params.to, params.excludeAppointmentId);
 
   return getAvailableSlots({
     service: { durationMin: service.durationMin },
@@ -91,6 +95,50 @@ export async function getAvailableSlotsForService(params: {
     tz: pro.timezone,
     minLeadMinutes: minLeadMinutes(),
   });
+}
+
+/**
+ * HU-022 (S5): solo se reprograman turnos CONFIRMED o AWAITING_PAYMENT que todavía no empezaron.
+ * Consumidores: getRescheduleSlots y rescheduleAppointment.
+ */
+export function canRescheduleAppointment(
+  appt: { status: string; startsAt: Date },
+  now: Date,
+): boolean {
+  return (appt.status === "CONFIRMED" || appt.status === "AWAITING_PAYMENT") && appt.startsAt.getTime() > now.getTime();
+}
+
+/**
+ * HU-022 (S3): inicios libres del día `dayKey` ("yyyy-MM-dd" en la zona de la profesional) para el
+ * servicio del turno, sin contar el propio turno como ocupado. Misma regla que la reserva:
+ * disponibilidad (reglas + excepciones), otros turnos CONFIRMED/AWAITING_PAYMENT y anticipación
+ * mínima. Turno inexistente o que no se puede reprogramar → []. Día inválido → tira.
+ * Consumidor: web (getRescheduleSlotsAction).
+ */
+export async function getRescheduleSlots(params: {
+  appointmentId: string;
+  dayKey: string;
+  now?: Date;
+}): Promise<Date[]> {
+  if (!isValidDayKey(params.dayKey)) throw new Error("Fecha inválida");
+  const now = params.now ?? new Date();
+  const appt = await prisma.appointment.findUnique({
+    where: { id: params.appointmentId },
+    select: { id: true, serviceId: true, status: true, startsAt: true },
+  });
+  if (!appt || !canRescheduleAppointment(appt, now)) return [];
+
+  const pro = await getProfessional();
+  const { start, end } = dayRangeUtc(params.dayKey, pro.timezone);
+  const slots = await getAvailableSlotsForService({
+    serviceId: appt.serviceId,
+    from: start,
+    to: end,
+    now,
+    excludeAppointmentId: appt.id,
+  });
+  // getAvailableSlots incluye `to`: la medianoche siguiente es del otro día.
+  return slots.filter((s) => s < end);
 }
 
 export async function checkSlotAvailable(params: {

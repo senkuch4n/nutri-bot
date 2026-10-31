@@ -5,6 +5,11 @@ import { AGENDA_TEXT, PHONE_INPUT_TEXT } from "@nutri-bot/core";
 const mocks = vi.hoisted(() => {
   class SlotUnavailableError extends Error {}
   class InvalidBookingReasonError extends Error {}
+  class RescheduleError extends Error {
+    constructor(readonly code: string) {
+      super(code);
+    }
+  }
   return {
     revalidatePath: vi.fn(),
     findUnique: vi.fn(),
@@ -20,6 +25,9 @@ const mocks = vi.hoisted(() => {
     getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
     SlotUnavailableError,
     InvalidBookingReasonError,
+    RescheduleError,
+    getRescheduleSlots: vi.fn(),
+    rescheduleAppointment: vi.fn(),
   };
 });
 
@@ -34,6 +42,9 @@ vi.mock("@nutri-bot/db/domain", () => ({
   enqueueReminderNow: vi.fn(),
   getAppointmentReminderStatus: vi.fn(),
   getProfessional: mocks.getProfessional,
+  getRescheduleSlots: mocks.getRescheduleSlots,
+  rescheduleAppointment: mocks.rescheduleAppointment,
+  RescheduleError: mocks.RescheduleError,
 }));
 vi.mock("@/lib/appointments", () => ({
   cancelAppointment: mocks.cancelAppointment,
@@ -51,7 +62,9 @@ vi.mock("@/lib/patients", () => ({
 import {
   cancelAppointmentAction,
   createAppointmentAction,
+  getRescheduleSlotsAction,
   listAppointmentPatientsAction,
+  rescheduleAppointmentAction,
   saveAppointmentReasonAction,
   setStatusAction,
 } from "./actions";
@@ -304,5 +317,73 @@ describe("HU-021: las actions del turno revalidan /turnos", () => {
     expect(await saveAppointmentReasonAction("appt-1", "Control")).toEqual({ ok: true, reason: "Control" });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+  });
+});
+
+describe("HU-022: reprogramar un turno", () => {
+  it("getRescheduleSlotsAction → ISO ordenados del día", async () => {
+    mocks.getRescheduleSlots.mockResolvedValue([
+      new Date("2026-11-05T16:00:00.000Z"),
+      new Date("2026-11-05T14:00:00.000Z"),
+    ]);
+    expect(await getRescheduleSlotsAction("appt-1", "2026-11-05")).toEqual({
+      ok: true,
+      slots: ["2026-11-05T14:00:00.000Z", "2026-11-05T16:00:00.000Z"],
+    });
+    expect(mocks.getRescheduleSlots).toHaveBeenCalledWith({ appointmentId: "appt-1", dayKey: "2026-11-05" });
+  });
+
+  it.each(["", "05/11/2026", "2026-02-30"])("getRescheduleSlotsAction con día inválido (%j) → error sin consultar", async (day) => {
+    expect(await getRescheduleSlotsAction("appt-1", day)).toEqual({ ok: false, error: "Elegí un día válido." });
+    expect(mocks.getRescheduleSlots).not.toHaveBeenCalled();
+  });
+
+  it("getRescheduleSlotsAction con error del dominio → mensaje", async () => {
+    mocks.getRescheduleSlots.mockRejectedValue(new Error("db down"));
+    expect(await getRescheduleSlotsAction("appt-1", "2026-11-05")).toEqual({
+      ok: false,
+      error: "No se pudieron cargar los horarios. Probá de nuevo.",
+    });
+  });
+
+  it("S4: rescheduleAppointmentAction ok → start/end nuevos y revalida calendario, turnos, avisos y ficha", async () => {
+    mocks.rescheduleAppointment.mockResolvedValue({
+      patientId: "pat-1",
+      startsAt: new Date("2026-11-05T14:00:00.000Z"),
+      endsAt: new Date("2026-11-05T14:45:00.000Z"),
+    });
+    expect(await rescheduleAppointmentAction("appt-1", "2026-11-05T14:00:00.000Z")).toEqual({
+      ok: true,
+      start: "2026-11-05T14:00:00.000Z",
+      end: "2026-11-05T14:45:00.000Z",
+    });
+    expect(mocks.rescheduleAppointment).toHaveBeenCalledWith({ id: "appt-1", startsAt: new Date("2026-11-05T14:00:00.000Z") });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1", "layout");
+  });
+
+  it("rescheduleAppointmentAction con fecha inválida → error sin llamar al dominio", async () => {
+    expect(await rescheduleAppointmentAction("appt-1", "mañana")).toEqual({ ok: false, error: "Elegí un horario válido." });
+    expect(mocks.rescheduleAppointment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["SLOT_TAKEN", "Ese horario ya no está libre. Elegí otro."],
+    ["NOT_RESCHEDULABLE", "Este turno ya no se puede reprogramar."],
+    ["SAME_TIME", "El turno ya está en ese horario."],
+  ])("S4/S5: RescheduleError %s → %j y sin revalidar", async (code, error) => {
+    mocks.rescheduleAppointment.mockRejectedValue(new mocks.RescheduleError(code));
+    expect(await rescheduleAppointmentAction("appt-1", "2026-11-05T14:00:00.000Z")).toEqual({ ok: false, error });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("rescheduleAppointmentAction con otro error → mensaje genérico", async () => {
+    mocks.rescheduleAppointment.mockRejectedValue(new Error("db down"));
+    expect(await rescheduleAppointmentAction("appt-1", "2026-11-05T14:00:00.000Z")).toEqual({
+      ok: false,
+      error: "No se pudo reprogramar el turno. Probá de nuevo.",
+    });
   });
 });

@@ -9,6 +9,7 @@ import {
   PHONE_INPUT_TEXT,
   buildPatientDirectory,
   classifyWhatsappJid,
+  isValidDayKey,
   parsePhoneInput,
   patientDisplayName,
   reminderStatusText,
@@ -25,7 +26,15 @@ import {
   updateAppointmentReason,
 } from "@/lib/appointments";
 import { findOrCreatePatient, phoneToJid } from "@/lib/patients";
-import { enqueueReminderNow, getAppointmentReminderStatus, getProfessional } from "@nutri-bot/db/domain";
+import {
+  enqueueReminderNow,
+  getAppointmentReminderStatus,
+  getProfessional,
+  getRescheduleSlots,
+  rescheduleAppointment,
+  RescheduleError,
+  type RescheduleErrorCode,
+} from "@nutri-bot/db/domain";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -280,4 +289,59 @@ export async function saveAppointmentReasonAction(
   revalidatePath("/turnos"); // HU-021
   revalidatePath(`/pacientes/${updated.patientId}`, "layout");
   return { ok: true, reason: updated.reason };
+}
+
+// ── HU-022: reprogramar un turno ─────────────────────────────────────────────────────────────
+
+const RESCHEDULE_ERROR_TEXT: Record<RescheduleErrorCode, string> = {
+  SLOT_TAKEN: "Ese horario ya no está libre. Elegí otro.",
+  NOT_RESCHEDULABLE: "Este turno ya no se puede reprogramar.",
+  SAME_TIME: "El turno ya está en ese horario.",
+};
+
+/**
+ * HU-022 (S3): inicios libres del día `dayKey` ("yyyy-MM-dd" en la zona de la profesional) para
+ * reprogramar el turno, en ISO y ordenados. Un turno que no se puede reprogramar devuelve `[]`.
+ */
+export async function getRescheduleSlotsAction(
+  appointmentId: string,
+  dayKey: string,
+): Promise<{ ok: true; slots: string[] } | { ok: false; error: string }> {
+  if (!appointmentId || !isValidDayKey(dayKey)) return { ok: false, error: "Elegí un día válido." };
+  try {
+    const slots = await getRescheduleSlots({ appointmentId, dayKey });
+    return {
+      ok: true,
+      slots: [...slots].sort((a, b) => a.getTime() - b.getTime()).map((d) => d.toISOString()),
+    };
+  } catch {
+    return { ok: false, error: "No se pudieron cargar los horarios. Probá de nuevo." };
+  }
+}
+
+const rescheduleSchema = z.object({ id: z.string().min(1), startsAt: z.string().datetime() });
+
+/**
+ * HU-022 (S4–S7): cambia el día y la hora del turno. El dominio revalida el horario (no se confía en
+ * el cliente), reinicia recordatorios y confirmación y avisa a la paciente por WhatsApp.
+ */
+export async function rescheduleAppointmentAction(
+  appointmentId: string,
+  startsAtISO: string,
+): Promise<{ ok: true; start: string; end: string } | { ok: false; error: string }> {
+  const parsed = rescheduleSchema.safeParse({ id: appointmentId, startsAt: startsAtISO });
+  if (!parsed.success) return { ok: false, error: "Elegí un horario válido." };
+
+  let updated: Awaited<ReturnType<typeof rescheduleAppointment>>;
+  try {
+    updated = await rescheduleAppointment({ id: parsed.data.id, startsAt: new Date(parsed.data.startsAt) });
+  } catch (err) {
+    if (err instanceof RescheduleError) return { ok: false, error: RESCHEDULE_ERROR_TEXT[err.code] };
+    return { ok: false, error: "No se pudo reprogramar el turno. Probá de nuevo." };
+  }
+  revalidatePath("/");
+  revalidatePath("/turnos");
+  revalidatePath("/avisos"); // recordatorios borrados/renombrados y el aviso encolado
+  revalidatePath(`/pacientes/${updated.patientId}`, "layout");
+  return { ok: true, start: updated.startsAt.toISOString(), end: updated.endsAt.toISOString() };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isValidMonthKey,
+  monthCalendarWeeks,
   monthKeyInTz,
   monthName,
   monthRangeInTz,
@@ -66,5 +67,26 @@ describe("monthTitle / monthName", () => {
     expect(monthTitle("2027-01")).toBe("Enero 2027");
     expect(monthName("2026-10")).toBe("octubre");
     expect(monthName("2026-09")).toBe("septiembre");
+  });
+});
+
+describe("monthCalendarWeeks", () => {
+  it("semanas de lunes a domingo, con los días del mes anterior y del siguiente", () => {
+    // 1 de octubre de 2026 es jueves; el 31, sábado.
+    const weeks = monthCalendarWeeks("2026-10");
+    expect(weeks).toHaveLength(5);
+    expect(weeks.every((w) => w.length === 7)).toBe(true);
+    expect(weeks[0]).toEqual(["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
+    expect(weeks[4]![6]).toBe("2026-11-01");
+  });
+  it("mes que empieza en domingo y cruza de año", () => {
+    // 1 de febrero de 2026 es domingo: la primera semana arranca el lunes 26 de enero.
+    expect(monthCalendarWeeks("2026-02")[0]![0]).toBe("2026-01-26");
+    expect(monthCalendarWeeks("2026-02")[0]![6]).toBe("2026-02-01");
+    // Diciembre de 2026 termina jueves 31: la última semana llega al domingo 3 de enero.
+    expect(monthCalendarWeeks("2026-12").at(-1)![6]).toBe("2027-01-03");
+  });
+  it("tira con una key inválida", () => {
+    expect(() => monthCalendarWeeks("2026-13")).toThrow();
   });
 });

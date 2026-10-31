@@ -6,6 +6,7 @@ import {
   AGENDA_TEXT,
   BOOKING_REASON_MAX,
   appointmentDayTime,
+  exceptionDayLabel,
   formatInTimeZone,
   formatPhone,
   parsePhoneInput,
@@ -19,7 +20,8 @@ import {
 } from "@/components/primitives/morph-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/primitives/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/primitives/toggle-group";
-import { Button, FormError, Input, Select, Textarea, filledInputClass, filledSurfaceClass } from "@/components/ui";
+import { MiniCalendar } from "@/components/mini-calendar";
+import { Button, FormError, Select, Textarea, filledInputClass, filledSurfaceClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { createAppointmentAction, listAppointmentPatientsAction, type AppointmentPatientOption } from "./actions";
@@ -31,12 +33,6 @@ export interface ServiceOption {
   id: string;
   name: string;
   durationMin: number;
-}
-
-/** "2026-10-05" → "2026-10-06" (sin la zona del proceso). */
-function nextDayKey(dayKey: string): string {
-  const [y, m, d] = dayKey.split("-").map(Number);
-  return new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, (d ?? 1) + 1)).toISOString().slice(0, 10);
 }
 
 /** Esc dentro del buscador con texto borra la búsqueda (lo hace el buscador) en vez de cerrar. */
@@ -54,7 +50,8 @@ function focusFirstField(e: Event, searchRef: React.RefObject<HTMLInputElement |
 
 /**
  * "Nuevo turno" (HU-017b-1, SDD 5.2): modal desde 640 px y sheet inferior en el celular. Tres pasos:
- * para quién (buscador o paciente nueva), servicio y día/horario. Cada apertura arranca limpia.
+ * para quién (buscador o paciente nueva), servicio y día/horario (calendario chico + horarios libres),
+ * cada uno en una tarjeta blanca, en dos columnas desde 768 px; acento en negro (ink-accent). Cada apertura arranca limpia.
  */
 export function NewAppointmentModal({
   open,
@@ -73,7 +70,7 @@ export function NewAppointmentModal({
   onCreated: () => void;
   services: ServiceOption[];
   tz: string;
-  /** "yyyy-MM-dd" de hoy en la zona de la profesional ("Hoy" y "Mañana"). */
+  /** "yyyy-MM-dd" de hoy en la zona de la profesional (el calendario marca hoy y no deja elegir antes). */
   todayKey: string;
   initialDate?: string;
   /** HU-017b-1 (Q4): horario tocado en la grilla (ISO); queda elegido si está libre. */
@@ -117,7 +114,7 @@ export function NewAppointmentModal({
   if (compact) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" onOpenAutoFocus={(e) => focusFirstField(e, searchRef)}
+        <SheetContent side="bottom" className="ink-accent bg-[#f9f8fa]" onOpenAutoFocus={(e) => focusFirstField(e, searchRef)}
           onEscapeKeyDown={keepOpenWhileSearching}
           aria-describedby={undefined}
         >
@@ -133,7 +130,7 @@ export function NewAppointmentModal({
     return (
       <MorphDialog open={open} onOpenChange={onOpenChange} origin={origin}>
         <MorphDialogContent
-          className="w-[min(100%,32rem)] bg-[#f9f8fa]"
+          className="ink-accent w-[min(100%,52rem)] bg-[#f9f8fa]"
           closeSide="left"
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => focusFirstField(e, searchRef)}
@@ -150,7 +147,7 @@ export function NewAppointmentModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90vh] max-w-lg overflow-y-auto"
+        className="ink-accent max-h-[90vh] max-w-[52rem] overflow-y-auto bg-[#f9f8fa]"
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => focusFirstField(e, searchRef)}
         onEscapeKeyDown={keepOpenWhileSearching}
@@ -166,6 +163,8 @@ export function NewAppointmentModal({
 
 /** Rótulo de sección: texto gris chico sobre los campos rellenos. */
 const SECTION_LABEL = "block px-1 text-subheadline font-normal text-muted-foreground";
+/** Tarjeta blanca de cada paso sobre el fondo gris del diálogo (como el formulario de servicio). */
+const CARD = "rounded-[1.25rem] bg-background p-4";
 
 function Step({ title, id, children }: { title: string; id: string; children: ReactNode }) {
   return (
@@ -173,7 +172,7 @@ function Step({ title, id, children }: { title: string; id: string; children: Re
       <h3 id={id} className={SECTION_LABEL}>
         {title}
       </h3>
-      {children}
+      <div className={CARD}>{children}</div>
     </section>
   );
 }
@@ -199,7 +198,6 @@ function NewAppointmentForm({
   onCancel: () => void;
   onCreated: () => void;
 }) {
-  const tomorrowKey = nextDayKey(todayKey);
   const [options, setOptions] = useState<AppointmentPatientOption[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [choice, setChoice] = useState<PatientChoice>(
@@ -273,6 +271,9 @@ function NewAppointmentForm({
   const ready = patientReady && Boolean(slot) && Boolean(serviceId);
   const submitLabel = submitting ? T.submitting : !patientReady ? T.choosePatient : !slot ? T.chooseTime : T.submit;
 
+  // "Lunes 12 de octubre" del día elegido, junto a "Horario".
+  const dayLabel = exceptionDayLabel(date, todayKey);
+
   function changeDate(next: string) {
     setDate(next);
     setSlotNotice(null);
@@ -331,134 +332,121 @@ function NewAppointmentForm({
 
   return (
     <form onSubmit={submit} className="space-y-6" noValidate>
-      <Step title={T.who} id="nuevo-turno-quien">
-        <PatientPicker
-          options={options}
-          loadError={loadError}
-          onRetry={loadPatients}
-          choice={choice}
-          onChange={(c) => {
-            setChoice(c);
-            setError(null);
-          }}
-          showErrors={attempted}
-          searchRef={searchRef}
-        />
-      </Step>
-
-      <Step title={T.service} id="nuevo-turno-servicio">
-        <label htmlFor="nuevo-turno-servicio-select" className="sr-only">
-          {T.service}
-        </label>
-        <Select
-          id="nuevo-turno-servicio-select"
-          className={`${filledInputClass} pr-10`}
-          value={serviceId}
-          onChange={(e) => setServiceId(e.target.value)}
-        >
-          <option value="">{T.servicePlaceholder}</option>
-          {services.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} ({s.durationMin} min)
-            </option>
-          ))}
-        </Select>
-      </Step>
-
-      <Step title={T.day} id="nuevo-turno-dia">
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { key: todayKey, label: AGENDA_TEXT.today },
-            { key: tomorrowKey, label: T.tomorrow },
-          ].map((d) => (
-            <Button
-              key={d.key}
-              type="button"
-              variant={date === d.key ? "tinted" : "secondary"}
-              aria-pressed={date === d.key}
-              className="h-[3.25rem] rounded-2xl px-5 text-body"
-              onClick={() => changeDate(d.key)}
-            >
-              {d.label}
-            </Button>
-          ))}
-          <label htmlFor="nuevo-turno-fecha" className="sr-only">
-            {T.day}
-          </label>
-          <Input
-            id="nuevo-turno-fecha"
-            type="date"
-            className={`${filledInputClass} w-auto min-w-40 flex-1`}
-            value={date}
-            min={todayKey}
-            onChange={(e) => e.target.value && changeDate(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2 pt-1">
-          <p id="nuevo-turno-horario" className={SECTION_LABEL}>
-            {T.time}
-          </p>
-          {slotNotice ? (
-            <p role="status" className="rounded-lg bg-warning-muted px-3 py-2 text-callout text-warning">
-              {slotNotice}
-            </p>
-          ) : null}
-          {!service ? (
-            <p className="text-callout text-muted-foreground">{T.pickServiceFirst}</p>
-          ) : loadingSlots ? (
-            <p role="status" className="flex items-center gap-2 text-callout text-muted-foreground">
-              <LoaderCircle className="size-4 animate-spin" aria-hidden />
-              {T.loadingSlots}
-            </p>
-          ) : slots.length === 0 ? (
-            <p className="text-callout text-muted-foreground">{T.noSlots}</p>
-          ) : (
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              value={slot}
-              onValueChange={(v) => {
-                if (!v) return;
-                setSlot(v);
-                setSlotNotice(null);
+      {/* Dos columnas en pantallas anchas: quién, servicio y motivo | día y horario. */}
+      <div className="grid gap-6 md:grid-cols-2 md:items-start">
+        <div className="space-y-6">
+          <Step title={T.who} id="nuevo-turno-quien">
+            <PatientPicker
+              options={options}
+              loadError={loadError}
+              onRetry={loadPatients}
+              choice={choice}
+              onChange={(c) => {
+                setChoice(c);
+                setError(null);
               }}
-              aria-labelledby="nuevo-turno-horario"
-              className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-2"
-            >
-              {slots.map((s) => (
-                <ToggleGroupItem
-                  key={s}
-                  value={s}
-                  className={`${filledSurfaceClass} h-12 border-transparent text-headline tabular-nums data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground`}
-                >
-                  {formatInTimeZone(new Date(s), tz, "H:mm")}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          )}
-        </div>
-      </Step>
+              showErrors={attempted}
+              searchRef={searchRef}
+            />
+          </Step>
 
-      <div className="space-y-2">
-        <label htmlFor="nuevo-turno-motivo" className={SECTION_LABEL}>
-          {T.reasonLabel}
-        </label>
-        <Textarea
-          id="nuevo-turno-motivo"
-          name="reason"
-          rows={3}
-          className={`${filledInputClass} h-auto py-3.5`}
-          maxLength={BOOKING_REASON_MAX}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          aria-describedby="nuevo-turno-motivo-ayuda"
-        />
-        <div id="nuevo-turno-motivo-ayuda" className="flex justify-between gap-2 px-1 text-footnote text-muted-foreground">
-          <span>{T.reasonHint}</span>
-          <span className="tabular-nums" aria-live="polite">
-            {reason.length}/{BOOKING_REASON_MAX}
-          </span>
+          <Step title={T.service} id="nuevo-turno-servicio">
+            <label htmlFor="nuevo-turno-servicio-select" className="sr-only">
+              {T.service}
+            </label>
+            <Select
+              id="nuevo-turno-servicio-select"
+              className={`${filledInputClass} pr-10`}
+              value={serviceId}
+              onChange={(e) => setServiceId(e.target.value)}
+            >
+              <option value="">{T.servicePlaceholder}</option>
+              {services.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.durationMin} min)
+                </option>
+              ))}
+            </Select>
+          </Step>
+
+          <div className="space-y-2">
+            <label htmlFor="nuevo-turno-motivo" className={SECTION_LABEL}>
+              {T.reasonLabel}
+            </label>
+            <div className={`${CARD} space-y-2`}>
+              <Textarea
+                id="nuevo-turno-motivo"
+                name="reason"
+                rows={3}
+                className={`${filledInputClass} h-auto py-3.5`}
+                maxLength={BOOKING_REASON_MAX}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                aria-describedby="nuevo-turno-motivo-ayuda"
+              />
+              <div id="nuevo-turno-motivo-ayuda" className="flex justify-between gap-2 px-1 text-footnote text-muted-foreground">
+                <span>{T.reasonHint}</span>
+                <span className="tabular-nums" aria-live="polite">
+                  {reason.length}/{BOOKING_REASON_MAX}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <Step title={T.day} id="nuevo-turno-dia">
+            <MiniCalendar
+              value={date}
+              onChange={changeDate}
+              todayKey={todayKey}
+              min={todayKey}
+              labelledBy="nuevo-turno-dia"
+            />
+
+            <div className="mt-4 space-y-2 border-t border-black/[0.05] pt-4">
+              <p id="nuevo-turno-horario" className={SECTION_LABEL}>
+                {`${T.time} · ${dayLabel}`}
+              </p>
+              {slotNotice ? (
+                <p role="status" className="rounded-xl bg-warning-muted px-3 py-2 text-callout text-warning">
+                  {slotNotice}
+                </p>
+              ) : null}
+              {!service ? (
+                <p className="px-1 text-callout text-muted-foreground">{T.pickServiceFirst}</p>
+              ) : loadingSlots ? (
+                <p role="status" className="flex items-center gap-2 px-1 text-callout text-muted-foreground">
+                  <LoaderCircle className="size-4 animate-spin" aria-hidden />
+                  {T.loadingSlots}
+                </p>
+              ) : slots.length === 0 ? (
+                <p className="px-1 text-callout text-muted-foreground">{T.noSlots}</p>
+              ) : (
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  value={slot}
+                  onValueChange={(v) => {
+                    if (!v) return;
+                    setSlot(v);
+                    setSlotNotice(null);
+                  }}
+                  aria-labelledby="nuevo-turno-horario"
+                  className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-2"
+                >
+                  {slots.map((s) => (
+                    <ToggleGroupItem
+                      key={s}
+                      value={s}
+                      className={`${filledSurfaceClass} h-12 border-transparent text-headline tabular-nums data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground`}
+                    >
+                      {formatInTimeZone(new Date(s), tz, "H:mm")}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              )}
+            </div>
+          </Step>
         </div>
       </div>
 
@@ -466,10 +454,10 @@ function NewAppointmentForm({
 
       <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:items-center sm:justify-end">
         <p className="text-footnote text-muted-foreground sm:mr-auto">{T.whatsappNotice}</p>
-        <Button type="button" variant="secondary" className="h-12 w-full rounded-2xl px-5 sm:w-auto" onClick={onCancel}>
+        <Button type="button" variant="secondary" className="h-12 w-full rounded-full px-5 sm:w-auto" onClick={onCancel}>
           {T.cancel}
         </Button>
-        <Button type="submit" className="h-12 w-full rounded-2xl px-5 sm:w-auto" loading={submitting} disabled={!ready}>
+        <Button type="submit" className="h-12 w-full rounded-full px-5 sm:w-auto" loading={submitting} disabled={!ready}>
           {submitLabel}
         </Button>
       </div>

@@ -291,3 +291,58 @@ describe("getAppointmentReminderStatus", () => {
     ]);
   });
 });
+
+// HU-022 (S6): al reprogramar, los mensajes ya enviados del horario viejo quedan con dedupeKey
+// "prev:…" y dejan de contar; los recordatorios y la confirmación vuelven a salir para el nuevo.
+describe("enqueueServiceReminders con mensajes del horario viejo (prev:)", () => {
+  const OLD = "2026-10-20T13:00:00.000Z";
+
+  it("un CONFIRMATION_REQUEST prev: no cuenta como confirmación enviada", async () => {
+    mocks.prisma.appointment.findMany.mockResolvedValue([
+      appt({
+        messages: [{ kind: "CONFIRMATION_REQUEST", dedupeKey: `prev:${OLD}:m1:`, createdAt: new Date(NOW_72H.getTime() - 2 * H) }],
+      }),
+    ]);
+    const res = await enqueueServiceReminders({ now: NOW_72H });
+    expect(res).toEqual({ reminders: 0, confirmations: 1 });
+    expect(mocks.enqueueMessage.mock.calls[0]![0].kind).toBe("CONFIRMATION_REQUEST");
+  });
+
+  it("un mensaje prev: posterior al momento no cubre al recordatorio nuevo", async () => {
+    const only24 = { name: "Control", reminders: [{ amount: 24, unit: "HOURS", asksConfirmation: false }] };
+    mocks.prisma.appointment.findMany.mockResolvedValue([
+      appt({
+        service: only24,
+        messages: [
+          { kind: "CONFIRMATION_REQUEST", dedupeKey: `prev:${OLD}:m1:`, createdAt: new Date(NOW_24H.getTime() - 30_000) },
+          { kind: "REMINDER", dedupeKey: `prev:${OLD}:m2:auto:24h`, createdAt: new Date(NOW_24H.getTime() - 20_000) },
+        ],
+      }),
+    ]);
+    const res = await enqueueServiceReminders({ now: NOW_24H });
+    expect(res).toEqual({ reminders: 1, confirmations: 0 });
+    expect(mocks.enqueueMessage.mock.calls[0]![0]).toMatchObject({ kind: "REMINDER", dedupeKey: "auto:24h" });
+  });
+
+  it("regresión sin prev:: un CONFIRMATION_REQUEST del horario actual sigue frenando la confirmación", async () => {
+    mocks.prisma.appointment.findMany.mockResolvedValue([
+      appt({ messages: [{ kind: "CONFIRMATION_REQUEST", dedupeKey: "", createdAt: new Date(NOW_72H.getTime() - 2 * H) }] }),
+    ]);
+    await expect(enqueueServiceReminders({ now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("getAppointmentReminderStatus con mensajes del horario viejo (prev:)", () => {
+  it("los prev: no se muestran como enviados del horario nuevo", async () => {
+    mocks.prisma.appointment.findUnique.mockResolvedValue(
+      appt({
+        messages: [
+          { kind: "CONFIRMATION_REQUEST", dedupeKey: "prev:2026-10-20T13:00:00.000Z:m1:", status: "SENT", createdAt: new Date("2026-10-12T13:01:00Z") },
+        ],
+      }),
+    );
+    const items = await getAppointmentReminderStatus("a1", { now: new Date("2026-10-13T13:00:00Z") });
+    expect(items[0]).toEqual({ label: "3 días antes, pide confirmar", state: "pending" });
+  });
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState, type Ref } from "react";
-import { Plus, Search } from "lucide-react";
+import { ChevronDown, Plus, Search } from "lucide-react";
 import {
   AGENDA_TEXT,
   HIDDEN_NUMBER_TEXT,
@@ -17,7 +17,7 @@ import type { AppointmentPatientOption } from "./actions";
 
 const T = AGENDA_TEXT.create;
 const MAX_RESULTS = 8;
-/** Con el buscador vacío: las de actividad más reciente; al resto se llega escribiendo. */
+/** Con el buscador vacío y "Ver recientes" abierto: las de actividad más reciente; al resto se llega escribiendo. */
 const MAX_RECENT = 5;
 const UNNAMED = "Sin nombre";
 
@@ -100,12 +100,15 @@ function PatientSearch({
   const listId = `${id}-lista`;
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  // Las recientes quedan escondidas hasta que se piden ("Ver recientes" o flecha abajo en el buscador vacío).
+  const [showRecent, setShowRecent] = useState(false);
 
   const results = useMemo(() => {
     if (!options) return [];
-    if (!query.trim()) return recentPatients(options, MAX_RECENT);
+    if (!query.trim()) return showRecent ? recentPatients(options, MAX_RECENT) : [];
     return options.filter((o) => matchesPatientQuery(o, query)).slice(0, MAX_RESULTS);
-  }, [options, query]);
+  }, [options, query, showRecent]);
+  const hasRecent = options !== null && recentPatients(options, 1).length > 0;
   const activeIndex = Math.min(active, Math.max(results.length - 1, 0));
 
   function startNew() {
@@ -115,7 +118,11 @@ function PatientSearch({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown" && !query.trim() && !showRecent && hasRecent) {
+      e.preventDefault();
+      setShowRecent(true);
+      setActive(0);
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive(Math.min(activeIndex + 1, results.length - 1));
     } else if (e.key === "ArrowUp") {
@@ -179,10 +186,24 @@ function PatientSearch({
         )
       ) : (
         <>
-          {!query.trim() && results.length > 0 ? (
-            <p aria-hidden className="px-1 text-footnote font-medium text-muted-foreground">
-              {T.recent}
-            </p>
+          {!query.trim() && hasRecent ? (
+            <button
+              type="button"
+              aria-expanded={showRecent}
+              aria-controls={listId}
+              onClick={() => {
+                setShowRecent((v) => !v);
+                setActive(0);
+              }}
+              className="inline-flex min-h-9 items-center gap-1 rounded-full px-2 text-footnote font-medium text-muted-foreground press-none transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {showRecent ? T.recent : "Ver recientes"}
+              <ChevronDown
+                className={cn("size-3.5 transition-transform duration-hover", showRecent && "rotate-180")}
+                strokeWidth={2}
+                aria-hidden
+              />
+            </button>
           ) : null}
           <ul
             id={listId}
@@ -218,7 +239,7 @@ function PatientSearch({
               {T.noResults(query.trim())}
             </p>
           ) : null}
-          <Button type="button" variant="tinted" className="h-12 rounded-2xl px-5" onClick={startNew}>
+          <Button type="button" variant="tinted" className="h-12 rounded-full px-5" onClick={startNew}>
             <Plus aria-hidden />
             {T.newPatient}
           </Button>

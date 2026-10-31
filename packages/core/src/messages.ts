@@ -145,6 +145,11 @@ export function cancelDone(params: { serviceName: string; startsAt: Date; tz: st
   )}. Cuando quieras sacás otro escribiendo *menú*.`;
 }
 
+/** HU-022 (S7): la profesional reprogramó el turno desde el panel; se avisa el día y la hora nuevos. */
+export function rescheduledNotice(params: { serviceName: string; startsAt: Date; tz: string }): string {
+  return `🔄 Tu turno de *${params.serviceName}* cambió de día y hora.\n\n🗓️ Nuevo horario: ${formatDateTime(params.startsAt, params.tz)} hs\n\nSi no podés venir, escribí *menú* y elegí la opción 2 para cancelar.`;
+}
+
 export function formatInsuranceList(insurances?: string | null): string[] {
   return (insurances ?? "")
     .split(/[,\n]/)

@@ -27,6 +27,7 @@ import {
   APPOINTMENT_STATUS_TEXT,
   BOOKING_REASON_MAX,
   HIDDEN_NUMBER_TEXT,
+  RESCHEDULE_TEXT,
   appointmentDayAtTime,
   appointmentDayTime,
   appointmentDurationMinutes,
@@ -51,6 +52,7 @@ import {
   SheetTitle,
 } from "@/components/primitives/sheet";
 import { useConfirm } from "@/components/confirm";
+import { RescheduleDialog } from "@/components/reschedule-dialog";
 import { Badge, Button, ButtonLink, FormError, Textarea, cn, filledInputClass } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import {
@@ -240,20 +242,28 @@ function Field({
   icon: Icon,
   action,
   className,
+  as: Tag = "div",
   children,
 }: {
   icon?: LucideIcon;
   action?: React.ReactNode;
   className?: string;
+  /** "span": la fila va adentro de un <button> (HU-022, "Fecha y hora" que abre "Cambiar horario"). */
+  as?: "div" | "span";
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn(FIELD, className)}>
+    <Tag className={cn(FIELD, className)}>
       {Icon ? <Icon className="size-4 shrink-0 text-muted-foreground" strokeWidth={2} aria-hidden /> : null}
-      <div className="flex min-w-0 flex-1 items-center">{children}</div>
-      {action ? <div className="shrink-0">{action}</div> : null}
-    </div>
+      <Tag className="flex min-w-0 flex-1 items-center">{children}</Tag>
+      {action ? <Tag className="shrink-0">{action}</Tag> : null}
+    </Tag>
   );
+}
+
+/** HU-022 (S5): se reprograman los turnos confirmados o esperando la seña, si todavía no empezaron. */
+function isReschedulable(status: AppointmentStatusLike, start: Date, now: Date): boolean {
+  return (status === "CONFIRMED" || status === "AWAITING_PAYMENT") && start.getTime() > now.getTime();
 }
 
 /** Ícono de la barra superior (ficha, WhatsApp, cancelar) con su nombre en un tooltip. */
@@ -350,6 +360,9 @@ function ActiveAppointmentBody({
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  // HU-022: "Cambiar horario" crece desde la fila de "Fecha y hora" que se tocó.
+  const [rescheduleOrigin, setRescheduleOrigin] = useState<HTMLElement | null>(null);
+  const [rescheduling, setRescheduling] = useState(false);
   const confirm = useConfirm();
   // HU-013 (D5): edición del motivo en línea.
   const [editingReason, setEditingReason] = useState(false);
@@ -495,6 +508,7 @@ function ActiveAppointmentBody({
     classifyWhatsappJid(appt.patientJid) === "phone" ? formatPhone(appt.patientPhone) : HIDDEN_NUMBER_TEXT;
   const canPay = (appt.status === "CONFIRMED" || appt.status === "COMPLETED") && !appt.hasFullPayment;
   const whenLabel = appointmentDayTime(start, now, tz);
+  const canReschedule = isReschedulable(appt.status, start, now);
 
   // Estado: las mismas transiciones que los botones de antes (confirmado → vino / no vino; y de vuelta).
   const statusOptions: AppointmentStatusLike[] =
@@ -523,15 +537,23 @@ function ActiveAppointmentBody({
 
       <div className={SECTIONS}>
         <Section label={T.sections.when}>
-          <Field icon={CalendarDays}>{appointmentShortDate(start, tz)}</Field>
-          <div className="flex gap-6">
-            <Field icon={Clock} className="flex-1">
-              <span className="tabular-nums">{formatTime(start, tz)}</span>
-            </Field>
-            <Field className="flex-1">
-              <span className="tabular-nums">{T.minutes(appointmentDurationMinutes(appt.start, appt.end))}</span>
-            </Field>
-          </div>
+          {canReschedule ? (
+            // HU-022 (S1): las mismas filas, tocables; abren "Cambiar horario" en su lugar.
+            <button
+              type="button"
+              aria-label={RESCHEDULE_TEXT.openLabel(whenLabel)}
+              disabled={disabled}
+              onClick={(e) => {
+                setRescheduleOrigin(e.currentTarget);
+                setRescheduling(true);
+              }}
+              className="-mx-2 block w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors duration-150 hover:bg-black/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:hover:bg-transparent motion-reduce:transition-none"
+            >
+              <WhenRows appt={appt} start={start} tz={tz} as="span" />
+            </button>
+          ) : (
+            <WhenRows appt={appt} start={start} tz={tz} />
+          )}
         </Section>
 
         <Section label={T.sections.status}>
@@ -677,6 +699,23 @@ function ActiveAppointmentBody({
 
       <FormError message={error} />
 
+      {canReschedule || rescheduling ? (
+        <RescheduleDialog
+          open={rescheduling}
+          onOpenChange={setRescheduling}
+          origin={rescheduleOrigin}
+          appointmentId={appt.id}
+          currentStart={appt.start}
+          tz={tz}
+          onDone={(next) => {
+            notify.saved(RESCHEDULE_TEXT.toastDone);
+            onUpdated({ ...appt, start: next.start, end: next.end });
+            onChanged();
+            setRemindersVersion((v) => v + 1);
+          }}
+        />
+      ) : null}
+
       {canPay ? (
         <AppointmentPaymentModal
           open={paying}
@@ -698,6 +737,26 @@ function ActiveAppointmentBody({
           }}
         />
       ) : null}
+    </>
+  );
+}
+
+/** "Fecha y hora": día, hora y duración. `as="span"` cuando van adentro del botón de "Cambiar horario". */
+function WhenRows({ appt, start, tz, as }: { appt: SelectedAppointment; start: Date; tz: string; as?: "div" | "span" }) {
+  const Row = as ?? "div";
+  return (
+    <>
+      <Field icon={CalendarDays} as={as}>
+        {appointmentShortDate(start, tz)}
+      </Field>
+      <Row className="flex gap-6">
+        <Field icon={Clock} className="flex-1" as={as}>
+          <span className="tabular-nums">{formatTime(start, tz)}</span>
+        </Field>
+        <Field className="flex-1" as={as}>
+          <span className="tabular-nums">{T.minutes(appointmentDurationMinutes(appt.start, appt.end))}</span>
+        </Field>
+      </Row>
     </>
   );
 }

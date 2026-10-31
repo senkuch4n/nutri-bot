@@ -124,3 +124,15 @@ describe("reminderMessage (HU-014)", () => {
     );
   });
 });
+
+describe("rescheduledNotice (HU-022)", () => {
+  const startsAt = new Date("2026-11-05T14:00:00Z");
+  const tz = "America/Argentina/Buenos_Aires";
+
+  it("avisa el servicio y el día y la hora nuevos, con la salida para cancelar", () => {
+    const out = messages.rescheduledNotice({ serviceName: "Control", startsAt, tz });
+    expect(out).toBe(
+      `🔄 Tu turno de *Control* cambió de día y hora.\n\n🗓️ Nuevo horario: ${formatDateTime(startsAt, tz)} hs\n\nSi no podés venir, escribí *menú* y elegí la opción 2 para cancelar.`,
+    );
+  });
+});
