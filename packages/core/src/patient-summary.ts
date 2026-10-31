@@ -188,7 +188,18 @@ export const PATIENT_SUMMARY_TEXT = {
   awaitingPayment: "Falta la seña",
   ageYears: (n: number) => `${n} ${n === 1 ? "año" : "años"}`,
   ageNotLoaded: "Edad sin cargar",
+  bornOn: (date: string) => `Nació el ${date}`,
+  scheduleAppointment: "Agendar turno",
+  archive: "Archivar",
+  viewHistory: "Ver historial",
   planSince: (dateLabel: string) => `desde el ${dateLabel}`,
   riskSuffix: "(riesgo)",
   backgroundLabel: "Antecedentes",
 } as const;
+
+/** Fecha de nacimiento "dd/MM/yyyy". `birthDate` es una columna @db.Date (medianoche UTC): se leen las
+ *  partes en UTC para no correrla un día con la zona de la profesional. */
+export function formatBirthDate(birthDate: Date): string {
+  const [y, m, d] = birthDate.toISOString().slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
+}

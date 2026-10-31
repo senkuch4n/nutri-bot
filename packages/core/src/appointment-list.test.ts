@@ -93,7 +93,7 @@ describe("summarizeAppointmentPayments", () => {
 
 describe("appointmentPaymentText", () => {
   it("describes only what was recorded", () => {
-    expect(appointmentPaymentText(summarizeAppointmentPayments(20000, [20000]), "ARS")).toBe("Pagado");
+    expect(appointmentPaymentText(summarizeAppointmentPayments(20000, [20000]), "ARS")).toBe("Pago completado");
     expect(appointmentPaymentText(summarizeAppointmentPayments(20000, [5000]), "ARS")).toBe(
       `Seña pagada · ${formatPrice(5000, "ARS")}`,
     );
@@ -216,7 +216,7 @@ describe("buildAppointmentListRows", () => {
   it("notes the unpaid deposit only on automatic cancellations", () => {
     expect(byName("Hugo")).toMatchObject({ rowStatus: "deposit_unpaid", statusLabel: "Canceló", statusNote: "Seña sin pagar" });
     expect(byName("Fabi")).toMatchObject({ rowStatus: "cancelled", statusLabel: "Canceló", statusNote: null });
-    expect(byName("Ana")).toMatchObject({ paymentText: "Pagado", canRegisterPayment: false, canClose: false });
+    expect(byName("Ana")).toMatchObject({ paymentText: "Pago completado", canRegisterPayment: false, canClose: false });
   });
 
   it("shows free appointments without payment actions", () => {

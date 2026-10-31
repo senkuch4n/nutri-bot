@@ -82,11 +82,14 @@ export function PatientTabs({
   panels,
   consultationCount,
   diaryHasRecent,
+  variant = "page",
 }: {
   header: ReactNode;
   panels: Record<PatientTab, ReactNode>;
   consultationCount: number;
   diaryHasRecent: boolean;
+  /** "modal": las pestañas se pegan arriba del cuerpo del diálogo (con su padding de 24 px). */
+  variant?: "page" | "modal";
 }) {
   const params = useSearchParams();
   const tabParam = params.get("tab");
@@ -95,6 +98,7 @@ export function PatientTabs({
   const [pendingFocus, setPendingFocus] = useState(state.focus === "datos");
   const rootRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
+  const tabsStartRef = useRef<HTMLDivElement>(null);
 
   // Atrás/adelante del navegador o un Link con otro ?tab=.
   useEffect(() => {
@@ -152,11 +156,12 @@ export function PatientTabs({
         setPendingFocus(true);
         return;
       }
-      // Si el encabezado ya está pegado arriba, el contenido nuevo arranca donde empiezan las pestañas.
-      const root = rootRef.current;
+      // Si las pestañas ya están pegadas arriba, el contenido nuevo arranca justo debajo de ellas (el
+      // encabezado de la ficha queda arriba, fuera de la vista).
+      const tabsStart = tabsStartRef.current;
       const sticky = stickyRef.current;
-      if (root && sticky && root.getBoundingClientRect().top < sticky.getBoundingClientRect().top) {
-        root.scrollIntoView({ block: "start" });
+      if (tabsStart && sticky && tabsStart.getBoundingClientRect().top < sticky.getBoundingClientRect().top) {
+        tabsStart.scrollIntoView({ block: "start" });
       }
     },
     [apply],
@@ -169,20 +174,28 @@ export function PatientTabs({
     <PatientTabsContext.Provider value={{ tab: state.tab, view: state.view, go, setView }}>
       <div
         ref={rootRef}
-        className="scroll-mt-14 lg:scroll-mt-0"
+        className={variant === "modal" ? undefined : "scroll-mt-14 lg:scroll-mt-0"}
         style={{ "--patient-chrome-h": "12rem" } as CSSProperties}
       >
         <Tabs value={state.tab} onValueChange={(v) => setTab(v as PatientTab)}>
+          {header}
+          <div
+            ref={tabsStartRef}
+            aria-hidden
+            className={variant === "modal" ? undefined : "scroll-mt-14 lg:scroll-mt-0"}
+          />
           <div ref={sentinelRef} aria-hidden className="pointer-events-none h-px" />
           <div
             ref={stickyRef}
             data-scrolled={scrolled}
-            className="material-chrome sticky top-14 z-20 -mx-6 px-6 pt-3 lg:top-0 lg:-mx-10 lg:px-10 lg:pt-4"
+            className={cn(
+              "material-chrome sticky z-20 mt-6",
+              variant === "modal" ? "top-0 -mx-6 px-6 pt-2" : "top-14 -mx-6 px-6 lg:top-0 lg:-mx-10 lg:px-10 lg:pt-2",
+            )}
           >
-            {header}
             <TabsList
               aria-label="Secciones de la ficha"
-              className="mt-3 max-sm:grid max-sm:grid-cols-4 max-sm:gap-1 sm:gap-7"
+              className="max-sm:grid max-sm:grid-cols-4 max-sm:gap-1 sm:gap-8"
             >
               {PATIENT_TABS.map((value) => (
                 <TabsTrigger key={value} value={value} className="max-sm:justify-center max-sm:text-subheadline">

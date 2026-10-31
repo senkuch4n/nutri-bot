@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Pencil } from "lucide-react";
-import { PATIENT_DIRECTORY_TEXT, type PatientDirectoryRow } from "@nutri-bot/core";
+import { PATIENT_DIRECTORY_TEXT } from "@nutri-bot/core";
 import { Button } from "@/components/ui";
 import { notify } from "@/lib/notify";
 import { NameContactSheet } from "../name-contact-sheet";
@@ -11,17 +11,7 @@ import { NameContactSheet } from "../name-contact-sheet";
  *  (017c-1), que escribe solo `Patient.name`; la revalidación de la action refresca la ficha. */
 export function HeaderNameButton({ patientId, phoneLabel }: { patientId: string; phoneLabel: string | null }) {
   const [open, setOpen] = useState(false);
-  // El Sheet solo usa id y phoneLabel; el resto de la fila no aplica en la ficha.
-  const row: PatientDirectoryRow = {
-    id: patientId,
-    name: null,
-    contactKind: phoneLabel ? "phone" : "hidden",
-    phoneLabel,
-    phoneDigits: null,
-    searchName: "",
-    statusLine: "",
-    lastContactLabel: "",
-  };
+  const row = { id: patientId, phoneLabel };
   return (
     <>
       <Button type="button" variant="tinted" onClick={() => setOpen(true)}>

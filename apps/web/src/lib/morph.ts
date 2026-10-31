@@ -81,7 +81,30 @@ export const morphTiming = {
   contentBlur: 0.2,
   /** La etiqueta compartida se funde con el contenido: arranca con él y dura esto. */
   labelFade: 0.12,
+  /** Cascada (ficha del paciente): el contenido aparece de arriba hacia abajo en este tiempo. */
+  cascade: 0.34,
+  /** Levantada: la tarjeta aparece con este fundido (tapa al origen, que se va debajo). */
+  liftAppear: 0.05,
 } as const;
+
+export type MorphTiming = { [K in keyof typeof morphTiming]: number };
+
+/**
+ * Tempo vivo (ficha del paciente, `brisk`): la tarjeta aparece sin fundido (la fila "se vuelve" tarjeta)
+ * y el contenido entra antes; todo asienta en ~0,4 s, como el video de /pacientes. El crecimiento sigue
+ * la curva medida en ese video (expo-out de 460 ms: 37 % a los 34 ms, 61 % a los 67 ms, 86 % a los
+ * 117 ms). Con 340 ms el primer cuadro ya movía casi un tercio y se sentía a los saltos.
+ */
+export const morphTimingBrisk: MorphTiming = {
+  ...morphTiming,
+  lift: 0.04,
+  liftAppear: 0,
+  expand: 0.46,
+  contentDelay: 0.08,
+  contentOpacity: 0.12,
+  contentBlur: 0.16,
+  cascade: 0.24,
+};
 
 /**
  * Cómo abre: `delayed` desde la página, `lift` desde un elemento de otro diálogo, `direct` sin origen
@@ -89,17 +112,20 @@ export const morphTiming = {
  */
 export type MorphOpenMode = "delayed" | "lift" | "direct";
 
-export function openMode(opts: { morph: boolean; resumed: boolean; nested: boolean }): MorphOpenMode {
+export function openMode(opts: { morph: boolean; resumed: boolean; nested: boolean; lift?: boolean }): MorphOpenMode {
   if (!opts.morph || opts.resumed) return "direct";
-  return opts.nested ? "lift" : "delayed";
+  return opts.nested || opts.lift ? "lift" : "delayed";
 }
 
 /** Momentos de la apertura, en segundos desde el clic. */
-export function openTimeline(mode: MorphOpenMode): { cardAt: number; expandAt: number; contentAt: number; settledAt: number } {
-  const cardAt = mode === "delayed" ? morphTiming.appearDelay : 0;
-  const expandAt = mode === "lift" ? cardAt + morphTiming.lift : cardAt;
-  const contentAt = expandAt + morphTiming.contentDelay;
-  const settledAt = contentAt + Math.max(morphTiming.contentOpacity, morphTiming.contentBlur);
+export function openTimeline(
+  mode: MorphOpenMode,
+  timing: MorphTiming = morphTiming,
+): { cardAt: number; expandAt: number; contentAt: number; settledAt: number } {
+  const cardAt = mode === "delayed" ? timing.appearDelay : 0;
+  const expandAt = mode === "lift" ? cardAt + timing.lift : cardAt;
+  const contentAt = expandAt + timing.contentDelay;
+  const settledAt = contentAt + Math.max(timing.contentOpacity, timing.contentBlur);
   return { cardAt, expandAt, contentAt, settledAt };
 }
 
@@ -117,6 +143,7 @@ export function easeOutExpo(t: number): number {
 export const morphEase = {
   power2Out: [0.25, 0.46, 0.45, 0.94],
   power3In: [0.55, 0.055, 0.675, 0.19],
+  power2InOut: [0.455, 0.03, 0.515, 0.955],
 } as const;
 
 type Ease =
@@ -130,12 +157,11 @@ type Ease =
 export type MorphTween = { type: "tween"; duration: number; delay?: number; ease?: Ease | Ease[]; times?: number[] };
 export type MorphSpring = { type: "spring"; duration: number; bounce: number; delay?: number };
 
-const T = morphTiming;
 /** Fracción del tiempo total del shell que ocupa el levantado. */
-export const LIFT_FRACTION = T.lift / (T.lift + T.expand);
+export const LIFT_FRACTION = morphTiming.lift / (morphTiming.lift + morphTiming.expand);
 
 /** Transiciones de Motion de la apertura según el modo (ver `openTimeline`). */
-export function openTransitions(mode: MorphOpenMode): {
+export function openTransitions(mode: MorphOpenMode, opts: { cascade?: boolean; brisk?: boolean } = {}): {
   backdrop: MorphTween;
   shellOpacity: MorphTween;
   /** Del shell y del desplazamiento de la etiqueta: con `lift`, fotogramas origen → levantada → diálogo. */
@@ -145,24 +171,30 @@ export function openTransitions(mode: MorphOpenMode): {
   content: MorphSpring;
   originOut: MorphTween;
   labelOpacity: MorphTween;
+  /** Máscara de la cascada (de 0 a 1). */
+  cascade: MorphTween;
 } {
-  const tl = openTimeline(mode);
+  const T = opts.brisk ? morphTimingBrisk : morphTiming;
+  const tl = openTimeline(mode, T);
   const lift = mode === "lift";
+  const liftFraction = T.lift / (T.lift + T.expand);
   return {
     backdrop: { type: "tween", duration: T.backdrop, delay: tl.cardAt, ease: "easeOut" },
     shellOpacity:
       mode === "direct"
         ? { type: "tween", duration: T.fadeIn, ease: morphEase.power2Out }
-        : { type: "tween", duration: lift ? T.lift : T.appear, delay: tl.cardAt, ease: "linear" },
+        : { type: "tween", duration: lift ? T.liftAppear : T.appear, delay: tl.cardAt, ease: "linear" },
     shell: lift
-      ? { type: "tween", duration: T.lift + T.expand, times: [0, LIFT_FRACTION, 1], ease: [morphEase.power2Out, easeOutExpo] }
+      ? { type: "tween", duration: T.lift + T.expand, times: [0, liftFraction, 1], ease: [morphEase.power2Out, easeOutExpo] }
       : { type: "tween", duration: T.expand, delay: tl.expandAt, ease: easeOutExpo },
     contentOpacity: { type: "tween", duration: T.contentOpacity, ease: morphEase.power2Out, delay: tl.contentAt },
-    contentBlur: { type: "tween", duration: T.contentBlur, ease: morphEase.power2Out, delay: tl.contentAt },
+    // Con cascada, el desenfoque acompaña a la máscara: lo de abajo llega nítido cuando aparece.
+    contentBlur: { type: "tween", duration: opts.cascade ? T.cascade : T.contentBlur, ease: morphEase.power2Out, delay: tl.contentAt },
     content: { type: "spring", duration: 0.3, bounce: 0, delay: tl.contentAt },
     // Levantada: el origen queda tapado por la tarjeta, se va en lo que dura el levantado.
     originOut: lift ? { type: "tween", duration: T.lift, ease: "linear" } : { type: "tween", duration: T.originOut, ease: "easeOut" },
     labelOpacity: { type: "tween", duration: T.labelFade, delay: tl.contentAt, ease: "easeInOut" },
+    cascade: { type: "tween", duration: T.cascade, delay: tl.contentAt, ease: morphEase.power2Out },
   };
 }
 
@@ -170,6 +202,8 @@ export function openTransitions(mode: MorphOpenMode): {
 export const morphTransitions = {
   close: {
     content: { type: "tween", duration: 0.12, ease: morphEase.power2Out },
+    /** Opacidad del contenido (acá, junto con el resto del contenido). */
+    contentFade: { type: "tween", duration: 0.12, ease: morphEase.power2Out },
     shell: { type: "tween", duration: 0.36, delay: 0.02, times: [0, 0.65, 1], ease: [morphEase.power3In, morphEase.power2Out] },
     shellOpacity: { type: "tween", duration: 0.12, delay: 0.24 },
     backdrop: { type: "tween", duration: 0.2, ease: morphEase.power2Out },
@@ -177,11 +211,28 @@ export const morphTransitions = {
     /** Si se cierra mientras la etiqueta todavía se ve. */
     label: { type: "tween", duration: 0.08 },
   },
+  /**
+   * Cierre de una tarjeta levantada (ficha del paciente, medido en su video): la tarjeta llega a la
+   * fila en ~170 ms (arranque rápido, sin la espera del power3In), se queda un instante blanca encima
+   * y se desvanece mientras la fila reaparece; el fondo aclara recién cuando ya llegó. El cuerpo se
+   * desenfoca enseguida pero se sigue viendo mientras la tarjeta se achica: se termina de ir al llegar.
+   */
+  closeLift: {
+    content: { type: "tween", duration: 0.1, ease: morphEase.power2Out },
+    contentFade: { type: "tween", duration: 0.16, ease: "easeIn" },
+    shell: { type: "tween", duration: 0.28, delay: 0, times: [0, 0.62, 1], ease: [morphEase.power2InOut, morphEase.power2Out] },
+    shellOpacity: { type: "tween", duration: 0.12, delay: 0.22 },
+    backdrop: { type: "tween", duration: 0.18, delay: 0.14, ease: morphEase.power2Out },
+    originIn: { type: "tween", duration: 0.12, delay: 0.2, ease: morphEase.power2Out },
+    label: { type: "tween", duration: 0.08 },
+  },
   /** Cierre sin origen (se fue del DOM): solo fundido. */
   fadeOut: {
     shellOpacity: { type: "tween", duration: 0.16 },
     backdrop: { type: "tween", duration: 0.2, ease: morphEase.power2Out },
   },
+  /** Cascada tardía: el contenido real llegó después de abrir y barre desde abajo del encabezado. */
+  lateReveal: { type: "tween", duration: 0.3, ease: morphEase.power2Out },
   /** Movimiento reducido: shell y fondo con un fundido de 150 ms, nada más. */
   reduced: { type: "tween", duration: 0.15, ease: morphEase.power2Out },
 } as const;
@@ -191,6 +242,13 @@ export const morphTransitions = {
 export const morphContent = {
   enter: { opacity: 0, y: 8, scale: 0.97, blur: 10 },
   exit: { opacity: 0, y: -4, scale: 0.985, blur: 5 },
+  /**
+   * Con cascada (ficha del paciente, un cuerpo grande): sin escala y entra con poco desenfoque. Escalar
+   * o desenfocar mucho toda la ficha obliga a repintarla en cada cuadro y la apertura se traba. Al
+   * cerrar sí va muy desenfocada (como en el video): dura ~170 ms y el encabezado viaja nítido encima.
+   */
+  enterCascade: { opacity: 0, y: 6, scale: 1, blur: 4 },
+  exitCascade: { opacity: 0, y: -2, scale: 1, blur: 8 },
 } as const;
 
 /** Interpolación lineal (exacta en los extremos). */
@@ -343,4 +401,93 @@ export function restoreInlineStyle(
     if (value) style.setProperty(prop, value, priority);
     else style.removeProperty(prop);
   }
+}
+
+/** Transiciones de un cierre con origen (`morphTransitions.close` o `closeLift`). */
+type CloseTransitions = {
+  shell: { delay: number; duration: number };
+  originIn: { delay: number; duration: number };
+};
+
+/** Duración total de un cierre con origen (ms): lo que tarda la tarjeta en volver y el origen en
+ *  reaparecer. Para quien tiene que esperar la animación antes de desmontar (p. ej. un `router.back()`). */
+export function morphCloseMs(c: CloseTransitions): number {
+  return Math.ceil(1000 * Math.max(c.shell.delay + c.shell.duration, c.originIn.delay + c.originIn.duration));
+}
+
+export const MORPH_CLOSE_MS = morphCloseMs(morphTransitions.close);
+/** Cierre de un MorphDialog con `lift`. */
+export const MORPH_LIFT_CLOSE_MS = morphCloseMs(morphTransitions.closeLift);
+
+/** Ancho del borde suave de la cascada, en % del alto del cuerpo. */
+export const CASCADE_BAND = 40;
+
+/**
+ * Máscara de la cascada (`p` 0 → 1): un borde suave baja de arriba hacia abajo y deja ver el contenido
+ * en orden (botones, pestañas, secciones). En 1 ya no hay máscara (no deja una capa de composición).
+ */
+export function cascadeMask(p: number): string {
+  if (p >= 1) return "none";
+  const edge = lerp(0, 100 + CASCADE_BAND, Math.max(0, p));
+  return `linear-gradient(to bottom, #000 ${edge - CASCADE_BAND}%, transparent ${edge}%)`;
+}
+
+/**
+ * Desde dónde arranca la cascada tardía (contenido que llegó con el diálogo ya abierto, p. ej. la ficha
+ * después de su `loading`): el borde queda justo debajo de `floor` (px desde arriba del cuerpo, donde
+ * termina el encabezado compartido), así lo de arriba sigue nítido y el resto baja. `height`: alto visible.
+ */
+export function cascadeStart(floor: number, height: number): number {
+  if (height <= 0) return 1;
+  const pct = Math.min(100, Math.max(0, (floor / height) * 100));
+  return (pct + CASCADE_BAND) / (100 + CASCADE_BAND);
+}
+
+/** Posición (relativa a la esquina del shell, sin escalar) y escala uniforme de un elemento compartido. */
+export type SharedPose = { x: number; y: number; scale: number };
+
+/**
+ * Elemento compartido (iniciales, nombre, etapa): dónde está en el origen, relativo a la esquina del
+ * origen (donde arranca o termina la esquina del shell), y su escala respecto del destino (`end`, la
+ * caja del elemento en el diálogo relativa a la esquina del shell). Se escala por el alto: es el mismo
+ * texto, más grande o más chico.
+ */
+export function sharedStart(piece: Rect, src: Rect, end: Rect): SharedPose {
+  return {
+    x: piece.left - src.left,
+    y: piece.top - src.top,
+    scale: end.height > 0 ? piece.height / end.height : 1,
+  };
+}
+
+/**
+ * Estilo inline de la copia de un elemento compartido: en la esquina de la capa, con la caja del
+ * destino (`end`). Siempre en una línea y sin recortar: `offsetWidth` redondea y, con el ancho justo,
+ * un título con `text-balance` partía el nombre ("Juan" / "Pérez") y el alto fijo escondía la segunda línea.
+ */
+export function sharedCloneStyle(end: Rect): Record<string, string> {
+  return {
+    position: "absolute",
+    left: "0",
+    top: "0",
+    margin: "0",
+    width: `${end.width}px`,
+    height: `${end.height}px`,
+    whiteSpace: "nowrap",
+    overflow: "visible",
+    transformOrigin: "0 0",
+    willChange: "transform",
+  };
+}
+
+/** Fotogramas de apertura de un elemento compartido: quieto en pantalla mientras la tarjeta se levanta
+ *  (compensa el `LIFT_PAD` que se corre la esquina), después va a su lugar en el diálogo. Cada valor es
+ *  `[origen, levantada, destino]`, relativo a la esquina del shell. */
+export function sharedOpenKeyframes(piece: Rect, src: Rect, end: Rect): Record<keyof SharedPose, [number, number, number]> {
+  const s = sharedStart(piece, src, end);
+  return {
+    x: [s.x, s.x + LIFT_PAD.x, end.left],
+    y: [s.y, s.y + LIFT_PAD.y, end.top],
+    scale: [s.scale, s.scale, 1],
+  };
 }

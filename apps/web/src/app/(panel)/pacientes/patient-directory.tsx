@@ -1,28 +1,48 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, m, useReducedMotionConfig } from "motion/react";
-import { Archive, ChevronRight, Pencil, Search, SearchX, Users, X } from "lucide-react";
+import { ChevronRight, LayoutGrid, Pencil, Rows3, Search, SearchX, Users, X } from "lucide-react";
 import {
   HIDDEN_NUMBER_TEXT,
-  PATIENT_ARCHIVE_TEXT,
   PATIENT_DIRECTORY_TEXT,
   capitalizeFirst,
   matchesPatientQuery,
   patientCountLabel,
+  patientStageCounts,
   type PatientDirectoryRow,
 } from "@nutri-bot/core";
-import { GroupedList, GroupedListRow } from "@/components/grouped-list";
+import { GroupedList } from "@/components/grouped-list";
 import { Button as PrimitiveButton } from "@/components/primitives/button";
+import { StatCard } from "@/components/stat-card";
 import { Button, EmptyState, inputClass } from "@/components/ui";
 import { fades, springs } from "@/lib/motion";
 import { notify } from "@/lib/notify";
+import { useMediaQuery } from "@/lib/use-media-query";
+import { setPatientModalOrigin } from "@/lib/patient-modal-origin";
+import { warmPatientRecordWhenIdle } from "./warm-patient-record";
 import { cn } from "@/lib/utils";
 import { NameContactSheet } from "./name-contact-sheet";
+import { PatientCard, type PatientView } from "./patient-card";
+import { PatientFilters, type PatientStageFilter } from "./patient-filters";
 
 const T = PATIENT_DIRECTORY_TEXT;
+
+/** Botones redondos del encabezado (buscar, vista). */
+const headerIconButton =
+  "relative inline-flex size-10 items-center justify-center rounded-full text-muted-foreground press-none touch-target transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed aria-pressed:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 /** ¿El foco está en un lugar donde "/" es texto (o hay un diálogo abierto)? Entonces el atajo no actúa. */
 function shortcutBlocked(target: EventTarget | null): boolean {
@@ -31,21 +51,30 @@ function shortcutBlocked(target: EventTarget | null): boolean {
   return Boolean(target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'));
 }
 
-/** Lista de pacientes (HU-017c-1, SDD 5.1–5.6): buscador, filas con nombre, "Por completar" y el Sheet
- *  "Poner nombre". Las filas llegan armadas del servidor (`buildPatientDirectory`); acá solo se filtran. */
+/** Pantalla "Pacientes": encabezado con buscar, «Filtros», vista y «Nuevo»; tarjetas con los totales;
+ *  y la lista de tarjetas (o cuadrícula). Cada paciente abre su ficha en un modal. Debajo siguen
+ *  "Por completar" (HU-017c-1) y el Sheet "Poner nombre". Las filas llegan armadas del servidor
+ *  (`buildPatientDirectory`); acá solo se filtran. */
 export function PatientDirectory({
   named,
   unnamed,
   archivedCount = 0,
+  newPatient,
 }: {
   named: PatientDirectoryRow[];
   unnamed: PatientDirectoryRow[];
-  /** HU-019 (D2): cantidad de archivadas; con N > 0 se muestra "Archivadas (N)" al final. */
+  /** HU-019 (D2): cantidad de archivadas; la tarjeta «Archivados» lleva a esa vista si hay alguna. */
   archivedCount?: number;
+  /** Botón «Nuevo» (Sheet de alta), armado por la página. */
+  newPatient?: ReactNode;
 }) {
   const router = useRouter();
+  const wide = useMediaQuery("(min-width: 640px)", true);
   const inputRef = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [stage, setStage] = useState<PatientStageFilter>("all");
+  const [view, setView] = useState<PatientView>("list");
   // R1 (agregado de 017c-2): lo que elige la usuaria manda sobre la apertura automática. null = sin
   // elección; entonces se abre sola si la búsqueda tiene coincidencias sin nombre.
   const [incompleteChoice, setIncompleteChoice] = useState<boolean | null>(null);
@@ -54,9 +83,11 @@ export function PatientDirectory({
   const savedRef = useRef(false);
 
   const searching = q.trim() !== "";
+  const counts = useMemo(() => patientStageCounts(named), [named]);
   const namedShown = useMemo(
-    () => (searching ? named.filter((r) => matchesPatientQuery(r, q)) : named),
-    [named, q, searching],
+    () =>
+      named.filter((r) => (stage === "all" || r.stage === stage) && (!searching || matchesPatientQuery(r, q))),
+    [named, q, searching, stage],
   );
   const unnamedShown = useMemo(
     () => (searching ? unnamed.filter((r) => matchesPatientQuery(r, q)) : unnamed),
@@ -73,18 +104,21 @@ export function PatientDirectory({
     wasSearching.current = searching;
   }, [searching]);
 
-  const focusSearch = useCallback(() => inputRef.current?.focus({ preventScroll: true }), []);
+  const focusSearch = useCallback(() => {
+    setSearchOpen(true);
+    // El campo se monta en este mismo render: el foco va en el próximo cuadro.
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  }, []);
   const clearSearch = useCallback(() => {
     setQ("");
     focusSearch();
   }, [focusSearch]);
+  const closeSearch = useCallback(() => {
+    setQ("");
+    setSearchOpen(false);
+  }, []);
 
-  // D13: autofoco solo con puntero fino (en el celular no abre el teclado). No se usa `autoFocus`.
-  useEffect(() => {
-    if (window.matchMedia("(pointer: fine)").matches) focusSearch();
-  }, [focusSearch]);
-
-  // Q3: "/" lleva al buscador, salvo que se esté escribiendo en otro campo o haya un diálogo abierto.
+  // Q3: "/" abre el buscador, salvo que se esté escribiendo en otro campo o haya un diálogo abierto.
   useEffect(() => {
     function onKeyDown(e: globalThis.KeyboardEvent) {
       if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
@@ -96,18 +130,34 @@ export function PatientDirectory({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [focusSearch]);
 
+  // La ficha se abre en el modal de la ruta interceptada (`(directorio)/@modal`); el elemento tocado
+  // queda guardado para que el diálogo crezca desde ahí.
+  const openPatient = useCallback(
+    (row: PatientDirectoryRow, origin: HTMLElement | null) => {
+      setPatientModalOrigin(origin, { initials: row.initials, name: row.name, stage: row.stage });
+      router.push(`/pacientes/${row.id}`, { scroll: false });
+    },
+    [router],
+  );
+  // Precarga (hasta el `loading` del modal) al apuntar o enfocar una fila: el clic ya no espera al
+  // servidor para que el modal exista y empiece la animación. Next deduplica las precargas repetidas
+  // y solo precarga en producción.
+  const prefetchPatient = useCallback((row: PatientDirectoryRow) => router.prefetch(`/pacientes/${row.id}`), [router]);
+  // Los módulos de la ficha, con la lista quieta: la primera apertura no los evalúa en pleno vuelo.
+  useEffect(() => warmPatientRecordWhenIdle(), []);
+
   // Q4: Enter abre la ficha de la primera coincidencia con nombre.
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const first = searching ? namedShown[0] : undefined;
-    if (first) router.push(`/pacientes/${first.id}`);
+    if (first) openPatient(first, null);
   }
 
   function onSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Escape" && q !== "") {
-      e.preventDefault();
-      clearSearch();
-    }
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    if (q !== "") clearSearch();
+    else closeSearch();
   }
 
   function openNameSheet(row: PatientDirectoryRow) {
@@ -134,101 +184,158 @@ export function PatientDirectory({
     [focusSearch],
   );
 
-  if (named.length === 0 && unnamed.length === 0) {
+  const empty = named.length === 0 && unnamed.length === 0;
+  const filtering = searching || stage !== "all";
+  const noResults = filtering && namedShown.length === 0 && unnamedShown.length === 0;
+  const showIncomplete = unnamed.length > 0 && (!searching || unnamedShown.length > 0);
+
+  const header = (
+    <header className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+      <h1 className="text-title-1 font-medium">{T.title}</h1>
+      <div className="flex items-center gap-1 sm:gap-2">
+        {!empty ? (
+          <>
+            <button
+              type="button"
+              className={headerIconButton}
+              aria-label={T.searchLabel}
+              aria-expanded={searchOpen}
+              aria-controls="patient-search"
+              aria-keyshortcuts="/"
+              onClick={() => (searchOpen ? closeSearch() : focusSearch())}
+            >
+              <Search className="size-5" strokeWidth={1.75} aria-hidden />
+            </button>
+            <PatientFilters stage={stage} wide={wide} onChange={setStage} />
+            <div role="group" aria-label={T.viewLabel} className="flex items-center">
+              <button
+                type="button"
+                className={headerIconButton}
+                aria-label={T.viewGrid}
+                aria-pressed={view === "grid"}
+                onClick={() => setView("grid")}
+              >
+                <LayoutGrid className="size-5" strokeWidth={1.75} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={headerIconButton}
+                aria-label={T.viewList}
+                aria-pressed={view === "list"}
+                onClick={() => setView("list")}
+              >
+                <Rows3 className="size-5" strokeWidth={1.75} aria-hidden />
+              </button>
+            </div>
+          </>
+        ) : null}
+        {newPatient}
+      </div>
+    </header>
+  );
+
+  if (empty) {
     return (
-      <div className="max-w-3xl">
+      <div>
+        {header}
         <EmptyState icon={Users} title={T.emptyTitle} description={T.emptyDescription} />
-        <ArchivedLink count={archivedCount} />
       </div>
     );
   }
 
-  const noResults = searching && namedShown.length === 0 && unnamedShown.length === 0;
-  const showIncomplete = unnamed.length > 0 && (!searching || unnamedShown.length > 0);
-
   return (
-    <div className="max-w-3xl">
-      <form role="search" onSubmit={onSubmit} className="relative">
-        <label htmlFor="patient-search" className="sr-only">
-          {T.searchLabel}
-        </label>
-        <Search
-          className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground"
-          strokeWidth={1.75}
-          aria-hidden
-        />
-        <input
-          ref={inputRef}
-          id="patient-search"
-          type="search"
-          inputMode="search"
-          enterKeyHint="search"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-keyshortcuts="/"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={onSearchKeyDown}
-          placeholder={T.searchPlaceholder}
-          className={cn(
-            inputClass,
-            "h-12 rounded-lg pl-11 pr-12 text-body-lg",
-            "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none",
-          )}
-        />
-        {q !== "" ? (
-          <PrimitiveButton
-            type="button"
-            variant="plain"
-            size="icon-lg"
-            onClick={clearSearch}
-            aria-label={T.clearSearch}
-            className="absolute right-0.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X aria-hidden />
-          </PrimitiveButton>
-        ) : null}
-      </form>
+    <div>
+      {header}
 
-      <p aria-live="polite" className="mb-3 mt-2.5 px-1 text-footnote tabular-nums text-muted-foreground">
-        {patientCountLabel(namedShown.length, named.length, searching)}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label={T.cards.total} value={counts.total} primary />
+        <StatCard label={T.cards.inProgress} value={counts.inProgress} />
+        <StatCard label={T.cards.dropped} value={counts.dropped} />
+        <StatCard
+          label={T.cards.archived}
+          value={archivedCount}
+          href={archivedCount > 0 ? "/pacientes?vista=archivadas" : undefined}
+          linkLabel={T.openArchived(archivedCount)}
+        />
+      </div>
+
+      {searchOpen ? (
+        <form role="search" onSubmit={onSubmit} className="relative mb-4">
+          <label htmlFor="patient-search" className="sr-only">
+            {T.searchLabel}
+          </label>
+          <Search
+            className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground"
+            strokeWidth={1.75}
+            aria-hidden
+          />
+          <input
+            ref={inputRef}
+            id="patient-search"
+            type="search"
+            inputMode="search"
+            enterKeyHint="search"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={onSearchKeyDown}
+            placeholder={T.searchPlaceholder}
+            className={cn(
+              inputClass,
+              "h-12 rounded-xl pl-11 pr-12 text-body-lg",
+              "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none",
+            )}
+          />
+          {q !== "" ? (
+            <PrimitiveButton
+              type="button"
+              variant="plain"
+              size="icon-lg"
+              onClick={clearSearch}
+              aria-label={T.clearSearch}
+              className="absolute right-0.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X aria-hidden />
+            </PrimitiveButton>
+          ) : null}
+        </form>
+      ) : null}
+
+      {/* El contador no se ve (están las tarjetas), pero se sigue anunciando al filtrar. */}
+      <p aria-live="polite" className="sr-only">
+        {patientCountLabel(namedShown.length, named.length, filtering)}
       </p>
 
       {noResults ? (
         <EmptyState
           icon={SearchX}
-          title={T.noResultsTitle(q.trim())}
-          description={T.noResultsDescription}
+          title={searching ? T.noResultsTitle(q.trim()) : T.stageFilter[stage]}
+          description={searching ? T.noResultsDescription : undefined}
           action={
-            <Button variant="secondary" onClick={clearSearch}>
-              {T.clearSearch}
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setStage("all");
+                if (searching) clearSearch();
+              }}
+            >
+              {searching ? T.clearSearch : T.clearFilters}
             </Button>
           }
         />
       ) : namedShown.length > 0 ? (
-        <GroupedList>
+        <ul
+          className={cn(
+            view === "grid" ? "grid gap-3 sm:grid-cols-2 lg:grid-cols-3" : "flex flex-col gap-3",
+          )}
+        >
           {namedShown.map((row) => (
-            <GroupedListRow
-              key={row.id}
-              size="lg"
-              href={`/pacientes/${row.id}`}
-              label={row.name}
-              description={
-                <>
-                  {row.statusLine}
-                  {row.phoneLabel ? (
-                    <>
-                      {" · "}
-                      <span className="whitespace-nowrap tabular-nums">{row.phoneLabel}</span>
-                    </>
-                  ) : null}
-                </>
-              }
-            />
+            <PatientCard key={row.id} row={row} view={view} onOpen={openPatient} onIntent={prefetchPatient} />
           ))}
-        </GroupedList>
-      ) : !searching ? (
+        </ul>
+      ) : !filtering ? (
         // Solo hay contactos sin nombre.
         <EmptyState icon={Users} title={T.emptyTitle} />
       ) : null}
@@ -243,9 +350,6 @@ export function PatientDirectory({
         />
       ) : null}
 
-      {/* HU-019: navegación, no resultado; se ve también con una búsqueda sin coincidencias. */}
-      <ArchivedLink count={archivedCount} />
-
       <NameContactSheet
         row={editing}
         open={sheetOpen}
@@ -254,20 +358,6 @@ export function PatientDirectory({
         onCloseAutoFocus={onCloseAutoFocus}
       />
     </div>
-  );
-}
-
-/** HU-019 (D2, SDD 7.3): fila "Archivadas (N)" al final de la lista; con N = 0 no se muestra. */
-function ArchivedLink({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <GroupedList className="mt-8">
-      <GroupedListRow
-        href="/pacientes?vista=archivadas"
-        icon={Archive}
-        label={PATIENT_ARCHIVE_TEXT.archivedSection(count)}
-      />
-    </GroupedList>
   );
 }
 

@@ -59,6 +59,7 @@ export function NewAppointmentModal({
   todayKey,
   initialDate,
   initialStart,
+  initialPatient,
 }: {
   open: boolean;
   onClose: () => void;
@@ -70,6 +71,8 @@ export function NewAppointmentModal({
   initialDate?: string;
   /** HU-017b-1 (Q4): horario tocado en la grilla (ISO); queda elegido si está libre. */
   initialStart?: string;
+  /** Paciente ya elegido (p. ej. «Agendar turno» desde la ficha). */
+  initialPatient?: AppointmentPatientOption;
 }) {
   const compact = useMediaQuery("(max-width: 639px)");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -89,6 +92,7 @@ export function NewAppointmentModal({
       todayKey={todayKey}
       initialDate={initialDate}
       initialStart={initialStart}
+      initialPatient={initialPatient}
       searchRef={searchRef}
       onCancel={onClose}
       onCreated={() => {
@@ -156,6 +160,7 @@ function NewAppointmentForm({
   todayKey,
   initialDate,
   initialStart,
+  initialPatient,
   searchRef,
   onCancel,
   onCreated,
@@ -165,6 +170,7 @@ function NewAppointmentForm({
   todayKey: string;
   initialDate?: string;
   initialStart?: string;
+  initialPatient?: AppointmentPatientOption;
   searchRef: React.RefObject<HTMLInputElement | null>;
   onCancel: () => void;
   onCreated: () => void;
@@ -172,7 +178,9 @@ function NewAppointmentForm({
   const tomorrowKey = nextDayKey(todayKey);
   const [options, setOptions] = useState<AppointmentPatientOption[] | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [choice, setChoice] = useState<PatientChoice>({ kind: "search" });
+  const [choice, setChoice] = useState<PatientChoice>(
+    initialPatient ? { kind: "existing", option: initialPatient } : { kind: "search" },
+  );
   const [serviceId, setServiceId] = useState("");
   const [date, setDate] = useState(initialDate ?? todayKey);
   const [slots, setSlots] = useState<string[]>([]);

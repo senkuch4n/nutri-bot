@@ -3,6 +3,7 @@ import type { MeasurementValues } from "./consultations";
 import {
   ACTIVITY_PLAIN_LABELS,
   APPOINTMENT_STATUS_TEXT,
+  formatBirthDate,
   PATIENT_SUMMARY_TEXT,
   appointmentHistoryText,
   consultationRecordedItems,
@@ -240,5 +241,16 @@ describe("missingForCaloriesText", () => {
   });
   it("vacío → null", () => {
     expect(missingForCaloriesText([])).toBeNull();
+  });
+});
+
+describe("formatBirthDate", () => {
+  it("usa la fecha calendario guardada (columna @db.Date en UTC), sin correrla por la zona horaria", () => {
+    expect(formatBirthDate(new Date("2004-06-15T00:00:00Z"))).toBe("15/06/2004");
+    expect(formatBirthDate(new Date("1990-01-01T00:00:00Z"))).toBe("01/01/1990");
+  });
+
+  it("el texto del encabezado lo usa", () => {
+    expect(PATIENT_SUMMARY_TEXT.bornOn(formatBirthDate(new Date("2004-06-15T00:00:00Z")))).toBe("Nació el 15/06/2004");
   });
 });

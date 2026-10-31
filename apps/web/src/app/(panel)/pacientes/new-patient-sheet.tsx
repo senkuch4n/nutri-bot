@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArchiveRestore, UserPlus } from "lucide-react";
+import { ArchiveRestore, Plus } from "lucide-react";
 import { PATIENT_ARCHIVE_TEXT, PATIENT_DIRECTORY_TEXT } from "@nutri-bot/core";
 import {
   Sheet,
@@ -29,9 +29,12 @@ export function NewPatientSheet() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button>
-          <UserPlus aria-hidden />
-          {T.newPatient}
+        <Button
+          aria-label={T.newPatient}
+          className="rounded-full bg-foreground text-background hover:bg-foreground/85 pressed:bg-foreground/75"
+        >
+          <Plus aria-hidden />
+          {T.newShort}
         </Button>
       </SheetTrigger>
       <SheetContent side={compact ? "bottom" : "right"} className={compact ? undefined : "w-full sm:max-w-md"}>

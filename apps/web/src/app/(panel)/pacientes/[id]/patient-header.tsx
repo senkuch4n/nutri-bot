@@ -1,84 +1,82 @@
-import { ExternalLink, MessageCircle } from "lucide-react";
-import {
-  HIDDEN_NUMBER_TEXT,
-  PATIENT_SUMMARY_TEXT,
-  classifyWhatsappJid,
-  formatPhone,
-  whatsappChatUrl,
-} from "@nutri-bot/core";
-import { buttonVariants } from "@/components/primitives/button";
+import type { PatientStage } from "@nutri-bot/core";
+import { PATIENT_SUMMARY_TEXT } from "@nutri-bot/core";
 import { cn } from "@/lib/utils";
 import { ClinicalAlert } from "./clinical-alert";
 import { HeaderNameButton } from "./header-name-button";
-import { PatientArchiveControls } from "./patient-archive-controls";
+import { PatientHeaderActions } from "./patient-header-actions";
+import { PatientHeaderIdentity } from "./patient-header-identity";
 
 const T = PATIENT_SUMMARY_TEXT;
 
-/** Encabezado de la ficha (HU-017c-2, server): quién es. Va dentro del chrome pegado de PatientTabs,
- *  que agrega las pestañas debajo. El próximo turno pasó al Resumen. */
+/** Encabezado de la ficha (server), con el diseño de referencia: avatar con iniciales, nombre, sexo,
+ *  edad y nacimiento, el estado arriba a la derecha y las acciones debajo. Va antes de las pestañas
+ *  de PatientTabs (que son lo único que se pega arriba al scrollear). */
 export function PatientHeader({
   patientId,
   name,
-  phone,
-  whatsappJid,
+  initials,
+  stage,
+  sexLabel,
   ageYears,
+  birthDateLabel,
+  phoneLabel,
+  contactLabel,
   riskBackground,
   archived,
-  pendingBlockedText,
+  actions,
+  className,
+  inDialog = false,
 }: {
   patientId: string;
   name: string | null;
-  phone: string;
-  /** Define si se muestra el teléfono y el botón de WhatsApp (los @lid no tienen número, D3). */
-  whatsappJid: string;
+  initials: string;
+  /** null: el contacto no es una persona (sin estado). */
+  stage: PatientStage | null;
+  sexLabel: string | null;
   ageYears: number | null;
+  /** "Nació el 15/06/2004", o null si no está cargada. */
+  birthDateLabel: string | null;
+  /** Teléfono formateado; null si el contacto no tiene número (@lid). */
+  phoneLabel: string | null;
+  /** phoneLabel o HIDDEN_NUMBER_TEXT. */
+  contactLabel: string;
   riskBackground: string | null;
-  /** HU-019: el menú "Más" ofrece «Desarchivar» en vez de «Archivar paciente». */
   archived: boolean;
-  /** HU-019 (D3): aviso de turno pendiente (archiveBlockedText) o null si no tiene. */
-  pendingBlockedText: string | null;
+  actions: Omit<React.ComponentProps<typeof PatientHeaderActions>, "patientId" | "name" | "contactLabel" | "archived">;
+  className?: string;
+  /** Dentro del modal de la lista: el nombre es el título del diálogo (Radix lo pide). */
+  inDialog?: boolean;
 }) {
-  const chatUrl = whatsappChatUrl({ whatsappJid, phone });
-  const isPhone = classifyWhatsappJid(whatsappJid) === "phone";
-  const phoneLabel = isPhone ? formatPhone(phone) : null;
+  const facts = [sexLabel, ageYears !== null ? T.ageYears(ageYears) : T.ageNotLoaded, birthDateLabel].filter(
+    (f): f is string => Boolean(f),
+  );
   return (
-    <div>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 className={cn("min-w-0 truncate text-title-1", !name && "text-muted-foreground")}>
-            {name ?? T.unnamed}
-          </h1>
-          {!name ? <HeaderNameButton patientId={patientId} phoneLabel={phoneLabel} /> : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {chatUrl ? (
-            <a
-              href={chatUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(buttonVariants({ variant: "secondary" }), "shrink-0")}
-            >
-              <MessageCircle aria-hidden />
-              {T.whatsapp}
-              <ExternalLink className="text-muted-foreground" aria-hidden />
-              <span className="sr-only"> {T.opensInNewTab}</span>
-            </a>
-          ) : null}
-          <PatientArchiveControls
-            patientId={patientId}
-            name={name?.trim() || null}
-            contactLabel={phoneLabel ?? HIDDEN_NUMBER_TEXT}
-            archived={archived}
-            pendingBlockedText={pendingBlockedText}
-          />
-        </div>
-      </div>
+    <div className={cn("relative", className)}>
+      <PatientHeaderIdentity
+        initials={initials}
+        stage={stage}
+        archived={archived}
+        name={name}
+        inDialog={inDialog}
+        nameAside={!name ? <HeaderNameButton patientId={patientId} phoneLabel={phoneLabel} /> : null}
+      />
 
-      <p className="mt-1 text-callout text-muted-foreground">
-        {ageYears !== null ? T.ageYears(ageYears) : T.ageNotLoaded}
-        <span aria-hidden> · </span>
-        <span className={cn(isPhone && "whitespace-nowrap tabular-nums")}>{phoneLabel ?? HIDDEN_NUMBER_TEXT}</span>
-      </p>
+      <ul className="mt-2 space-y-0.5 text-callout text-muted-foreground">
+        {facts.map((f) => (
+          <li key={f}>{f}</li>
+        ))}
+        <li className={cn(phoneLabel && "tabular-nums")}>{contactLabel}</li>
+      </ul>
+
+      <div className="mt-5">
+        <PatientHeaderActions
+          patientId={patientId}
+          name={name?.trim() || null}
+          contactLabel={contactLabel}
+          archived={archived}
+          {...actions}
+        />
+      </div>
 
       {riskBackground ? <ClinicalAlert background={riskBackground} compact /> : null}
     </div>

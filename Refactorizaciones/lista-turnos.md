@@ -887,3 +887,19 @@ Ninguna bloqueante. No hace falta migración.
   tocar lógica): en el detalle de lectura, «Canceló: La paciente / Vos / Se canceló sola: no se pagó la
   seña»; la etiqueta «Esperando seña» también en el badge del detalle (el calendario dice «Falta la
   seña», pero nunca muestra esos turnos).
+
+## Ajustes visuales posteriores a la aprobación
+
+Pedidos por el usuario para copiar la captura de referencia. Reemplazan lo que diga §7.3 sobre tonos y
+anchos; textos, columnas y acciones no cambian.
+
+- **V1 (02a464a):** tabla plana; pastillas de Estado y Pago neutras con ícono.
+- **V2 (2026-10-26):** sin líneas divisorias; encabezado y contenido en `text-body`; columnas de datos al
+  ancho de su contenido (`w-px` + `pr-10`) y Motivo con el espacio que sobra. Pastillas en
+  `text-subheadline font-medium`, con cuatro estilos: **outlined** (blanca con borde fino, ícono en
+  contorno) para upcoming / unclosed / awaiting_deposit y para Pago `none` / `partial`; **plain** (sin
+  pastilla, ícono relleno) para completed / no_show; **danger** (`bg-destructive-muted-hover
+  text-destructive`, ícono relleno) para cancelled / deposit_unpaid, que pasan a `CircleX` como la
+  referencia; **success** (`bg-success-muted text-success`, ícono `Check`) para Pago `paid`. El color
+  siempre se suma al ícono y al texto. R8 se mantiene: ningún tono de advertencia ni de error en Pago y
+  nunca «Cobro pendiente».

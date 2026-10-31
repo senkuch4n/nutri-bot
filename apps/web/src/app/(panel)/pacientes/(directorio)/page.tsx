@@ -1,16 +1,15 @@
 import { prisma } from "@nutri-bot/db";
 import {
   PATIENT_ARCHIVE_TEXT,
-  PATIENT_DIRECTORY_TEXT,
   buildArchivedPatientList,
   buildPatientDirectory,
   type PatientDirectoryInput,
 } from "@nutri-bot/core";
 import { PageHeader } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
-import { ArchivedPatientList } from "./archived-patient-list";
-import { NewPatientSheet } from "./new-patient-sheet";
-import { PatientDirectory } from "./patient-directory";
+import { ArchivedPatientList } from "../archived-patient-list";
+import { NewPatientSheet } from "../new-patient-sheet";
+import { PatientDirectory } from "../patient-directory";
 
 export const dynamic = "force-dynamic";
 
@@ -75,10 +74,12 @@ export default async function PacientesPage({
   const archivedCount = buildArchivedPatientList(archivedInputs(archived), pro.timezone).length;
 
   return (
-    <div>
-      <PageHeader title={PATIENT_DIRECTORY_TEXT.title} action={<NewPatientSheet />} />
-      <PatientDirectory named={named} unnamed={unnamed} archivedCount={archivedCount} />
-    </div>
+    <PatientDirectory
+      named={named}
+      unnamed={unnamed}
+      archivedCount={archivedCount}
+      newPatient={<NewPatientSheet />}
+    />
   );
 }
 

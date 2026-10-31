@@ -70,7 +70,7 @@ export function summarizeAppointmentPayments(
   return { state: paidCents > 0 ? "partial" : "none", paidTotal, balance: (priceCents - paidCents) / 100 };
 }
 
-/** "Pagado" · "Seña pagada · $ 5.000" (formatPrice(paidTotal, currency)) · "Sin pagos registrados" · "—" (free). */
+/** "Pago completado" · "Seña pagada · $ 5.000" (formatPrice(paidTotal, currency)) · "Sin pagos registrados" · "—" (free). */
 export function appointmentPaymentText(s: AppointmentPaymentSummary, currency: string): string {
   switch (s.state) {
     case "paid":
@@ -337,7 +337,7 @@ export const APPOINTMENT_LIST_TEXT = {
     unclosed: (n: number) => `${n} sin cerrar`,
   },
   payment: {
-    paid: "Pagado",
+    paid: "Pago completado",
     partial: (amount: string) => `Seña pagada · ${amount}`,
     none: "Sin pagos registrados",
     free: "—",

@@ -365,6 +365,9 @@ Tabla con columnas:
 | Motivo | `AppointmentReasonCell` (truncado, se expande al tocar) |
 | Acciones | «Registrar pago» (ver 4.6), «Abrir ↗». En filas «Sin cerrar», además «Vino» / «No vino» |
 
+> Ajuste visual V2 (2026-10-26, pedido del usuario): «Canceló» va en una pastilla roja y «Pagado» en una
+> verde, siempre con su ícono y su texto. R8 no cambia: en Pago no hay tonos de advertencia ni de error.
+
 - Orden: fecha y hora ascendente (como una agenda).
 - Toda la fila no es clickeable en escritorio (para no chocar con los botones); «Abrir» sí.
 - Teclado: los controles de la fila en orden de tabulación; al cerrar el detalle, el foco vuelve

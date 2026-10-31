@@ -22,7 +22,8 @@ import {
   type AppointmentListInput,
   type AppointmentListRow,
 } from "@nutri-bot/core";
-import { Button, EmptyState, cn } from "@/components/ui";
+import { StatCard } from "@/components/stat-card";
+import { Button, EmptyState } from "@/components/ui";
 import { usePendingDeletions } from "@/lib/deferred-delete";
 import { notify } from "@/lib/notify";
 import { replaceUrlInRouter } from "@/lib/patient-tab-route";
@@ -43,30 +44,6 @@ const T = APPOINTMENT_LIST_TEXT;
 /** ‹ › del selector de mes: chico y discreto (44 px de objetivo táctil con puntero grueso). */
 const monthNavButton =
   "relative inline-flex size-8 items-center justify-center rounded-full text-muted-foreground press-none touch-target transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
-
-const countFormat = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
-
-/** HU-021 V1. Tarjeta gris suave: etiqueta chica arriba y número grande abajo. */
-function StatCard({
-  label,
-  value,
-  caption,
-  primary = false,
-}: {
-  label: string;
-  value: number;
-  caption?: string;
-  /** «Totales»: la etiqueta va en el color del texto, no en gris. */
-  primary?: boolean;
-}) {
-  return (
-    <div className="rounded-xl bg-muted px-5 py-4 sm:px-6 sm:py-5 more-contrast:border more-contrast:border-input">
-      <p className={cn("text-subheadline", primary ? "text-foreground" : "text-muted-foreground")}>{label}</p>
-      <p className="mt-1 text-metric-md font-medium tabular-nums">{countFormat.format(value)}</p>
-      {caption ? <p className="mt-0.5 text-footnote text-muted-foreground">{caption}</p> : null}
-    </div>
-  );
-}
 
 /** T15: mientras la cancelación con "Deshacer" está pendiente, el turno se ve como cancelado. */
 function withPendingCancel(a: TurnosAppointment, pending: ReadonlySet<string>): TurnosAppointment {

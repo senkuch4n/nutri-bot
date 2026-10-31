@@ -37,6 +37,44 @@ export interface PatientDirectoryRow {
   statusLine: string;
   /** Solo filas sin nombre (en las con nombre, ""): "escribió " + formatTimeAgo(lastContactAt ?? createdAt). */
   lastContactLabel: string;
+  /** patientStageFor(...): "En proceso" o "De baja" en la lista. */
+  stage: PatientStage;
+  /** patientInitials(name): "DJ" para el avatar; "" sin nombre. */
+  initials: string;
+}
+
+/** Etapa derivada (sin campo en la base): en proceso con un turno próximo o una consulta reciente. */
+export type PatientStage = "in_progress" | "dropped";
+
+/** Días hacia atrás en los que una consulta mantiene a la paciente "En proceso". */
+export const PATIENT_ACTIVE_WINDOW_DAYS = 90;
+
+export function patientStageFor(
+  p: Pick<PatientDirectoryInput, "nextAppointment" | "lastConsultationAt">,
+  now: Date,
+): PatientStage {
+  if (p.nextAppointment) return "in_progress";
+  const since = now.getTime() - PATIENT_ACTIVE_WINDOW_DAYS * 86_400_000;
+  return p.lastConsultationAt && p.lastConsultationAt.getTime() >= since ? "in_progress" : "dropped";
+}
+
+/** Primeras letras de las dos primeras palabras, en mayúscula: "Daniel José" → "DJ". */
+export function patientInitials(name: string | null): string {
+  const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  return words
+    .slice(0, 2)
+    .map((w) => Array.from(w)[0]!.toLocaleUpperCase("es"))
+    .join("");
+}
+
+/** Tarjetas de la lista: total y cuántas hay en cada etapa. */
+export function patientStageCounts(rows: readonly Pick<PatientDirectoryRow, "stage">[]): {
+  total: number;
+  inProgress: number;
+  dropped: number;
+} {
+  const inProgress = rows.filter((r) => r.stage === "in_progress").length;
+  return { total: rows.length, inProgress, dropped: rows.length - inProgress };
 }
 
 export interface PatientDirectory {
@@ -87,6 +125,8 @@ export function buildPatientDirectory(
       phoneLabel: kind === "phone" ? formatPhone(p.phone) : null,
       phoneDigits: kind === "phone" ? p.phone.replace(/\D/g, "") : null,
       searchName: normalize(name ?? ""),
+      stage: patientStageFor(p, now),
+      initials: patientInitials(name),
     } as const;
     if (name) {
       named.push({ row: { ...base, statusLine: statusLineFor(p, now, tz), lastContactLabel: "" } });
@@ -221,4 +261,17 @@ export const PATIENT_DIRECTORY_TEXT = {
   newPatientPhoneHint: "Con código de área. Si es de otro país, empezá con +",
   phoneTaken: (label: string) => `Ese número ya es de ${label}`,
   openExisting: "Ver su ficha",
+  newShort: "Nuevo",
+  search: "Buscar",
+  filters: "Filtros",
+  filtersLabel: (n: number) => (n > 0 ? `Filtros (${n} activo)` : "Filtros"),
+  stageLegend: "Estado",
+  stageFilter: { all: "Todos", in_progress: "En proceso", dropped: "De baja" },
+  stage: { in_progress: "En proceso", dropped: "De baja" },
+  clearFilters: "Borrar filtros",
+  viewLabel: "Vista",
+  viewGrid: "Ver en cuadrícula",
+  viewList: "Ver en lista",
+  cards: { total: "Total", inProgress: "En proceso", dropped: "De baja", archived: "Archivados" },
+  openArchived: (n: number) => `Ver archivados (${n})`,
 } as const;

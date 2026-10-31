@@ -7,6 +7,8 @@ import {
   buildPatientDirectory,
   matchesPatientQuery,
   patientCountLabel,
+  patientInitials,
+  patientStageCounts,
   type PatientDirectoryInput,
 } from "./patient-directory";
 
@@ -235,5 +237,54 @@ describe("HU-019: archivadas", () => {
     expect(matchesPatientQuery(ana!, "lopez")).toBe(true);
     expect(matchesPatientQuery(ana!, "5555 1234")).toBe(true);
     expect(matchesPatientQuery(ana!, "beto")).toBe(false);
+  });
+});
+
+describe("Pacientes rediseño: etapa e iniciales", () => {
+  it("en proceso con un turno próximo o una consulta de los últimos 90 días; si no, de baja", () => {
+    const { named } = buildPatientDirectory(
+      [
+        input({ name: "A Turno", nextAppointment: { startsAt: daysAgo(-3), status: "CONFIRMED" } }),
+        input({ name: "B Reciente", lastConsultationAt: daysAgo(90) }),
+        input({ name: "C Vieja", lastConsultationAt: daysAgo(91) }),
+        input({ name: "D Nada", lastContactAt: daysAgo(1) }),
+      ],
+      NOW,
+      TZ,
+    );
+    expect(named.map((r) => [r.name, r.stage])).toEqual([
+      ["A Turno", "in_progress"],
+      ["B Reciente", "in_progress"],
+      ["C Vieja", "dropped"],
+      ["D Nada", "dropped"],
+    ]);
+  });
+
+  it("las filas sin nombre también traen etapa", () => {
+    const { unnamed } = buildPatientDirectory([input({ name: null, lastConsultationAt: daysAgo(5) })], NOW, TZ);
+    expect(unnamed[0]!.stage).toBe("in_progress");
+  });
+
+  it("iniciales: primeras letras de las dos primeras palabras, en mayúscula", () => {
+    expect(patientInitials("Daniel José")).toBe("DJ");
+    expect(patientInitials("  ana  maría lópez ")).toBe("AM");
+    expect(patientInitials("Ñandú")).toBe("Ñ");
+    expect(patientInitials("élida ruiz")).toBe("ÉR");
+    expect(patientInitials(null)).toBe("");
+    expect(patientInitials("   ")).toBe("");
+  });
+
+  it("buildPatientDirectory guarda las iniciales en cada fila con nombre", () => {
+    const { named } = buildPatientDirectory([input({ name: "QA Beto SinReceptor" })], NOW, TZ);
+    expect(named[0]!.initials).toBe("QB");
+  });
+
+  it("patientStageCounts cuenta total, en proceso y de baja", () => {
+    expect(patientStageCounts([{ stage: "in_progress" }, { stage: "dropped" }, { stage: "in_progress" }])).toEqual({
+      total: 3,
+      inProgress: 2,
+      dropped: 1,
+    });
+    expect(patientStageCounts([])).toEqual({ total: 0, inProgress: 0, dropped: 0 });
   });
 });

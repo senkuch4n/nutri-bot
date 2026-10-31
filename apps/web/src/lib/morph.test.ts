@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { overlayAlpha } from "./design-tokens";
 import {
+  CASCADE_BAND,
   LIFT_FRACTION,
   LIFT_PAD,
   MORPH_BACKDROP_OPACITY,
+  MORPH_CLOSE_MS,
   MORPH_DIM,
+  MORPH_LIFT_CLOSE_MS,
   MORPH_RADIUS,
   MORPH_STACK_DIM,
   backdropOpacity,
   blurFilter,
   canMorph,
+  cascadeMask,
+  cascadeStart,
   easeOutExpo,
   flipFrom,
   inverseScale,
@@ -19,8 +24,11 @@ import {
   lerp,
   liftKeyframes,
   liftRect,
+  morphCloseMs,
   morphContent,
   morphTiming,
+  morphTimingBrisk,
+  morphTransitions,
   openMode,
   openTimeline,
   openTransitions,
@@ -30,6 +38,9 @@ import {
   restoreInlineStyle,
   saveInlineStyle,
   settleKeyframes,
+  sharedCloneStyle,
+  sharedOpenKeyframes,
+  sharedStart,
   visibleRadius,
   type InlineStyle,
   type Rect,
@@ -329,5 +340,108 @@ describe("estilos del origen", () => {
       transform: ["rotate(1deg)", "important"],
       opacity: ["0", ""],
     });
+  });
+});
+
+describe("ficha del paciente (video de referencia de /pacientes)", () => {
+  it("con `lift` también se levanta desde la página", () => {
+    expect(openMode({ morph: true, resumed: false, nested: false, lift: true })).toBe("lift");
+    expect(openMode({ morph: false, resumed: false, nested: false, lift: true })).toBe("direct");
+    expect(openMode({ morph: true, resumed: true, nested: false, lift: true })).toBe("direct");
+  });
+
+  it("la cascada empieza todo oculto, baja de arriba hacia abajo y termina sin máscara", () => {
+    expect(cascadeMask(0)).toBe(`linear-gradient(to bottom, #000 ${-CASCADE_BAND}%, transparent 0%)`);
+    expect(cascadeMask(0.5)).toBe(
+      `linear-gradient(to bottom, #000 ${(100 + CASCADE_BAND) / 2 - CASCADE_BAND}%, transparent ${(100 + CASCADE_BAND) / 2}%)`,
+    );
+    expect(cascadeMask(1)).toBe("none");
+    expect(cascadeMask(1.2)).toBe("none");
+  });
+
+  it("con cascada el desenfoque dura lo que la cascada y arranca con el contenido", () => {
+    const t = openTransitions("lift", { cascade: true });
+    const tl = openTimeline("lift");
+    expect(t.cascade).toMatchObject({ duration: morphTiming.cascade, delay: tl.contentAt });
+    expect(t.contentBlur.duration).toBe(morphTiming.cascade);
+    expect(openTransitions("lift").contentBlur.duration).toBe(morphTiming.contentBlur);
+  });
+
+  it("un elemento compartido arranca donde está en el origen, relativo a la esquina, con su escala", () => {
+    const piece: Rect = { left: 40, top: 22, width: 36, height: 36 };
+    const end: Rect = { left: 24, top: 28, width: 80, height: 80 };
+    expect(sharedStart(piece, src, end)).toEqual({ x: 20, y: 12, scale: 0.45 });
+    const k = sharedOpenKeyframes(piece, src, end);
+    // Mientras la tarjeta se levanta (su esquina se corre LIFT_PAD) el elemento se queda quieto en pantalla.
+    expect(k).toEqual({ x: [20, 20 + LIFT_PAD.x, 24], y: [12, 12 + LIFT_PAD.y, 28], scale: [0.45, 0.45, 1] });
+  });
+
+  it("sin alto de destino la escala queda en 1 (no divide por cero)", () => {
+    expect(sharedStart(src, src, { left: 0, top: 0, width: 0, height: 0 }).scale).toBe(1);
+  });
+
+  it("el cierre levantado llega a la fila en ~170 ms y termina antes que el cierre normal", () => {
+    const c = morphTransitions.closeLift;
+    const reach = c.shell.delay + c.shell.duration * c.shell.times[1];
+    expect(reach).toBeGreaterThan(0.15);
+    expect(reach).toBeLessThan(0.19);
+    expect(MORPH_LIFT_CLOSE_MS).toBeLessThan(MORPH_CLOSE_MS);
+    expect(MORPH_LIFT_CLOSE_MS).toBe(morphCloseMs(morphTransitions.closeLift));
+    expect(MORPH_CLOSE_MS).toBe(morphCloseMs(morphTransitions.close));
+  });
+
+  it("con cascada el cuerpo no se escala y entra poco desenfocado (barato de pintar en una ficha grande)", () => {
+    for (const state of [morphContent.enterCascade, morphContent.exitCascade]) expect(state.scale).toBe(1);
+    expect(morphContent.enterCascade.blur).toBeLessThanOrEqual(4);
+  });
+
+  it("al cerrar la ficha el cuerpo se ve muy desenfocado mientras la tarjeta se achica (como el video)", () => {
+    const c = morphTransitions.closeLift;
+    const reach = c.shell.delay + c.shell.duration * c.shell.times[1];
+    expect(morphContent.exitCascade.blur).toBeGreaterThanOrEqual(8);
+    // Se termina de ir cuando la tarjeta llega a la fila, no a mitad de camino.
+    expect(c.contentFade.duration).toBeGreaterThan(reach * 0.8);
+    expect(c.contentFade.duration).toBeLessThanOrEqual(reach);
+    // El cierre normal no cambia: opacidad y desenfoque juntos.
+    expect(morphTransitions.close.contentFade).toEqual(morphTransitions.close.content);
+  });
+
+  it("la ficha crece con la curva medida en el video, sin meter casi todo en el primer cuadro", () => {
+    // Borde de la tarjeta en el video de referencia (60 fps), desde que se levanta la fila.
+    const at = (ms: number) => easeOutExpo(ms / 1000 / morphTimingBrisk.expand);
+    expect(at(34)).toBeCloseTo(0.37, 1);
+    expect(at(67)).toBeCloseTo(0.61, 1);
+    expect(at(117)).toBeCloseTo(0.86, 1);
+    // Antes (340 ms) el primer cuadro (17 ms) ya movía un 30 % y a los 100 ms estaba en el 87 %.
+    expect(at(17)).toBeLessThan(0.25);
+  });
+
+  it("la copia del nombre que viaja no se parte en dos líneas (\"Juan\" en vez de \"Juan Pérez\")", () => {
+    // `offsetWidth` redondea: con el ancho justo, `text-balance` del título manda "Pérez" a otra línea
+    // y el alto fijo la recorta.
+    const css = sharedCloneStyle({ left: 24, top: 120, width: 163, height: 36 });
+    expect(css).toMatchObject({ whiteSpace: "nowrap", overflow: "visible", width: "163px", height: "36px" });
+  });
+
+  it("la cascada tardía deja nítido el encabezado y barre desde abajo de él", () => {
+    expect(cascadeMask(cascadeStart(140, 700))).toBe(
+      `linear-gradient(to bottom, #000 20%, transparent ${20 + CASCADE_BAND}%)`,
+    );
+    expect(cascadeStart(0, 700)).toBe(CASCADE_BAND / (100 + CASCADE_BAND));
+    expect(cascadeStart(900, 700)).toBe(1);
+    expect(cascadeStart(100, 0)).toBe(1);
+  });
+
+  it("el tempo vivo asienta antes (~0,4 s como el video) y la tarjeta aparece sin fundido", () => {
+    const brisk = openTimeline("lift", morphTimingBrisk);
+    expect(brisk.settledAt).toBeLessThan(openTimeline("lift").settledAt);
+    expect(brisk.contentAt + morphTimingBrisk.cascade).toBeLessThanOrEqual(0.4);
+    const t = openTransitions("lift", { cascade: true, brisk: true });
+    expect(t.shellOpacity.duration).toBe(0);
+    expect(t.shell.duration).toBeCloseTo(morphTimingBrisk.lift + morphTimingBrisk.expand);
+    expect(t.shell.times?.[1]).toBeCloseTo(morphTimingBrisk.lift / (morphTimingBrisk.lift + morphTimingBrisk.expand));
+    expect(t.cascade).toMatchObject({ duration: morphTimingBrisk.cascade, delay: brisk.contentAt });
+    // Sin `brisk` todo sigue igual que antes.
+    expect(openTransitions("lift").shellOpacity.duration).toBe(morphTiming.lift);
   });
 });

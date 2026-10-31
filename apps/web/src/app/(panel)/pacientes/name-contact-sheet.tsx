@@ -26,7 +26,7 @@ export function NameContactSheet({
   onSaved,
   onCloseAutoFocus,
 }: {
-  row: PatientDirectoryRow | null;
+  row: Pick<PatientDirectoryRow, "id" | "phoneLabel"> | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: (name: string) => void;

@@ -23,7 +23,8 @@ import {
   backdropOpacity,
   blurFilter,
   canMorph,
-  flipFrom,
+  cascadeMask,
+  cascadeStart,
   inverseScale,
   labelOffsetKeyframes,
   liftKeyframes,
@@ -37,11 +38,15 @@ import {
   restoreInlineStyle,
   saveInlineStyle,
   settleKeyframes,
+  sharedCloneStyle,
+  sharedOpenKeyframes,
+  sharedStart,
   visibleRadius,
   type OriginStyle,
   type Point,
   type Rect,
   type SavedInlineStyle,
+  type SharedPose,
 } from "@/lib/morph"
 import { ignoreOutsideBeforeOpen, preserveUserFocusOnClose } from "@/lib/overlay-focus"
 import { runExit, type ExitAnimation } from "@/lib/sheet-exit"
@@ -64,13 +69,44 @@ import { cn } from "@/lib/utils"
 // ya casi llegó.
 // Con movimiento reducido no se mide ni se transforma nada: shell y fondo con un fundido de 150 ms.
 //
+// Ficha del paciente (video de /pacientes): `lift` hace que también desde la página el origen se
+// levante (y el cierre sea el rápido de `closeLift`); `cascade` muestra el cuerpo de arriba hacia abajo.
+// Elementos compartidos: lo marcado con el mismo `data-morph-id` en el origen y en el diálogo (iniciales,
+// nombre, etapa) viaja nítido y escalado entre los dos, encima del cuerpo que se enfoca o desenfoca.
+//
 // Apilado: un MorphDialog abierto desde un elemento de otro funciona como dos diálogos de Radix
 // anidados (foco, Escape y clic afuera los resuelve la capa de arriba; el padre está en el árbol de
 // React del hijo, así que un toque en el hijo no cuenta como "afuera" del padre). El fondo del hijo solo
 // completa el 12 % (`layerDim`): el padre queda apenas gris detrás, sin oscurecerse el doble, y al cerrar
 // el hijo vuelve a su origen adentro del padre sin tocarlo.
-type MorphDialogContextValue = { open: boolean; origin: HTMLElement | null; originLabel: OriginLabel }
-const MorphDialogContext = React.createContext<MorphDialogContextValue>({ open: false, origin: null, originLabel: false })
+type MorphDialogContextValue = {
+  open: boolean
+  origin: HTMLElement | null
+  originLabel: OriginLabel
+  lift: boolean
+  cascade: boolean
+}
+const MorphDialogContext = React.createContext<MorphDialogContextValue>({
+  open: false,
+  origin: null,
+  originLabel: false,
+  lift: false,
+  cascade: false,
+})
+
+/** Repite la cascada para el contenido que llegó con el diálogo abierto (ver `MorphDialogContentReady`). */
+const MorphRevealContext = React.createContext<(() => void) | null>(null)
+
+/**
+ * Dentro de un MorphDialog con `cascade`: avisa que llegó el contenido real (p. ej. la página que
+ * reemplaza a su `loading.tsx`), así aparece con la cascada aunque el diálogo ya esté abierto en vez de
+ * saltar de golpe.
+ */
+function MorphDialogContentReady() {
+  const replay = React.useContext(MorphRevealContext)
+  React.useLayoutEffect(() => replay?.(), [replay])
+  return null
+}
 
 /** `true`: el texto del propio origen. Un elemento: el texto de ese elemento (tiene que estar adentro del origen). */
 type OriginLabel = boolean | HTMLElement | null
@@ -83,15 +119,28 @@ type MorphDialogProps = React.ComponentProps<typeof DialogPrimitive.Root> & {
    * esquina superior izquierda) y se funde con el contenido. Solo si el texto entra en una línea.
    */
   originLabel?: OriginLabel
+  /** El origen se levanta (tarjeta blanca) también desde la página, y vuelve con el cierre rápido. */
+  lift?: boolean
+  /** El cuerpo aparece de arriba hacia abajo (máscara que baja) y se va más desenfocado. */
+  cascade?: boolean
 }
 
-function MorphDialog({ open: openProp, defaultOpen, onOpenChange, origin = null, originLabel = false, ...props }: MorphDialogProps) {
+function MorphDialog({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
+  origin = null,
+  originLabel = false,
+  lift = false,
+  cascade = false,
+  ...props
+}: MorphDialogProps) {
   const [open, setOpen] = useControllableState({
     prop: openProp,
     defaultProp: defaultOpen ?? false,
     onChange: onOpenChange,
   })
-  const ctx = React.useMemo(() => ({ open, origin, originLabel }), [open, origin, originLabel])
+  const ctx = React.useMemo(() => ({ open, origin, originLabel, lift, cascade }), [open, origin, originLabel, lift, cascade])
   const openInfo = useOverlayOpenInfo(open)
   return (
     <MorphDialogContext.Provider value={ctx}>
@@ -110,6 +159,8 @@ const MorphDialogClose = DialogPrimitive.Close
 const morphSizes = {
   md: "w-[min(100%,440px)]",
   lg: "w-[min(100%,720px)]",
+  /** Pantallas completas dentro del diálogo (p. ej. la ficha del paciente). */
+  xl: "w-[min(100%,1200px)]",
 } as const
 
 type MorphDialogContentProps = Omit<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>, "forceMount"> & {
@@ -118,7 +169,7 @@ type MorphDialogContentProps = Omit<React.ComponentPropsWithoutRef<typeof Dialog
 
 const MorphDialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, MorphDialogContentProps>(
   ({ children, ...props }, ref) => {
-    const { open, origin, originLabel } = React.useContext(MorphDialogContext)
+    const { open, origin, originLabel, lift, cascade } = React.useContext(MorphDialogContext)
     // Durante la salida se conservan el contenido y el origen de la apertura.
     const content = useExitSnapshot(children, open)
     const exitOrigin = useExitSnapshot(origin, open)
@@ -126,7 +177,14 @@ const MorphDialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimit
       <AnimatePresence>
         {open ? (
           <DialogPrimitive.Portal forceMount>
-            <MorphPanel ref={ref} origin={exitOrigin} originLabel={originLabel} {...props}>
+            <MorphPanel
+              ref={ref}
+              origin={exitOrigin}
+              originLabel={originLabel}
+              lift={lift}
+              cascade={cascade}
+              {...props}
+            >
               {content}
             </MorphPanel>
           </DialogPrimitive.Portal>
@@ -227,6 +285,43 @@ function offsetWithin(el: HTMLElement, ancestor: HTMLElement): Point | null {
   return node === ancestor ? { x, y } : null
 }
 
+/** Elemento compartido en vuelo: una copia del destino (en la capa de encima) que va y viene del origen. */
+type SharedPiece = {
+  id: string
+  clone: HTMLElement
+  /** Caja del destino relativa a la esquina del shell (sin escalar). */
+  end: Rect
+  /** Pose actual (de dónde parte la siguiente animación si se interrumpe). */
+  pose: SharedPose
+}
+
+const SHARED_SELECTOR = "[data-morph-id]"
+const POSE_KEYS = ["x", "y", "scale"] as const
+
+function writePiece(p: SharedPiece) {
+  p.clone.style.transform = `translate(${p.pose.x}px, ${p.pose.y}px) scale(${p.pose.scale})`
+}
+
+/** Copia inerte del destino: sin ids ni marcas (no la vuelve a encontrar ningún selector). */
+function clonePiece(dest: HTMLElement, end: Rect): HTMLElement {
+  const clone = dest.cloneNode(true) as HTMLElement
+  for (const node of [clone, ...Array.from(clone.querySelectorAll<HTMLElement>("*"))]) {
+    node.removeAttribute("id")
+    node.removeAttribute("data-morph-id")
+    node.removeAttribute("data-morph-title")
+  }
+  Object.assign(clone.style, sharedCloneStyle(end))
+  return clone
+}
+
+/** Caja del elemento `[data-morph-id=id]` dentro de `origin`, en pantalla; null si no está o no se ve. */
+function originPieceRect(origin: HTMLElement, id: string): Rect | null {
+  const piece = origin.querySelector<HTMLElement>(`[data-morph-id="${CSS.escape(id)}"]`)
+  if (!piece) return null
+  const r = viewportRect(piece)
+  return r.width > 0 && r.height > 0 ? r : null
+}
+
 const DIALOG_SELECTOR = '[role="dialog"], [role="alertdialog"]'
 
 /** ¿Hay otro diálogo abierto (de Radix) debajo de `shell`? Entonces el fondo de este va apilado. */
@@ -251,13 +346,20 @@ function writeOrigin(s: OriginSession, style: OriginStyle, willChange: boolean) 
 
 const MorphPanel = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  MorphDialogContentProps & { origin: HTMLElement | null; originLabel: OriginLabel }
->(({ origin, originLabel, size = "md", className, children, style, onCloseAutoFocus, onPointerDownOutside, ...props }, forwardedRef) => {
+  MorphDialogContentProps & {
+    origin: HTMLElement | null
+    originLabel: OriginLabel
+    lift: boolean
+    cascade: boolean
+  }
+>(({ origin, originLabel, lift: liftProp, cascade, size = "md", className, children, style, onCloseAutoFocus, onPointerDownOutside, ...props }, forwardedRef) => {
   const openInfo = React.useContext(OverlayOpenInfoContext)
   const reduced = Boolean(useReducedMotionConfig())
   const [isPresent, safeToRemove] = usePresence()
   const shellRef = React.useRef<HTMLDivElement | null>(null)
   const labelRef = React.useRef<HTMLSpanElement | null>(null)
+  const bodyRef = React.useRef<HTMLDivElement | null>(null)
+  const piecesRef = React.useRef<HTMLDivElement | null>(null)
   /** Tamaño del shell sin transformar (para el radio visible). */
   const shellSize = React.useRef<{ width: number; height: number } | null>(null)
 
@@ -283,7 +385,15 @@ const MorphPanel = React.forwardRef<
   const contentY = useMotionValue<number>(morphContent.enter.y)
   const contentScale = useMotionValue<number>(morphContent.enter.scale)
   const contentBlur = useMotionValue<number>(morphContent.enter.blur)
-  const contentFilter = useTransform(contentBlur, blurFilter)
+  // `lateBlur`: el de la cascada tardía. Va aparte (animar de nuevo `contentBlur` frenaría la animación
+  // de la apertura, y una animación frenada de Motion nunca termina su promesa).
+  const lateBlur = useMotionValue(0)
+  const contentFilter = useTransform([contentBlur, lateBlur], ([a = 0, b = 0]: number[]) => blurFilter(Math.max(a, b)))
+  // Cascada: 0 todo oculto → 1 sin máscara. `lateReveal`: la del contenido que llega ya abierto; manda
+  // la que menos dejó ver.
+  const reveal = useMotionValue(1)
+  const lateReveal = useMotionValue(1)
+  const revealMask = useTransform([reveal, lateReveal], ([a = 1, b = 1]: number[]) => cascadeMask(Math.min(a, b)))
   // Etiqueta compartida: esquina del shell sin transformar (`anchor`) + traslación del shell + desplazamiento.
   const anchorX = useMotionValue(0)
   const anchorY = useMotionValue(0)
@@ -299,6 +409,7 @@ const MorphPanel = React.forwardRef<
   const generation = React.useRef(0)
   const phase = React.useRef<"idle" | "open" | "closing">("idle")
   const session = React.useRef<OriginSession | null>(null)
+  const pieces = React.useRef<SharedPiece[]>([])
   const focusFallback = React.useRef<HTMLElement | null>(null)
   /** Opacidad del fondo de esta apertura (más baja si hay otro diálogo abajo). */
   const backdropTarget = React.useRef(backdropOpacity(false))
@@ -311,7 +422,10 @@ const MorphPanel = React.forwardRef<
     for (const c of running) c.stop()
   }, [])
 
-  const runAnimations = React.useCallback((list: Animation[], onComplete?: () => void): ExitAnimation => {
+  const runAnimations = React.useCallback((all: (Animation | undefined)[], onComplete?: () => void): ExitAnimation => {
+    // Una animación instantánea (duración 0, p. ej. la tarjeta del tempo `brisk`) ya terminó y Motion
+    // no devuelve controles: no hay nada que esperar ni frenar.
+    const list = all.filter((a): a is Animation => a !== undefined)
     const gen = generation.current
     controls.current.push(...list)
     const done = Promise.all(list.map((a) => new Promise<void>((resolve) => void a.then(() => resolve()))))
@@ -323,11 +437,87 @@ const MorphPanel = React.forwardRef<
     return { then: whenCurrent, stop: stopAnimations }
   }, [stopAnimations])
 
+  /** Corre `fn` en el cuadro siguiente al que se está por pintar (doble rAF), salvo que se haya frenado
+   *  todo antes (un cierre o el desmontaje avanzan la generación). */
+  const afterNextPaint = React.useCallback((fn: () => void) => {
+    const gen = generation.current
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (gen === generation.current) fn()
+      })
+    )
+  }, [])
+
   /** Devuelve el origen a sus estilos inline exactos. */
   const releaseOrigin = React.useCallback(() => {
     const s = session.current
     session.current = null
     if (s) restoreInlineStyle(s.el.style, s.saved)
+  }, [])
+
+  /** `will-change` del cuerpo solo mientras se anima (una capa permanente gasta memoria y desenfoca el texto). */
+  const setBodyLayer = React.useCallback((on: boolean) => {
+    const body = bodyRef.current
+    if (!body) return
+    if (on) body.style.setProperty("will-change", "opacity, filter, transform")
+    else body.style.removeProperty("will-change")
+  }, [])
+
+  /**
+   * El contenido real llegó con el diálogo ya abierto (la ficha después de su `loading`): si la cascada
+   * de la apertura ya había dejado ver esa parte, se repite desde abajo del encabezado compartido (que
+   * sigue nítido en su lugar). Si todavía no había llegado hasta ahí, alcanza con la de la apertura.
+   */
+  const replayReveal = React.useCallback(() => {
+    const body = bodyRef.current
+    if (!cascade || reduced || phase.current !== "open" || !body) return
+    let floor = 0
+    for (const el of Array.from(body.querySelectorAll<HTMLElement>(SHARED_SELECTOR))) {
+      const at = offsetWithin(el, body)
+      if (at) floor = Math.max(floor, at.y + el.offsetHeight)
+    }
+    const from = cascadeStart(floor - body.scrollTop, body.clientHeight)
+    if (Math.min(reveal.get(), lateReveal.get()) <= from) return
+    lateReveal.set(from)
+    const list = [animateSingleValue(lateReveal, 1, morphTransitions.lateReveal)]
+    // Si el encabezado todavía viaja (sus copias están fuera del cuerpo y no se desenfocan), la ficha
+    // además entra desenfocada, como en el video. Con el encabezado real ya en el cuerpo, solo la máscara.
+    if (pieces.current.length) {
+      lateBlur.set(morphContent.enterCascade.blur)
+      list.push(animateSingleValue(lateBlur, 0, morphTransitions.lateReveal))
+    }
+    // Fuera de `runAnimations`: no demora el final de la apertura; un cierre la frena con el resto.
+    for (const a of list) if (a) controls.current.push(a)
+  }, [cascade, reduced, reveal, lateReveal, lateBlur])
+
+  /** Saca las copias en vuelo y vuelve a mostrar los elementos compartidos reales. */
+  const releasePieces = React.useCallback(() => {
+    for (const p of pieces.current) p.clone.remove()
+    pieces.current = []
+    shellRef.current?.removeAttribute("data-morph-flying")
+  }, [])
+
+  /**
+   * Copias de los elementos compartidos que están en el diálogo y en `originEl`, ya en su pose de
+   * destino. `src` es la caja del origen; la pose de origen se calcula con `sharedStart`.
+   */
+  const collectPieces = React.useCallback((): SharedPiece[] => {
+    const shell = shellRef.current
+    const layer = piecesRef.current
+    if (!shell || !layer) return []
+    const scroll = bodyRef.current?.scrollTop ?? 0
+    const list: SharedPiece[] = []
+    for (const dest of Array.from(bodyRef.current?.querySelectorAll<HTMLElement>(SHARED_SELECTOR) ?? [])) {
+      const id = dest.getAttribute("data-morph-id")
+      const at = id ? offsetWithin(dest, shell) : null
+      if (!id || !at || list.some((p) => p.id === id)) continue
+      const end = { left: at.x, top: at.y - scroll, width: dest.offsetWidth, height: dest.offsetHeight }
+      if (end.width <= 0 || end.height <= 0) continue
+      const clone = clonePiece(dest, end)
+      layer.appendChild(clone)
+      list.push({ id, clone, end, pose: { x: end.left, y: end.top, scale: 1 } })
+    }
+    return list
   }, [])
 
   const setAll = React.useCallback(
@@ -336,6 +526,22 @@ const MorphPanel = React.forwardRef<
     },
     []
   )
+
+  /** Anima la pose de un elemento compartido eje por eje (fotogramas por eje, misma transición). */
+  const animatePose = (
+    p: SharedPiece,
+    frames: (key: keyof SharedPose) => number[],
+    transition: Parameters<typeof animateSingleValue>[2]
+  ): Animation[] =>
+    POSE_KEYS.map((key) =>
+      animateSingleValue(p.pose[key], frames(key), {
+        ...transition,
+        onUpdate: (v: number) => {
+          p.pose[key] = v
+          writePiece(p)
+        },
+      })
+    )
 
   React.useLayoutEffect(() => {
     if (isPresent) {
@@ -351,7 +557,8 @@ const MorphPanel = React.forwardRef<
       if (reduced) {
         // Sin medir ni transformar el origen: solo el fundido de shell y fondo.
         releaseOrigin()
-        setAll([[x, 0], [y, 0], [sx, 1], [sy, 1], [contentOpacity, 1], [contentY, 0], [contentScale, 1], [contentBlur, 0]])
+        releasePieces()
+        setAll([[x, 0], [y, 0], [sx, 1], [sy, 1], [contentOpacity, 1], [contentY, 0], [contentScale, 1], [contentBlur, 0], [reveal, 1], [lateReveal, 1], [lateBlur, 0]])
         runAnimations([
           animateSingleValue(shellOpacity, 1, morphTransitions.reduced),
           animateSingleValue(backdrop, backdropTarget.current, morphTransitions.reduced),
@@ -367,8 +574,11 @@ const MorphPanel = React.forwardRef<
       // Origen → (tarjeta levantada →) diálogo, cuando hay un origen nuevo que medir.
       let frames: ReturnType<typeof liftKeyframes> | null = null
       let label: { offset: ReturnType<typeof labelOffsetKeyframes> } | null = null
+      // Elementos compartidos que salen del origen, con sus fotogramas.
+      const shared: { piece: SharedPiece; k: ReturnType<typeof sharedOpenKeyframes> }[] = []
       if (!resumeSame) {
         releaseOrigin()
+        releasePieces()
         const shell = shellRef.current
         const target = shell ? layoutRect(shell) : null
         if (target) shellSize.current = { width: target.width, height: target.height }
@@ -390,14 +600,28 @@ const MorphPanel = React.forwardRef<
             // Desde el clic la etiqueta tapa exacto al texto del origen (que se desvanece debajo).
             setAll([[anchorX, target.left], [anchorY, target.top], [labelOffX, label.offset.x[0]], [labelOffY, label.offset.y[0]], [labelOpacity, 1]])
           }
+          // Solo los que también están en el origen; los demás entran con el cuerpo.
+          for (const piece of collectPieces()) {
+            const from = originPieceRect(el, piece.id)
+            if (!from) {
+              piece.clone.remove()
+              continue
+            }
+            const k = sharedOpenKeyframes(from, src, piece.end)
+            piece.pose = { x: k.x[0], y: k.y[0], scale: k.scale[0] }
+            writePiece(piece)
+            shared.push({ piece, k })
+          }
+          pieces.current = shared.map((e) => e.piece)
+          if (shared.length) shell.setAttribute("data-morph-flying", "")
           const computed = Number.parseFloat(getComputedStyle(el).opacity)
           session.current = {
             el,
             saved: saveInlineStyle(el.style),
             baseOpacity: Number.isFinite(computed) ? computed : 1,
-            // Con etiqueta, el origen solo se desvanece: el texto que viaja lo tapa exacto.
-            scale: label ? 1 : originScale(src.width),
-            blur: label ? 0 : ORIGIN_BLUR,
+            // Con etiqueta o elementos compartidos, el origen solo se desvanece: lo que viaja lo tapa exacto.
+            scale: label || shared.length ? 1 : originScale(src.width),
+            blur: label || shared.length ? 0 : ORIGIN_BLUR,
             hidden: 0,
           }
           frames = liftKeyframes(src, target)
@@ -406,53 +630,85 @@ const MorphPanel = React.forwardRef<
           setAll([[x, 0], [y, 0], [sx, 1], [sy, 1]])
         }
         if (!resumed) {
-          const e = morphContent.enter
-          setAll([[shellOpacity, 0], [contentOpacity, e.opacity], [contentY, e.y], [contentScale, e.scale], [contentBlur, e.blur]])
+          const e = cascade ? morphContent.enterCascade : morphContent.enter
+          setAll([
+            [shellOpacity, 0],
+            [contentOpacity, e.opacity],
+            [contentY, e.y],
+            [contentScale, e.scale],
+            [contentBlur, e.blur],
+            [reveal, cascade ? 0 : 1],
+            [lateReveal, 1],
+            [lateBlur, 0],
+          ])
         }
       }
 
-      const mode = openMode({ morph: frames !== null, resumed, nested })
-      const t = openTransitions(mode)
+      const mode = openMode({ morph: frames !== null, resumed, nested, lift: liftProp })
+      const t = openTransitions(mode, { cascade, brisk: liftProp })
       const lift = mode === "lift"
       // Diferida: el shell espera invisible sobre el origen y crece sin pasar por la tarjeta levantada.
       const along = (v: MotionValue<number>, k: [number, number, number] | undefined, dest: number) =>
         animateSingleValue(v, k ? (lift ? k : [k[0], k[2]]) : dest, t.shell)
-      const list = [
-        animateSingleValue(backdrop, backdropTarget.current, t.backdrop),
-        animateSingleValue(shellOpacity, 1, t.shellOpacity),
-        along(x, frames?.x, 0),
-        along(y, frames?.y, 0),
-        along(sx, frames?.sx, 1),
-        along(sy, frames?.sy, 1),
-        animateSingleValue(contentOpacity, 1, t.contentOpacity),
-        animateSingleValue(contentBlur, 0, t.contentBlur),
-        animateSingleValue(contentY, 0, t.content),
-        animateSingleValue(contentScale, 1, t.content),
-      ]
-      if (label) {
-        list.push(
-          along(labelOffX, label.offset.x, 0),
-          along(labelOffY, label.offset.y, 0),
-          // Se funde con el contenido, que aparece casi en el mismo lugar (el título).
-          animateSingleValue(labelOpacity, 0, t.labelOpacity)
-        )
+      const start = () => {
+        const list = [
+          animateSingleValue(backdrop, backdropTarget.current, t.backdrop),
+          animateSingleValue(shellOpacity, 1, t.shellOpacity),
+          along(x, frames?.x, 0),
+          along(y, frames?.y, 0),
+          along(sx, frames?.sx, 1),
+          along(sy, frames?.sy, 1),
+          animateSingleValue(contentOpacity, 1, t.contentOpacity),
+          animateSingleValue(contentBlur, 0, t.contentBlur),
+          animateSingleValue(contentY, 0, t.content),
+          animateSingleValue(contentScale, 1, t.content),
+        ]
+        if (cascade) list.push(animateSingleValue(reveal, 1, t.cascade))
+        for (const { piece, k } of shared) {
+          list.push(...animatePose(piece, (key) => (lift ? k[key] : [k[key][0], k[key][2]]), t.shell))
+        }
+        // Reabierto a mitad del cierre: los que estaban volviendo regresan a su lugar desde donde están.
+        if (resumeSame) {
+          for (const piece of pieces.current) {
+            const end = { x: piece.end.left, y: piece.end.top, scale: 1 }
+            list.push(...animatePose(piece, (key) => [piece.pose[key], end[key]], t.shell))
+          }
+        }
+        if (label) {
+          list.push(
+            along(labelOffX, label.offset.x, 0),
+            along(labelOffY, label.offset.y, 0),
+            // Se funde con el contenido, que aparece casi en el mismo lugar (el título).
+            animateSingleValue(labelOpacity, 0, t.labelOpacity)
+          )
+        }
+        const s = session.current
+        if (s) {
+          list.push(
+            animateSingleValue(s.hidden, 1, {
+              ...t.originOut,
+              onUpdate: (p) => {
+                s.hidden = p
+                writeOrigin(s, originHiddenStyle(p, s.scale, s.baseOpacity, s.blur), true)
+              },
+            })
+          )
+        }
+        // El cuerpo en su propia capa mientras se anima (opacidad, desenfoque y desplazamiento sin repintar).
+        setBodyLayer(true)
+        // Oculto y quieto: sin `will-change`. Los elementos compartidos llegaron: se muestran los reales.
+        runAnimations(list, () => {
+          if (s && session.current === s) restoreInlineStyle(s.el.style, s.saved, ["will-change"])
+          releasePieces()
+          setBodyLayer(false)
+        })
       }
-      const s = session.current
-      if (s) {
-        list.push(
-          animateSingleValue(s.hidden, 1, {
-            ...t.originOut,
-            onUpdate: (p) => {
-              s.hidden = p
-              writeOrigin(s, originHiddenStyle(p, s.scale, s.baseOpacity, s.blur), true)
-            },
-          })
-        )
-      }
-      // Oculto y quieto: sin `will-change`.
-      runAnimations(list, () => {
-        if (s && session.current === s) restoreInlineStyle(s.el.style, s.saved, ["will-change"])
-      })
+      // Desde un origen nuevo, la animación arranca en un cuadro limpio. El clic monta el diálogo (Radix,
+      // el contenido, las mediciones) y ese cuadro tarda: si arrancaba ahí, Motion ya contaba ese tiempo
+      // y el primer cuadro pintado saltaba casi todo el recorrido. Mientras, la tarjeta espera invisible
+      // sobre el origen, que sigue a la vista. Reabierto a mitad del cierre sigue sin esperar.
+      if (resumed || !frames) start()
+      else afterNextPaint(start)
       return
     }
 
@@ -469,16 +725,34 @@ const MorphPanel = React.forwardRef<
     const target = shell ? layoutRect(shell) : null
     if (target) shellSize.current = { width: target.width, height: target.height }
     let src: Rect | null = null
+    /** A dónde vuelve cada elemento compartido (su caja en el origen). */
+    const homes = new Map<string, Rect>()
     if (!reduced && s?.el.isConnected) {
       // Se mide sin nuestra transformación (solo esa) y se repone enseguida.
       const ours = s.el.style.getPropertyValue("transform")
       restoreInlineStyle(s.el.style, s.saved, ["transform"])
       src = viewportRect(s.el)
+      // Cerrado a mitad de la apertura: siguen las copias en vuelo; si no, se copian los del diálogo.
+      if (!pieces.current.length) pieces.current = collectPieces()
+      for (const piece of pieces.current) {
+        const home = originPieceRect(s.el, piece.id)
+        if (home) homes.set(piece.id, home)
+      }
       s.el.style.setProperty("transform", ours)
     }
     const morph = Boolean(s && target && canMorph(src, target))
     // Sin origen (se fue del DOM) o con movimiento reducido: solo fundido.
-    if (!morph) releaseOrigin()
+    if (!morph) {
+      releaseOrigin()
+      releasePieces()
+    } else {
+      for (const piece of pieces.current) if (!homes.has(piece.id)) piece.clone.remove()
+      pieces.current = pieces.current.filter((piece) => homes.has(piece.id))
+      if (pieces.current.length) shell?.setAttribute("data-morph-flying", "")
+      for (const piece of pieces.current) writePiece(piece)
+    }
+    const flying = pieces.current
+    setBodyLayer(true)
 
     const start = (): ExitAnimation => {
       // Si se cierra mientras la etiqueta compartida todavía se ve, se va enseguida.
@@ -494,14 +768,21 @@ const MorphPanel = React.forwardRef<
           animateSingleValue(backdrop, 0, fade.backdrop),
         ])
       }
-      const c = morphTransitions.close
-      const out = morphContent.exit
+      const c = liftProp ? morphTransitions.closeLift : morphTransitions.close
+      const out = cascade ? morphContent.exitCascade : morphContent.exit
       const k = settleKeyframes(src, target)
+      const shellTransition = { ...c.shell, times: [...c.shell.times], ease: [...c.shell.ease] }
       const returnValue = (v: MotionValue<number>, [mid, dest]: [number, number]) =>
-        animateSingleValue(v, [v.get(), mid, dest], { ...c.shell, times: [...c.shell.times], ease: [...c.shell.ease] })
+        animateSingleValue(v, [v.get(), mid, dest], shellTransition)
+      // Los elementos compartidos llegan a su lugar en el origen cuando la tarjeta llega a él.
+      const home = (piece: SharedPiece) => sharedStart(homes.get(piece.id) ?? src, src, piece.end)
       return runAnimations([
+        ...flying.flatMap((piece) => {
+          const to = home(piece)
+          return animatePose(piece, (key) => [piece.pose[key], to[key], to[key]], shellTransition)
+        }),
         hideLabel,
-        animateSingleValue(contentOpacity, out.opacity, c.content),
+        animateSingleValue(contentOpacity, out.opacity, c.contentFade),
         animateSingleValue(contentY, out.y, c.content),
         animateSingleValue(contentScale, out.scale, c.content),
         animateSingleValue(contentBlur, out.blur, c.content),
@@ -529,11 +810,13 @@ const MorphPanel = React.forwardRef<
         backdrop.jump(0)
         labelOpacity.jump(0)
         releaseOrigin()
+        releasePieces()
       },
       onDone: () => {
         cancelExit.current = null
         phase.current = "idle"
         releaseOrigin()
+        releasePieces()
         safeToRemove?.()
       },
     })
@@ -547,9 +830,10 @@ const MorphPanel = React.forwardRef<
       cancelExit.current = null
       stopAnimations()
       releaseOrigin()
+      releasePieces()
       phase.current = "idle"
     },
-    [stopAnimations, releaseOrigin]
+    [stopAnimations, releaseOrigin, releasePieces]
   )
 
   const setRefs = React.useCallback(
@@ -587,6 +871,8 @@ const MorphPanel = React.forwardRef<
               morphSizes[size],
               // Durante la salida el shell ya no recibe punteros.
               "data-[state=closed]:pointer-events-none",
+              // Mientras viajan las copias, los elementos compartidos reales no se ven.
+              "[&[data-morph-flying]_[data-morph-id]]:invisible",
               className
             )}
             style={{ ...style, x, y, scaleX: sx, scaleY: sy, originX: 0, originY: 0, opacity: shellOpacity, borderRadius }}
@@ -595,15 +881,25 @@ const MorphPanel = React.forwardRef<
           >
             <m.div className="relative" style={{ scaleX: invSx, scaleY: invSy, originX: 0, originY: 0 }}>
               <m.div
+                ref={bodyRef}
                 className="relative max-h-[85dvh] overflow-y-auto overscroll-contain p-6"
-                style={{ opacity: contentOpacity, y: contentY, scale: contentScale, filter: contentFilter }}
+                style={{
+                  opacity: contentOpacity,
+                  y: contentY,
+                  scale: contentScale,
+                  filter: contentFilter,
+                  maskImage: revealMask,
+                  WebkitMaskImage: revealMask,
+                }}
               >
-                {children}
+                <MorphRevealContext.Provider value={replayReveal}>{children}</MorphRevealContext.Provider>
                 <DialogPrimitive.Close className={closeButtonClass}>
                   <X className="size-3.5" strokeWidth={2.25} aria-hidden />
                   <span className="sr-only">Cerrar</span>
                 </DialogPrimitive.Close>
               </m.div>
+              {/* Copias de los elementos compartidos en vuelo (fuera del cuerpo: no se desenfocan con él). */}
+              <div ref={piecesRef} aria-hidden className="pointer-events-none absolute left-0 top-0" />
             </m.div>
           </m.div>
         </DialogPrimitive.Content>
@@ -652,6 +948,7 @@ export {
   MorphDialogTrigger,
   MorphDialogClose,
   MorphDialogContent,
+  MorphDialogContentReady,
   MorphDialogHeader,
   MorphDialogTitle,
   MorphDialogDescription,

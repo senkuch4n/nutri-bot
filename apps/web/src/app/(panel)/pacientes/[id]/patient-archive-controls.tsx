@@ -33,31 +33,24 @@ export function useUnarchivePatient(patientId: string) {
   return { unarchive, pending };
 }
 
-/**
- * HU-019 (SDD 7.1): menú "Más" del encabezado de la ficha. Activa → «Archivar paciente» (no
- * destructivo: no se pierde nada); archivada → «Desarchivar».
- * - Con un turno pendiente conocido al cargar la ficha, el aviso sale sin llamar a la action.
- * - Si el turno apareció mientras se confirmaba (carrera), la action devuelve `blocked` con el mismo aviso.
- */
-export function PatientArchiveControls({
-  patientId,
-  name,
-  contactLabel,
-  archived,
-  pendingBlockedText,
-}: {
+type ArchiveInput = {
   patientId: string;
   /** Nombre recortado o null. */
   name: string | null;
   /** Para la confirmación sin nombre: teléfono formateado o HIDDEN_NUMBER_TEXT. */
   contactLabel: string;
-  archived: boolean;
   /** archiveBlockedText del próximo turno pendiente, o null si no tiene. */
   pendingBlockedText: string | null;
-}) {
+};
+
+/**
+ * HU-019 (SDD 7.1): «Archivar paciente» (no destructivo: no se pierde nada).
+ * - Con un turno pendiente conocido al cargar la ficha, el aviso sale sin llamar a la action.
+ * - Si el turno apareció mientras se confirmaba (carrera), la action devuelve `blocked` con el mismo aviso.
+ */
+export function useArchivePatient({ patientId, name, contactLabel, pendingBlockedText }: ArchiveInput) {
   const router = useRouter();
   const confirm = useConfirm();
-  const { unarchive } = useUnarchivePatient(patientId);
 
   const showBlocked = useCallback(
     async (text: string) => {
@@ -73,7 +66,7 @@ export function PatientArchiveControls({
     [confirm, patientId, router],
   );
 
-  const archive = useCallback(async () => {
+  return useCallback(async () => {
     if (pendingBlockedText) return showBlocked(pendingBlockedText);
     const ok = await confirm({
       title: T.confirmTitle(name),
@@ -96,6 +89,15 @@ export function PatientArchiveControls({
       else notify.error(u.error);
     });
   }, [confirm, contactLabel, name, patientId, pendingBlockedText, router, showBlocked]);
+}
+
+/** Menú "Más" del encabezado de la ficha. Activa → «Archivar paciente»; archivada → «Desarchivar». */
+export function PatientArchiveControls({
+  archived,
+  ...input
+}: ArchiveInput & { archived: boolean }) {
+  const { unarchive } = useUnarchivePatient(input.patientId);
+  const archive = useArchivePatient(input);
 
   return (
     <MoreActionsMenu
