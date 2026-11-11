@@ -151,7 +151,7 @@ El repo lo trabajan dos personas, cada una con su orquestador. Reglas:
   | `validada`, `arquitectura_lista` (sin arrancar) | label `estado: lista` |
   | `afinando`, `afinada_pendiente_validacion`, `en_arquitectura`, `implementando`, `rechazada_reintentando` | label `estado: en curso` |
   | `en_revision` | label `estado: en revisión` |
-  | `aprobada` | issue cerrado (el PR lo cierra con `Closes #<n>`) |
+  | `aprobada` | issue cerrado a mano al mergear (`gh issue close <n>`): `Closes #<n>` no cierra solo porque los PR van a `develop`, no a la rama por defecto |
   | `bloqueada` | label `estado: bloqueada` |
 
   Una HU descartada es un issue cerrado como "not planned". Épicas candidatas e ideas sueltas van
