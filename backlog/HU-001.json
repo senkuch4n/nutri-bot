@@ -1,0 +1,21 @@
+{
+  "id": "HU-001",
+  "responsable": "senkuch4n",
+  "slug": "datos-paciente-calculos",
+  "titulo": "Datos del paciente para cálculos (sexo, actividad, objetivo, contextura)",
+  "origen": "docs/historias-usuario-nutridesk.md — Épica 17",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-datos-paciente-calculos.md",
+  "sdd": "Refactorizaciones/datos-paciente-calculos.md",
+  "notas": "Primera de la ronda 2. Destraba la calculadora (Épicas 18/19).",
+  "skills": [
+    "migracion-prisma",
+    "ui-ux-pro-max",
+    "web-design-guidelines"
+  ],
+  "rama": "hu-001-datos-paciente-calculos",
+  "modelo": "opus",
+  "modelo_reviewer": "fable",
+  "review": "progress/review_HU-001.md"
+}

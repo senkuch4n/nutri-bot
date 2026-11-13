@@ -2,21 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import {
-  ISAK_REPORT_TEXT,
-  professionalSignature,
-  type IsakReportTextKey,
-  type IsakReportTexts,
-} from "@nutri-bot/core";
-import { prisma } from "@nutri-bot/db";
+import { ISAK_REPORT_TEXT, type IsakReportTextKey, type IsakReportTexts } from "@nutri-bot/core";
 import {
   enqueueAnthropometricReportMessage,
   saveAnthropometricReportPdf,
   saveAnthropometricReportTexts,
 } from "@nutri-bot/db/domain";
 import { renderAnthropometricReportPdf } from "@/lib/anthropometric-report-pdf";
+import { loadProfessionalPdfBranding } from "@/lib/professional-pdf";
 import { loadIsakReportContext, type IsakReportContext } from "@/lib/anthropometric-report";
 import { belongsToPatient } from "@/lib/consultation-guard";
+import { errorCode } from "@/lib/error-code";
 
 // HU-007: informe antropométrico. Se llaman directo desde el cliente (no como <form action>).
 // La lógica vive en packages/core; las lecturas y escrituras, en packages/db/domain.
@@ -66,17 +62,16 @@ async function generateAndSave(ctx: IsakReportContext, texts: IsakReportTexts): 
   const saved = await saveAnthropometricReportTexts({ isakEntryId: ctx.entry.id, texts });
   const savedTexts = { ...texts };
   for (const k of Object.keys(saved.texts) as IsakReportTextKey[]) savedTexts[k] = saved.texts[k] ?? "";
-  const logoRow = await prisma.professional.findUnique({
-    where: { id: 1 },
-    select: { logoData: true, logoMimeType: true },
-  });
+  // HU-016: nombre con título, pie, logo y bloque de firma salen de un único lugar.
+  const branding = await loadProfessionalPdfBranding();
   const data = await renderAnthropometricReportPdf({
     model: ctx.model,
     texts: savedTexts,
-    professionalName: ctx.pro.name,
-    signature: professionalSignature({ title: ctx.pro.title, name: ctx.pro.name, licenseNumber: ctx.pro.licenseNumber }),
-    logo: logoRow?.logoData && logoRow.logoMimeType ? { data: logoRow.logoData, mimeType: logoRow.logoMimeType } : null,
-    accentColor: ctx.pro.pdfAccentColor,
+    professionalName: branding.displayName,
+    signature: branding.footerSignature,
+    logo: branding.logo,
+    accentColor: branding.accentColor,
+    signatureBlock: branding.signature,
   });
   const { id } = await saveAnthropometricReportPdf({
     isakEntryId: ctx.entry.id,
@@ -115,7 +110,8 @@ export async function generateIsakReportPdfAction(input: ReportActionInput): Pro
   try {
     await generateAndSave(ctx, data.texts);
   } catch (err) {
-    console.error("generateIsakReportPdfAction", err);
+    // HU-016 (D10): generateAndSave lee la firma y guarda un PDF que la lleva: solo el código.
+    console.error("generateIsakReportPdfAction", errorCode(err));
     return { ok: false, error: ISAK_REPORT_TEXT.generateError };
   }
   revalidateReport(data.patientId, data.consultationId);
@@ -137,7 +133,8 @@ export async function sendIsakReportWhatsAppAction(input: ReportActionInput): Pr
       caption: ISAK_REPORT_TEXT.whatsappCaption(ctx.currentDateLabel),
     });
   } catch (err) {
-    console.error("sendIsakReportWhatsAppAction", err);
+    // HU-016 (D10): generateAndSave lee la firma y guarda un PDF que la lleva: solo el código.
+    console.error("sendIsakReportWhatsAppAction", errorCode(err));
     return { ok: false, error: ISAK_REPORT_TEXT.sendError };
   }
   revalidateReport(data.patientId, data.consultationId);

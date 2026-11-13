@@ -583,7 +583,7 @@ describe("getRequirementBlockingMissing", () => {
     const items = getRequirementBlockingMissing({ ...complete, hasBirthDate: false });
     expect(items.map((i) => i.key)).toEqual(["birthDate"]);
     expect(missingFormulaDataMessage(items)).toBe(
-      'Faltan datos para los cálculos: fecha de nacimiento. La fecha de nacimiento se carga en "Datos".',
+      'Faltan datos para los cálculos: fecha de nacimiento. La fecha de nacimiento se carga en "Editar datos".',
     );
   });
 
@@ -838,5 +838,16 @@ describe("HU-008: calculadora pediátrica", () => {
     const d2 = draftFromPrescription(aggressive, tomas);
     expect(d2.adjustmentRange).toBe("MODERATE_DEFICIT");
     expect(d2.adjustmentPercent).toBe(-20);
+  });
+});
+
+describe("REQUIREMENT_TEXT: borrado con Deshacer (HU-017c-3, solo panel)", () => {
+  it("confirmación y toast del cálculo", () => {
+    expect(REQUIREMENT_TEXT.deleteConfirmTitle).toBe("¿Borrar el cálculo de calorías?");
+    expect(REQUIREMENT_TEXT.deleteConfirmDescription).toBe(
+      "Se borra lo indicado en esta consulta. El Resumen va a mostrar el cálculo anterior, si hay.",
+    );
+    expect(REQUIREMENT_TEXT.deleteConfirmDescription).not.toMatch(/deshacer/i);
+    expect(REQUIREMENT_TEXT.deleted).toBe("Cálculo borrado");
   });
 });

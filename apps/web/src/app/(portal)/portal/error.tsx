@@ -1,32 +1,27 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
+import { PORTAL_TEXT } from "@nutri-bot/core";
 import { StatusScreen } from "@/components/status-screen";
 import { Button, ButtonLink } from "@/components/ui";
 
-export default function PortalError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
+// HU-017d-1 (T10): textos simples y sin "Código: …".
+export default function PortalError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <StatusScreen
       icon={CircleAlert}
-      title="Algo salió mal"
-      description="No pudimos mostrar esta pantalla. Probá de nuevo y, si sigue fallando, recargá la página."
+      title={PORTAL_TEXT.errorTitle}
+      description={PORTAL_TEXT.errorBody}
       actions={
         <>
           <Button size="lg" onClick={reset}>
-            Reintentar
+            {PORTAL_TEXT.retry}
           </Button>
           <ButtonLink href="/portal" variant="secondary" size="lg">
-            Volver al inicio
+            {PORTAL_TEXT.backHome}
           </ButtonLink>
         </>
       }
-      detail={error.digest ? `Código: ${error.digest}` : undefined}
     />
   );
 }

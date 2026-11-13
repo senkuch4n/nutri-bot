@@ -1,0 +1,170 @@
+/* Shell del panel (HU-017a §10.1). Todo en rem salvo hairlines. El ancho del slot lo anima Motion
+   (app-sidebar.tsx, SIDEBAR_WIDTH); la sidebar mantiene el ancho expandido y el slot la recorta. */
+.panel-sidebar-slot {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .panel-sidebar-layout {
+    --panel-sidebar-collapsed: 3rem;
+    --panel-sidebar-expanded: 14rem;
+    height: 100dvh;
+    min-height: 0;
+    padding: 0.5rem;
+    overflow: hidden;
+    background: hsl(var(--sidebar));
+  }
+
+  .panel-sidebar-workspace {
+    min-height: 0;
+    margin-top: 0.5rem;
+    overflow-y: auto;
+    border-radius: 1.375rem; /* radii["2xl"] (workspace: radio de sheet/dialog) */
+    background: hsl(var(--background));
+    box-shadow: theme("boxShadow.card");
+  }
+
+  .panel-sidebar-slot {
+    display: block;
+    position: sticky;
+    top: 0;
+    height: 100%;
+    flex-shrink: 0;
+    overflow: hidden;
+    z-index: 10;
+  }
+
+  .panel-sidebar {
+    width: var(--panel-sidebar-expanded);
+    height: 100%;
+  }
+
+  .panel-sidebar-header {
+    padding: 0 0.25rem;
+  }
+
+  .panel-sidebar-toggle {
+    right: 0.25rem;
+  }
+
+  .panel-sidebar-toggle-logo,
+  .panel-sidebar-toggle-icon {
+    transition:
+      opacity var(--duration-hover) var(--ease-out),
+      transform var(--duration-hover) var(--ease-out);
+  }
+
+  .panel-sidebar-toggle-logo {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle {
+    right: auto;
+    left: 0.25rem;
+    background: transparent;
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle-logo {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle-icon {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  /* En el rail el logo se cambia por el ícono de abrir: con el mouse encima o con foco de teclado. */
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle:focus-visible .panel-sidebar-toggle-logo {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle:focus-visible .panel-sidebar-toggle-icon {
+    opacity: 1;
+    transform: scale(1);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle:hover .panel-sidebar-toggle-logo {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    .panel-sidebar[data-collapsed="true"] .panel-sidebar-toggle:hover .panel-sidebar-toggle-icon {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .panel-sidebar nav a,
+  .panel-sidebar > div:last-child > a,
+  .panel-sidebar button[type="submit"] {
+    position: relative;
+    padding-left: 0.5rem;
+    justify-content: flex-start;
+  }
+
+  .panel-sidebar .panel-sidebar-label {
+    position: absolute;
+    left: 2.5rem;
+    width: calc(var(--panel-sidebar-expanded) - 4rem);
+    white-space: nowrap;
+  }
+
+  /* Etiquetas: fundido (también con movimiento reducido: es opacidad, §14). */
+  .panel-sidebar .panel-sidebar-label,
+  .panel-sidebar .panel-sidebar-detail {
+    opacity: 1;
+    visibility: visible;
+    transition:
+      opacity 120ms var(--ease-out) 60ms,
+      visibility 0s linear 60ms;
+  }
+
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-label,
+  .panel-sidebar[data-collapsed="true"] .panel-sidebar-detail {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 90ms var(--ease-out),
+      visibility 0s linear 90ms;
+  }
+
+  .panel-sidebar[data-collapsed="true"] nav a,
+  .panel-sidebar[data-collapsed="true"] > div:last-child > a,
+  .panel-sidebar[data-collapsed="true"] button[type="submit"] {
+    width: 2rem;
+  }
+
+  .panel-sidebar .panel-sidebar-account {
+    position: relative;
+    min-height: 2rem;
+    padding-top: 2rem;
+  }
+
+  .panel-sidebar .panel-sidebar-signout {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+
+  .panel-sidebar .panel-sidebar-email {
+    width: 100%;
+  }
+}
+
+/* Más contraste: el workspace suma un borde visible (§7.7). */
+@media (min-width: 1024px) and (prefers-contrast: more) {
+  .panel-sidebar-workspace {
+    box-shadow: theme("boxShadow.card"), 0 0 0 1px hsl(var(--input));
+  }
+}
+
+/* Movimiento reducido (política §7.7): el ancho ya es instantáneo (Motion); el ícono del toggle
+   cambia por fundido, sin escala. */
+@media (prefers-reduced-motion: reduce) {
+  .panel-sidebar-toggle-logo,
+  .panel-sidebar-toggle-icon {
+    transform: none !important;
+  }
+}

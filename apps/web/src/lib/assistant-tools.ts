@@ -4,6 +4,7 @@ import { getLatestFormulaMeasurements, listApprovedPaymentsInRange } from "@nutr
 import {
   activityLevelOption,
   computeAgeYears,
+  formatArchivedDate,
   formatDateTime,
   formatPrice,
   normalize,
@@ -21,7 +22,10 @@ export async function buscarPaciente(query: string) {
   const matches = patients.filter(
     (p) => normalize(p.name ?? "").includes(n) || (digits.length > 0 && p.phone.includes(digits)),
   );
-  return matches.slice(0, 10).map((p) => ({ id: p.id, nombre: p.name, telefono: p.phone }));
+  // HU-019 (D11): el asistente ve también a las archivadas, marcadas.
+  return matches
+    .slice(0, 10)
+    .map((p) => ({ id: p.id, nombre: p.name, telefono: p.phone, archivada: p.archivedAt !== null }));
 }
 
 export async function resumenPaciente(patientId: string) {
@@ -45,6 +49,8 @@ export async function resumenPaciente(patientId: string) {
   return {
     nombre: patient.name,
     telefono: patient.phone,
+    // HU-019 (D11): "dd/MM/yyyy" si está archivada; null si está activa.
+    archivada_el: patient.archivedAt ? formatArchivedDate(patient.archivedAt, pro.timezone) : null,
     antecedentes: record?.background ?? null,
     objetivos: record?.goals ?? null,
     sexo: sexLabel(patient.sex),

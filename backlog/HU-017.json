@@ -1,0 +1,13 @@
+{
+  "id": "HU-017",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-apple",
+  "titulo": "Rediseño visual estilo Apple (auditoría de todas las páginas + partición)",
+  "origen": "Pedido del usuario 2026-10-03 · skill apple-design (.claude/skills/apple-design/SKILL.md)",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-rediseno-apple.md",
+  "sdd": null,
+  "rama": "feat/hu-017-rediseno-apple",
+  "notas": "Auditoría primero: cada página del panel y del portal contra el skill apple-design, con capturas; propuesta de partición en HU (como HU-002a–d). Rediseño visual completo (decisión del usuario). Excluye alimentos, planes y plantillas (zona de imleticio: PR #7, HU-015). Validada como paraguas el 2026-10-03 y partida en HU-017a–f (cada una con su propio ciclo)."
+}

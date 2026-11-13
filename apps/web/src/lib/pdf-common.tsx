@@ -29,14 +29,22 @@ export const FONT_FAMILY = registerFonts();
 // Sin separación de sílabas: react-pdf corta palabras en español con reglas de inglés.
 Font.registerHyphenationCallback((word) => [word]);
 
-/** data: URL del logo de /ajustes, o null. */
-export function pdfLogoSrc(logo: { data: Buffer; mimeType: string } | null): string | null {
-  return logo ? `data:${logo.mimeType};base64,${logo.data.toString("base64")}` : null;
+export type PdfImage = { data: Buffer; mimeType: string };
+
+/** data: URL de una imagen guardada (logo o firma), o null. */
+export function pdfImageSrc(img: PdfImage | null): string | null {
+  return img ? `data:${img.mimeType};base64,${img.data.toString("base64")}` : null;
 }
+/** Compatibilidad: plan-pdf.tsx y el informe lo siguen importando con este nombre. */
+export const pdfLogoSrc = pdfImageSrc;
 
 // ─── Estilos comunes ───────────────────────────────────────────────────────────
 
-export function buildCommonStyles(accentColor: string) {
+/** Colores neutros de un PDF. El plan usa `pdfColors`; el informe, `reportPdfColors` (HU-017c-4). */
+export type PdfPalette = { text: string; muted: string; border: string; subtle: string };
+
+/** `palette` es opcional: sin ella el resultado es idéntico al de antes (el plan no la pasa). */
+export function buildCommonStyles(accentColor: string, palette: PdfPalette = pdfColors) {
   return StyleSheet.create({
     // Ojo: `lineHeight` NO va en la página. En react-pdf 4.9 un lineHeight en <Page> hace que el
     // pie `fixed` no se dibuje (verificado en el scratchpad); por eso va en `content`.
@@ -45,17 +53,17 @@ export function buildCommonStyles(accentColor: string) {
       paddingBottom: 64,
       fontFamily: FONT_FAMILY,
       fontSize: 10,
-      color: pdfColors.text,
+      color: palette.text,
     },
     content: { lineHeight: 1.45 },
     header: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 16 },
     headerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
     logo: { width: 40, height: 40, objectFit: "contain" },
     title: { fontSize: 18, fontWeight: 600, lineHeight: 1.2 },
-    subtitle: { fontSize: 10, color: pdfColors.muted, marginTop: 2 },
+    subtitle: { fontSize: 10, color: palette.muted, marginTop: 2 },
     brand: { alignItems: "flex-end" },
     brandName: { fontSize: 10, fontWeight: 500 },
-    brandProduct: { fontSize: 8, color: pdfColors.muted, marginTop: 1 },
+    brandProduct: { fontSize: 8, color: palette.muted, marginTop: 1 },
     accentRule: { height: 2, backgroundColor: accentColor, marginTop: 14 },
     sectionHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
     sectionMark: { width: 3, height: 12, backgroundColor: accentColor, borderRadius: 1 },
@@ -71,9 +79,9 @@ export function buildCommonStyles(accentColor: string) {
       gap: 12,
       paddingTop: 6,
       borderTopWidth: 0.5,
-      borderTopColor: pdfColors.border,
+      borderTopColor: palette.border,
       fontSize: 8,
-      color: pdfColors.muted,
+      color: palette.muted,
     },
     footerText: { flex: 1 },
   });
@@ -89,13 +97,17 @@ export function PdfHeader({
   subtitle,
   brandName,
   styles,
+  palette,
 }: {
   logoSrc: string | null;
   title: string;
   subtitle: string;
   brandName: string;
   styles: CommonStyles;
+  /** Opcional: repinta los textos secundarios aunque `styles` se haya armado con otra paleta. */
+  palette?: PdfPalette;
 }) {
+  const muted = palette ? { color: palette.muted } : null;
   return (
     <>
       <View style={styles.header}>
@@ -104,12 +116,12 @@ export function PdfHeader({
           {logoSrc ? <Image src={logoSrc} style={styles.logo} /> : null}
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>{title}</Text>
-            <Text style={styles.subtitle}>{subtitle}</Text>
+            <Text style={muted ? [styles.subtitle, muted] : styles.subtitle}>{subtitle}</Text>
           </View>
         </View>
         <View style={styles.brand}>
           <Text style={styles.brandName}>{brandName}</Text>
-          <Text style={styles.brandProduct}>NutriBot</Text>
+          <Text style={muted ? [styles.brandProduct, muted] : styles.brandProduct}>NutriBot</Text>
         </View>
       </View>
       <View style={styles.accentRule} />
@@ -123,19 +135,65 @@ export function PdfFooter({
   pageLabel,
   styles,
   pageWidth,
+  palette,
 }: {
   text: string;
   pageLabel: (pageNumber: number, totalPages: number) => string;
   styles: CommonStyles;
   pageWidth: number;
+  /** Opcional: repinta el separador y el texto aunque `styles` se haya armado con otra paleta. */
+  palette?: PdfPalette;
 }) {
+  const override = palette ? { borderTopColor: palette.border, color: palette.muted } : null;
   return (
-    <View style={styles.footer} fixed>
+    <View style={override ? [styles.footer, override] : styles.footer} fixed>
       <Text style={styles.footerText}>{text}</Text>
       <Text
         style={{ width: pageWidth, textAlign: "right" }}
         render={({ pageNumber, totalPages }) => pageLabel(pageNumber, totalPages)}
       />
+    </View>
+  );
+}
+
+// ─── Bloque de firma (HU-016, D7) ─────────────────────────────────────────────
+
+/** HU-016 (D7): datos del bloque de firma. */
+export type PdfSignatureInput = {
+  image: PdfImage | null; // null → solo línea + aclaración (D8)
+  nameLine: string; // professionalSignatureLines(...).nameLine
+  licenseLine: string | null;
+};
+
+const signatureStyles = StyleSheet.create({
+  block: { marginTop: 32, alignSelf: "flex-end", width: 180, alignItems: "center" },
+  image: { width: 180, height: 45, objectFit: "contain", marginBottom: 2 },
+  rule: { alignSelf: "stretch", borderTopWidth: 0.75, borderTopColor: pdfColors.text, marginBottom: 4 },
+  name: { fontSize: 10, fontWeight: 500, textAlign: "center", lineHeight: 1.3 },
+  license: { fontSize: 9, textAlign: "center", lineHeight: 1.3 },
+});
+
+/**
+ * Bloque de firma al final del contenido: imagen (alto máx. 45 pt, proporción), línea y aclaración
+ * en dos líneas, alineado a la derecha. wrap={false}: si no entra, pasa entero a la página siguiente.
+ * Estilos propios (no depende de buildCommonStyles), así el plan lo reusa sin cambios.
+ */
+export function PdfSignatureBlock({
+  signature,
+  palette = pdfColors,
+}: {
+  signature: PdfSignatureInput;
+  /** Opcional (HU-017c-4): color de la línea de firma. Default `pdfColors`, como antes. */
+  palette?: PdfPalette;
+}) {
+  const src = pdfImageSrc(signature.image);
+  return (
+    <View style={signatureStyles.block} wrap={false}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf/renderer Image, not an <img> */}
+      {src ? <Image src={src} style={signatureStyles.image} /> : null}
+      <View style={{ ...signatureStyles.rule, borderTopColor: palette.text }} />
+      <Text style={signatureStyles.name}>{signature.nameLine}</Text>
+      {signature.licenseLine ? <Text style={signatureStyles.license}>{signature.licenseLine}</Text> : null}
     </View>
   );
 }

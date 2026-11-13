@@ -7,19 +7,20 @@ const Table = React.forwardRef<
   React.HTMLAttributes<HTMLTableElement> & { containerClassName?: string }
 >(({ className, containerClassName, ...props }, ref) => (
   <div className={cn("relative w-full overflow-auto", containerClassName)}>
-    <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
+    <table ref={ref} className={cn("w-full caption-bottom text-callout", className)} {...props} />
   </div>
 ));
 Table.displayName = "Table";
 
 // Encabezado fijo: con un contenedor de alto acotado (containerClassName="max-h-[60vh]") queda pegado arriba.
+// Sin backdrop-filter: Safari tiene bugs con thead sticky + blur (R12 de HU-017).
 const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
   <thead
     ref={ref}
-    className={cn("sticky top-0 z-10 bg-background [&_tr]:border-b", className)}
+    className={cn("sticky top-0 z-10 bg-background/95 [&_tr]:border-b", className)}
     {...props}
   />
 ));
@@ -45,12 +46,15 @@ const TableFooter = React.forwardRef<
 ));
 TableFooter.displayName = "TableFooter";
 
+// Fila navegable (con onClick): cambia de tono en el pointer-down, sin escala (§1; escalar una fila
+// dentro de una tabla se ve roto).
 const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTMLTableRowElement>>(
   ({ className, ...props }, ref) => (
     <tr
       ref={ref}
       className={cn(
-        "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+        "border-b transition-colors duration-hover ease-out-soft hover:bg-overlay-hover data-[state=selected]:bg-primary-soft",
+        props.onClick && "press-none cursor-pointer pressed:bg-overlay-pressed",
         className,
       )}
       {...props}
@@ -66,7 +70,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-10 px-3 text-left align-middle text-xs font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "h-9 px-3 text-left align-middle text-footnote font-semibold text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       numeric && "text-right tabular-nums",
       className,
     )}
@@ -82,7 +86,7 @@ const TableCell = React.forwardRef<
   <td
     ref={ref}
     className={cn(
-      "px-3 py-2.5 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "px-3 py-2.5 align-middle text-callout [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       numeric && "text-right tabular-nums",
       className,
     )}
@@ -95,7 +99,7 @@ const TableCaption = React.forwardRef<
   HTMLTableCaptionElement,
   React.HTMLAttributes<HTMLTableCaptionElement>
 >(({ className, ...props }, ref) => (
-  <caption ref={ref} className={cn("mt-4 text-sm text-muted-foreground", className)} {...props} />
+  <caption ref={ref} className={cn("mt-4 text-footnote text-muted-foreground", className)} {...props} />
 ));
 TableCaption.displayName = "TableCaption";
 

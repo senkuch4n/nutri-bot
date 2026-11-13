@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Separator } from "@/components/primitives/separator";
+import { m } from "motion/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/primitives/tooltip";
 import type { BotShellStatus } from "@/lib/shell";
+import { springs } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import { isActive, navGroups, settingsItem, sidebarItemClass, type NavItem } from "./nav-config";
+import { isActive, navGroups, settingsItem, sidebarItemClass, type NavBadges, type NavItem } from "./nav-config";
+import { useOptimisticPath } from "./use-optimistic-path";
 
 const botStatusMeta: Record<BotShellStatus, { label: string; dot: string }> = {
   connected: { label: "WhatsApp conectado", dot: "bg-success" },
@@ -15,7 +16,7 @@ const botStatusMeta: Record<BotShellStatus, { label: string; dot: string }> = {
   disconnected: { label: "WhatsApp desconectado", dot: "bg-destructive" },
 };
 
-/** Envuelve en Tooltip a la derecha solo cuando la barra está colapsada. */
+/** Keep the trigger mounted while labels fade; only show tooltips in rail mode. */
 function MaybeTooltip({
   collapsed,
   label,
@@ -25,11 +26,10 @@ function MaybeTooltip({
   label: string;
   children: ReactNode;
 }) {
-  if (!collapsed) return <>{children}</>;
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+      {collapsed ? <TooltipContent side="right">{label}</TooltipContent> : null}
     </Tooltip>
   );
 }
@@ -38,29 +38,67 @@ function SidebarLink({
   item,
   collapsed,
   active,
+  count,
   onNavigate,
+  markPending,
+  slide = true,
 }: {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
+  /** HU-011: contador (p. ej. mensajes pendientes). 0 o undefined → no se muestra. */
+  count?: number;
   onNavigate?: () => void;
+  markPending: (href: string, e: React.MouseEvent) => void;
+  /** Indicador que se desliza (`layoutId`). En el menú táctil no: se cierra al navegar. */
+  slide?: boolean;
 }) {
   const Icon = item.icon;
+  const hasCount = typeof count === "number" && count > 0;
+  // El número va en el nombre accesible del link, con contexto ("3 pendientes"); el pill es visual.
+  const accessibleLabel = hasCount ? `${item.label} (${count} pendientes)` : item.label;
   return (
     <MaybeTooltip collapsed={collapsed} label={item.label}>
       <Link
         href={item.href}
-        onClick={onNavigate}
+        onClick={(e) => {
+          markPending(item.href, e);
+          onNavigate?.();
+        }}
         aria-current={active ? "page" : undefined}
-        className={cn(
-          sidebarItemClass,
-          active &&
-            "bg-accent font-medium text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-foreground",
-          collapsed && "justify-center px-0",
-        )}
+        aria-label={accessibleLabel}
+        // Activo: fondo + color + peso + ícono (no solo color; S2).
+        className={cn(sidebarItemClass, active && "font-semibold text-primary [&>svg]:text-primary")}
       >
-        <Icon className="h-4 w-4 shrink-0" aria-hidden />
-        <span className={cn("truncate", collapsed && "sr-only")}>{item.label}</span>
+        {active && slide ? (
+          <m.span
+            layoutId="sidebar-active"
+            aria-hidden
+            transition={springs.indicator}
+            className="absolute inset-0 -z-10 rounded-md bg-primary-soft"
+          />
+        ) : active ? (
+          // Menú del celular: fondo fijo. Sin `layoutId` adentro de un sheet que entra y sale (no hay
+          // nada que deslizar: el menú se cierra al navegar) y sin nodos de proyección en su salida.
+          <span aria-hidden className="absolute inset-0 -z-10 rounded-md bg-primary-soft" />
+        ) : null}
+        <Icon className="size-4 shrink-0" strokeWidth={active ? 2 : 1.75} aria-hidden />
+        {hasCount ? (
+          <>
+            <span className="panel-sidebar-label flex min-w-0 flex-1 items-center gap-2" aria-hidden="true">
+              <span className="truncate">{item.label}</span>
+              {/* Q3: tint, no rojo (el rojo queda para error/destructivo). */}
+              <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-caption font-semibold leading-5 text-primary-foreground tabular-nums">
+                {(count ?? 0) > 99 ? "99+" : count}
+              </span>
+            </span>
+            {collapsed ? (
+              <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary" aria-hidden="true" />
+            ) : null}
+          </>
+        ) : (
+          <span className="panel-sidebar-label truncate" aria-hidden="true">{item.label}</span>
+        )}
       </Link>
     </MaybeTooltip>
   );
@@ -68,23 +106,30 @@ function SidebarLink({
 
 /**
  * Navegación agrupada + pie (Ajustes, estado del bot, cuenta). La usan la sidebar de escritorio
- * (colapsable) y el Sheet del menú en pantallas chicas (siempre expandida).
+ * (colapsable) y el Sheet del menú en pantallas chicas (siempre expandida, `density="touch"`).
+ * El indicador del activo se desliza con `layoutId` (cada instancia va dentro de su `LayoutGroup`).
  */
 export function SidebarContent({
   collapsed = false,
   email,
   botStatus,
   account,
+  badges,
   onNavigate,
+  density = "default",
 }: {
   collapsed?: boolean;
   email?: string | null;
   botStatus: BotShellStatus;
   /** Slot para el botón "Cerrar sesión" (server component con su action inline). */
   account: ReactNode;
+  /** HU-011: contadores por ítem (ver `NavItem.badge`). */
+  badges?: NavBadges;
   onNavigate?: () => void;
+  /** `touch`: ítems de 44 px (menú del celular). */
+  density?: "default" | "touch";
 }) {
-  const pathname = usePathname();
+  const { pathname, markPending } = useOptimisticPath();
   const status = botStatusMeta[botStatus];
 
   return (
@@ -92,21 +137,20 @@ export function SidebarContent({
       {/* Alturas pensadas para que todo (grupos + pie) entre sin scroll en ~650 px de alto
           (notebook 1366×768 con el navegador abierto). El overflow-y-auto queda de red de
           seguridad para alturas menores. Medición en progress/impl_HU-002a.md. */}
-      <nav aria-label="Principal" className="flex-1 overflow-y-auto px-2 pb-2">
+      <nav aria-label="Principal" data-density={density} className="group/nav flex-1 overflow-y-auto px-2 pb-1">
         {navGroups.map((group, i) => (
           <div key={group.label}>
-            {collapsed ? (
-              i > 0 ? <Separator className="my-2" /> : <div className="pt-2" />
-            ) : (
-              <p
-                className={cn(
-                  "px-2 pb-1 text-xs font-medium text-muted-foreground",
-                  i > 0 ? "pt-3" : "pt-2",
-                )}
-              >
-                {group.label}
-              </p>
-            )}
+            <p
+              className={cn(
+                // Títulos compactos: con el pie, todo entra sin scroll en ~634 px (1366×768 con la
+                // barra del navegador). Los ítems conservan su alto (32 px; 44 en el menú táctil).
+                "panel-sidebar-detail px-2 pb-0.5 text-caption font-semibold text-muted-foreground",
+                i > 0 ? "pt-2" : "pt-1.5",
+              )}
+              aria-hidden={collapsed}
+            >
+              {group.label}
+            </p>
             <ul className="space-y-0.5">
               {group.items.map((item) => (
                 <li key={item.href}>
@@ -114,7 +158,10 @@ export function SidebarContent({
                     item={item}
                     collapsed={collapsed}
                     active={isActive(pathname, item.href)}
+                    count={item.badge ? badges?.[item.badge] : undefined}
                     onNavigate={onNavigate}
+                    markPending={markPending}
+                    slide={density === "default"}
                   />
                 </li>
               ))}
@@ -123,45 +170,44 @@ export function SidebarContent({
         ))}
       </nav>
 
-      <div className="mt-auto space-y-0.5 border-t p-2">
+      <div data-density={density} className="group/nav mt-auto space-y-0.5 border-t border-border p-2">
         <SidebarLink
           item={settingsItem}
           collapsed={collapsed}
           active={isActive(pathname, settingsItem.href)}
           onNavigate={onNavigate}
+          markPending={markPending}
+          slide={density === "default"}
         />
 
         <MaybeTooltip collapsed={collapsed} label={status.label}>
           <Link
             href="/ajustes/whatsapp"
+            aria-label={status.label}
             onClick={onNavigate}
-            className={cn(
-              "flex h-7 items-center gap-2.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              collapsed && "justify-center px-0",
-            )}
+            className="flex h-7 items-center gap-2.5 rounded-md px-2 text-footnote text-muted-foreground press-none transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring group-data-[density=touch]/nav:h-11"
           >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-              <span className={cn("h-2 w-2 rounded-full", status.dot)} aria-hidden />
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <span className={cn("size-2 rounded-full", status.dot)} aria-hidden />
             </span>
-            <span className={cn("truncate", collapsed && "sr-only")}>{status.label}</span>
+            <span className="panel-sidebar-label truncate" aria-hidden="true">{status.label}</span>
           </Link>
         </MaybeTooltip>
 
-        {collapsed ? (
-          <MaybeTooltip collapsed label="Cerrar sesión">
-            {account}
-          </MaybeTooltip>
-        ) : (
-          // Cuenta en una sola fila: email (truncado, con title) + botón "Cerrar sesión".
-          <div className="flex items-center gap-1">
-            {email ? (
-              <p className="min-w-0 flex-1 truncate px-2 text-xs text-muted-foreground" title={email}>
-                {email}
-              </p>
-            ) : null}
-            <div className={cn("min-w-0", email ? "shrink-0" : "flex-1")}>{account}</div>
+        <div className="panel-sidebar-account flex items-center gap-1">
+          {email ? (
+            <p
+              className="panel-sidebar-email panel-sidebar-detail min-w-0 flex-1 truncate px-2 text-footnote text-muted-foreground"
+              title={email}
+              aria-hidden={collapsed}
+            >
+              {email}
+            </p>
+          ) : null}
+          <div className={cn("panel-sidebar-signout min-w-0", email ? "shrink-0" : "flex-1")}>
+            <MaybeTooltip collapsed={collapsed} label="Cerrar sesión">{account}</MaybeTooltip>
           </div>
-        )}
+        </div>
       </div>
     </>
   );

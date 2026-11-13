@@ -1,10 +1,15 @@
-import { FOOD_GROUP_SHORT_LABELS, type FoodGroupKey } from "./food-groups";
+import { FOOD_GROUP_SHORT_LABELS, type FoodGroupKey, type FoodSourceKey } from "./food-groups";
 
 export interface AiCatalogFood {
   id: string;
   name: string;
   group: FoodGroupKey;
   kcalPer100: number;
+}
+
+/** SARA 2 is required for new AI plans. Caller supplies active foods. */
+export function selectAiCatalogFoods<T extends { source: FoodSourceKey }>(foods: readonly T[]): readonly T[] {
+  return foods.filter((food) => food.source === "SARA2");
 }
 
 export const AI_CATALOG_MAX_CHARS = 60_000;

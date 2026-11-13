@@ -183,7 +183,6 @@ export const ISAK_REPORT_TEXT = {
   reviewNotice: "Revisá y editá los textos antes de generar el PDF.",
   missingDataNotice: "Faltan datos en el estudio: el PDF va a mostrar «Sin dato» en algunos valores.",
   editStudy: "Editar estudio",
-  licenseMissing: "Tu matrícula no está cargada. Completala en Ajustes para que aparezca en el informe.",
   goToSettings: "Ir a Ajustes",
   stalePdf: "El estudio cambió después de generar este PDF. Generalo de nuevo antes de enviarlo.",
   draftBadge: "Borrador automático",
@@ -344,14 +343,8 @@ export function variationLine(
   return `${d < 0 ? "Bajó" : "Subió"} de ${prev} a ${cur} (${formatSignedFixedEs(d, decimals)})`;
 }
 
-/** "Lic. Ana Pérez · M.P. 123"; sin título: "Ana Pérez · M.P. 123"; sin matrícula: "Lic. Ana Pérez". */
-export function professionalSignature(p: { title: string | null; name: string; licenseNumber: string | null }): string {
-  const title = p.title?.trim() ?? "";
-  const name = p.name.trim();
-  const license = p.licenseNumber?.trim() ?? "";
-  const who = [title, name].filter((s) => s !== "").join(" ");
-  return license === "" ? who : `${who} · ${license}`;
-}
+// HU-016: movida a professional-identity.ts (mismo comportamiento).
+export { professionalSignature } from "./professional-identity";
 
 /** "informe-antropometrico-2026-05-08.pdf" a partir del dayKey de la consulta. */
 export function isakReportFileName(consultationDayKey: string): string {

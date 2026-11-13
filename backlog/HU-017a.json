@@ -1,0 +1,27 @@
+{
+  "id": "HU-017a",
+  "responsable": "senkuch4n",
+  "slug": "rediseno-apple-fundaciones-shell",
+  "titulo": "Rediseño Apple (1/5): fundaciones y shell (tokens, Inter, Motion, componentes base, sidebar, portal, login, página demo)",
+  "origen": "HU-017 partida (docs/hu-rediseno-apple.md, sección 6 y Resoluciones)",
+  "estado": "aprobada",
+  "intentos_revision": 2,
+  "hu": "docs/hu-rediseno-apple.md",
+  "sdd": "Refactorizaciones/rediseno-apple-fundaciones.md",
+  "rama": "feat/hu-017-rediseno-apple",
+  "notas": "HU compartida (paraguas HU-017); esta parte cubre la fila HU-017a de la partición. Corte en la demo después de la fase 6 (decisión del usuario).",
+  "skills_sdd": [
+    "apple-design",
+    "refactor",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "apple-design",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-017a.md",
+  "modelo_ronda2": "opus",
+  "modelo_ronda3": "opus"
+}

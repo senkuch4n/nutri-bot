@@ -1,0 +1,294 @@
+// HU-013: motivo de consulta en createAppointment / updateAppointmentReason (prisma mockeado).
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { messages } from "@nutri-bot/core";
+
+const mocks = vi.hoisted(() => ({
+  getProfessional: vi.fn(),
+  checkSlotAvailable: vi.fn(),
+  enqueueMessage: vi.fn(),
+  prisma: {
+    $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
+    service: { findUniqueOrThrow: vi.fn() },
+    patient: { findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
+    appointment: { create: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
+    consultation: { create: vi.fn(), deleteMany: vi.fn() },
+  },
+}));
+
+vi.mock("../index", () => ({
+  prisma: mocks.prisma,
+  Prisma: { PrismaClientKnownRequestError: class extends Error {} },
+}));
+vi.mock("./availability", () => ({
+  getProfessional: mocks.getProfessional,
+  checkSlotAvailable: mocks.checkSlotAvailable,
+}));
+vi.mock("./outbox", () => ({ enqueueMessage: mocks.enqueueMessage }));
+
+import {
+  createAppointment,
+  InvalidBookingReasonError,
+  setAppointmentStatus,
+  SlotUnavailableError,
+  updateAppointmentReason,
+} from "./appointments";
+
+const TZ = "America/Argentina/Buenos_Aires";
+const STARTS = new Date("2026-10-12T13:00:00Z");
+const SERVICE = { id: "s1", name: "Primera consulta", durationMin: 30, price: 25000, requiresDeposit: false, depositKind: "FIXED", depositValue: 5000 };
+const PATIENT = { id: "p1", name: "Ana (TEST)", phone: "5490000000031", whatsappJid: "5490000000031@s.whatsapp.net" };
+
+const base = { patientId: "p1", serviceId: "s1", startsAt: STARTS };
+
+function createData() {
+  return mocks.prisma.appointment.create.mock.calls[0]![0].data;
+}
+function enqueued(kind: string) {
+  return mocks.enqueueMessage.mock.calls.map((c) => c[0]).filter((m) => m.kind === kind);
+}
+
+describe("createAppointment con motivo (HU-013)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
+    mocks.checkSlotAvailable.mockResolvedValue(true);
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
+      id: "a1",
+      startsAt: data.startsAt,
+      reason: data.reason,
+      status: data.status,
+    }));
+  });
+
+  it("guarda el motivo normalizado y sigue marcando needsGoogleSync", async () => {
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "  Bajar de peso  " });
+    expect(createData().reason).toBe("Bajar de peso");
+    expect(createData().needsGoogleSync).toBe(true);
+  });
+
+  it.each([{ reason: "   " }, {}])("vacío o ausente → null (%j)", async (extra) => {
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, ...extra });
+    expect(createData().reason).toBeNull();
+  });
+
+  it("más de 500 → InvalidBookingReasonError sin leer ni escribir", async () => {
+    await expect(
+      createAppointment({ ...base, createdBy: "PATIENT", reason: "a".repeat(501) }),
+    ).rejects.toBeInstanceOf(InvalidBookingReasonError);
+    expect(mocks.prisma.appointment.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.service.findUniqueOrThrow).not.toHaveBeenCalled();
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+
+  it("la alerta de turno nuevo lleva el motivo (sin seña)", async () => {
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Bajar de peso" });
+    const alerts = enqueued("PROFESSIONAL_ALERT");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].toJid).toBe("pro@s.whatsapp.net");
+    expect(alerts[0].body).toContain("📝 Motivo: Bajar de peso");
+  });
+
+  it("sin motivo la alerta es la de siempre", async () => {
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: null });
+    const alerts = enqueued("PROFESSIONAL_ALERT");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].body).toBe(
+      messages.professionalNewBookingAlert({
+        patientName: PATIENT.name,
+        patientPhone: PATIENT.phone,
+        serviceName: SERVICE.name,
+        startsAt: STARTS,
+        tz: TZ,
+      }),
+    );
+  });
+
+  it("professionalAlertJid reemplaza el destino; null apaga la alerta", async () => {
+    await createAppointment({
+      ...base,
+      createdBy: "PATIENT",
+      notifyPatient: false,
+      reason: "Control",
+      professionalAlertJid: "fake@s.whatsapp.net",
+    });
+    expect(enqueued("PROFESSIONAL_ALERT").map((m) => m.toJid)).toEqual(["fake@s.whatsapp.net"]);
+
+    mocks.enqueueMessage.mockClear();
+    await createAppointment({
+      ...base,
+      createdBy: "PATIENT",
+      notifyPatient: false,
+      reason: "Control",
+      professionalAlertJid: null,
+    });
+    expect(enqueued("PROFESSIONAL_ALERT")).toHaveLength(0);
+  });
+
+  it("con seña guarda el motivo y no avisa todavía", async () => {
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Control" });
+    expect(createData().status).toBe("AWAITING_PAYMENT");
+    expect(createData().reason).toBe("Control");
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+
+  it("desde el panel guarda el motivo, confirma al paciente sin motivo y no alerta", async () => {
+    await createAppointment({ ...base, createdBy: "PROFESSIONAL", reason: "Control mensual" });
+    expect(createData().reason).toBe("Control mensual");
+    expect(mocks.enqueueMessage).toHaveBeenCalledTimes(1);
+    const msg = mocks.enqueueMessage.mock.calls[0]![0];
+    expect(msg.kind).toBe("CONFIRMATION");
+    expect(msg.body).not.toContain("Motivo");
+  });
+});
+
+describe("updateAppointmentReason (HU-013, D5)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: any }) => ({
+      id: "a1",
+      patientId: "p1",
+      reason: data.reason,
+    }));
+  });
+
+  it("actualiza solo el motivo normalizado", async () => {
+    const r = await updateAppointmentReason({ id: "a1", reason: "  Nuevo motivo " });
+    expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
+      where: { id: "a1" },
+      data: { reason: "Nuevo motivo" },
+      select: { id: true, patientId: true, reason: true },
+    });
+    expect(r).toEqual({ id: "a1", patientId: "p1", reason: "Nuevo motivo" });
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+
+  it("vacío → null", async () => {
+    await updateAppointmentReason({ id: "a1", reason: "" });
+    expect(mocks.prisma.appointment.update.mock.calls[0]![0].data).toEqual({ reason: null });
+  });
+
+  it("más de 500 → error sin escribir", async () => {
+    await expect(updateAppointmentReason({ id: "a1", reason: "a".repeat(501) })).rejects.toBeInstanceOf(
+      InvalidBookingReasonError,
+    );
+    expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("createAppointment sella bookedAt (HU-014, D5)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
+    mocks.checkSlotAvailable.mockResolvedValue(true);
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
+      id: "a1",
+      startsAt: data.startsAt,
+      reason: data.reason,
+      status: data.status,
+    }));
+  });
+
+  it("sin seña → bookedAt es el momento de la reserva", async () => {
+    const before = Date.now();
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    const data = createData();
+    expect(data.status).toBe("CONFIRMED");
+    expect(data.bookedAt).toBeInstanceOf(Date);
+    expect(data.bookedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(data.bookedAt.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("con seña (paciente + requiresDeposit) → bookedAt null", async () => {
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    const data = createData();
+    expect(data.status).toBe("AWAITING_PAYMENT");
+    expect(data.bookedAt).toBeNull();
+  });
+
+  it("desde el panel con un servicio con seña → confirmado y sellado", async () => {
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    await createAppointment({ ...base, createdBy: "PROFESSIONAL", notifyPatient: false });
+    expect(createData().bookedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("reservar desarchiva (HU-019, T4/T5)", () => {
+  const UNARCHIVE = { where: { id: "p1", archivedAt: { not: null } }, data: { archivedAt: null } };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
+    mocks.checkSlotAvailable.mockResolvedValue(true);
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mocks.prisma.patient.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
+      id: "a1",
+      startsAt: data.startsAt,
+      reason: data.reason,
+      status: data.status,
+    }));
+  });
+
+  it.each(["PROFESSIONAL", "PATIENT"] as const)("createAppointment (%s) desarchiva dentro de la transacción", async (createdBy) => {
+    const appt = await createAppointment({ ...base, createdBy, notifyPatient: false });
+    expect(appt.id).toBe("a1");
+    expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
+    expect(mocks.prisma.appointment.create.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.prisma.patient.updateMany.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("con seña (AWAITING_PAYMENT) también desarchiva", async () => {
+    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    expect(createData().status).toBe("AWAITING_PAYMENT");
+    expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
+  });
+
+  it("horario no disponible → SlotUnavailableError sin desarchivar", async () => {
+    mocks.checkSlotAvailable.mockResolvedValue(false);
+    await expect(createAppointment({ ...base, createdBy: "PROFESSIONAL" })).rejects.toBeInstanceOf(SlotUnavailableError);
+    expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
+  });
+
+  describe("setAppointmentStatus", () => {
+    function prevAppt(startsAt: Date, status = "NO_SHOW") {
+      return { id: "a1", patientId: "p1", startsAt, status, consultation: null };
+    }
+    beforeEach(() => {
+      mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: any }) => ({ id: "a1", status: data.status }));
+      mocks.prisma.consultation.create.mockResolvedValue({ id: "c1" });
+    });
+
+    it("a CONFIRMED con turno futuro → desarchiva", async () => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(new Date(Date.now() + 86_400_000)));
+      await setAppointmentStatus({ id: "a1", status: "CONFIRMED" });
+      expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
+    });
+
+    it("a CONFIRMED con turno pasado → no desarchiva", async () => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(new Date(Date.now() - 86_400_000)));
+      await setAppointmentStatus({ id: "a1", status: "CONFIRMED" });
+      expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
+    });
+
+    it.each(["COMPLETED", "NO_SHOW"] as const)("a %s (turno futuro) → no desarchiva", async (status) => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(
+        prevAppt(new Date(Date.now() + 86_400_000), "CONFIRMED"),
+      );
+      await setAppointmentStatus({ id: "a1", status });
+      expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
+    });
+  });
+});

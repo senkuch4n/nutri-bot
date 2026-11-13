@@ -297,3 +297,20 @@ describe("HU-008: estudio de un chico", () => {
     expect(r.tissues.adipose.kg).toEqual({ status: "not_for_minors" });
   });
 });
+
+describe("ISAK_TEXT: borrado con Deshacer (HU-017c-3, solo panel)", () => {
+  it("las confirmaciones dicen qué se pierde y ya no dicen que no se puede deshacer", () => {
+    expect(ISAK_TEXT.deleteTitle).toBe("¿Borrar el estudio ISAK?");
+    expect(ISAK_TEXT.deleteDescription).toBe("Se borran las medidas del estudio.");
+    expect(ISAK_TEXT.deleteWithReportDescription).toBe("Se borran las medidas del estudio y su informe.");
+    expect(ISAK_TEXT.deleteLabel).toBe("Borrar estudio");
+    for (const text of [ISAK_TEXT.deleteDescription, ISAK_TEXT.deleteWithReportDescription]) {
+      expect(text).not.toMatch(/deshacer/i);
+    }
+  });
+
+  it("toasts del estudio", () => {
+    expect(ISAK_TEXT.deleted).toBe("Estudio borrado");
+    expect(ISAK_TEXT.saved).toBe("Estudio guardado");
+  });
+});

@@ -90,7 +90,7 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 
 | Comando | Qué hace |
 |---|---|
-| `npm run dev` | Panel Next.js |
+| `npm run dev` | Panel Next.js (con Turbopack; si algo falla, `npm run dev:webpack --workspace apps/web` usa el compilador anterior) |
 | `npm run dev:bot` | Proceso del bot |
 | `npm run db:migrate` | Crea/aplica migraciones (desarrollo) |
 | `npm run db:deploy` | Aplica migraciones (producción) |
@@ -103,6 +103,8 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 | `npm run sara2:load` | Carga `alimentos.json` en la base: upsert por clave de origen, idempotente, no toca los alimentos propios ni borra (desactiva los que salieron). `-- --dry-run` para ver qué haría |
 | `npm run test:foods --workspace packages/db` | Prueba contra la base de desarrollo la carga de SARA 2 (en transacción revertida) y los alimentos propios (borra por id lo que crea) |
 | `npm run test:confirm-flow --workspace apps/bot` | Simula sin WhatsApp real el flujo de confirmación de turno (sí/no) y las recomendaciones previas a un estudio; crea y borra sus propios datos de prueba |
+| `npm run test:bot-ai --workspace apps/bot` | Simula sin WhatsApp real ni API de IA (proveedor falso) la opción 5 del bot (preguntas con IA): tools, límites, errores, derivación con 0 y retención; crea y borra sus propios datos de prueba |
+| `npm run test:booking-reason --workspace apps/bot` | Simula sin WhatsApp real el paso del motivo de consulta al reservar (HU-013): salteo, muy corto/largo, comandos, audio, alerta con el motivo recortado, seña, edición y privacidad frente a la IA; crea y borra sus propios datos de prueba |
 
 ## Despliegue (VPS con Docker)
 
@@ -121,6 +123,10 @@ La carga de SARA 2 va **después** de `migrate deploy` y se puede repetir en cad
 `packages/db/data/sara2/alimentos.json` (versionado), no necesita `pdftotext` y nunca toca los
 alimentos propios. Si la imagen del bot no trae `tsx`, correrla desde una máquina de desarrollo
 con la `DATABASE_URL` de producción por túnel: `DATABASE_URL=… npx tsx packages/db/scripts/sara2/load.ts`.
+
+(Opcional, HU-018d) Convertir las "Unidad de referencia" legibles (`1 taza ≈ 180 g`) en medidas caseras:
+`npm run measures:convert-hints:prod --workspace packages/db` corre en seco e imprime el reporte; si está
+bien, repetir con `-- --apply` (una transacción, idempotente, no toca `unitHint` ni los planes).
 
 ## Historias de usuario cubiertas
 
@@ -201,9 +207,10 @@ Auth.js — es un token HMAC con `AUTH_SECRET` sin estado en el servidor.
 
 ### Mercado Pago (cobros)
 
-Para que funcione de verdad, completá `MERCADOPAGO_ACCESS_TOKEN` en `.env` (credenciales de prueba
-mientras se testea, de producción para cobrar). Con el token vacío, reservar un servicio con seña
-por WhatsApp falla al intentar generar el link de pago — no rompe el resto del bot.
+Las señas se cobran en la cuenta de Mercado Pago que la profesional conecta desde **Ajustes →
+Mercado Pago** (HU-023, ver abajo). Sin cuenta conectada, el bot no reserva servicios con seña:
+le contesta al paciente que la seña no está disponible y le avisa a la profesional (como mucho un
+aviso cada 24 h) — no rompe el resto del bot.
 
 El webhook de Mercado Pago pega contra `${AUTH_URL}/api/webhooks/mercadopago`: en producción
 `AUTH_URL` ya es una URL pública, pero en desarrollo local (`localhost`) Mercado Pago no puede
@@ -212,6 +219,32 @@ con algo como `ngrok` y setear `AUTH_URL` a esa URL pública mientras se prueba.
 
 Una reserva con seña queda en estado "Esperando pago" (no se confirma ni bloquea el turno en la
 agenda visible) y se libera sola a los 15 minutos si no se completa el pago.
+
+### Mercado Pago: vincular la cuenta (HU-023)
+
+1. **Aplicación "Numa"** (Mercado Pago Developers → Tus integraciones → Numa):
+   - URL de redireccionamiento exacta: `https://<dominio>/api/mercadopago/oauth/callback` (el origen
+     de `AUTH_URL` + esa ruta; hoy `https://169-58-151-56.sslip.io/api/mercadopago/oauth/callback`).
+     Si cambia el dominio, hay que actualizarla en la aplicación.
+   - **Habilitar PKCE** (el panel manda `code_challenge` S256).
+   - Confirmar que los permisos incluyen `offline_access`: sin eso Mercado Pago no deja renovar el
+     permiso y la cuenta queda "Hay que reconectar" a los 180 días.
+   - Notificaciones (webhooks) con la clave secreta = `MERCADOPAGO_WEBHOOK_SECRET`.
+2. **Variables** (`.env` / `deploy/.env`, en web **y** bot): `MERCADOPAGO_CLIENT_ID`,
+   `MERCADOPAGO_CLIENT_SECRET` y `MERCADOPAGO_TOKEN_KEY` (`openssl rand -base64 32`; cifra los tokens
+   en la base, así una copia de la base sola no alcanza para usarlos). Cambiar la clave obliga a
+   reconectar. El bot también necesita `AUTH_URL` (renueva el permiso una vez por día).
+3. **Conectar** desde Ajustes → Mercado Pago con la cuenta que cobra (hoy la de Joel; después la de
+   la Lic. Ponce: "Reconectar" con su cuenta).
+4. **Pruebas sin plata:** crear usuarios de prueba (vendedor + comprador) desde la cuenta de
+   developers dueña de "Numa". En dev se conecta el vendedor de prueba y se paga con el comprador
+   (`MERCADOPAGO_SANDBOX=true npm run test:mercadopago-sandbox --workspace apps/bot`). En producción
+   solo se aceptan cuentas reales (`live_mode`). Para desarrollo sin OAuth existe el respaldo
+   explícito `MERCADOPAGO_ALLOW_ENV_TOKEN=true` + `MERCADOPAGO_ACCESS_TOKEN` (ignorado con
+   `NODE_ENV=production`).
+5. **Cambiar de cuenta o desconectar** cancela las señas pendientes de la cuenta anterior y les
+   avisa a esos pacientes (como cuando vence la seña). La confirmación de "Desconectar" lo advierte.
+6. Después de conectar en producción, borrar `MERCADOPAGO_ACCESS_TOKEN` del `.env` del VPS.
 
 Backlog de historias inspiradas en NutriDesk (competencia), con las épicas pendientes:
 [`docs/historias-usuario-nutridesk.md`](docs/historias-usuario-nutridesk.md).

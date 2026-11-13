@@ -279,19 +279,19 @@ export function getMissingFormulaData(input: FormulaDataPresence): MissingFormul
 }
 
 /** null si la lista está vacía. Si no, el aviso con los faltantes y dónde se cargan los que
- *  no son de la tarjeta "Datos para cálculos". */
+ *  no se editan en "Editar datos" (HU-017c-2: las pestañas "Datos" y "Evolución" pasaron a "Editar datos" e "Historial"). */
 export function missingFormulaDataMessage(
   items: ReadonlyArray<MissingFormulaDataItem>,
 ): string | null {
   if (items.length === 0) return null;
   const has = (key: MissingFormulaDataKey) => items.some((i) => i.key === key);
   const sentences = [`Faltan datos para los cálculos: ${items.map((i) => i.label).join(", ")}.`];
-  if (has("birthDate")) sentences.push('La fecha de nacimiento se carga en "Datos".');
+  if (has("birthDate")) sentences.push('La fecha de nacimiento se carga en "Editar datos".');
   const missingWeight = has("weight");
   const missingHeight = has("height");
-  if (missingWeight && missingHeight) sentences.push('El peso y la talla se cargan en "Evolución".');
-  else if (missingWeight) sentences.push('El peso se carga en "Evolución".');
-  else if (missingHeight) sentences.push('La talla se carga en "Evolución".');
+  if (missingWeight && missingHeight) sentences.push('El peso y la talla se cargan en "Historial".');
+  else if (missingWeight) sentences.push('El peso se carga en "Historial".');
+  else if (missingHeight) sentences.push('La talla se carga en "Historial".');
   return sentences.join(" ");
 }
 

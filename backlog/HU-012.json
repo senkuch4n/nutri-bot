@@ -1,0 +1,27 @@
+{
+  "id": "HU-012",
+  "responsable": "senkuch4n",
+  "slug": "preguntas-bot-ia",
+  "titulo": "Preguntas al bot con IA (servicios, turnos, precios)",
+  "origen": "hus-last-meet.md (reunión con la nutricionista)",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-preguntas-bot-ia.md",
+  "sdd": "Refactorizaciones/preguntas-bot-ia.md",
+  "rama": "feat/hu-012-preguntas-bot-ia",
+  "notion": "https://app.notion.com/p/3ed6bad61c798113a6e0f7169e96b098",
+  "notas": "Borrador: como paciente necesito poder preguntarle al bot dudas a través de IA para poder resolver cualquier duda que tenga respecto a los servicios, turnos, etc.",
+  "skills_sdd": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "claude-api",
+    "ui-styling",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-012.md"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "HU-018",
+  "responsable": "senkuch4n",
+  "slug": "plan-recetas-buscador",
+  "titulo": "Armar comidas del plan con recetas, colaciones y guarniciones (buscador estilo Google Shopping, macros en gramos o medidas caseras)",
+  "origen": "Pedido del usuario 2026-10-03 · cubre EP-022 (recetas), EP-021 (medidas caseras), EP-057 (macros diarios), EP-058 (viandas)",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-plan-recetas-buscador.md",
+  "sdd": null,
+  "rama": "feat/hu-018-plan-recetas-buscador",
+  "notas": "Paraguas (validada 2026-10-03): partida en HU-018a (recetario), HU-018b (menú semanal), HU-018c (buscador con impacto por día), HU-018d (medidas caseras, sin afinar). Orden: 018b → 018a → 018c. Decisiones: D1 menú semanal, D3 todo con atribución (licencia la confirma Daiana fuera del sistema), N1 promedio + rango, N2 018b la hace senkuch4n avisándole a imleticio. Material local en docs/recetarios/ y docs/planes-alimentacion/ (gitignored)."
+}

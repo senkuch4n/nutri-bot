@@ -1,17 +1,12 @@
 "use client";
 
-import { Inter } from "next/font/google";
 import { CircleAlert } from "lucide-react";
 import { StatusScreen } from "@/components/status-screen";
 import { Button } from "@/components/ui";
+import { sans } from "./fonts";
 import "./globals.css";
 
 // global-error reemplaza al layout raíz, así que carga la misma fuente para que --font-sans exista.
-const sans = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
 
 /** Errores del layout raíz o de los layouts de grupo, que `error.tsx` no atrapa. */
 export default function GlobalError({

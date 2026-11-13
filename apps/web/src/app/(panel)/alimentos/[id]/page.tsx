@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import { Copy } from "lucide-react";
 import { formatKcalOneDecimal, atwaterKcal, kcalDiffersFromAtwater, readFoodNutrients } from "@nutri-bot/core";
-import { getFood, getFoodUsage } from "@nutri-bot/db/domain";
-import { Alert, Badge, ButtonLink, Card, PageHeader } from "@/components/ui";
+import { getFood, getFoodUsage, listFoodMeasures } from "@nutri-bot/db/domain";
+import { Alert, Badge, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
+import { FoodMeasuresCard } from "@/components/food-measures/food-measures-card";
 import { foodGroupLabel } from "@/lib/food-groups";
 import { FoodEnergyCard } from "../food-energy-card";
 import { FoodMainNutrientsCard, FoodMoreNutrients } from "../food-nutrients";
@@ -24,7 +24,7 @@ function usageText(u: { plans: number; templates: number }): string {
 
 export default async function AlimentoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [food, usage] = await Promise.all([getFood(id), getFoodUsage(id)]);
+  const [food, usage, measures] = await Promise.all([getFood(id), getFoodUsage(id), listFoodMeasures(id)]);
   if (!food) notFound();
 
   const isSara = food.source === "SARA2";
@@ -62,12 +62,6 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
                 {food.active ? "Desactivar" : "Activar"}
               </SubmitButton>
             </form>
-            {isSara ? (
-              <ButtonLink href={`/alimentos/nuevo?desde=${food.id}`} variant="secondary" size="sm">
-                <Copy aria-hidden />
-                Duplicar como propio
-              </ButtonLink>
-            ) : null}
           </div>
         }
       />
@@ -75,8 +69,7 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
       <div className="mb-6 max-w-3xl space-y-3">
         {isSara ? (
           <Alert tone="info">
-            Dato oficial de SARA 2 (Ministerio de Salud, 2022). No se puede editar: si necesitás otros valores,
-            duplicalo como propio.
+            Dato oficial de SARA 2 (Ministerio de Salud, 2022). No se puede editar.
           </Alert>
         ) : null}
         {kcalDiffers ? (
@@ -103,6 +96,14 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
         )}
         {inUse ? <p className="text-sm text-muted-foreground">{usageText(usage)}</p> : null}
       </div>
+
+      {/* HU-018d: medidas caseras, arriba de Energía (editable también en SARA 2). */}
+      <FoodMeasuresCard
+        food={{ id: food.id, name: food.name, kcalPer100 }}
+        measures={measures}
+        isSara={isSara}
+        unitHint={food.unitHint}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <FoodEnergyCard
@@ -150,7 +151,6 @@ export default async function AlimentoPage({ params }: { params: Promise<{ id: s
               addedSugarPer100: str(food.addedSugarPer100),
               saturatedFatPer100: str(food.saturatedFatPer100),
               cholesterolMgPer100: str(food.cholesterolMgPer100),
-              unitHint: food.unitHint ?? "",
             }}
           />
         </Card>

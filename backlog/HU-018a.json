@@ -1,0 +1,27 @@
+{
+  "id": "HU-018a",
+  "responsable": "senkuch4n",
+  "intentos_revision": 0,
+  "hu": "docs/hu-plan-recetas-buscador.md",
+  "sdd": "Refactorizaciones/recetario.md",
+  "rama": "feat/hu-018a2-carga-asistida",
+  "origen": "Partición de HU-018",
+  "slug": "recetario",
+  "titulo": "Recetario: modelo de recetas, pantalla /recetas, macros por porción con SARA 2, carga asistida a borradores",
+  "estado": "aprobada",
+  "notas": "Va después de 018b.",
+  "skills_architect": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "entregas": {
+    "018a-1": "aprobada y mergeada (PR #23)",
+    "018a-2": "aprobada (2026-10-03, PR a develop)"
+  },
+  "modelo": "opus",
+  "skills": [
+    "apple-design",
+    "ui-ux-pro-max"
+  ],
+  "modelo_reviewer": "opus"
+}

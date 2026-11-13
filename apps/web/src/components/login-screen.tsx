@@ -1,6 +1,6 @@
 import { signIn } from "@/auth";
 import { GoogleG, Wordmark } from "@/components/brand";
-import { Button } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
 
 /**
  * Pantalla de login sobria, compartida por /login e /inicio (D10). Es pública: no muestra el
@@ -8,30 +8,31 @@ import { Button } from "@/components/ui";
  */
 export function LoginScreen() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted px-4 py-12">
+    <main className="grid min-h-[100dvh] place-items-center bg-grouped px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex justify-center">
           <Wordmark />
         </div>
-        <div className="rounded-lg border bg-card p-8">
-          <h1 className="text-balance text-xl font-semibold">Ingresá al panel</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+        {/* Entrada sobria (§16 Delight sin espectáculo): sube 8 px con fundido; solo fundido con movimiento reducido. */}
+        <div className="rounded-xl bg-card p-8 shadow-card motion-safe:animate-rise-in motion-reduce:animate-fade-in-content more-contrast:border more-contrast:border-input">
+          <h1 className="text-balance text-title-1">Ingresá al panel</h1>
+          <p className="mt-2 text-body text-muted-foreground">
             Usá tu cuenta de Google autorizada para continuar.
           </p>
           <form
-            className="mt-6"
             action={async () => {
               "use server";
               await signIn("google", { redirectTo: "/" });
             }}
           >
-            <Button type="submit" variant="secondary" size="lg" className="w-full">
+            {/* Spinner apenas se envía (§1): Google tarda en responder. */}
+            <SubmitButton variant="secondary" size="lg" className="mt-6 w-full" pendingLabel="Abriendo Google…">
               <GoogleG />
               Entrar con Google
-            </Button>
+            </SubmitButton>
           </form>
         </div>
-        <p className="mt-6 text-center text-xs text-muted-foreground">
+        <p className="mt-6 text-center text-footnote text-muted-foreground">
           Si no podés entrar, pedí que sumen tu correo a la lista de acceso.
         </p>
       </div>

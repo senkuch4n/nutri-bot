@@ -49,7 +49,7 @@ cambio (web o bot). Tu documento tiene que dejar eso a la vista.
 
 - ❌ No edites nada en `apps/` ni `packages/`.
 - ❌ No crees ni apliques migraciones, ni modifiques datos: solo inspección.
-- ❌ No toques `backlog.json`.
+- ❌ No toques `backlog/`.
 - ✅ Si hay una ambigüedad técnica (no de negocio, eso ya lo validó el
   usuario), dejala como pregunta explícita en el documento y devolvé
   `bloqueada`.

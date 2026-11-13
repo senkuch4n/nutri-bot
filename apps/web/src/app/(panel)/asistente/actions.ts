@@ -14,7 +14,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "buscar_paciente",
-      description: "Busca pacientes por nombre o teléfono. Devuelve id, nombre y teléfono de las coincidencias.",
+      description: "Busca pacientes por nombre o teléfono, incluidas las archivadas. Devuelve id, nombre, teléfono y si está archivada.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "Nombre o teléfono a buscar" } },
@@ -27,7 +27,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "resumen_paciente",
       description:
-        "Ficha clínica, sexo, edad, actividad física, objetivo nutricional, último peso registrado, plan activo y próximo turno de un paciente puntual, dado su id.",
+        "Ficha clínica, sexo, edad, actividad física, objetivo nutricional, último peso registrado, plan activo y próximo turno de un paciente puntual, dado su id. Informa también archivada_el: la fecha en que se archivó, o null si está activa.",
       parameters: {
         type: "object",
         properties: { patientId: { type: "string" } },

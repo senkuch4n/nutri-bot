@@ -1,14 +1,16 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@nutri-bot/db";
-import { getPlan, listFoods } from "@nutri-bot/db/domain";
-import { sumMacros } from "@nutri-bot/core";
+import { getPlan, getPlanConsultationId, getPlanTarget, listFoods, listMeasuresForPicker } from "@nutri-bot/db/domain";
+import { computeAgeYears, computePlanMicronutrients, formatInTimeZone } from "@nutri-bot/core";
 import { getProfessional } from "@/lib/professional";
 import { formatDateTime } from "@nutri-bot/core";
 import { Card, PageHeader } from "@/components/ui";
-import { MacroTotals } from "@/components/macro-totals";
 import { MealsEditor } from "@/components/meals-editor";
-import { toMealView } from "@/lib/meal-view";
-import { calculateAge } from "@/lib/age";
+import { initialDayFor } from "@/components/weekly-menu/day-param";
+import type { PlanTargetView } from "@/components/weekly-menu/day-target-strip";
+import { toMealView, toMicronutrientItems } from "@/lib/meal-view";
+import { PlanMicronutrientsSection } from "@/components/plan-micronutrients";
+import { PlanSectionsEditor } from "@/components/plan-sections/plan-sections-editor";
 import { PlanMetaForm } from "./plan-meta-form";
 import { PlanPdfActions } from "./plan-pdf-actions";
 import { DeletePlanButton } from "./delete-plan-button";
@@ -26,14 +28,19 @@ const fmtKg = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 });
 
 export default async function PlanDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; planId: string }>;
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id, planId } = await params;
-  const [plan, foods, pro] = await Promise.all([
+  const query = (await searchParams) ?? {};
+  const [plan, foods, pro, planTarget, measures] = await Promise.all([
     getPlan(planId),
-    listFoods({ activeOnly: true }),
+    listFoods({ activeOnly: true, source: "SARA2" }),
     getProfessional(),
+    getPlanTarget(planId),
+    listMeasuresForPicker(),
   ]);
   if (!plan || plan.patientId !== id) notFound();
 
@@ -45,8 +52,28 @@ export default async function PlanDetailPage({
     }),
   ]);
   const meals = toMealView(plan.meals);
-  const totals = sumMacros(meals.flatMap((m) => m.items.map((i) => i.macros).filter((m) => m !== null)));
-  const age = patient.birthDate ? calculateAge(patient.birthDate) : null;
+  // HU-018b (D7): objetivo = prescripción de la consulta que indicó el plan, o la más reciente.
+  const target: PlanTargetView | null = planTarget
+    ? {
+        kcal: planTarget.kcal,
+        protein: planTarget.protein,
+        carbs: planTarget.carbs,
+        fat: planTarget.fat,
+        sourceLabel: `Objetivo: consulta del ${formatInTimeZone(planTarget.consultedAt, pro.timezone, "dd/MM/yyyy")}`,
+      }
+    : null;
+  // D11: sin objetivo, el aviso lleva a la consulta del plan o, si no tiene, a la pestaña Consultas.
+  const planConsultationId = target ? null : await getPlanConsultationId(plan.id);
+  const targetMissingHref = target
+    ? null
+    : planConsultationId
+      ? `/pacientes/${id}/consultas/${planConsultationId}`
+      : `/pacientes/${id}?tab=consultas`;
+  const at = new Date();
+  const micronutrients = computePlanMicronutrients(
+    toMicronutrientItems(plan.meals), patient, at, pro.timezone,
+  );
+  const age = patient.birthDate ? computeAgeYears(patient.birthDate, at, pro.timezone) : null;
   const latestWeight = latestEntry?.weightKg ? Number(latestEntry.weightKg) : null;
 
   const description = [
@@ -66,14 +93,10 @@ export default async function PlanDetailPage({
         action={<DeletePlanButton planId={plan.id} patientId={id} />}
       />
 
-      {/* Totales del plan: quedan a la vista mientras se editan las comidas. */}
-      <div className="sticky top-14 z-10 -mx-6 mb-6 bg-background px-6 py-3 lg:top-0 lg:-mx-10 lg:px-10">
-        <MacroTotals totals={totals} />
-      </div>
-
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
         <div className="space-y-6">
-          {plan.meals.length === 0 ? (
+          {/* HU-018b: la IA corre si el plan no tiene ítems (las comidas por defecto están vacías). */}
+          {!plan.meals.some((meal) => meal.items.length > 0) ? (
             <Card title="Armar con IA">
               <AiPlanForm planId={plan.id} patientId={id} />
             </Card>
@@ -83,12 +106,24 @@ export default async function PlanDetailPage({
             ownerId={plan.id}
             ownerField="planId"
             meals={meals}
-            foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source }))}
+            foods={foods.map((f) => ({ id: f.id, name: f.name, group: f.group, source: f.source, kcalPer100: Number(f.kcalPer100) }))}
+            measures={measures}
             addMealAction={addPlanMealAction}
             deleteMealAction={deletePlanMealAction}
             addItemAction={addPlanMealItemAction}
             deleteItemAction={deletePlanMealItemAction}
             showMacros
+            kind="plan"
+            target={target}
+            targetMissingHref={targetMissingHref}
+            initialDay={initialDayFor(query.dia, plan.meals)}
+          />
+          <PlanMicronutrientsSection result={micronutrients} />
+          {/* HU-020 (D9): textos del plan (recomendaciones, reemplazos…). */}
+          <PlanSectionsEditor
+            kind="plan"
+            ownerId={plan.id}
+            sections={plan.sections.map(({ id: sectionId, title, body }) => ({ id: sectionId, title, body }))}
           />
         </div>
 

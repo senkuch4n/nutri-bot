@@ -8,7 +8,6 @@ import {
   FoodNotEditableError,
   InvalidOwnFoodError,
   applyAtwaterKcal,
-  createOwnFood,
   findFoodNameConflicts,
   getFood,
   setFoodActive,
@@ -50,7 +49,7 @@ const ownFoodSchema = z.object({
   saturatedFatPer100: optionalNumber(100),
   sodiumMgPer100: optionalNumber(100000),
   cholesterolMgPer100: optionalNumber(10000),
-  unitHint: optionalText(120),
+  // HU-018d (D9): sin unitHint. El formulario ya no lo manda y domain no lo toca si falta la clave.
   confirmSaraDuplicate: z.literal("1").optional(),
 });
 
@@ -89,7 +88,6 @@ function parseOwnFood(formData: FormData): Parsed {
       addedSugarPer100: d.addedSugarPer100,
       saturatedFatPer100: d.saturatedFatPer100,
       cholesterolMgPer100: d.cholesterolMgPer100,
-      unitHint: d.unitHint,
     },
   };
 }
@@ -97,7 +95,7 @@ function parseOwnFood(formData: FormData): Parsed {
 function errorState(err: unknown): OwnFoodState {
   if (err instanceof DuplicateOwnFoodNameError) return { ok: false, error: "Ya tenés un alimento propio con ese nombre." };
   if (err instanceof FoodNotEditableError) {
-    return { ok: false, error: "Los alimentos de SARA 2 no se editan. Duplicalo como propio." };
+    return { ok: false, error: "Los alimentos de SARA 2 no se editan." };
   }
   if (err instanceof InvalidOwnFoodError) {
     const first = err.issues[0];
@@ -106,21 +104,8 @@ function errorState(err: unknown): OwnFoodState {
   throw err;
 }
 
-export async function createOwnFoodAction(_prev: OwnFoodState, formData: FormData): Promise<OwnFoodState> {
-  const parsed = parseOwnFood(formData);
-  if (!parsed.ok) return parsed.state;
-  if (!parsed.confirmSaraDuplicate) {
-    const { own, sara } = await findFoodNameConflicts(parsed.input.name);
-    if (own) return { ok: false, error: "Ya tenés un alimento propio con ese nombre." };
-    if (sara) return { ok: false, saraDuplicate: sara };
-  }
-  try {
-    const food = await createOwnFood(parsed.input);
-    revalidatePath("/alimentos");
-    return { ok: true, foodId: food.id };
-  } catch (err) {
-    return errorState(err);
-  }
+export async function createOwnFoodAction(): Promise<OwnFoodState> {
+  return { ok: false, error: "La creación de alimentos propios ya no está disponible. Usá la base SARA 2." };
 }
 
 export async function updateOwnFoodAction(

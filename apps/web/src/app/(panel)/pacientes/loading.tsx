@@ -1,16 +1,17 @@
 import { Skeleton } from "@/components/primitives/skeleton";
-import { TableSkeleton } from "@/components/skeletons";
+import { GroupedListSkeleton } from "@/components/skeletons";
 
+// Misma geometría que la lista (HU-017c-1, SDD 5.6): título, buscador de 48 px, contador y filas de 56 px.
 export default function PacientesLoading() {
   return (
     <div role="status" aria-busy="true">
       <span className="sr-only">Cargando…</span>
-      <div className="mb-8 space-y-3">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-4 w-80 max-w-full" />
+      <Skeleton className="mb-8 h-8 w-40" />
+      <div className="max-w-3xl">
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="mb-3 mt-3.5 h-3 w-24" />
+        <GroupedListSkeleton rows={8} bare />
       </div>
-      <Skeleton className="mb-4 h-9 w-72 max-w-full" />
-      <TableSkeleton rows={8} columns={3} bare />
     </div>
   );
 }

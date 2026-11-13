@@ -1,4 +1,6 @@
 import { formatDate, formatDateTime, formatPrice, formatTime } from "./format";
+import { reasonForAlert } from "./booking-reason";
+import { PAYMENT_METHODS } from "./payment-methods";
 
 export const MENU = `¡Hola! 👋 Soy el asistente de turnos. ¿Qué necesitás?
 
@@ -12,12 +14,12 @@ Respondé con el número de la opción.`;
 
 export const ASK_NAME = "Antes de empezar, ¿cómo es tu nombre completo?";
 
-export function greetByName(name: string): string {
-  return `¡Gracias, ${name}! 🙌\n\n${MENU}`;
+export function greetByName(name: string, menuText: string = MENU): string {
+  return `¡Gracias, ${name}! 🙌\n\n${menuText}`;
 }
 
-export function welcomeBack(name: string): string {
-  return `¡Hola de nuevo, ${name}! 👋\n\n${MENU}`;
+export function welcomeBack(name: string, menuText: string = MENU): string {
+  return `¡Hola de nuevo, ${name}! 👋\n\n${menuText}`;
 }
 
 export const NOT_UNDERSTOOD = `No entendí esa respuesta. Escribí *menú* para ver las opciones.`;
@@ -46,18 +48,26 @@ export function askSlot(slots: Date[], tz: string): string {
 
 export const NO_SLOTS = `No hay horarios disponibles para ese día. Escribí *menú* y probá con otro.`;
 
+/** HU-013: línea del motivo (resumen al paciente y alerta). */
+export function bookingReasonLine(reason: string): string {
+  return `📝 Motivo: ${reason}`;
+}
+
 export function confirmBooking(params: {
   serviceName: string;
   startsAt: Date;
   price: number | string;
   tz: string;
   currency: string;
+  /** HU-013: motivo ya normalizado. null/undefined/"" → sin línea (texto idéntico al de antes). */
+  reason?: string | null;
 }): string {
+  const reasonLine = params.reason ? `\n${bookingReasonLine(params.reason)}` : "";
   return `Confirmás este turno?
 
 📋 *${params.serviceName}*
 🗓️ ${formatDateTime(params.startsAt, params.tz)} hs
-💲 ${formatPrice(params.price, params.currency)}
+💲 ${formatPrice(params.price, params.currency)}${reasonLine}
 
 Respondé *sí* para confirmar o *no* para cancelar.`;
 }
@@ -100,7 +110,29 @@ export function depositExpired(params: { serviceName: string; startsAt: Date; tz
 Si todavía querés un turno, escribí *turno* para volver a intentar.`;
 }
 
+/** HU-023 (D3): al paciente, en BOOK_CONFIRM tras "sí", si el servicio pide seña y no hay cuenta usable. */
+export const DEPOSIT_UNAVAILABLE = `No pude generar el link de pago de la seña en este momento. 😕
+Te aviso a la nutricionista para que te contacte y coordinen el turno. También podés escribir *menú* para ver otras opciones.`;
+
+/** HU-023 (D5): a la profesional (PROFESSIONAL_ALERT a phoneJid), máx. 1 cada 24 h. */
+export function professionalDepositUnavailableAlert(params: {
+  patientName?: string | null;
+  patientPhone: string;
+  serviceName: string;
+}): string {
+  const who = params.patientName ?? params.patientPhone;
+  return `⚠️ ${who} quiso reservar *${params.serviceName}* pero no se pudo generar el link de la seña porque Mercado Pago no está conectado. Conectalo en el panel: Ajustes → Mercado Pago.`;
+}
+
+/** HU-023 (D5): a la profesional, una vez por incidente (revocado / renovación fallida / clave). */
+export const MERCADOPAGO_DISCONNECTED_ALERT = `⚠️ Se desconectó tu cuenta de Mercado Pago en NutriBot, así que por ahora los pacientes no pueden pagar señas. Volvé a conectarla en el panel: Ajustes → Mercado Pago.`;
+
 export const SLOT_TAKEN = `Ese horario se acaba de ocupar. Escribí *menú* para elegir otro.`;
+
+/** HU-013: el horario se ocupó pero el paciente ya había dejado motivo: se conserva y se ofrecen otros días. */
+export function slotTakenKeepReason(dayOptions: { label: string }[]): string {
+  return `Ese horario se acaba de ocupar. 😕 Tu motivo quedó guardado, no hace falta que lo vuelvas a escribir.\n\n${askDay(dayOptions)}`;
+}
 
 export function askWhichToCancel(
   appts: { serviceName: string; startsAt: Date }[],
@@ -142,7 +174,8 @@ export function pricesMessage(serviceLines: string, insurances?: string | null):
   const insuranceLine = items.length
     ? `\n\n🏥 Obras sociales:\n${items.map((i) => `• ${i}`).join("\n")}`
     : "";
-  return `💲 *Precios*\n\n${serviceLines}${insuranceLine}\n\nEscribí *menú* para volver.`;
+  const paymentLine = `\n\n💳 Medios de pago:\n${PAYMENT_METHODS.map((method) => `• ${method}`).join("\n")}`;
+  return `💲 *Precios*\n\n${serviceLines}${insuranceLine}${paymentLine}\n\nEscribí *menú* para volver.`;
 }
 
 export function confirmAttendanceRequest(params: { serviceName: string; startsAt: Date; tz: string }): string {
@@ -168,9 +201,11 @@ export function reminderMessage(params: {
   serviceName: string;
   startsAt: Date;
   tz: string;
+  /** HU-014 (D10): relativeDayPhrase(now, startsAt, tz) ("hoy", "mañana", "en 3 días"…). Obligatorio. */
+  when: string;
 }): string {
   const hi = params.patientName ? `Hola ${params.patientName}! ` : "";
-  return `⏰ ${hi}Te recuerdo tu turno:
+  return `⏰ ${hi}Te recuerdo que tenés turno ${params.when}:
 
 📋 ${params.serviceName}
 🗓️ ${formatDateTime(params.startsAt, params.tz)} hs
@@ -198,12 +233,15 @@ export function professionalNewBookingAlert(params: {
   serviceName: string;
   startsAt: Date;
   tz: string;
+  /** HU-013 (D7): null/undefined/"" → texto idéntico al de antes. */
+  reason?: string | null;
 }): string {
   const who = params.patientName ?? params.patientPhone;
-  return `🔔 ${who} sacó un turno de ${params.serviceName} para el ${formatDateTime(
+  const text = `🔔 ${who} sacó un turno de ${params.serviceName} para el ${formatDateTime(
     params.startsAt,
     params.tz,
   )} hs.`;
+  return params.reason ? `${text}\n${bookingReasonLine(reasonForAlert(params.reason))}` : text;
 }
 
 export function professionalHandoffAlert(params: {
@@ -213,3 +251,77 @@ export function professionalHandoffAlert(params: {
   const who = params.patientName ?? params.patientPhone;
   return `🔔 ${who} quiere hablar con vos por WhatsApp.`;
 }
+
+// --- HU-011: consultas fuera de horario (opción 0) ---
+
+export function afterHoursHandoff(params: { attendFrom: string; attendTo: string }): string {
+  return `🌙 La nutricionista responde consultas de *${params.attendFrom} a ${params.attendTo}*.\n\nSi querés, escribime ahora tu consulta en un mensaje y se la dejo para que la vea a primera hora. 🙂\n\nSi era para un turno, escribí *menú* y lo resolvemos ya mismo.`;
+}
+
+export function inquirySavedAfterHours(params: { attendFrom: string }): string {
+  return `¡Listo! Le dejé tu consulta a la nutricionista. Te va a responder por acá a partir de las *${params.attendFrom}*. 🙌\n\nSi querés agregar algo más, escribilo ahora.`;
+}
+
+export const INQUIRY_SAVED_DAY = `¡Listo! Le pasé tu consulta a la nutricionista. Te va a responder por acá lo antes posible. 🙌\n\nSi querés agregar algo más, escribilo ahora.`;
+
+export const INQUIRY_TEXT_ONLY = `Por ahora solo puedo guardar mensajes de texto. ¿Me la escribís? 🙏`;
+
+export function afterHoursDigest(params: {
+  items: { patientName?: string | null; patientPhone: string; receivedAt: Date }[];
+  tz: string;
+}): string {
+  const n = params.items.length;
+  const head = `🌙 Anoche te dejaron ${n} ${n === 1 ? "consulta" : "consultas"} fuera de horario:`;
+  const lines = params.items.map(
+    (i) => `• ${i.patientName ?? i.patientPhone} (${formatTime(i.receivedAt, params.tz)})`,
+  );
+  return `${head}\n${lines.join("\n")}\n\nLas ves completas en el panel → Mensajes.`;
+}
+
+// --- HU-012: preguntas al bot con IA (opción 5) ---
+
+export const MENU_WITH_QUESTIONS = `¡Hola! 👋 Soy el asistente de turnos. ¿Qué necesitás?
+
+1️⃣ Sacar un turno
+2️⃣ Cancelar un turno
+3️⃣ Ver precios
+4️⃣ Ver mi portal (plan, turnos, evolución)
+5️⃣ Hacer una pregunta
+0️⃣ Hablar con la nutricionista
+
+Respondé con el número de la opción.`;
+
+/** Menú del bot: con la opción 5 solo si la IA está disponible (interruptor + clave). */
+export function menu(p: { withQuestions: boolean }): string {
+  return p.withQuestions ? MENU_WITH_QUESTIONS : MENU;
+}
+
+export const QUESTION_MODE_INTRO = `💬 Escribime tu pregunta sobre servicios, precios, turnos o pagos y te respondo al toque.\n\nTe responde un asistente automático con inteligencia artificial de un proveedor externo: lo que escribas acá se procesa en sus servidores, fuera del país. No da indicaciones de salud ni de alimentación, así que no me cuentes datos personales de salud. Para eso está la nutricionista (opción *0*).\n\nPara volver, escribí *menú*.`;
+
+export const AI_DAILY_LIMIT = `Por hoy ya respondí muchas preguntas tuyas. 🙂 Podés usar el *menú* para turnos y precios, o responder *0* para dejarle tu consulta a la nutricionista.`;
+
+export const AI_TOO_LONG = `Uy, es un mensaje muy largo para mí. ¿Me lo resumís en una pregunta más corta?`;
+
+export const AI_ERROR = `Ahora no puedo responderte. 😕 Probá de nuevo en un rato, escribí *menú* para ver las opciones o respondé *0* para dejarle tu consulta a la nutricionista.`;
+
+export const AI_UNAVAILABLE = `Por ahora no puedo responder preguntas. Escribí *menú* para ver las opciones o respondé *0* para hablar con la nutricionista.`;
+
+export const AI_TEXT_ONLY = `Por ahora solo entiendo preguntas escritas. ¿Me la escribís? 🙏`;
+
+export const AI_OFF_TOPIC = `Solo puedo ayudarte con temas del consultorio: servicios, precios, turnos y pagos. ¿Tenés alguna duda sobre eso?`;
+
+/** Sufijo de una respuesta cortada por max_tokens (SDD P3). */
+export const AI_TRUNCATED_SUFFIX = `\n\nSi necesitás más detalle, preguntame algo más puntual o respondé *0* para dejarle tu consulta a la nutricionista.`;
+
+// --- HU-013: motivo de consulta al reservar ---
+
+export const ASK_BOOKING_REASON = `Contame en pocas palabras el *motivo de la consulta* 📝
+(por ejemplo: bajar de peso, control, alimentación deportiva, un estudio que te pidieron).
+
+Así la nutricionista puede preparar tu turno. Si preferís no decirlo ahora, escribí *saltear*.`;
+
+export const BOOKING_REASON_TOO_SHORT = `No llegué a entenderlo 🙈. Contame el motivo en unas palabras, o escribí *saltear* si preferís no decirlo.`;
+
+export const BOOKING_REASON_TOO_LONG = `¡Gracias por el detalle! Es un poco largo para guardarlo 😅. ¿Me lo resumís en un mensaje más corto? Lo demás se lo podés contar a la nutricionista en la consulta.`;
+
+export const BOOKING_REASON_TEXT_ONLY = `Por ahora solo puedo guardar texto. ¿Me lo escribís? 🙏 Si preferís no decirlo, escribí *saltear*.`;

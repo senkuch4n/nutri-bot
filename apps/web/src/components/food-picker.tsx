@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { searchFoods } from "@nutri-bot/core";
 import { useFoodCatalog, type CatalogFood } from "@/components/food-catalog";
@@ -20,7 +19,14 @@ type Option = { kind: "free" } | { kind: "food"; food: CatalogFood };
  * "combobox con listbox"). Manda el id elegido en `<input type="hidden" name={name}>`
  * ("" = alimento libre). Filtra en el cliente con `searchFoods` (sin round-trips).
  */
-export function FoodPicker({ name = "foodId" }: { name?: string }) {
+export function FoodPicker({
+  name = "foodId",
+  onValueChange,
+}: {
+  name?: string;
+  /** HU-018d: avisa el id elegido ("" = alimento libre) al elegir, al escribir y al resetear. */
+  onValueChange?: (foodId: string) => void;
+}) {
   const { foods } = useFoodCatalog();
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -30,6 +36,12 @@ export function FoodPicker({ name = "foodId" }: { name?: string }) {
   const [selectedId, setSelectedId] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+
+  const onValueChangeRef = useRef(onValueChange);
+  onValueChangeRef.current = onValueChange;
+  useEffect(() => {
+    onValueChangeRef.current?.(selectedId);
+  }, [selectedId]);
 
   const results = useMemo(() => (query.trim() ? searchFoods(foods, query, MAX_RESULTS) : []), [foods, query]);
   const options: Option[] = useMemo(
@@ -182,16 +194,7 @@ export function FoodPicker({ name = "foodId" }: { name?: string }) {
             </p>
           ) : results.length === 0 ? (
             <p className="border-t px-3 py-2 text-xs text-muted-foreground" onMouseDown={(e) => e.preventDefault()}>
-              No hay alimentos que coincidan. Podés agregarlo como alimento libre o crearlo en{" "}
-              <Link
-                href="/alimentos/nuevo"
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-foreground underline underline-offset-2"
-              >
-                Alimentos
-              </Link>
-              .
+              No hay alimentos SARA 2 que coincidan. Podés agregar una descripción como alimento libre, sin composición nutricional.
             </p>
           ) : null}
         </div>

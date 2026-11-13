@@ -1,0 +1,27 @@
+{
+  "project": "nutri-bot",
+  "descripcion": "Reglas del backlog del arnés RDD/SDD. Cada HU vive en backlog/<id>.json (un archivo por HU, para que dos personas no se pisen en los merges).",
+  "reglas": {
+    "estados_activos": [
+      "afinando",
+      "en_arquitectura",
+      "implementando",
+      "en_revision"
+    ],
+    "valid_status": [
+      "no_afinada",
+      "afinando",
+      "afinada_pendiente_validacion",
+      "validada",
+      "en_arquitectura",
+      "arquitectura_lista",
+      "implementando",
+      "en_revision",
+      "aprobada",
+      "rechazada_reintentando",
+      "bloqueada"
+    ],
+    "max_intentos_revision": 2,
+    "max_activas_por_responsable": 1
+  }
+}

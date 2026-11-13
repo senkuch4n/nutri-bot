@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Calculator, Pencil, Trash2 } from "lucide-react";
 import {
   REQUIREMENT_TEXT,
@@ -13,14 +13,18 @@ import {
 } from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { MoreActionsMenu } from "@/components/more-actions-menu";
 import { Alert, Button, ButtonLink, Card } from "@/components/ui";
-import { notify } from "@/lib/notify";
+import { UNDO_TEXT, prescriptionDeletionKey, useDeferredDelete, usePendingDeletion } from "@/lib/deferred-delete";
 import { FormulaDataForm, type FormulaDataValues } from "../../formula-data-form";
 import { FormulaDataSheet } from "../../formula-data-sheet";
 import { deletePrescriptionAction } from "../../prescription-actions";
 import { RequirementCalculator, type CalculatorProps } from "./requirement-calculator";
 
-/** Sección "Requerimiento" del detalle de la consulta (HU-004, 7.3): vacío, calculando o resumen. */
+const TITLE = "Calorías y nutrientes";
+
+/** Sección "Calorías y nutrientes" del detalle de la consulta (HU-004, 7.3; nombre de HU-017c): vacío,
+ *  calculando o resumen. Adentro, la calculadora conserva sus términos clínicos (D11a). */
 export function RequirementSection({
   patientId,
   consultationId,
@@ -30,6 +34,7 @@ export function RequirementSection({
   formulaValues,
   calculator,
   prescription,
+  prescriptionId,
   bodyFatDateLabel,
 }: {
   patientId: string;
@@ -40,24 +45,33 @@ export function RequirementSection({
   formulaValues: FormulaDataValues;
   calculator: CalculatorProps | null;
   prescription: PrescriptionSnapshot | null;
+  /** Id de la fila (null si no hay): la key del borrado diferido va por este id. */
+  prescriptionId: string | null;
   bodyFatDateLabel: string | null;
 }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const confirm = useConfirm();
-  const [deleting, startTransition] = useTransition();
+  const deferDelete = useDeferredDelete();
+  // HU-017c-3: mientras corre el plazo de "Deshacer", el cálculo se ve como borrado. La key va por el id
+  // de la prescripción (ronda 2 de 017c-4): un cálculo nuevo, guardado mientras la key vieja sigue
+  // oculta por `releaseAfterMs`, tiene otro id y se ve. Cuando la página trae `prescription === null`,
+  // la key es la vacía y "Calcular requerimiento" se libera (R5).
+  const deletionKey = prescriptionDeletionKey(prescriptionId);
+  const deleting = usePendingDeletion(deletionKey);
 
   // Confirmación en el handler, fuera de toda transición (React 19: si no, deadlock).
   async function handleDelete() {
     const ok = await confirm({
       title: REQUIREMENT_TEXT.deleteConfirmTitle,
       description: REQUIREMENT_TEXT.deleteConfirmDescription,
-      confirmLabel: "Borrar prescripción",
+      confirmLabel: UNDO_TEXT.calculation.confirmLabel,
     });
     if (!ok) return;
-    startTransition(async () => {
-      const res = await deletePrescriptionAction(patientId, consultationId);
-      if (res.ok) notify.saved(REQUIREMENT_TEXT.deleted);
-      else notify.error(res.error);
+    deferDelete({
+      key: deletionKey,
+      message: REQUIREMENT_TEXT.deleted,
+      undoneMessage: UNDO_TEXT.calculation.undone,
+      commit: () => deletePrescriptionAction(patientId, consultationId),
     });
   }
 
@@ -78,8 +92,8 @@ export function RequirementSection({
             </FormulaDataSheet>
           ) : null}
           {missingBirthDate ? (
-            <ButtonLink href={`/pacientes/${patientId}?tab=datos`} variant="secondary" size="sm">
-              Ir a Datos
+            <ButtonLink href={`/pacientes/${patientId}?editar=datos`} variant="secondary" size="sm">
+              Editar datos
             </ButtonLink>
           ) : null}
         </div>
@@ -90,7 +104,7 @@ export function RequirementSection({
   if (mode === "edit" && calculator) {
     const editing = prescription !== null;
     return (
-      <Card title="Requerimiento" description="Se recalcula al cambiar cualquier dato.">
+      <Card title={TITLE} description="Se recalcula al cambiar cualquier dato.">
         <RequirementCalculator
           patientId={patientId}
           consultationId={consultationId}
@@ -103,16 +117,31 @@ export function RequirementSection({
     );
   }
 
-  if (prescription === null) {
+  if (prescription === null || deleting) {
+    const waitId = `${consultationId}-calculo-espera`;
+    // Solo se espera mientras el cálculo borrado sigue en la página (plazo de "Deshacer" o commit en curso).
+    const waitingUndo = deleting && prescription !== null;
     return (
-      <Card title="Requerimiento">
+      <Card title={TITLE}>
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">{REQUIREMENT_TEXT.emptyInConsultation}</p>
+          <p className="text-body text-muted-foreground">{REQUIREMENT_TEXT.emptyInConsultation}</p>
           {blocking}
-          <Button type="button" disabled={calculator === null} onClick={() => setMode("edit")}>
+          {/* Mientras corre el "Deshacer" el cálculo todavía existe: uno nuevo se borraría con él. */}
+          <Button
+            type="button"
+            size="lg"
+            disabled={calculator === null || waitingUndo}
+            aria-describedby={waitingUndo ? waitId : undefined}
+            onClick={() => setMode("edit")}
+          >
             <Calculator aria-hidden />
             Calcular requerimiento
           </Button>
+          {waitingUndo ? (
+            <p id={waitId} className="text-footnote text-muted-foreground">
+              Vas a poder calcular de nuevo cuando se cierre el aviso de “Deshacer”.
+            </p>
+          ) : null}
         </div>
       </Card>
     );
@@ -120,23 +149,31 @@ export function RequirementSection({
 
   return (
     <Card
-      title="Requerimiento"
+      title={TITLE}
       actions={
         <>
           <Button
             type="button"
             variant="secondary"
-            size="sm"
-            disabled={calculator === null || deleting}
+            size="lg"
+            disabled={calculator === null}
             onClick={() => setMode("edit")}
           >
             <Pencil aria-hidden />
-            Editar
+            Editar cálculo
           </Button>
-          <Button type="button" variant="danger" size="sm" loading={deleting} onClick={handleDelete}>
-            {deleting ? null : <Trash2 aria-hidden />}
-            {deleting ? "Borrando…" : "Borrar prescripción"}
-          </Button>
+          <MoreActionsMenu
+            label="Más opciones del cálculo"
+            actions={[
+              {
+                key: "borrar",
+                label: UNDO_TEXT.calculation.confirmLabel,
+                icon: <Trash2 />,
+                destructive: true,
+                onSelect: handleDelete,
+              },
+            ]}
+          />
         </>
       }
     >

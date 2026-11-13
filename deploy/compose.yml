@@ -1,0 +1,82 @@
+# Producción en el VPS: Postgres + web + bot + Caddy (HTTPS automático).
+# Vive en /opt/nutribot/deploy; los secretos van en /opt/nutribot/deploy/.env (no versionado,
+# ver deploy/README.md). Solo Caddy publica puertos: Docker se saltea ufw en los puertos
+# publicados, así que la base y la web quedan solo en la red interna.
+#
+#   docker compose up -d --build                 # levantar / actualizar
+#   docker compose run --rm migrate              # prisma migrate deploy
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nutri
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: nutribot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nutri -d nutribot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    env_file: .env
+    build: { context: .., dockerfile: apps/web/Dockerfile }
+    image: nutribot-web
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nutri:${POSTGRES_PASSWORD}@db:5432/nutribot
+      AUTH_URL: https://${DOMAIN}
+      AUTH_TRUST_HOST: "true"
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      db: { condition: service_healthy }
+
+  bot:
+    env_file: .env
+    build: { context: .., dockerfile: apps/bot/Dockerfile }
+    image: nutribot-bot
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nutri:${POSTGRES_PASSWORD}@db:5432/nutribot
+      AUTH_URL: https://${DOMAIN}
+      WHATSAPP_AUTH_DIR: /app/.whatsapp-auth
+    depends_on:
+      db: { condition: service_healthy }
+    volumes:
+      - whatsapp-auth:/app/.whatsapp-auth
+
+  # Migraciones: usa la imagen del bot (la de la web es standalone, sin la CLI de Prisma).
+  migrate:
+    image: nutribot-bot
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgresql://nutri:${POSTGRES_PASSWORD}@db:5432/nutribot
+    command: ["npx", "prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  whatsapp-auth:
+  caddy_data:
+  caddy_config:

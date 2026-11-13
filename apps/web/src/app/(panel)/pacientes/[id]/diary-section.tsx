@@ -1,4 +1,5 @@
 import { NotebookPen } from "lucide-react";
+import { PATIENT_SUMMARY_TEXT } from "@nutri-bot/core";
 import { Badge, Card, EmptyState } from "@/components/ui";
 
 export interface DiaryEntryRow {
@@ -9,6 +10,7 @@ export interface DiaryEntryRow {
   hasPhoto: boolean;
 }
 
+/** Historial › Diario: lo que la paciente cargó desde el portal. */
 export function DiarySection({ entries }: { entries: DiaryEntryRow[] }) {
   return (
     <Card title="Diario alimentario" description="Lo carga el paciente desde el portal.">
@@ -24,7 +26,8 @@ export function DiarySection({ entries }: { entries: DiaryEntryRow[] }) {
             <li key={e.id} className="grid gap-3 py-5 first:pt-0 last:pb-0 sm:grid-cols-[12rem_minmax(0,1fr)]">
               <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-start">
                 <p className="text-sm text-muted-foreground">{e.createdAtLabel}</p>
-                {e.isRecent ? <Badge tone="info">Últimas 24 hs</Badge> : null}
+                {/* HU-017c-2: las entradas de las últimas 24 hs se marcan "Nuevo". */}
+                {e.isRecent ? <Badge tone="info">{PATIENT_SUMMARY_TEXT.recent}</Badge> : null}
               </div>
               <div className="min-w-0">
                 {e.note ? <p className="whitespace-pre-wrap text-sm">{e.note}</p> : null}

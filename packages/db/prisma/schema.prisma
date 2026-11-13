@@ -24,9 +24,32 @@ model Professional {
   title              String?
   /// HU-007 (D1): matrícula, p. ej. "M.P. 852". null = no cargada (aviso en la página del informe).
   licenseNumber      String?
+  /// HU-016 (D1, D2): imagen de la firma manuscrita (PNG o JPG, máx. 1 MB, validada por magic bytes
+  /// en el servidor). null = sin firma. DATO SENSIBLE (D10): nunca se lee en getProfessional()
+  /// (ver PROFESSIONAL_SELECT); solo la vista previa del panel y la generación de PDF la seleccionan.
+  signatureData      Bytes?
+  /// HU-016: "image/png" o "image/jpeg", detectado por magic bytes (no el MIME que manda el navegador).
+  /// Se escribe y se borra junto con signatureData.
+  signatureMimeType  String?
+  /// HU-014 (D4): SIN USO. Los recordatorios se configuran por servicio (`Service.reminders`).
+  /// Solo lo leyó el backfill de la migración `service_reminders`. Se borra en otra migración.
   reminderLeadHours  Int      @default(24)
   /// Si está en true, el bot no responde ningún mensaje entrante.
   botPaused          Boolean  @default(false)
+  /// HU-011 (D1): franja "fuera de horario" de la opción 0 del bot. Dentro de la franja, la opción 0
+  /// no alerta en el momento: toma la consulta y la resume al terminar la franja.
+  afterHoursEnabled  Boolean  @default(true)
+  /// Inicio de la franja, "HH:mm" en `timezone` (p. ej. "22:00").
+  afterHoursStart    String   @default("22:00")
+  /// Fin de la franja, "HH:mm" en `timezone` (p. ej. "09:00"). A esta hora sale el resumen.
+  afterHoursEnd      String   @default("09:00")
+  /// HU-012 (D11): el bot responde preguntas con IA (opción 5 del menú). Además de esto, el bot
+  /// exige la clave del proveedor en el .env; sin clave la opción no aparece.
+  botAiEnabled       Boolean  @default(false)
+  /// HU-012 (D10): "Información para el asistente" (dirección, medios de pago, cuotas, política de
+  /// cancelación…). Texto libre, máx. 2.000 caracteres (validado en la action). La IA lo recibe con
+  /// la tool `datos_consultorio`. null = no cargado.
+  botAiInfo          String?
   googleRefreshToken String?
   googleCalendarId   String?
   googleSyncError    String?
@@ -45,6 +68,8 @@ model Patient {
   activityLevel ActivityLevel?
   nutritionGoal NutritionGoal?
   bodyFrame     BodyFrame?
+  /// HU-019: null = activa; con fecha = archivada (no aparece en la lista, "Nuevo turno" ni comunicados).
+  archivedAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   appointments Appointment[]
@@ -53,6 +78,8 @@ model Patient {
   evolutionEntries EvolutionEntry[]
   diaryEntries DiaryEntry[]
   consultations Consultation[]
+  inquiries    PatientInquiry[]
+  botAiQuestions BotAiQuestion[]
 }
 
 model DiaryEntry {
@@ -245,6 +272,15 @@ model Service {
   durationMin  Int
   prepInstructions String?
   prepLeadHours Int?
+  /// HU-013 (D4): el bot pide el motivo de consulta al reservar este servicio. Prendido por defecto.
+  asksReason   Boolean       @default(true)
+  /// HU-014: recordatorios por WhatsApp antes del turno. Lista JSON de 0 a 3
+  /// `{ amount: number, unit: "HOURS" | "DAYS", asksConfirmation: boolean }`, ordenada de mayor a
+  /// menor anticipación. Validada con `validateServiceReminders` (packages/core) al guardar y leída
+  /// con `parseServiceReminders`. Máximo uno con `asksConfirmation` (ese manda el pedido de
+  /// confirmación de asistencia en vez del recordatorio). `[]` = el servicio no manda recordatorios.
+  /// El default tiene que coincidir con DEFAULT_SERVICE_REMINDERS de packages/core.
+  reminders    Json          @default("[{\"amount\":3,\"unit\":\"DAYS\",\"asksConfirmation\":true},{\"amount\":24,\"unit\":\"HOURS\",\"asksConfirmation\":false}]")
   color        String        @default("#2563eb")
   active       Boolean       @default(true)
   createdAt    DateTime      @default(now())
@@ -386,12 +422,21 @@ model Appointment {
   createdBy       Actor
   cancelledBy     Actor?
   cancelReason    String?
+  /// HU-013: motivo de consulta que escribió el paciente al reservar por el bot, o la profesional
+  /// en el panel. trim, máx. 500 caracteres (validado en packages/core). null = sin motivo (no se
+  /// pidió, lo salteó o turno anterior a la HU-013; D11). No va a Google Calendar, a la IA ni al portal (D9).
+  reason          String?
   priceSnapshot   Decimal           @db.Decimal(12, 2)
   googleEventId   String?
   needsGoogleSync Boolean           @default(true)
   confirmationRequestedAt DateTime?
   confirmationRespondedAt DateTime?
   confirmationResponse Boolean?
+  /// HU-014 (D5): momento en que el turno quedó reservado en firme: al crearse si nace CONFIRMED,
+  /// al aprobarse la seña si nació AWAITING_PAYMENT. null = turno con seña sin pagar, o fila creada
+  /// por fuera de `createAppointment` (seeds/scripts): se usa `createdAt`. Los recordatorios cuyo
+  /// momento es anterior a este instante no se mandan.
+  bookedAt        DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -428,6 +473,9 @@ model Payment {
   externalId    String?
   preferenceId  String?
   checkoutUrl   String?
+  /// HU-023 (D6): user_id de MP de la cuenta con la que se creó la preferencia. null = pagos
+  /// manuales, pagos anteriores a la HU-023 o creados con el token de respaldo del .env (solo dev).
+  mercadopagoUserId String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   paidAt        DateTime?
@@ -435,6 +483,55 @@ model Payment {
   @@index([appointmentId])
   @@index([preferenceId])
   @@index([externalId])
+}
+
+/// HU-023: cuenta de Mercado Pago vinculada por OAuth (aplicación "Numa"). Fila única id = 1 (hay
+/// una sola Professional). La fila puede existir sin cuenta vinculada (guarda el tope del aviso
+/// "falta Mercado Pago"). Se crea perezosamente con INSERT ... ON CONFLICT DO NOTHING.
+/// DATO SENSIBLE: accessTokenEnc / refreshTokenEnc van cifrados (AES-256-GCM con
+/// MERCADOPAGO_TOKEN_KEY, formato "v1.<iv>.<tag>.<ct>" en base64url). Solo los lee
+/// domain/mercadopagoAccount.ts; nunca viajan al navegador ni a los logs.
+model MercadoPagoAccount {
+  id              Int       @id @default(1)
+  /// user_id de MP de la cuenta vinculada (número, guardado como texto). null = sin cuenta.
+  userId          String?
+  nickname        String?
+  email           String?
+  /// live_mode que devolvió /oauth/token. En producción solo se acepta true (D8).
+  liveMode        Boolean?
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  /// scope que devolvió MP (p. ej. "offline_access payments read write"). Diagnóstico.
+  scope           String?
+  /// Vencimiento del access_token (now + expires_in al canjear / renovar).
+  expiresAt       DateTime?
+  connectedAt     DateTime?
+  refreshedAt     DateTime?
+  /// "revoked" | "refresh_failed" | "decrypt_failed". null = sin error. Se borra al reconectar.
+  errorCode       String?
+  errorAt         DateTime?
+  /// Cuándo se encoló el aviso de WhatsApp de este incidente (uno por incidente, D5).
+  errorNotifiedAt DateTime?
+  /// Último aviso "un paciente no pudo reservar porque falta Mercado Pago" (máx. 1 cada 24 h, D5).
+  missingAlertAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+/// HU-023: estado temporal del OAuth (anti-CSRF + PKCE). Un solo uso: se borra con
+/// DELETE ... RETURNING al volver del callback. Vence a los 10 minutos.
+model MercadoPagoOAuthState {
+  id              String   @id @default(cuid())
+  /// sha256 (hex) del state que viaja a MP. El state en claro no se guarda.
+  stateHash       String   @unique
+  /// code_verifier de PKCE, cifrado con la misma clave que los tokens.
+  codeVerifierEnc String
+  /// Email de la sesión de Auth.js que inició el flujo: el callback exige la misma sesión.
+  sessionEmail    String
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 enum MessageStatus {
@@ -460,11 +557,16 @@ model OutboundMessage {
   /// HU-007: informe que manda un mensaje ANTHROPOMETRIC_REPORT_PDF.
   anthropometricReport   AnthropometricReport? @relation(fields: [anthropometricReportId], references: [id], onDelete: SetNull)
   anthropometricReportId String?
+  /// HU-014: distingue varios mensajes del mismo `kind` para el mismo turno. "" para todo lo que no
+  /// es un recordatorio (y para los mensajes anteriores a la HU-014), así la unicidad de los otros
+  /// kinds queda igual que antes. REMINDER automático: "auto:<horas>h" (p. ej. "auto:48h").
+  /// REMINDER manual ("Enviar recordatorio ahora"): "manual:<ISO del encolado>".
+  dedupeKey     String        @default("")
   sentAt        DateTime?
   createdAt     DateTime      @default(now())
 
-  // Evita duplicar confirmaciones / recordatorios para un mismo turno.
-  @@unique([appointmentId, kind])
+  // Evita duplicar confirmaciones / recordatorios para un mismo turno (HU-014: + dedupeKey).
+  @@unique([appointmentId, kind, dedupeKey])
   @@index([status, createdAt])
 }
 
@@ -537,17 +639,62 @@ model Food {
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
-  planItems     PlanMealItem[]
-  templateItems TemplateMealItem[]
+  planItems         PlanMealItem[]
+  templateItems     TemplateMealItem[]
+  recipeIngredients RecipeIngredient[] // HU-018a
+  measures          FoodMeasure[] // HU-018d
 
   @@index([group])
   @@index([source, active])
+}
+
+/// HU-018d: medida casera de un alimento ("1 taza = 180 g"). La equivalencia es POR alimento.
+/// Se cargan a mano (D1) o salen de convertir el unitHint (D9). Se pueden cargar en SARA 2: la
+/// composición del alimento no cambia.
+model FoodMeasure {
+  id        String   @id @default(cuid())
+  food      Food     @relation(fields: [foodId], references: [id], onDelete: Cascade)
+  foodId    String
+  /// Singular, como lo escribió ella ("taza", "unidad mediana"). trim + espacios colapsados, 1..40.
+  name      String
+  /// foodSearchText(name) (core): unicidad por alimento sin mayúsculas ni tildes.
+  nameKey   String
+  /// Plural escrito a mano (D6). null = el automático (pluralizeMeasureName de core). 1..40.
+  plural    String?
+  /// Gramos que pesa UNA medida. 0,1..2000, 1 decimal. Líquidos: 1 ml ≈ 1 g (D8).
+  grams     Decimal  @db.Decimal(6, 1)
+  /// Orden en la lista. La primera es la que se propone al agregar (D13).
+  order     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([foodId, nameKey])
+  @@index([foodId, order])
 }
 
 enum PlanStatus {
   DRAFT
   ACTIVE
   ARCHIVED
+}
+
+/// HU-018b: modo de una comida del plan o de la plantilla.
+/// EVERY_DAY = "Igual todos los días" (ítems con weekday = null).
+/// PER_DAY   = "Cambia cada día" (cada ítem tiene su weekday).
+enum MealMode {
+  EVERY_DAY
+  PER_DAY
+}
+
+/// HU-018b: día de la semana de un ítem en una comida PER_DAY. Semana fija lunes a domingo.
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
 }
 
 model NutritionPlan {
@@ -564,6 +711,8 @@ model NutritionPlan {
   updatedAt      DateTime          @updatedAt
 
   meals          PlanMeal[]
+  /// HU-020 (D9): textos del plan (recomendaciones, reemplazos…).
+  sections       PlanSection[]
   messages       OutboundMessage[]
   consultations  Consultation[]
 
@@ -576,6 +725,10 @@ model PlanMeal {
   planId String
   name   String
   order  Int
+  /// HU-018b. Default EVERY_DAY: los planes previos a la HU quedan "Igual todos los días".
+  mode      MealMode @default(EVERY_DAY)
+  /// HU-018b: "Opciones (elige una)". Solo con mode = EVERY_DAY (lo garantiza el dominio).
+  isOptions Boolean  @default(false)
   items  PlanMealItem[]
 
   @@index([planId, order])
@@ -591,17 +744,93 @@ model PlanMealItem {
   quantityGrams Decimal?  @db.Decimal(7, 2)
   notes         String?
   order         Int
+  /// HU-018b: null = todos los días (comida EVERY_DAY). En comidas PER_DAY, siempre con valor.
+  /// `order` es el orden dentro de (mealId, weekday).
+  weekday       Weekday?
+  /// HU-018a (para 018c): ítem de receta. Con recipeId, foodId y quantityGrams quedan null.
+  /// Restrict: una receta usada en un plan no se puede borrar (se archiva).
+  recipe        Recipe?   @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  recipeId      String?
+  /// HU-018a (D9): porciones de la receta, pasos de ½ entre 0,5 y 4. null si no es receta.
+  portions      Decimal?  @db.Decimal(3, 1)
+  /// HU-018d: ítem de alimento en medida casera. Las 4 van juntas (todas null o todas con valor) y
+  /// solo con foodId (nunca con recipeId). Son COPIAS de la medida al agregar (D4): cambiar o borrar
+  /// la FoodMeasure no toca el ítem. quantityGrams = measureItemGrams(measureQty, measureGrams).
+  /// Cantidad: ¼..20 de a ¼ (D5).
+  measureQty    Decimal?  @db.Decimal(4, 2)
+  /// Singular ("taza").
+  measureName   String?
+  /// Plural ya resuelto al agregar (el escrito a mano o el automático): "tazas".
+  measurePlural String?
+  /// Gramos por medida al agregar (para recalcular con el stepper).
+  measureGrams  Decimal?  @db.Decimal(6, 1)
 
   @@index([mealId, order])
+  @@index([recipeId])
+}
+
+/// HU-020: estado de una plantilla. Solo PUBLISHED se ofrece en "Aplicar plantilla".
+enum TemplateStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/// HU-020: MANUAL = creada en el panel. IMPORT = vino de plans:import (PDF).
+enum TemplateOrigin {
+  MANUAL
+  IMPORT
 }
 
 model PlanTemplate {
-  id        String   @id @default(cuid())
+  id          String                @id @default(cuid())
+  title       String
+  notes       String?
+  /// HU-020. Default PUBLISHED: las existentes y las creadas a mano se siguen ofreciendo.
+  status      TemplateStatus        @default(PUBLISHED)
+  origin      TemplateOrigin        @default(MANUAL)
+  /// HU-020 (D12): "pdf-sha256:<hex>" del contenido del PDF (planImportKey de core). Nunca el nombre
+  /// del archivo. Hace idempotente la importación. No se guarda el PDF ni su texto.
+  importKey   String?               @unique
+  /// HU-020: TemplateImportHint[] de core (avisos para la revisión). Se vacía al publicar.
+  importHints Json?
+  /// HU-020: primera vez que se cambió el borrador desde el panel. Desde ahí la importación no lo pisa.
+  reviewedAt  DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  meals       TemplateMeal[]
+  sections    PlanTemplateSection[]
+
+  @@index([status, title])
+}
+
+/// HU-020 (D9): textos de la plantilla (recomendaciones, consumo diario, reemplazos…). Se copian al plan.
+model PlanTemplateSection {
+  id         String       @id @default(cuid())
+  template   PlanTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId String
+  /// 1..80 (PLAN_SECTION_LIMITS de core).
+  title      String
+  /// 1..20000. Texto plano con saltos de línea.
+  body       String
+  order      Int
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([templateId, order])
+}
+
+/// HU-020 (D9): textos del plan de la paciente. Copia de los de la plantilla al aplicarla; editables.
+model PlanSection {
+  id        String        @id @default(cuid())
+  plan      NutritionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId    String
   title     String
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  meals     TemplateMeal[]
+  body      String
+  order     Int
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([planId, order])
 }
 
 model TemplateMeal {
@@ -610,6 +839,10 @@ model TemplateMeal {
   templateId String
   name       String
   order      Int
+  /// HU-018b. Default EVERY_DAY: los planes previos a la HU quedan "Igual todos los días".
+  mode       MealMode @default(EVERY_DAY)
+  /// HU-018b: "Opciones (elige una)". Solo con mode = EVERY_DAY (lo garantiza el dominio).
+  isOptions  Boolean  @default(false)
   items      TemplateMealItem[]
 
   @@index([templateId, order])
@@ -625,8 +858,188 @@ model TemplateMealItem {
   quantityGrams Decimal?     @db.Decimal(7, 2)
   notes         String?
   order         Int
+  /// HU-018b: null = todos los días (comida EVERY_DAY). En comidas PER_DAY, siempre con valor.
+  /// `order` es el orden dentro de (mealId, weekday).
+  weekday       Weekday?
+  /// HU-018a (para 018c): ítem de receta. Con recipeId, foodId y quantityGrams quedan null.
+  /// Restrict: una receta usada en un plan no se puede borrar (se archiva).
+  recipe        Recipe?      @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  recipeId      String?
+  /// HU-018a (D9): porciones de la receta, pasos de ½ entre 0,5 y 4. null si no es receta.
+  portions      Decimal?     @db.Decimal(3, 1)
+  /// HU-018d: ítem de alimento en medida casera. Las 4 van juntas (todas null o todas con valor) y
+  /// solo con foodId (nunca con recipeId). Son COPIAS de la medida al agregar (D4): cambiar o borrar
+  /// la FoodMeasure no toca el ítem. quantityGrams = measureItemGrams(measureQty, measureGrams).
+  /// Cantidad: ¼..20 de a ¼ (D5).
+  measureQty    Decimal?     @db.Decimal(4, 2)
+  /// Singular ("taza").
+  measureName   String?
+  /// Plural ya resuelto al agregar (el escrito a mano o el automático): "tazas".
+  measurePlural String?
+  /// Gramos por medida al agregar (para recalcular con el stepper).
+  measureGrams  Decimal?     @db.Decimal(6, 1)
 
   @@index([mealId, order])
+  @@index([recipeId])
+}
+
+/// HU-018a: estado de una receta. Solo PUBLISHED aparece en el buscador del plan (018c).
+enum RecipeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// HU-018a: MANUAL = cargada en el formulario. IMPORT = vino de la carga asistida (fuente obligatoria).
+enum RecipeOrigin {
+  MANUAL
+  IMPORT
+}
+
+/// HU-018a (D12): tipo de receta (uno por receta). Valores fijos.
+enum RecipeType {
+  MAIN_DISH // Plato principal
+  SIDE_DISH // Guarnición
+  SALAD // Ensalada
+  SNACK // Colación
+  BREAKFAST // Desayuno y merienda
+  BREAD_DOUGH // Panes y masas
+  DESSERT // Dulces y postres
+}
+
+/// HU-018a: momentos del día de una receta (varios). 018c los infiere del nombre de la comida (D11).
+enum RecipeMoment {
+  BREAKFAST // Desayuno
+  LUNCH // Almuerzo
+  AFTERNOON_SNACK // Merienda
+  DINNER // Cena
+  SNACK // Colación
+}
+
+/// HU-018a (D12, D20): etiquetas fijas.
+enum RecipeTag {
+  GLUTEN_FREE // Sin TACC
+  VEGETARIAN // Vegetariana
+  MEAL_PREP // Apta vianda / freezer
+}
+
+/// HU-018a: imágenes de la carga asistida. PAGE = la página renderizada (columna "Original" de la
+/// revisión). CANDIDATE = foto incrustada en esa página, para elegir como foto de la receta.
+enum RecipeImportImageKind {
+  PAGE
+  CANDIDATE
+}
+
+/// HU-018a: receta. Los macros NO se guardan: se calculan desde los ingredientes (D4, D10).
+model Recipe {
+  id                   String         @id @default(cuid())
+  name                 String
+  status               RecipeStatus   @default(DRAFT)
+  origin               RecipeOrigin   @default(MANUAL)
+  /// null solo en borradores (validateRecipeForPublish lo exige para publicar).
+  type                 RecipeType?
+  moments              RecipeMoment[] @default([])
+  tags                 RecipeTag[]    @default([])
+  /// Cuántas porciones rinde la receta (> 0, 1 decimal). null solo en borradores.
+  yieldPortions        Decimal?       @db.Decimal(5, 1)
+  /// "¾ albóndigas", "1/4 de tarta". Lo que ve el paciente. null solo en borradores.
+  portionHousehold     String?
+  /// Referencia opcional; el paciente no lo ve (D9).
+  portionGrams         Decimal?       @db.Decimal(7, 2)
+  preparation          String?
+  /// "Tips y conservación" (D20: la nota de conservación de las viandas va acá).
+  tips                 String?
+  /// "Nutriarte — Almuerzos y cenas 2". Se muestra como "Fuente: …" (D3). Obligatoria si origin = IMPORT.
+  sourceName           String?
+  /// D4: tabla nutricional publicada por la fuente, por porción. Solo para comparar.
+  publishedPortionText String?
+  publishedKcal        Decimal?       @db.Decimal(7, 2)
+  publishedProteinG    Decimal?       @db.Decimal(6, 2)
+  publishedCarbsG      Decimal?       @db.Decimal(6, 2)
+  publishedFatG        Decimal?       @db.Decimal(6, 2)
+  publishedFiberG      Decimal?       @db.Decimal(6, 2)
+  /// Carga asistida: "almuerzos-y-cenas-2:p7:albondigas de lentejas" (recipeImportKey de core).
+  /// Hace idempotente la extracción y el pase a producción.
+  importKey            String?        @unique
+  importFile           String?
+  importPage           Int?
+  /// Texto de la página tal como salió de pdftotext. Dato de terceros: solo en la base (D3).
+  importRawText        String?
+  /// RecipeImportHints de core (texto de rinde y porción, línea de autor, avisos del parser).
+  importHints          Json?
+  /// Primera vez que se guardó desde la revisión. Desde ahí la extracción no pisa el borrador.
+  reviewedAt           DateTime?
+  publishedAt          DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  ingredients   RecipeIngredient[]
+  photo         RecipePhoto?
+  importImages  RecipeImportImage[]
+  planItems     PlanMealItem[]
+  templateItems TemplateMealItem[]
+
+  @@index([status, name])
+}
+
+/// HU-018a: ingrediente. Con alimento suma macros si tiene gramos; sin alimento es texto libre.
+model RecipeIngredient {
+  id         String   @id @default(cuid())
+  recipe     Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipeId   String
+  order      Int
+  /// Sin cascada, como PlanMealItem: los alimentos no se borran, se dan de baja.
+  food       Food?    @relation(fields: [foodId], references: [id])
+  foodId     String?
+  /// Cómo se lee en la receta ("Puré de calabaza"). Obligatorio si no hay alimento; si hay, opcional
+  /// (vacío = nombre del alimento).
+  label      String?
+  /// null = sin gramos (o c.n. si noQuantity). Nunca se completa solo (D5).
+  grams      Decimal? @db.Decimal(7, 2)
+  /// "Sin cantidad (c.n.)": no suma macros y no se le piden gramos.
+  noQuantity Boolean  @default(false)
+  /// Medida casera en texto: "1 taza", "2 cdas".
+  household  String?
+  /// Carga asistida: la línea original ("Lentejas 500g"). Dato de terceros: solo en la base.
+  rawText    String?
+
+  @@index([recipeId, order])
+  @@index([foodId])
+}
+
+/// HU-018a (D18): foto de la receta, 1:1. WebP ya reducida. Se reemplaza borrando y creando, así
+/// el id cambia y la URL /api/recetas/fotos/<id> se puede cachear como inmutable.
+model RecipePhoto {
+  id        String   @id @default(cuid())
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipeId  String   @unique
+  /// WebP, máx. 1200×900 (4:3).
+  data      Bytes
+  /// WebP 480×360 (4:3): tarjetas y miniaturas.
+  thumbData Bytes
+  mimeType  String   @default("image/webp")
+  byteSize  Int
+  /// "Foto: Nutrispace". Opcional; se muestra junto a la fuente (D3).
+  credit    String?
+  createdAt DateTime @default(now())
+}
+
+/// HU-018a: imágenes de la carga asistida (página renderizada y fotos candidatas). Se borran al
+/// publicar. Dato de terceros: solo en la base (D3).
+model RecipeImportImage {
+  id        String                @id @default(cuid())
+  recipe    Recipe                @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipeId  String
+  kind      RecipeImportImageKind
+  order     Int
+  /// PAGE: WebP de hasta 1000 px de ancho. CANDIDATE: WebP 1200×900, ya procesada como RecipePhoto.
+  data      Bytes
+  /// Solo CANDIDATE: WebP 480×360.
+  thumbData Bytes?
+  width     Int
+  height    Int
+
+  @@index([recipeId, kind, order])
 }
 
 /// Máquina de estados de la conversación del bot, por paciente.
@@ -644,4 +1057,91 @@ model BotStatus {
   qr              String?
   lastConnectedAt DateTime?
   updatedAt       DateTime  @updatedAt
+}
+
+/// HU-011: estado de una consulta dejada por WhatsApp (opción 0 del bot).
+enum InquiryStatus {
+  PENDING
+  ANSWERED
+}
+
+/// HU-011: consulta que el paciente le dejó a la profesional por la opción 0 del bot.
+/// Una fila por paciente y por sesión (y por noche, ver D7). No es la `Consultation` clínica.
+model PatientInquiry {
+  id                 String        @id @default(cuid())
+  patient            Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId          String
+  /// Texto de la consulta. Los mensajes siguientes se concatenan con "\n".
+  body               String
+  /// Instante del primer mensaje.
+  receivedAt         DateTime
+  /// Instante del último mensaje agregado.
+  lastMessageAt      DateTime
+  /// true si el primer mensaje llegó dentro de la franja fuera de horario: entra al resumen.
+  receivedAfterHours Boolean
+  status             InquiryStatus @default(PENDING)
+  answeredAt         DateTime?
+  /// Cuándo la procesó el resumen de fin de franja (se haya encolado o no el WhatsApp, según
+  /// haya `phoneJid`). null = todavía no se resumió. Solo aplica si `receivedAfterHours`.
+  digestedAt         DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([status, receivedAt])
+  @@index([patientId, status])
+}
+
+/// HU-012: resultado de una pregunta al asistente con IA del bot.
+enum BotAiOutcome {
+  /// Respondió.
+  ANSWERED
+  /// Respondió y ofreció la opción 0 (heurística sobre el texto, `classifyAnswer`).
+  HANDOFF_OFFERED
+  /// stop_reason "refusal": se mandó el texto fijo de fuera de tema.
+  REFUSED
+  /// stop_reason "max_tokens": se mandó la respuesta cortada en la última oración + sufijo.
+  TRUNCATED
+  /// Pidió más vueltas de tools que el tope: texto fijo de error.
+  TOOL_LIMIT
+  /// Error del proveedor, timeout, respuesta vacía o stop_reason inesperado: texto fijo de error.
+  ERROR
+  /// Tope diario del paciente: no se llamó a la IA.
+  LIMIT_PATIENT
+  /// Tope diario global: no se llamó a la IA.
+  LIMIT_GLOBAL
+}
+
+/// HU-012 (D7): una fila por pregunta hecha en el modo pregunta del bot. Retención de 90 días
+/// (cron del bot) y borrado en cascada con el paciente.
+model BotAiQuestion {
+  id                  String       @id @default(cuid())
+  patient             Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId           String
+  /// Instante de la pregunta (lo pone el bot: inyectable en pruebas). Base del límite diario y de la retención.
+  askedAt             DateTime
+  /// Texto de la pregunta tal como se mandó a la IA (trim, ≤ 500 caracteres).
+  question            String
+  /// Texto que recibió el paciente. null en LIMIT_* (recibió un texto fijo que no hace falta guardar).
+  answer              String?
+  outcome             BotAiOutcome
+  /// "anthropic" | "deepseek" (o "fake" en el script de prueba).
+  provider            String
+  model               String
+  /// Suma de `usage` de TODAS las vueltas del loop de tools.
+  inputTokens         Int          @default(0)
+  outputTokens        Int          @default(0)
+  cacheCreationTokens Int          @default(0)
+  cacheReadTokens     Int          @default(0)
+  /// Vueltas de tools ejecutadas (0–4).
+  toolRounds          Int          @default(0)
+  /// Tiempo total de la pregunta en ms (null en LIMIT_*).
+  latencyMs           Int?
+  /// Tipo de error (`BotAiErrorKind`) si outcome = ERROR. Nunca el mensaje del proveedor.
+  errorKind           String?
+  /// D4 (c): cuándo el paciente respondió "0" y esta pregunta pasó a la bandeja `/mensajes`.
+  handedOffAt         DateTime?
+  createdAt           DateTime     @default(now())
+
+  @@index([patientId, askedAt])
+  @@index([askedAt])
 }

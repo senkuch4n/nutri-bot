@@ -1,29 +1,32 @@
 import {
-  dayKeyInTz,
+  dayKeyFromDbDate,
   getAvailableSlots,
   isSlotAvailable,
   type BusyInterval,
   type Exception,
   type Rule,
 } from "@nutri-bot/core";
-import { prisma } from "../index";
+import { prisma, type Prisma } from "../index";
+import { PROFESSIONAL_SELECT } from "./professionalSelect";
+
+type AvailabilityClient = Pick<Prisma.TransactionClient, "professional" | "service" | "availabilityRule" | "availabilityException" | "appointment">;
 
 function minLeadMinutes(): number {
   return Number(process.env.MIN_LEAD_MINUTES ?? 120);
 }
 
 export async function getProfessional() {
-  const pro = await prisma.professional.findUnique({ where: { id: 1 } });
+  const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: PROFESSIONAL_SELECT });
   if (!pro) {
     throw new Error("Falta la ficha de la profesional. Ejecutá `npm run db:seed`.");
   }
   return pro;
 }
 
-async function loadRulesAndExceptions(tz: string) {
+async function loadRulesAndExceptions(tz: string, db: AvailabilityClient = prisma) {
   const [rules, exceptions] = await Promise.all([
-    prisma.availabilityRule.findMany({ where: { active: true } }),
-    prisma.availabilityException.findMany(),
+    db.availabilityRule.findMany({ where: { active: true } }),
+    db.availabilityException.findMany(),
   ]);
 
   const coreRules: Rule[] = rules.map((r) => ({
@@ -34,7 +37,7 @@ async function loadRulesAndExceptions(tz: string) {
   }));
 
   const coreExceptions: Exception[] = exceptions.map((e) => ({
-    dayKey: dayKeyInTz(e.date, tz),
+    dayKey: dayKeyFromDbDate(e.date),
     type: e.type,
     startTime: e.startTime,
     endTime: e.endTime,
@@ -47,8 +50,9 @@ async function loadBusy(
   from: Date,
   to: Date,
   excludeAppointmentId?: string,
+  db: AvailabilityClient = prisma,
 ): Promise<BusyInterval[]> {
-  const appts = await prisma.appointment.findMany({
+  const appts = await db.appointment.findMany({
     where: {
       status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] },
       startsAt: { lt: to },
@@ -94,17 +98,17 @@ export async function checkSlotAvailable(params: {
   startsAt: Date;
   now?: Date;
   excludeAppointmentId?: string;
-}): Promise<boolean> {
+}, db: AvailabilityClient = prisma): Promise<boolean> {
   const now = params.now ?? new Date();
   const [pro, service] = await Promise.all([
-    getProfessional(),
-    prisma.service.findUnique({ where: { id: params.serviceId } }),
+    db.professional.findUniqueOrThrow({ where: { id: 1 }, select: PROFESSIONAL_SELECT }),
+    db.service.findUnique({ where: { id: params.serviceId } }),
   ]);
-  if (!service) return false;
+  if (!service || !service.active) return false;
 
-  const { coreRules, coreExceptions } = await loadRulesAndExceptions(pro.timezone);
+  const { coreRules, coreExceptions } = await loadRulesAndExceptions(pro.timezone, db);
   const end = new Date(params.startsAt.getTime() + service.durationMin * 60_000);
-  const busy = await loadBusy(params.startsAt, end, params.excludeAppointmentId);
+  const busy = await loadBusy(params.startsAt, end, params.excludeAppointmentId, db);
 
   return isSlotAvailable({
     startsAt: params.startsAt,

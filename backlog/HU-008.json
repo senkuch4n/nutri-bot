@@ -1,0 +1,24 @@
+{
+  "id": "HU-008",
+  "responsable": "senkuch4n",
+  "slug": "pediatria-oms",
+  "titulo": "Pacientes pediátricos (5–18): OMS 2007 IMC/talla para la edad y Schofield",
+  "origen": "Épica 56",
+  "notas": "Depende de HU-004 y HU-006.",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-pediatria-oms.md",
+  "sdd": "Refactorizaciones/pediatria-oms.md",
+  "rama": "hu-008-pediatria-oms",
+  "skills_sdd": [
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "ui-ux-pro-max",
+    "ui-styling",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "opus",
+  "review": "progress/review_HU-008.md"
+}

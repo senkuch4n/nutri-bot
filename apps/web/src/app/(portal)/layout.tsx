@@ -1,52 +1,60 @@
-import { LogOut } from "lucide-react";
-import { Wordmark } from "@/components/brand";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import { ConfirmProvider } from "@/components/confirm";
+import { PendingUnloadGuard } from "@/components/pending-unload-guard";
+import { PortalAccessGate, PortalAccessScreen } from "@/components/portal/portal-access";
 import { Toaster } from "@/components/primitives/sonner";
+import { PortalHeader } from "@/components/shell/portal-header";
 import { PortalNav } from "@/components/shell/portal-nav";
-import { Button } from "@/components/ui";
 import { getPortalPatient } from "@/lib/patient-session";
-import { getProfessionalDisplayName } from "@/lib/shell";
+import { getPortalDocumentTitle, getProfessionalPortalContact } from "@/lib/shell";
 
+// HU-017d-1: la pestaña del portal no dice "NutriBot — Panel" (el título del layout raíz).
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: await getPortalDocumentTitle(),
+    description: "Tu plan, tu evolución y tu diario, con tu nutricionista.",
+  };
+}
+
+// HU-017a §10.3. `theme-portal` = fondo agrupado cálido (D2); el resto de la paleta es la del panel.
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
-  const [patient, professionalName] = await Promise.all([
-    getPortalPatient(),
-    getProfessionalDisplayName(),
-  ]);
+  const [patient, contact] = await Promise.all([getPortalPatient(), getProfessionalPortalContact()]);
 
   if (!patient) {
+    // HU-017d-1 (Q2): el layout no recibe searchParams; el gate cliente distingue "link vencido"
+    // (?error=invalid) de "sin link". El Suspense evita el aviso de useSearchParams en el build.
     return (
-      <div className="theme-warm flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
-        <div className="w-full max-w-sm rounded-lg border bg-card p-8 text-center">
-          <Wordmark subtitle={professionalName} className="mb-6 justify-center" />
-          <h1 className="text-balance text-xl font-semibold">Portal del paciente</h1>
-          <p className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground">
-            Para entrar necesitás un link de acceso. Escribile a tu nutricionista por WhatsApp
-            <strong className="font-semibold text-foreground"> &quot;portal&quot; </strong> o elegí la
-            opción del menú y te lo mandamos.
-          </p>
-        </div>
-      </div>
+      <Suspense
+        fallback={
+          <PortalAccessScreen variant="no-link" professionalName={contact.name} whatsappUrl={contact.whatsappUrl} />
+        }
+      >
+        <PortalAccessGate professionalName={contact.name} whatsappUrl={contact.whatsappUrl} />
+      </Suspense>
     );
   }
 
   return (
-    <div className="theme-warm min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b bg-background">
-        <div className="mx-auto flex h-14 max-w-2xl items-center justify-between gap-4 px-4">
-          <Wordmark subtitle={professionalName} />
-          <div className="flex items-center gap-2">
-            <PortalNav variant="top" className="hidden md:flex" />
-            <form action="/portal/logout" method="POST">
-              <Button type="submit" variant="ghost" size="lg" className="text-muted-foreground">
-                <LogOut aria-hidden />
-                Salir
-              </Button>
-            </form>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-2xl px-4 pb-28 pt-6 md:py-8">{children}</main>
-      <PortalNav variant="bottom" />
-      <Toaster position="top-center" />
-    </div>
+    <ConfirmProvider>
+      {/* HU-017d-2: con un borrado del diario pendiente, recargar o cerrar la pestaña pregunta. */}
+      <PendingUnloadGuard />
+      <div className="theme-portal relative min-h-[100dvh] bg-grouped text-foreground">
+        <PortalHeader professionalName={contact.name} />
+        {/* El contenido pasa por debajo del header y de la tab bar (materiales translúcidos). */}
+        <main
+          data-portal-main
+          className="mx-auto max-w-2xl px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom)+1.5rem)] pt-6 md:py-8"
+        >
+          {children}
+        </main>
+        <PortalNav variant="bottom" />
+        <Toaster
+          position="top-center"
+          offset={{ top: "calc(env(safe-area-inset-top) + 4rem)" }}
+          mobileOffset={{ top: "calc(env(safe-area-inset-top) + 4rem)" }}
+        />
+      </div>
+    </ConfirmProvider>
   );
 }

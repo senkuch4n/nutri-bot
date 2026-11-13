@@ -1,4 +1,4 @@
-import { isConsultationEmpty, messages } from "@nutri-bot/core";
+import { computeDepositAmount, isConsultationEmpty, messages, validateBookingReasonInput } from "@nutri-bot/core";
 import { Prisma, prisma, type Actor, type Appointment, type AppointmentStatus } from "../index";
 import { getProfessional, checkSlotAvailable } from "./availability";
 import { enqueueMessage } from "./outbox";
@@ -10,6 +10,22 @@ export class SlotUnavailableError extends Error {
   }
 }
 
+/** HU-013: motivo inválido (más de 500 caracteres). `message` es el texto para el panel. */
+export class InvalidBookingReasonError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidBookingReasonError";
+  }
+}
+
+/** HU-019: desarchiva a la paciente dentro de una transacción (no-op si está activa). */
+function unarchiveInTx(tx: Prisma.TransactionClient, patientId: string) {
+  return tx.patient.updateMany({
+    where: { id: patientId, archivedAt: { not: null } },
+    data: { archivedAt: null },
+  });
+}
+
 /** Crea un turno confirmado, revalidando el horario, y encola la confirmación. */
 export async function createAppointment(params: {
   patientId: string;
@@ -18,7 +34,16 @@ export async function createAppointment(params: {
   createdBy: Actor;
   /** false cuando el bot ya respondió la confirmación en vivo. */
   notifyPatient?: boolean;
+  /** HU-013: motivo de consulta. Se normaliza con validateBookingReasonInput; "" → null.
+   *  Si supera 500 → InvalidBookingReasonError ANTES de leer o escribir nada. */
+  reason?: string | null;
+  /** HU-013, SOLO pruebas: destino de la alerta de turno nuevo. undefined = Professional.phoneJid
+   *  (como hoy); null = sin alerta. El bot pasa `opts.alertJid` (undefined en producción). */
+  professionalAlertJid?: string | null;
 }) {
+  const r = validateBookingReasonInput(params.reason);
+  if (!r.ok) throw new InvalidBookingReasonError(r.error);
+
   const [pro, service, patient] = await Promise.all([
     getProfessional(),
     prisma.service.findUniqueOrThrow({ where: { id: params.serviceId } }),
@@ -27,23 +52,35 @@ export async function createAppointment(params: {
 
   const endsAt = new Date(params.startsAt.getTime() + service.durationMin * 60_000);
   const awaitingPayment = params.createdBy === "PATIENT" && service.requiresDeposit;
+  if (awaitingPayment && (!service.depositKind || service.depositValue == null ||
+    computeDepositAmount(Number(service.price), service.depositKind, Number(service.depositValue)) <= 0)) {
+    throw new Error("El servicio no tiene una seña válida configurada.");
+  }
 
   const appointment = await prisma.$transaction(async (tx) => {
-    const ok = await checkSlotAvailable({ serviceId: params.serviceId, startsAt: params.startsAt });
+    // All booking writers share this lock: overlapping services use the same calendar.
+    await tx.$queryRaw`SELECT id FROM "Professional" WHERE id = 1 FOR UPDATE`;
+    const ok = await checkSlotAvailable({ serviceId: params.serviceId, startsAt: params.startsAt }, tx);
     if (!ok) throw new SlotUnavailableError();
 
-    return tx.appointment.create({
+    const created = await tx.appointment.create({
       data: {
         patientId: params.patientId,
         serviceId: params.serviceId,
         startsAt: params.startsAt,
         endsAt,
         status: awaitingPayment ? "AWAITING_PAYMENT" : "CONFIRMED",
+        // HU-014 (D5): reserva en firme. Con seña se sella al aprobarse el pago (payments.ts).
+        bookedAt: awaitingPayment ? null : new Date(),
         createdBy: params.createdBy,
         priceSnapshot: service.price,
-        needsGoogleSync: true,
+        needsGoogleSync: !awaitingPayment,
+        reason: r.reason,
       },
     });
+    // HU-019 (T4, D7): reservar desarchiva a la paciente (panel y bot, con o sin seña).
+    await unarchiveInTx(tx, params.patientId);
+    return created;
   });
 
   if (!awaitingPayment && params.notifyPatient !== false) {
@@ -60,9 +97,11 @@ export async function createAppointment(params: {
   }
 
   // Aviso a la profesional cuando el turno lo saca el paciente.
-  if (!awaitingPayment && params.createdBy === "PATIENT" && pro.phoneJid) {
+  const alertJid =
+    params.professionalAlertJid !== undefined ? params.professionalAlertJid : pro.phoneJid;
+  if (!awaitingPayment && params.createdBy === "PATIENT" && alertJid) {
     await enqueueMessage({
-      toJid: pro.phoneJid,
+      toJid: alertJid,
       kind: "PROFESSIONAL_ALERT",
       // Sin appointmentId: puede haber varias alertas para un mismo turno.
       body: messages.professionalNewBookingAlert({
@@ -71,11 +110,31 @@ export async function createAppointment(params: {
         serviceName: service.name,
         startsAt: appointment.startsAt,
         tz: pro.timezone,
+        reason: appointment.reason,
       }),
     });
   }
 
   return appointment;
+}
+
+/**
+ * HU-013 (D5): la profesional edita el motivo desde el detalle del turno. Cualquier estado.
+ * Valida y normaliza con validateBookingReasonInput (inválido → InvalidBookingReasonError sin
+ * escribir). Actualiza SOLO `reason`: no toca `needsGoogleSync` (el motivo no va a Google), no
+ * encola mensajes, no toca la consulta.
+ */
+export async function updateAppointmentReason(params: {
+  id: string;
+  reason: string | null;
+}): Promise<{ id: string; patientId: string; reason: string | null }> {
+  const r = validateBookingReasonInput(params.reason);
+  if (!r.ok) throw new InvalidBookingReasonError(r.error);
+  return prisma.appointment.update({
+    where: { id: params.id },
+    data: { reason: r.reason },
+    select: { id: true, patientId: true, reason: true },
+  });
 }
 
 export async function cancelAppointment(params: {
@@ -165,6 +224,11 @@ export async function setAppointmentStatus(params: {
         where: { id: params.id },
         data: { status: params.status },
       });
+      // HU-019 (T5): volver un turno futuro a CONFIRMED mantiene el invariante "una archivada no
+      // tiene turnos pendientes".
+      if (params.status === "CONFIRMED" && prev.startsAt >= new Date()) {
+        await unarchiveInTx(tx, prev.patientId);
+      }
 
       let consultation: SetAppointmentStatusResult["consultation"] = null;
       let removedEmptyConsultation = false;

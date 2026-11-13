@@ -12,6 +12,7 @@ import QRCode from "qrcode";
 import { prisma } from "@nutri-bot/db";
 import { env } from "./env";
 import { logger } from "./logger";
+import { isIgnoredJid } from "./jid-filter";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -46,8 +47,24 @@ function extractText(m: WAMessage): string | null {
 }
 
 export type IncomingHandler = (jid: string, text: string) => Promise<void>;
+/** HU-011 (D8): mensaje entrante sin texto (audio, foto sin epígrafe, sticker, documento…). */
+export type IncomingMediaHandler = (jid: string) => Promise<void>;
 
-export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
+/** Claves de contenido que cuentan como "medio sin texto" (D8). Lo demás se sigue ignorando. */
+const MEDIA_KEYS = [
+  "audioMessage",
+  "imageMessage",
+  "videoMessage",
+  "documentMessage",
+  "documentWithCaptionMessage",
+  "stickerMessage",
+  "ptvMessage",
+];
+
+export async function startWhatsApp(
+  onMessage: IncomingHandler,
+  onMedia?: IncomingMediaHandler,
+): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState(env.authDir);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -86,7 +103,7 @@ export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
         );
       } else {
         logger.warn(`Conexión cerrada (código ${code ?? "?"}). Reconectando en 3s…`);
-        setTimeout(() => void startWhatsApp(onMessage), 3000);
+        setTimeout(() => void startWhatsApp(onMessage, onMedia), 3000);
       }
     }
   });
@@ -101,7 +118,7 @@ export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
     for (const m of messages) {
       if (m.key.fromMe) continue;
       const jid = m.key.remoteJid ?? "";
-      if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") continue;
+      if (isIgnoredJid(jid)) continue;
       if (!m.message) {
         // Suele ser un mensaje que no se pudo descifrar (ver "Failed to decrypt" arriba).
         logger.warn({ jid, stubType: m.messageStubType ?? null }, "Mensaje entrante sin contenido: se ignora");
@@ -110,6 +127,14 @@ export async function startWhatsApp(onMessage: IncomingHandler): Promise<void> {
       const text = extractText(m);
       if (!text) {
         const kinds = Object.keys(normalizeMessageContent(m.message) ?? {});
+        if (onMedia && kinds.some((k) => MEDIA_KEYS.includes(k))) {
+          try {
+            await onMedia(jid);
+          } catch (err) {
+            logger.error({ err, jid }, "Error procesando mensaje entrante sin texto");
+          }
+          continue;
+        }
         logger.info({ jid, kinds }, "Mensaje entrante sin texto: se ignora");
         continue;
       }
@@ -143,4 +168,11 @@ export async function sendDocument(jid: string, buffer: Buffer, fileName: string
 
 export function isConnected(): boolean {
   return sock !== null;
+}
+
+/** HU-012: "escribiendo…" sin mandar nada. No lanza (si no hay socket, no hace nada). */
+export async function sendTyping(jid: string): Promise<void> {
+  if (!sock) return;
+  await sock.presenceSubscribe(jid).catch(() => {});
+  await sock.sendPresenceUpdate("composing", jid).catch(() => {});
 }

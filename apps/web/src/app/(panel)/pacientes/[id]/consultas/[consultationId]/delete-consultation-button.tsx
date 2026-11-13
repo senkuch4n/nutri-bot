@@ -1,61 +1,65 @@
 "use client";
 
-import { useId, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { CONSULTATION_TEXT } from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
-import { Button } from "@/components/ui";
-import { notify } from "@/lib/notify";
+import { MoreActionsMenu } from "@/components/more-actions-menu";
+import { UNDO_TEXT, useDeferredDelete } from "@/lib/deferred-delete";
 import { deleteConsultationAction } from "../../consultation-actions";
 
-/** Borrado a mano: solo sin mediciones y sin plan (`canDelete`, calculado en el server). */
-export function DeleteConsultationButton({
+/**
+ * "…" del encabezado de la consulta con "Borrar consulta" (HU-017c-3). Solo se puede borrar sin
+ * mediciones, cálculo ni plan (`canDelete`, calculado en el server): si no, el ítem queda deshabilitado
+ * con el motivo. Borrado diferido con "Deshacer": se vuelve a la ficha al instante y el toast sigue.
+ */
+export function ConsultationMoreMenu({
   patientId,
   consultationId,
   canDelete,
+  dayLabel,
 }: {
   patientId: string;
   consultationId: string;
   canDelete: boolean;
+  /** "24/09". */
+  dayLabel: string;
 }) {
   const confirm = useConfirm();
-  const [pending, startTransition] = useTransition();
-  const helpId = useId();
+  const router = useRouter();
+  const deferDelete = useDeferredDelete();
+  const consultationHref = `/pacientes/${patientId}/consultas/${consultationId}`;
 
   // Confirmación en el handler, fuera de toda transición (React 19: si no, deadlock).
-  async function handleClick() {
+  async function handleDelete() {
     const ok = await confirm({
-      title: "¿Eliminar esta consulta?",
-      description: "Se borran sus notas. No se puede deshacer.",
-      confirmLabel: "Eliminar consulta",
+      title: UNDO_TEXT.consultation.confirmTitle,
+      description: UNDO_TEXT.consultation.confirmDescription(dayLabel),
+      confirmLabel: UNDO_TEXT.consultation.confirmLabel,
     });
     if (!ok) return;
-    startTransition(async () => {
-      // Si sale bien, la action redirige a la pestaña Consultas.
-      const res = await deleteConsultationAction(patientId, consultationId);
-      if (res && !res.ok) notify.error(res.error);
+    deferDelete({
+      key: `consultation:${consultationId}`,
+      message: UNDO_TEXT.consultation.deleted,
+      undoneMessage: UNDO_TEXT.consultation.undone,
+      undoneAction: { label: UNDO_TEXT.open, href: consultationHref },
+      commit: () => deleteConsultationAction(patientId, consultationId),
+      afterSchedule: () => router.push(`/pacientes/${patientId}?tab=consultas`),
     });
   }
 
   return (
-    <div className="space-y-2">
-      <Button
-        type="button"
-        variant="danger"
-        size="sm"
-        loading={pending}
-        disabled={!canDelete}
-        aria-describedby={canDelete ? undefined : helpId}
-        onClick={handleClick}
-      >
-        {pending ? null : <Trash2 aria-hidden />}
-        {pending ? "Eliminando…" : "Eliminar consulta"}
-      </Button>
-      {canDelete ? null : (
-        <p id={helpId} className="text-xs text-muted-foreground">
-          {CONSULTATION_TEXT.notDeletable}.
-        </p>
-      )}
-    </div>
+    <MoreActionsMenu
+      actions={[
+        {
+          key: "borrar",
+          label: UNDO_TEXT.consultation.confirmLabel,
+          icon: <Trash2 />,
+          destructive: true,
+          disabledReason: canDelete ? undefined : `${CONSULTATION_TEXT.notDeletable}.`,
+          onSelect: handleDelete,
+        },
+      ]}
+    />
   );
 }

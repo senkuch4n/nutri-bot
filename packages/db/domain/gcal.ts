@@ -76,12 +76,12 @@ export async function syncGoogleCalendar(): Promise<{ processed: number; error?:
     }
 
     if (pro.googleSyncError) {
-      await prisma.professional.update({ where: { id: 1 }, data: { googleSyncError: null } });
+      await prisma.professional.update({ where: { id: 1 }, data: { googleSyncError: null }, select: { id: true } });
     }
     return { processed };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido de Google Calendar";
-    await prisma.professional.update({ where: { id: 1 }, data: { googleSyncError: message } });
+    await prisma.professional.update({ where: { id: 1 }, data: { googleSyncError: message }, select: { id: true } });
     return { processed, error: message };
   }
 }

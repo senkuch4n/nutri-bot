@@ -1,0 +1,26 @@
+{
+  "id": "HU-020",
+  "responsable": "senkuch4n",
+  "slug": "importar-planes-pdf",
+  "titulo": "Importar planes alimentarios desde PDF como plantillas",
+  "origen": "Pedido de la nutricionista (2026-10-25): compartir planes ya listos en PDF para que se adapten al programa sin cargarlos a mano. Las recetas ya tienen carga asistida (HU-018a-2).",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-importar-planes-pdf.md",
+  "sdd": "Refactorizaciones/importar-planes-pdf.md",
+  "rama": "feat/HU-020-importar-planes-pdf",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/48",
+  "notas": "PDF de ejemplo: docs/planes-alimentacion/ (Canva, 15 páginas, cualitativo). Posible cruce con HU-017e (imleticio) en las pantallas de plantillas. D12/D14/D15 pendientes de la nutricionista; D6 provisoria.",
+  "skills_architect": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "modelo": "opus",
+  "skills": [
+    "migracion-prisma",
+    "apple-design",
+    "ui-ux-pro-max",
+    "web-design-guidelines"
+  ],
+  "modelo_reviewer": "sonnet"
+}

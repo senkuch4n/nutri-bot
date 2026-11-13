@@ -31,7 +31,6 @@ export interface OwnFoodDefaults {
   addedSugarPer100: string;
   saturatedFatPer100: string;
   cholesterolMgPer100: string;
-  unitHint: string;
 }
 
 const toNumber = (v: string): number | null => {
@@ -237,11 +236,6 @@ export function OwnFoodForm({
               value={alcohol}
               onChange={(e) => setAlcohol(e.target.value)}
             />
-          </Field>
-        </div>
-        <div className="mt-4">
-          <Field label="Unidad de referencia" hint="Ej.: “1 taza ≈ 180 g”. Solo informativo.">
-            <Input name="unitHint" defaultValue={defaults.unitHint} maxLength={120} autoComplete="off" />
           </Field>
         </div>
       </fieldset>

@@ -1,20 +1,34 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useRef, type FormEvent } from "react";
+import { useRef, useState } from "react";
 import { Send } from "lucide-react";
-import { useConfirm } from "@/components/confirm";
+import { OUTBOX_TEXT } from "@nutri-bot/core";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/primitives/alert-dialog";
 import { Button, FormError, Textarea } from "@/components/ui";
-import { useActionToast } from "@/lib/notify";
+import { useDeferredDelete } from "@/lib/deferred-delete";
+import { notify } from "@/lib/notify";
 import { broadcastMessageAction, type BroadcastState } from "./actions";
 
-const initial: BroadcastState = { ok: false };
+const T = OUTBOX_TEXT;
 type BroadcastAction = (prev: BroadcastState, formData: FormData) => Promise<BroadcastState>;
 
 /**
- * El `<form>` no tiene `action`: el envío se despacha a mano después de confirmar. El `await` del
- * diálogo corre en el handler del evento, fuera de toda transición (si se hiciera dentro de
- * `<form action>` o de `startTransition`, en React 19 el diálogo nunca se monta; ver `useConfirm`).
- * `sendAction` existe solo para la página de prueba: en producción nunca se pasa.
+ * Comunicado a todas las pacientes (D13, D14): "Revisar y enviar" → vista previa con la burbuja →
+ * "Enviar a N pacientes" → toast con "Deshacer" durante 8 s. Nada se encola durante el plazo; recién
+ * al vencer corre la action. "Deshacer" devuelve el texto al campo. Mientras está pendiente o
+ * enviándose, el navegador avisa al cerrar o recargar (y si igual se cierra, no se manda).
+ *
+ * `sendAction` es opcional y se define siempre **del lado cliente** (la demo de /dev-diseno, Q18):
+ * nunca se pasa una función desde un componente de servidor.
  */
 export function BroadcastForm({
   patientCount,
@@ -23,58 +37,121 @@ export function BroadcastForm({
   patientCount: number;
   sendAction?: BroadcastAction;
 }) {
-  const [state, dispatch, pending] = useActionState(sendAction, initial);
-  const formRef = useRef<HTMLFormElement>(null);
-  const confirm = useConfirm();
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
+  // Ronda 2: un comunicado por vista previa. Un segundo "Enviar" (doble clic, el diálogo cerrándose)
+  // no programa otro; se rearma al volver a abrir la vista previa.
+  const scheduledRef = useRef(false);
+  const deferred = useDeferredDelete();
+  const disabled = patientCount === 0;
 
-  useActionToast(state, {
-    success: state.ok ? `Encolado para ${state.sent} paciente${state.sent === 1 ? "" : "s"}` : undefined,
-  });
-  // Solo si salió bien: si falla, lo escrito se conserva (Gherkin "Error al guardar").
-  useEffect(() => {
-    if (state.ok) formRef.current?.reset();
-  }, [state]);
-
-  async function onSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault(); // 1. SIEMPRE y antes de cualquier await
-    const formData = new FormData(e.currentTarget); // 2. sincrónico: currentTarget es null después del await
-    const body = formData.get("body")?.toString().trim();
-    if (body) {
-      // 3. igual que antes: sin texto no se confirma y la action devuelve su error
-      const ok = await confirm({
-        // 4. en un handler de evento, fuera de toda transición
-        title: "¿Enviar este comunicado?",
-        description: `Se va a mandar por WhatsApp a los ${patientCount} pacientes cargados. No se puede deshacer.`,
-        confirmLabel: `Enviar a ${patientCount} pacientes`,
-      });
-      if (!ok) return; // Cancelar o Escape: no pasa nada
+  function review() {
+    const text = body.trim();
+    if (text.length < 3) {
+      setError(T.emptyBody);
+      textareaRef.current?.focus();
+      return;
     }
-    startTransition(() => dispatch(formData)); // 5. recién acá la action, dentro de una transición
+    setError(null);
+    scheduledRef.current = false;
+    setPreviewOpen(true);
+  }
+
+  function send() {
+    const text = body.trim();
+    const n = patientCount;
+    // Defensa en profundidad: nunca se programa un comunicado vacío ni dos veces el mismo.
+    if (scheduledRef.current || text.length < 3 || n === 0) return;
+    scheduledRef.current = true;
+    setPreviewOpen(false);
+    setBody(""); // el campo se vacía al programar; "Deshacer" lo devuelve
+    const fd = new FormData();
+    fd.set("body", text);
+    let sent = n;
+    deferred({
+      key: `broadcast:${crypto.randomUUID()}`,
+      message: T.scheduled(n),
+      undoneMessage: T.undone,
+      guardUnload: true,
+      errorMessage: T.error,
+      commit: async () => {
+        const r = await sendAction({ ok: false }, fd);
+        if (r.ok) sent = r.sent ?? n;
+        // Si no se pudo, el texto vuelve al campo (si no escribió otra cosa mientras tanto).
+        else setBody((current) => (current === "" ? text : current));
+        return { ok: r.ok, error: r.error };
+      },
+      onCommitted: () => notify.saved(T.committed(sent)),
+      onUndone: () => {
+        setBody((current) => (current === "" ? text : current));
+        textareaRef.current?.focus();
+      },
+    });
   }
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="space-y-3">
+    <div className="rounded-xl bg-card p-4 shadow-card more-contrast:border more-contrast:border-input sm:p-5">
+      <label htmlFor="comunicado-texto" className="sr-only">
+        {T.fieldLabel}
+      </label>
       <Textarea
+        ref={textareaRef}
+        id="comunicado-texto"
         name="body"
         rows={3}
-        required
-        aria-label="Mensaje del comunicado"
-        placeholder="Ej: La semana que viene estoy de vacaciones, retomo el lunes 22."
+        maxLength={1000}
+        value={body}
+        onChange={(e) => {
+          setBody(e.target.value);
+          if (error) setError(null);
+        }}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? "comunicado-error comunicado-alcance" : "comunicado-alcance"}
+        placeholder={T.placeholder}
+        className="text-body"
       />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Se envía a {patientCount} pacientes por WhatsApp.</p>
-        <Button type="submit" loading={pending} disabled={patientCount === 0}>
-          {pending ? (
-            "Enviando…"
-          ) : (
-            <>
-              <Send aria-hidden />
-              Enviar a los {patientCount} pacientes
-            </>
-          )}
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p id="comunicado-alcance" className="text-subheadline text-muted-foreground">
+          {disabled ? T.noRecipients : `${T.reach(patientCount)}.`}
+        </p>
+        <Button type="button" size="lg" onClick={review} disabled={disabled}>
+          <Send aria-hidden />
+          {T.review}
         </Button>
       </div>
-      <FormError message={state.error} />
-    </form>
+      <div id="comunicado-error">
+        <FormError message={error} />
+      </div>
+
+      <AlertDialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <AlertDialogContent
+          onOpenAutoFocus={(e) => {
+            // El botón seguro tiene el foco.
+            e.preventDefault();
+            backRef.current?.focus();
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>{T.previewTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{T.reach(patientCount)}.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="rounded-xl bg-secondary p-3">
+            <p className="ml-auto w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-success-muted px-3.5 py-2 text-body text-foreground shadow-card">
+              {body.trim()}
+            </p>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel ref={backRef}>{T.backToEdit}</AlertDialogCancel>
+            <AlertDialogAction onClick={send}>
+              <Send aria-hidden />
+              {T.send(patientCount)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

@@ -170,9 +170,7 @@ export function IsakForm({
 
       {ISAK_MEASURE_GROUPS.map((group) => (
         <fieldset key={group.key} className="space-y-3">
-          <legend>
-            <h3 className="text-sm font-semibold">{group.title}</h3>
-          </legend>
+          <legend className="mb-3 text-body font-semibold">{group.title}</legend>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {ISAK_MEASURES.filter((d) => d.group === group.key).map((def) => {
               const required = REQUIRED.has(def.key);
@@ -185,6 +183,7 @@ export function IsakForm({
                     step="0.1"
                     min="0"
                     autoComplete="off"
+                    className="h-11 text-base"
                     defaultValue={value == null ? "" : value}
                     aria-required={required || undefined}
                     aria-invalid={errors[def.key] ? true : undefined}
@@ -205,10 +204,10 @@ export function IsakForm({
 
       <div className="space-y-2">
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" loading={pending}>
+          <Button type="submit" size="lg" loading={pending}>
             {pending ? ISAK_TEXT.saving : ISAK_TEXT.save}
           </Button>
-          <Button variant="secondary" type="button" onClick={handleCancel} disabled={pending}>
+          <Button variant="secondary" size="lg" type="button" onClick={handleCancel} disabled={pending}>
             Cancelar
           </Button>
         </div>
