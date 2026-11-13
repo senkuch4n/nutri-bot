@@ -354,3 +354,4 @@ orquestador, para que las revise a la mañana:
 - HU-023: afinada (D1–D14) → `afinada_pendiente_validacion`.
 - HU-023 **validada** (Resoluciones al final de la HU: app "Numa", PKCE, sin cuenta no hay seña; Joel conecta su cuenta por ahora).
 - HU-023 → `en_arquitectura` (architect Opus; migracion-prisma + ui).
+- HU-023: SDD lista (Refactorizaciones/mercadopago-oauth.md), verify.sh OK → `arquitectura_lista`.
