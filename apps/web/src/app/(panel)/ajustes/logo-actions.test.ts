@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { professional: { update: mocks.update } } }));
 vi.mock("@/lib/bot-ai", () => ({ getBotAiKeyStatus: vi.fn() }));
+// HU-023: actions.ts también tiene las acciones de Mercado Pago (sesión + dominio).
+vi.mock("@/auth", () => ({ auth: vi.fn() }));
+vi.mock("@nutri-bot/db/domain", () => ({}));
 
 import { uploadLogoAction } from "./actions";
 

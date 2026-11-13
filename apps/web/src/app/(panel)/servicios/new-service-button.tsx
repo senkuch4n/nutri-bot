@@ -7,10 +7,13 @@ import { ServiceSheet } from "./service-form";
 
 export function NewServiceButton({
   currency,
+  mercadoPagoReady,
   label = "Nuevo servicio",
   variant = "primary",
 }: {
   currency: string;
+  /** HU-023: hay una cuenta de Mercado Pago conectada (si no, nota bajo "Pide seña"). */
+  mercadoPagoReady: boolean;
   label?: string;
   variant?: "primary" | "tinted";
 }) {
@@ -25,6 +28,7 @@ export function NewServiceButton({
         open={open}
         onOpenChange={setOpen}
         currency={currency}
+        mercadoPagoReady={mercadoPagoReady}
         title="Nuevo servicio"
         description="El bot lo ofrece a los pacientes por WhatsApp."
       />
