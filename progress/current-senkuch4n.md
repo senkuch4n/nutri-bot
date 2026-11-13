@@ -356,3 +356,4 @@ orquestador, para que las revise a la mañana:
 - HU-023 → `en_arquitectura` (architect Opus; migracion-prisma + ui).
 - HU-023: SDD lista (Refactorizaciones/mercadopago-oauth.md), verify.sh OK → `arquitectura_lista`.
 - HU-023 → `implementando` (Opus; migracion-prisma, apple-design, web-design-guidelines).
+- HU-023: implementer (Opus) `done` → progress/impl_HU-023.md (2657 tests OK, typecheck OK, migración aplicada en dev con pg_dump previo). Sin recorrido visual (login Google). → `en_revision`.

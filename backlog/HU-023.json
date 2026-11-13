@@ -4,7 +4,7 @@
   "slug": "mercadopago-oauth",
   "titulo": "Conectar la cuenta de Mercado Pago de la profesional (OAuth)",
   "origen": "Prueba punta a punta en el VPS (2026-11-12): la seña se cobró con la cuenta de Leo. Joel quiere que la profesional autorice cobrar a su nombre sin pasar credenciales.",
-  "estado": "implementando",
+  "estado": "en_revision",
   "intentos_revision": 0,
   "hu": "docs/hu-mercadopago-oauth.md",
   "sdd": "Refactorizaciones/mercadopago-oauth.md",
