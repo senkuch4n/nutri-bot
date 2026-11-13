@@ -12,7 +12,7 @@
   "lock": "https://github.com/senkuch4n/nutri-bot/issues/53",
   "notas": "Lleva migración (tokens). Cruce con HU-021 (imleticio, #50) en packages/db/domain/payments.ts. Producción ahora en VPS (deploy/), no Vercel. Joel prueba en paralelo la vinculación manual con su cuenta.",
   "modelo": "opus",
-  "modelo_reviewer": null,
+  "modelo_reviewer": "opus",
   "skills_architect": [
     "migracion-prisma",
     "ui"
