@@ -346,3 +346,8 @@ orquestador, para que las revise a la mañana:
 - HU-020 → `implementando` (Opus; migracion-prisma, apple-design, ui-ux-pro-max, web-design-guidelines).
 - HU-020: implementer (Opus) `done` → progress/impl_HU-020.md (2526 tests OK, typecheck web+bot OK, prueba real en dev + undo). Sin recorrido visual (login de Google). → `en_revision`.
 - **HU-020 aprobada** (reviewer Sonnet, 1ª ronda). Dudas no bloqueantes: frases genéricas de menú del PDF real en fixtures y en la HU. PR a develop con `Closes #48`; migrar Neon antes del merge.
+
+## 2026-11-12 — Migración a VPS + HU-023 Mercado Pago OAuth
+- Producción pasó de Vercel + Neon a VPS propio (169.58.151.56, deploy/compose.yml, Caddy, sslip.io). PR #52. Base nueva vacía + seed base. Bot vinculado al WhatsApp de Joel para la prueba. Vercel desconectado del repo; falta `vercel project pause` (interactivo).
+- Prueba punta a punta OK: Leo sacó turno con seña $100, pagó con MP real, webhook → turno CONFIRMED y confirmación por WhatsApp.
+- **HU-023 mercadopago-oauth** → issue #53, rama feat/HU-023-mercadopago-oauth, `afinando` (afinador, Opus).
