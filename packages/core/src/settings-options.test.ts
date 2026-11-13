@@ -80,6 +80,10 @@ describe("SETTINGS_TEXT", () => {
   it("vista previa del teléfono y sección de PDF", () => {
     expect(SETTINGS_TEXT.phonePreview("+54 9 351 555-2345")).toBe("Te avisamos al +54 9 351 555-2345");
     expect(SETTINGS_TEXT.sections.pdf).toBe("Informes en PDF");
+    expect(SETTINGS_TEXT.sections.mercadopago).toBe("Mercado Pago");
+    expect(SETTINGS_TEXT.pageDescription).toBe(
+      "Tus datos, el bot de WhatsApp, Google Calendar, Mercado Pago y tus informes en PDF.",
+    );
     expect(SETTINGS_TEXT.unsaved).toBe("Cambios sin guardar");
   });
 

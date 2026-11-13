@@ -17,6 +17,7 @@ export * from "./recipeImport";
 export * from "./professionalAssets";
 export * from "./payments";
 export * from "./mercadopago-signature";
+export * from "./mercadopagoAccount";
 export * from "./patientAuth";
 export * from "./diary";
 export * from "./prescriptions";

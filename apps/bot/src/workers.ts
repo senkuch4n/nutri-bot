@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
@@ -18,7 +18,7 @@ async function reconcilePayments(): Promise<void> {
     const result = await reconcilePendingPayments((paymentId) => {
       logger.warn({ paymentId }, "Error conciliando pago de Mercado Pago");
     });
-    if (result.processed || result.failed) logger.info(result, "Conciliación Mercado Pago");
+    if (result.processed || result.failed || result.skipped) logger.info(result, "Conciliación Mercado Pago");
     // Do not expire reservations when the provider could not be consulted.
     if (result.failed === 0) await expireStalePendingPayments();
   } catch {
@@ -106,12 +106,26 @@ export function startCron(): void {
     }
   });
 
+  // HU-023 (D4): renovación diaria del token de Mercado Pago (si faltan menos de 30 días).
+  cron.schedule("0 6 * * *", () => runMercadoPagoRefresh());
+
   // Privacidad (HU-012/HU-013): el texto del paciente no queda guardado en sesiones vencidas.
   cron.schedule("*/5 * * * *", () => runSessionTextCleanup());
   // HU-012 (D7): retención de las preguntas a la IA (antes del resumen, que tiene que ser el último).
   cron.schedule("30 4 * * *", () => runBotAiPurge());
   // HU-011: resumen de consultas fuera de horario (último cron: los tests miran calls[0]).
   cron.schedule("* * * * *", () => runAfterHoursDigest());
+}
+
+/** HU-023 (D4): renueva el token de la cuenta de Mercado Pago vinculada. Nunca loguea el error
+ *  crudo (puede traer headers con el token). */
+export async function runMercadoPagoRefresh(): Promise<void> {
+  try {
+    const result = await refreshMercadoPagoAccountToken();
+    if (result !== "not_needed" && result !== "not_connected") logger.info({ result }, "Renovación Mercado Pago");
+  } catch {
+    logger.error("Error renovando Mercado Pago");
+  }
 }
 
 /** Barre pendientes al arrancar, sin esperar al primer tick del cron. */

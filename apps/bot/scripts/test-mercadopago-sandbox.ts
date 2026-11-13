@@ -3,8 +3,10 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import assert from "node:assert/strict";
 import { prisma } from "@nutri-bot/db";
+import { allowsMercadoPagoEnvToken } from "@nutri-bot/core";
 import {
   createDepositCheckout,
+  getMercadoPagoConnectionView,
   reconcilePendingPayments,
   syncMercadoPagoPayment,
 } from "@nutri-bot/db/domain";
@@ -22,15 +24,25 @@ let patientId: string | undefined;
 let serviceId: string | undefined;
 let appointmentId: string | undefined;
 try {
-  assert(
-    process.env.MERCADOPAGO_ACCESS_TOKEN,
-    "MERCADOPAGO_ACCESS_TOKEN is required.",
-  );
   assert.equal(
     process.env.MERCADOPAGO_SANDBOX,
     "true",
     "MERCADOPAGO_SANDBOX=true is required to run this sandbox test.",
   );
+  // HU-023: the checkout uses the Mercado Pago account linked in Ajustes (a test seller in dev).
+  const view = await getMercadoPagoConnectionView();
+  if (view.status !== "connected" && !allowsMercadoPagoEnvToken(process.env)) {
+    throw new Error(
+      "Conectá un usuario de prueba vendedor en Ajustes → Mercado Pago (o habilitá MERCADOPAGO_ALLOW_ENV_TOKEN en dev)",
+    );
+  }
+  // Never print tokens: only which account is used.
+  console.log("Mercado Pago account:", {
+    status: view.status,
+    nickname: view.nickname,
+    userId: view.userId,
+    liveMode: view.liveMode,
+  });
   const patient = await prisma.patient.create({
     data: {
       name: "Mercado Pago sandbox",
@@ -88,6 +100,11 @@ try {
     "Payment is not approved yet. Check the sandbox checkout.",
   );
   assert(payment.externalId);
+  assert.equal(
+    payment.mercadopagoUserId,
+    view.status === "connected" ? view.userId : null,
+    "The payment was not created with the linked account.",
+  );
   const confirmed = await prisma.appointment.findUniqueOrThrow({
     where: { id: appointmentId },
   });

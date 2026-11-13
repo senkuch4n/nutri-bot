@@ -33,7 +33,16 @@ function switchId(id: string): string {
  * reducido, sin desplazamiento). Pausar muestra "Deshacer" (8 s), que llama a la misma action con
  * `true`. El foco sigue al switch en su lugar nuevo.
  */
-export function ServiceSections({ services, currency }: { services: readonly ServiceView[]; currency: string }) {
+export function ServiceSections({
+  services,
+  currency,
+  mercadoPagoReady,
+}: {
+  services: readonly ServiceView[];
+  currency: string;
+  /** HU-023: hay una cuenta de Mercado Pago conectada. */
+  mercadoPagoReady: boolean;
+}) {
   // Valor optimista por servicio hasta que llega la página revalidada.
   const [overrides, setOverrides] = useState<ReadonlyMap<string, boolean>>(new Map());
 
@@ -101,13 +110,13 @@ export function ServiceSections({ services, currency }: { services: readonly Ser
       <div className="space-y-8">
         <Section title={T.active(active.length)} empty="Ningún servicio activo: el bot no ofrece turnos.">
           {active.map((v) => (
-            <ServiceCard key={v.service.id} view={v} active currency={currency} onToggle={(n) => void toggle(v, n)} />
+            <ServiceCard key={v.service.id} view={v} active currency={currency} mercadoPagoReady={mercadoPagoReady} onToggle={(n) => void toggle(v, n)} />
           ))}
         </Section>
         {paused.length > 0 ? (
           <Section title={T.paused(paused.length)}>
             {paused.map((v) => (
-              <ServiceCard key={v.service.id} view={v} active={false} currency={currency} onToggle={(n) => void toggle(v, n)} />
+              <ServiceCard key={v.service.id} view={v} active={false} currency={currency} mercadoPagoReady={mercadoPagoReady} onToggle={(n) => void toggle(v, n)} />
             ))}
           </Section>
         ) : null}
@@ -135,11 +144,13 @@ function ServiceCard({
   view,
   active,
   currency,
+  mercadoPagoReady,
   onToggle,
 }: {
   view: ServiceView;
   active: boolean;
   currency: string;
+  mercadoPagoReady: boolean;
   onToggle: (next: boolean) => void;
 }) {
   const { service, priceLabel, summary } = view;
@@ -182,6 +193,7 @@ function ServiceCard({
         onOpenChange={setEditing}
         editing={service}
         currency={currency}
+        mercadoPagoReady={mercadoPagoReady}
         title={`${T.edit} · ${service.name}`}
         description={
           active ? "Los cambios se ven en el bot y en el calendario." : "Está pausado: guardar no lo vuelve a ofrecer."

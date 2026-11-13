@@ -346,3 +346,15 @@ orquestador, para que las revise a la mañana:
 - HU-020 → `implementando` (Opus; migracion-prisma, apple-design, ui-ux-pro-max, web-design-guidelines).
 - HU-020: implementer (Opus) `done` → progress/impl_HU-020.md (2526 tests OK, typecheck web+bot OK, prueba real en dev + undo). Sin recorrido visual (login de Google). → `en_revision`.
 - **HU-020 aprobada** (reviewer Sonnet, 1ª ronda). Dudas no bloqueantes: frases genéricas de menú del PDF real en fixtures y en la HU. PR a develop con `Closes #48`; migrar Neon antes del merge.
+
+## 2026-11-12 — Migración a VPS + HU-023 Mercado Pago OAuth
+- Producción pasó de Vercel + Neon a VPS propio (169.58.151.56, deploy/compose.yml, Caddy, sslip.io). PR #52. Base nueva vacía + seed base. Bot vinculado al WhatsApp de Joel para la prueba. Vercel desconectado del repo; falta `vercel project pause` (interactivo).
+- Prueba punta a punta OK: Leo sacó turno con seña $100, pagó con MP real, webhook → turno CONFIRMED y confirmación por WhatsApp.
+- **HU-023 mercadopago-oauth** → issue #53, rama feat/HU-023-mercadopago-oauth, `afinando` (afinador, Opus).
+- HU-023: afinada (D1–D14) → `afinada_pendiente_validacion`.
+- HU-023 **validada** (Resoluciones al final de la HU: app "Numa", PKCE, sin cuenta no hay seña; Joel conecta su cuenta por ahora).
+- HU-023 → `en_arquitectura` (architect Opus; migracion-prisma + ui).
+- HU-023: SDD lista (Refactorizaciones/mercadopago-oauth.md), verify.sh OK → `arquitectura_lista`.
+- HU-023 → `implementando` (Opus; migracion-prisma, apple-design, web-design-guidelines).
+- HU-023: implementer (Opus) `done` → progress/impl_HU-023.md (2657 tests OK, typecheck OK, migración aplicada en dev con pg_dump previo). Sin recorrido visual (login Google). → `en_revision`.
+- **HU-023 aprobada** (reviewer Opus, 1ª ronda, sin cambios). 4 dudas no bloqueantes en progress/review_HU-023.md (la 1: posible falso 'revocado' si MP responde 401 a un pago de la cuenta vieja, mirar en la prueba). PR a develop con `Closes #53`; migrar el VPS antes del merge.

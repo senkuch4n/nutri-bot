@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn() }));
+const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -10,12 +10,13 @@ vi.mock("@nutri-bot/db/domain", () => ({
   enqueueAfterHoursDigest: mocks.digest,
   purgeExpiredBotAiQuestions: mocks.purge,
   clearExpiredSessionText: mocks.clearSessions,
+  refreshMercadoPagoAccountToken: mocks.mpRefresh,
 }));
 vi.mock("./ai/runtime", () => ({ getBotAiConfig: () => ({ limits: { retentionDays: 90 } }) }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
 vi.mock("./outbound-payload", () => ({ OUTBOX_INCLUDE: {}, resolveOutboundPayload: vi.fn() }));
 vi.mock("./env", () => ({ env: { pollIntervalMs: 4000 } }));
-vi.mock("./logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: mocks.error } }));
+vi.mock("./logger", () => ({ logger: { info: mocks.info, warn: vi.fn(), error: mocks.error } }));
 import { runServiceReminders, runStartupJobs, startCron } from "./workers";
 
 describe("payment cron without Baileys or database", () => {
@@ -202,5 +203,47 @@ describe("service reminders cron (HU-014)", () => {
     await runStartupJobs();
     expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
     expect(mocks.prep).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("renovación diaria de Mercado Pago (HU-023)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+  it("hay un cron \"0 6 * * *\" cuyo tick renueva una vez", async () => {
+    mocks.mpRefresh.mockResolvedValue("refreshed");
+    startCron();
+    const daily = mocks.schedule.mock.calls.filter((c) => c[0] === "0 6 * * *");
+    expect(daily).toHaveLength(1);
+    await daily[0]![1]();
+    expect(mocks.mpRefresh).toHaveBeenCalledTimes(1);
+    expect(mocks.mpRefresh).toHaveBeenCalledWith();
+    expect(mocks.info).toHaveBeenCalledWith({ result: "refreshed" }, "Renovación Mercado Pago");
+    // Va entre Google Calendar y la limpieza de sesiones; los asserts de orden siguen valiendo.
+    const exprs = mocks.schedule.mock.calls.map((c) => c[0]);
+    expect(exprs[0]).toBe("* * * * *");
+    expect(exprs.at(-2)).toBe("30 4 * * *");
+    expect(exprs.indexOf("0 6 * * *")).toBeLessThan(exprs.lastIndexOf("*/5 * * * *"));
+  });
+  it("not_needed / not_connected no ensucian el log", async () => {
+    mocks.mpRefresh.mockResolvedValue("not_needed");
+    startCron();
+    await mocks.schedule.mock.calls.find((c) => c[0] === "0 6 * * *")![1]();
+    expect(mocks.info).not.toHaveBeenCalled();
+  });
+  it("si la renovación rechaza, no propaga y loguea sin el error crudo", async () => {
+    mocks.mpRefresh.mockRejectedValue(new Error("Authorization: Bearer secreto"));
+    startCron();
+    const tick = mocks.schedule.mock.calls.find((c) => c[0] === "0 6 * * *")![1];
+    await expect(tick()).resolves.toBeUndefined();
+    expect(mocks.error).toHaveBeenCalledWith("Error renovando Mercado Pago");
+    expect(JSON.stringify(mocks.error.mock.calls)).not.toContain("secreto");
+  });
+  it("la conciliación loguea los pagos salteados", async () => {
+    mocks.reconcile.mockResolvedValue({ processed: 0, failed: 0, skipped: 2 });
+    startCron();
+    await mocks.schedule.mock.calls[0]![1]();
+    expect(mocks.info).toHaveBeenCalledWith({ processed: 0, failed: 0, skipped: 2 }, "Conciliación Mercado Pago");
+    expect(mocks.expire).toHaveBeenCalledTimes(1);
   });
 });
