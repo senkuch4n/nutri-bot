@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { m, useReducedMotionConfig } from "motion/react";
-import { CalendarDays, ChevronLeft, ChevronRight, FileText, MessageCircle, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, FileText, MessageCircle, SlidersHorizontal, Wallet, type LucideIcon } from "lucide-react";
 import { SETTINGS_TEXT as T } from "@nutri-bot/core";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { PageHeader, cn } from "@/components/ui";
@@ -15,6 +15,7 @@ export const AJUSTES_TABS = [
   { value: "general", label: T.sections.general },
   { value: "whatsapp", label: T.sections.whatsapp },
   { value: "google", label: T.sections.google },
+  { value: "mercadopago", label: T.sections.mercadopago },
   { value: "pdf", label: T.sections.pdf },
 ] as const;
 
@@ -32,6 +33,7 @@ const ICONS: Record<AjustesTabValue, LucideIcon> = {
   general: SlidersHorizontal,
   whatsapp: MessageCircle,
   google: CalendarDays,
+  mercadopago: Wallet,
   pdf: FileText,
 };
 
@@ -49,8 +51,8 @@ function tabHref(tab: AjustesTabValue | null): string {
 /**
  * Ajustes (HU-017b-4, D20): desde 1024 px, índice lateral con la sección activa en `tint-soft`; en el
  * celular, la lista de secciones y, al tocar una, la sección con "‹ Ajustes". La sección elegida vive en
- * `?tab=` (`general | whatsapp | google | pdf`; el editor del informe enlaza `?tab=pdf`) y se escribe con
- * `replaceUrlInRouter` (sin ida al servidor ni entradas en el historial). Las cuatro secciones quedan
+ * `?tab=` (`general | whatsapp | google | mercadopago | pdf`; el editor del informe enlaza `?tab=pdf`) y se escribe con
+ * `replaceUrlInRouter` (sin ida al servidor ni entradas en el historial). Las secciones quedan
  * montadas para no perder lo escrito al cambiar: cada grupo guarda solo lo suyo y el índice marca con un
  * punto la sección que quedó a medias. Todo se resuelve con CSS por ancho (sin desajuste de hidratación).
  */
@@ -58,16 +60,20 @@ export function AjustesTabs({
   panels,
   summaries,
   banner,
+  mercadoPagoBanner,
 }: {
   panels: Record<AjustesTabValue, ReactNode>;
   /** Valor corto de cada sección en la lista del celular ("Conectado"). Solo texto. */
   summaries?: Partial<Record<AjustesTabValue, string>>;
   /** Aviso fijo arriba (WhatsApp desconectado), en todas las secciones. */
   banner?: ReactNode;
+  /** HU-023: aviso "servicios con seña sin Mercado Pago", después del de WhatsApp. No se muestra con la
+   *  sección Mercado Pago abierta (ahí ya está el estado de la cuenta). */
+  mercadoPagoBanner?: ReactNode;
 }) {
   return (
     <SettingsDirtyProvider>
-      <AjustesLayout panels={panels} summaries={summaries} banner={banner} />
+      <AjustesLayout panels={panels} summaries={summaries} banner={banner} mercadoPagoBanner={mercadoPagoBanner} />
     </SettingsDirtyProvider>
   );
 }
@@ -76,10 +82,12 @@ function AjustesLayout({
   panels,
   summaries,
   banner,
+  mercadoPagoBanner,
 }: {
   panels: Record<AjustesTabValue, ReactNode>;
   summaries?: Partial<Record<AjustesTabValue, string>>;
   banner?: ReactNode;
+  mercadoPagoBanner?: ReactNode;
 }) {
   const param = useSearchParams().get("tab");
   const fromUrl: AjustesTabValue | null = isTab(param) ? param : null;
@@ -129,6 +137,9 @@ function AjustesLayout({
         <PageHeader title="Ajustes" description={T.pageDescription} />
       </div>
       {banner ? <div className="mb-6 max-w-3xl lg:ml-[15rem]">{banner}</div> : null}
+      {mercadoPagoBanner && active !== "mercadopago" ? (
+        <div className="mb-6 max-w-3xl lg:ml-[15rem]">{mercadoPagoBanner}</div>
+      ) : null}
 
       <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-8">
         {/* Índice lateral (≥ 1024 px) */}

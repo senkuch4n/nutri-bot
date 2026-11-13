@@ -124,3 +124,30 @@ describe("reminderMessage (HU-014)", () => {
     );
   });
 });
+
+describe("textos de HU-023 (Mercado Pago)", () => {
+  it("DEPOSIT_UNAVAILABLE exacto", () => {
+    expect(messages.DEPOSIT_UNAVAILABLE).toBe(
+      "No pude generar el link de pago de la seña en este momento. 😕\nTe aviso a la nutricionista para que te contacte y coordinen el turno. También podés escribir *menú* para ver otras opciones.",
+    );
+  });
+
+  it("professionalDepositUnavailableAlert con nombre y sin nombre (usa el teléfono)", () => {
+    expect(
+      messages.professionalDepositUnavailableAlert({ patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Primera consulta" }),
+    ).toBe(
+      "⚠️ Ana quiso reservar *Primera consulta* pero no se pudo generar el link de la seña porque Mercado Pago no está conectado. Conectalo en el panel: Ajustes → Mercado Pago.",
+    );
+    expect(
+      messages.professionalDepositUnavailableAlert({ patientName: null, patientPhone: "+5493515552345", serviceName: "Control" }),
+    ).toBe(
+      "⚠️ +5493515552345 quiso reservar *Control* pero no se pudo generar el link de la seña porque Mercado Pago no está conectado. Conectalo en el panel: Ajustes → Mercado Pago.",
+    );
+  });
+
+  it("MERCADOPAGO_DISCONNECTED_ALERT exacto", () => {
+    expect(messages.MERCADOPAGO_DISCONNECTED_ALERT).toBe(
+      "⚠️ Se desconectó tu cuenta de Mercado Pago en NutriBot, así que por ahora los pacientes no pueden pagar señas. Volvé a conectarla en el panel: Ajustes → Mercado Pago.",
+    );
+  });
+});

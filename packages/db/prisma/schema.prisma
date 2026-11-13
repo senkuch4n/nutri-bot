@@ -473,6 +473,9 @@ model Payment {
   externalId    String?
   preferenceId  String?
   checkoutUrl   String?
+  /// HU-023 (D6): user_id de MP de la cuenta con la que se creó la preferencia. null = pagos
+  /// manuales, pagos anteriores a la HU-023 o creados con el token de respaldo del .env (solo dev).
+  mercadopagoUserId String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   paidAt        DateTime?
@@ -480,6 +483,55 @@ model Payment {
   @@index([appointmentId])
   @@index([preferenceId])
   @@index([externalId])
+}
+
+/// HU-023: cuenta de Mercado Pago vinculada por OAuth (aplicación "Numa"). Fila única id = 1 (hay
+/// una sola Professional). La fila puede existir sin cuenta vinculada (guarda el tope del aviso
+/// "falta Mercado Pago"). Se crea perezosamente con INSERT ... ON CONFLICT DO NOTHING.
+/// DATO SENSIBLE: accessTokenEnc / refreshTokenEnc van cifrados (AES-256-GCM con
+/// MERCADOPAGO_TOKEN_KEY, formato "v1.<iv>.<tag>.<ct>" en base64url). Solo los lee
+/// domain/mercadopagoAccount.ts; nunca viajan al navegador ni a los logs.
+model MercadoPagoAccount {
+  id              Int       @id @default(1)
+  /// user_id de MP de la cuenta vinculada (número, guardado como texto). null = sin cuenta.
+  userId          String?
+  nickname        String?
+  email           String?
+  /// live_mode que devolvió /oauth/token. En producción solo se acepta true (D8).
+  liveMode        Boolean?
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  /// scope que devolvió MP (p. ej. "offline_access payments read write"). Diagnóstico.
+  scope           String?
+  /// Vencimiento del access_token (now + expires_in al canjear / renovar).
+  expiresAt       DateTime?
+  connectedAt     DateTime?
+  refreshedAt     DateTime?
+  /// "revoked" | "refresh_failed" | "decrypt_failed". null = sin error. Se borra al reconectar.
+  errorCode       String?
+  errorAt         DateTime?
+  /// Cuándo se encoló el aviso de WhatsApp de este incidente (uno por incidente, D5).
+  errorNotifiedAt DateTime?
+  /// Último aviso "un paciente no pudo reservar porque falta Mercado Pago" (máx. 1 cada 24 h, D5).
+  missingAlertAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+/// HU-023: estado temporal del OAuth (anti-CSRF + PKCE). Un solo uso: se borra con
+/// DELETE ... RETURNING al volver del callback. Vence a los 10 minutos.
+model MercadoPagoOAuthState {
+  id              String   @id @default(cuid())
+  /// sha256 (hex) del state que viaja a MP. El state en claro no se guarda.
+  stateHash       String   @unique
+  /// code_verifier de PKCE, cifrado con la misma clave que los tokens.
+  codeVerifierEnc String
+  /// Email de la sesión de Auth.js que inició el flujo: el callback exige la misma sesión.
+  sessionEmail    String
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 enum MessageStatus {

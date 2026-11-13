@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
 import {
@@ -13,6 +14,12 @@ import {
   validateBotAiInfo,
   validateLogoImage,
 } from "@nutri-bot/core";
+import {
+  MercadoPagoConfigError,
+  disconnectMercadoPagoAccount,
+  startMercadoPagoOAuth,
+} from "@nutri-bot/db/domain";
+import { auth } from "@/auth";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 
 export type SettingsState = { ok: boolean; error?: string };
@@ -239,4 +246,32 @@ export async function saveBotAiAction(_prev: SettingsState, formData: FormData):
   });
   revalidatePath("/ajustes");
   return { ok: true };
+}
+
+// HU-023: Mercado Pago (OAuth de la aplicación "Numa").
+
+/** Botón "Conectar Mercado Pago" / "Reconectar": crea el estado del OAuth y manda a Mercado Pago.
+ *  `redirect` tira NEXT_REDIRECT: se llama fuera del try/catch. */
+export async function connectMercadoPagoAction(): Promise<void> {
+  const session = await auth();
+  const email = session?.user?.email;
+  if (!email) redirect("/inicio");
+  let target: string;
+  try {
+    const { url } = await startMercadoPagoOAuth(email);
+    target = url;
+  } catch (error) {
+    if (!(error instanceof MercadoPagoConfigError)) throw error;
+    target = "/ajustes?tab=mercadopago&mp=not_configured";
+  }
+  redirect(target);
+}
+
+/** Botón "Desconectar" (con confirmación en el cliente). Cancela las señas pendientes de la cuenta (D6). */
+export async function disconnectMercadoPagoAction(): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.email) redirect("/inicio");
+  await disconnectMercadoPagoAccount();
+  revalidatePath("/ajustes");
+  revalidatePath("/servicios");
 }

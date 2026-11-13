@@ -1,0 +1,25 @@
+{
+  "id": "HU-023",
+  "responsable": "senkuch4n",
+  "slug": "mercadopago-oauth",
+  "titulo": "Conectar la cuenta de Mercado Pago de la profesional (OAuth)",
+  "origen": "Prueba punta a punta en el VPS (2026-11-12): la seña se cobró con la cuenta de Leo. Joel quiere que la profesional autorice cobrar a su nombre sin pasar credenciales.",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-mercadopago-oauth.md",
+  "sdd": "Refactorizaciones/mercadopago-oauth.md",
+  "rama": "feat/HU-023-mercadopago-oauth",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/53",
+  "notas": "Lleva migración (tokens). Cruce con HU-021 (imleticio, #50) en packages/db/domain/payments.ts. Producción ahora en VPS (deploy/), no Vercel. Joel prueba en paralelo la vinculación manual con su cuenta.",
+  "modelo": "opus",
+  "modelo_reviewer": "opus",
+  "skills_architect": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "skills": [
+    "migracion-prisma",
+    "apple-design",
+    "web-design-guidelines"
+  ]
+}
