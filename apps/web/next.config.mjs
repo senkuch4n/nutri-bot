@@ -3,6 +3,11 @@ const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
   outputFileTracingRoot: new URL("../../", import.meta.url).pathname,
+  // pdfkit (vía @react-pdf/renderer) carga sus fuentes estándar con un require dinámico que el
+  // trazado de archivos no detecta: sin esto el build standalone (Docker) no las copia y los PDF fallan.
+  outputFileTracingIncludes: {
+    "/**": ["../../node_modules/pdfkit/js/standard-fonts/**", "../../node_modules/pdfkit/js/data/**"],
+  },
   transpilePackages: ["@nutri-bot/core", "@nutri-bot/db"],
   serverExternalPackages: ["@prisma/client", ".prisma/client", "googleapis", "google-auth-library", "sharp"],
   experimental: {

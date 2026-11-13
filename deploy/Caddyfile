@@ -1,0 +1,5 @@
+# El dominio sale de DOMAIN en deploy/.env. Caddy saca y renueva el certificado solo.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
