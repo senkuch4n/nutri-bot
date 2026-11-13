@@ -352,3 +352,4 @@ orquestador, para que las revise a la mañana:
 - Prueba punta a punta OK: Leo sacó turno con seña $100, pagó con MP real, webhook → turno CONFIRMED y confirmación por WhatsApp.
 - **HU-023 mercadopago-oauth** → issue #53, rama feat/HU-023-mercadopago-oauth, `afinando` (afinador, Opus).
 - HU-023: afinada (D1–D14) → `afinada_pendiente_validacion`.
+- HU-023 **validada** (Resoluciones al final de la HU: app "Numa", PKCE, sin cuenta no hay seña; Joel conecta su cuenta por ahora).

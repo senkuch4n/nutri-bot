@@ -411,3 +411,20 @@ Si `phoneJid` no está cargado, solo queda el aviso del panel.
 - **D14. Puesta en marcha con la licenciada:** ¿ella hace la conexión sola desde el panel, o la
   acompañan? ¿Tiene cuenta de Mercado Pago a su nombre (persona física/monotributo) lista para
   recibir cobros? Si no, la HU se puede implementar igual pero no se puede probar en real.
+
+## Resoluciones (validadas por el usuario, 2026-11-12)
+
+- **D1:** la aplicación de Mercado Pago se llama **"Numa"** (es lo que ve la profesional al autorizar).
+- **D2:** PKCE sí (S256).
+- **D3:** opción (a). En producción, sin cuenta vinculada no se cobra seña; el token del `.env` solo como respaldo explícito para desarrollo.
+- **D4:** cron diario del bot (renueva si faltan < 30 días) + renovación al usar si ya venció.
+- **D5:** los dos avisos por WhatsApp, con tope de uno cada 24 h / uno por incidente.
+- **D6:** las señas PENDING de la cuenta anterior se cancelan con el aviso de seña vencida.
+- **D7:** solo advertir, no bloquear "Desconectar".
+- **D8:** usuarios de prueba de MP en dev; se guarda el ambiente de la cuenta vinculada para impedir un token de prueba en producción.
+- **D9:** nickname + email; sin fecha de renovación.
+- **D10:** variable nueva (`MERCADOPAGO_TOKEN_KEY`), decisión final del architect.
+- **D11:** fuera de alcance.
+- **D12:** en paralelo con HU-021 (#50); se resuelve en el rebase.
+- **D13:** el dominio propio no es requisito; si cambia, se actualiza la redirect_uri en la app de MP.
+- **D14:** la profesional tiene cuenta para conectar. Por ahora Joel conecta su propia cuenta para cobrar; después se pasa a la de ella.
