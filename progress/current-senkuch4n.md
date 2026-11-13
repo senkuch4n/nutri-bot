@@ -351,3 +351,4 @@ orquestador, para que las revise a la mañana:
 - Producción pasó de Vercel + Neon a VPS propio (169.58.151.56, deploy/compose.yml, Caddy, sslip.io). PR #52. Base nueva vacía + seed base. Bot vinculado al WhatsApp de Joel para la prueba. Vercel desconectado del repo; falta `vercel project pause` (interactivo).
 - Prueba punta a punta OK: Leo sacó turno con seña $100, pagó con MP real, webhook → turno CONFIRMED y confirmación por WhatsApp.
 - **HU-023 mercadopago-oauth** → issue #53, rama feat/HU-023-mercadopago-oauth, `afinando` (afinador, Opus).
+- HU-023: afinada (D1–D14) → `afinada_pendiente_validacion`.
