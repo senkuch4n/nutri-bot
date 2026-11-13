@@ -357,3 +357,4 @@ orquestador, para que las revise a la mañana:
 - HU-023: SDD lista (Refactorizaciones/mercadopago-oauth.md), verify.sh OK → `arquitectura_lista`.
 - HU-023 → `implementando` (Opus; migracion-prisma, apple-design, web-design-guidelines).
 - HU-023: implementer (Opus) `done` → progress/impl_HU-023.md (2657 tests OK, typecheck OK, migración aplicada en dev con pg_dump previo). Sin recorrido visual (login Google). → `en_revision`.
+- **HU-023 aprobada** (reviewer Opus, 1ª ronda, sin cambios). 4 dudas no bloqueantes en progress/review_HU-023.md (la 1: posible falso 'revocado' si MP responde 401 a un pago de la cuenta vieja, mirar en la prueba). PR a develop con `Closes #53`; migrar el VPS antes del merge.

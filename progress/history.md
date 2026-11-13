@@ -506,3 +506,7 @@
   en la base ni en el repo (D12). D6 provisoria (tandas numeradas); D12/D14/D15 esperan más PDF de la nutricionista.
 - Migración `plan_template_import` (aditiva). Implementer Opus, reviewer Sonnet: APPROVED en la 1ª ronda.
 - Pendiente: migrar Neon antes del merge; recorrido visual con sesión de Google; importar en producción.
+
+## HU-023 · Conectar la cuenta de Mercado Pago de la profesional (OAuth) — aprobada 2026-11-12 (senkuch4n)
+- La profesional vincula su cuenta de MP desde Ajustes → Mercado Pago (app "Numa", OAuth + PKCE S256). Tokens cifrados AES-256-GCM (`MERCADOPAGO_TOKEN_KEY`) en `MercadoPagoAccount`; renovación diaria del bot con lock de fila; sin cuenta no se cobra seña (D3); cambiar/desconectar cancela las señas de la cuenta anterior (D6).
+- Migración aditiva `mercadopago_oauth`. Implementer Opus, reviewer Opus (APPROVED 1ª ronda). Docs: docs/hu-mercadopago-oauth.md, Refactorizaciones/mercadopago-oauth.md, progress/impl_HU-023.md, progress/review_HU-023.md. Issue #53.
