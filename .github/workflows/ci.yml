@@ -5,7 +5,9 @@ on:
   pull_request:
     branches: [develop, main]
   push:
-    branches: [develop, main]
+    branches: [develop]
+  # El push a main lo cubre deploy.yml, que llama a este workflow antes de desplegar.
+  workflow_call:
 
 jobs:
   verificar:
