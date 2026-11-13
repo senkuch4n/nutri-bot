@@ -1,5 +1,6 @@
 import { Prisma, prisma } from "@nutri-bot/db";
 import {
+  MercadoPagoUnavailableError,
   SlotUnavailableError,
   cancelAppointment,
   createAppointment,
@@ -8,7 +9,9 @@ import {
   findOrCreatePatientByJid,
   countBotAiQuestionsToday,
   getProfessional,
+  isMercadoPagoCheckoutAvailable,
   markBotAiQuestionHandedOff,
+  notifyMercadoPagoMissingForBooking,
   recordBotAiQuestion,
   recordInquiryMessage,
   runBotAiTool,
@@ -551,11 +554,19 @@ async function handleBookConfirm(
     return;
   }
 
+  let serviceName: string | null = null;
   try {
     const [service, pro] = await Promise.all([
       prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } }),
       getProfessional(),
     ]);
+    serviceName = service.name;
+    // HU-023 (D3): sin cuenta de Mercado Pago usable no se crea el turno con seña.
+    if (service.requiresDeposit && !(await isMercadoPagoCheckoutAvailable())) {
+      await depositUnavailable(patientId, service.name, send);
+      await save(jid, STEP.MENU);
+      return;
+    }
     const appointment = await createAppointment({
       patientId,
       serviceId: ctx.serviceId,
@@ -583,6 +594,10 @@ async function handleBookConfirm(
         }
       }
       await send(messages.SLOT_TAKEN);
+    } else if (err instanceof MercadoPagoUnavailableError) {
+      // HU-023: carrera (la cuenta se cayó entre el chequeo y el checkout). El turno ya quedó
+      // cancelado por el catch de createDepositCheckout.
+      await depositUnavailable(patientId, serviceName ?? "", send);
     } else {
       // Provider errors may contain request headers with the access token.
       logger.error({ errorType: err instanceof Error ? err.name : "UnknownError" }, "Error creando turno desde el bot");
@@ -590,6 +605,20 @@ async function handleBookConfirm(
     }
   }
   await save(jid, STEP.MENU);
+}
+
+/** HU-023 (D3/D5): avisa al paciente que la seña no está disponible y a la profesional (tope 24 h). */
+async function depositUnavailable(patientId: string, serviceName: string, send: Send): Promise<void> {
+  await send(messages.DEPOSIT_UNAVAILABLE);
+  try {
+    const patient = await prisma.patient.findUnique({ where: { id: patientId }, select: { name: true, phone: true } });
+    if (patient) {
+      await notifyMercadoPagoMissingForBooking({ patientName: patient.name, patientPhone: patient.phone, serviceName });
+    }
+  } catch (err) {
+    // Un error al encolar no cambia lo que ve el paciente.
+    logger.error({ errorType: err instanceof Error ? err.name : "UnknownError" }, "Error avisando que falta Mercado Pago");
+  }
 }
 
 async function handleCancelPick(jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
