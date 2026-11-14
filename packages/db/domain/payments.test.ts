@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), search: vi.fn(), createPreference: vi.fn(), prisma: {
+const mocks = vi.hoisted(() => ({ get: vi.fn(), search: vi.fn(), createPreference: vi.fn(),
+  getMercadoPagoCredentials: vi.fn(), markMercadoPagoAccountError: vi.fn(), prisma: {
   $transaction: vi.fn(), $queryRaw: vi.fn(),
   payment: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   appointment: { findUniqueOrThrow: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
@@ -8,6 +9,13 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), search: vi.fn(), createPreferenc
   outboundMessage: { createMany: vi.fn() },
 } }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
+// HU-023: el token sale de la cuenta vinculada; acá se mockea el resolvedor (sin base ni red).
+vi.mock("./mercadopagoAccount", () => ({
+  getMercadoPagoCredentials: mocks.getMercadoPagoCredentials,
+  markMercadoPagoAccountError: mocks.markMercadoPagoAccountError,
+  MercadoPagoUnavailableError: class MercadoPagoUnavailableError extends Error {},
+}));
+const CREDS = { accessToken: "isolated-test-token", sellerUserId: "seller-1", source: "account" as const };
 vi.mock("mercadopago", () => ({
   MercadoPagoConfig: class {}, Preference: class { create = mocks.createPreference; },
   Payment: class { get = mocks.get; search = mocks.search; },
@@ -17,7 +25,8 @@ import { createDepositCheckout, expireStalePendingPayments, handleMercadoPagoWeb
 describe("checkout return URL configuration", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.stubEnv("MERCADOPAGO_ACCESS_TOKEN", "isolated-test-token");
+    mocks.getMercadoPagoCredentials.mockResolvedValue(CREDS);
+    mocks.markMercadoPagoAccountError.mockResolvedValue(undefined);
     vi.stubEnv("AUTH_URL", "http://localhost:3000");
     vi.stubEnv("MERCADOPAGO_RETURN_URL", "https://return.example.test/result");
     vi.stubEnv("MERCADOPAGO_NOTIFICATION_URL", "https://notifications.example.test/api/webhooks/mercadopago");
@@ -59,13 +68,13 @@ describe("checkout return URL configuration", () => {
     appointment.service.depositValue = depositKind === "PERCENT" ? 30 : 2500;
     const amount = depositKind === "PERCENT" ? 3000 : 2500;
     await expect(createDepositCheckout("appointment")).resolves.toEqual({ amount, paymentId: "internal", checkoutUrl: "https://checkout.example.test" });
-    expect(mocks.prisma.payment.create).toHaveBeenCalledWith({ data: { appointmentId: "appointment", kind: "DEPOSIT", status: "PENDING", amount } });
+    expect(mocks.prisma.payment.create).toHaveBeenCalledWith({ data: { appointmentId: "appointment", kind: "DEPOSIT", status: "PENDING", amount, mercadopagoUserId: "seller-1" } });
   });
 
-  it.each(["api-error", "missing-link", "missing-token", "invalid-deposit"])("releases the reservation after %s", async (failure) => {
+  it.each(["api-error", "missing-link", "no-credentials", "invalid-deposit"])("releases the reservation after %s", async (failure) => {
     if (failure === "api-error") mocks.createPreference.mockRejectedValue(new Error("offline"));
     if (failure === "missing-link") mocks.createPreference.mockResolvedValue({ id: "preference" });
-    if (failure === "missing-token") vi.stubEnv("MERCADOPAGO_ACCESS_TOKEN", "   ");
+    if (failure === "no-credentials") mocks.getMercadoPagoCredentials.mockResolvedValue(null);
     if (failure === "invalid-deposit") {
       const appointment = await mocks.prisma.appointment.findUniqueOrThrow();
       appointment.service.depositValue = NaN;
@@ -75,7 +84,39 @@ describe("checkout return URL configuration", () => {
       where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: expect.objectContaining({ status: "CANCELLED" }),
     }));
     expect(mocks.prisma.payment.updateMany).toHaveBeenCalledWith({ where: { appointmentId: "appointment", status: "PENDING" }, data: { status: "CANCELLED" } });
-    if (["missing-token", "invalid-deposit"].includes(failure)) expect(mocks.prisma.payment.create).not.toHaveBeenCalled();
+    if (["no-credentials", "invalid-deposit"].includes(failure)) expect(mocks.prisma.payment.create).not.toHaveBeenCalled();
+  });
+
+  it("sin credenciales tira MercadoPagoUnavailableError y no llama a Mercado Pago", async () => {
+    mocks.getMercadoPagoCredentials.mockResolvedValue(null);
+    const error = await createDepositCheckout("appointment").catch((e: unknown) => e);
+    expect((error as Error).message).toBe("No hay cuenta de Mercado Pago usable");
+    expect(error?.constructor?.name).toBe("MercadoPagoUnavailableError");
+    expect(mocks.createPreference).not.toHaveBeenCalled();
+    expect(mocks.getMercadoPagoCredentials).toHaveBeenCalledWith({ kind: "current" });
+  });
+
+  it("401 de Mercado Pago al crear la preferencia marca la cuenta como revocada y libera la reserva", async () => {
+    mocks.createPreference.mockRejectedValue({ status: 401, error: "unauthorized" });
+    await expect(createDepositCheckout("appointment")).rejects.toEqual({ status: 401, error: "unauthorized" });
+    expect(mocks.markMercadoPagoAccountError).toHaveBeenCalledWith("revoked");
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: expect.objectContaining({ status: "CANCELLED" }),
+    }));
+  });
+
+  it("500 de Mercado Pago no marca la cuenta", async () => {
+    mocks.createPreference.mockRejectedValue({ status: 500 });
+    await expect(createDepositCheckout("appointment")).rejects.toEqual({ status: 500 });
+    expect(mocks.markMercadoPagoAccountError).not.toHaveBeenCalled();
+  });
+
+  it("con el token de respaldo de dev no marca la cuenta aunque MP responda 401", async () => {
+    mocks.getMercadoPagoCredentials.mockResolvedValue({ accessToken: "env", sellerUserId: null, source: "env_fallback" });
+    mocks.createPreference.mockRejectedValue({ status: 401 });
+    await expect(createDepositCheckout("appointment")).rejects.toEqual({ status: 401 });
+    expect(mocks.markMercadoPagoAccountError).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.create).toHaveBeenCalledWith({ data: expect.objectContaining({ mercadopagoUserId: null }) });
   });
 
   it("does not cancel payments if concurrent approval already confirmed the appointment", async () => {
@@ -99,7 +140,8 @@ describe("payment reconciliation without database or network", () => {
   let payment: any;
   beforeEach(() => {
     vi.resetAllMocks();
-    process.env.MERCADOPAGO_ACCESS_TOKEN = "isolated-test-token";
+    mocks.getMercadoPagoCredentials.mockResolvedValue(CREDS);
+    mocks.markMercadoPagoAccountError.mockResolvedValue(undefined);
     payment = { id: "internal", provider: "mercadopago", kind: "DEPOSIT", status: "PENDING", paidAt: null,
       appointment: { id: "appointment", status: "AWAITING_PAYMENT", startsAt: new Date("2026-10-01T12:00:00Z"),
         patient: { whatsappJid: "fake", name: "Test", phone: "fake" }, service: { name: "Test service" } } };
@@ -173,7 +215,7 @@ describe("payment reconciliation without database or network", () => {
   it("confirms through polling when the Webhook is absent and ignores a later approval replay", async () => {
     mocks.prisma.payment.findMany.mockResolvedValue([{ id: "internal", preferenceId: "preference" }]);
     mocks.search.mockResolvedValue({ results: [{ id: 123 }], paging: { total: 1 } });
-    expect(await reconcilePendingPayments()).toEqual({ processed: 1, failed: 0 });
+    expect(await reconcilePendingPayments()).toEqual({ processed: 1, failed: 0, skipped: 0 });
     expect(mocks.search.mock.calls[0]?.[0].options.external_reference).toBe("internal");
     expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
     expect(payment.status).toBe("APPROVED");
@@ -187,7 +229,7 @@ describe("payment reconciliation without database or network", () => {
     mocks.prisma.payment.findMany.mockResolvedValue([{ id: "broken", externalId: "bad" }, { id: "internal", externalId: "123" }]);
     mocks.get.mockRejectedValueOnce(new Error("offline"));
     const onError = vi.fn();
-    expect(await reconcilePendingPayments(onError)).toEqual({ processed: 1, failed: 1 });
+    expect(await reconcilePendingPayments(onError)).toEqual({ processed: 1, failed: 1, skipped: 0 });
     expect(onError).toHaveBeenCalledWith("broken");
     expect(payment.status).toBe("APPROVED");
   });
@@ -271,5 +313,40 @@ describe("payment reconciliation without database or network", () => {
     await Promise.all([syncMercadoPagoPayment("123"), syncMercadoPagoPayment("123")]);
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
+  });
+  // HU-023: credenciales por cuenta.
+  it("skips a payment whose seller has no credentials without counting it as failed", async () => {
+    mocks.prisma.payment.findMany.mockResolvedValue([{ id: "internal", externalId: "123", preferenceId: "preference", mercadopagoUserId: "old-seller" }]);
+    mocks.getMercadoPagoCredentials.mockResolvedValue(null);
+    expect(await reconcilePendingPayments()).toEqual({ processed: 0, failed: 0, skipped: 1 });
+    expect(mocks.getMercadoPagoCredentials).toHaveBeenCalledWith({ kind: "payment", sellerUserId: "old-seller" });
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+  });
+  it("resolves credentials once per seller", async () => {
+    mocks.prisma.payment.findMany.mockResolvedValue([
+      { id: "internal", externalId: "123", mercadopagoUserId: "seller-1" },
+      { id: "internal", externalId: "123", mercadopagoUserId: "seller-1" },
+    ]);
+    expect(await reconcilePendingPayments()).toEqual({ processed: 2, failed: 0, skipped: 0 });
+    expect(mocks.getMercadoPagoCredentials).toHaveBeenCalledTimes(1);
+    expect(mocks.getMercadoPagoCredentials).toHaveBeenCalledWith({ kind: "payment", sellerUserId: "seller-1" });
+  });
+  it("does not confirm a payment created with another Mercado Pago account", async () => {
+    payment.mercadopagoUserId = "otro";
+    await syncMercadoPagoPayment("123");
+    expect(mocks.prisma.payment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.createMany).not.toHaveBeenCalled();
+  });
+  it("the webhook without credentials throws MercadoPagoUnavailableError before calling Mercado Pago", async () => {
+    mocks.getMercadoPagoCredentials.mockResolvedValue(null);
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+  it("a 401 while reconciling marks the account as revoked and counts as failed", async () => {
+    mocks.prisma.payment.findMany.mockResolvedValue([{ id: "internal", externalId: "123", mercadopagoUserId: "seller-1" }]);
+    mocks.get.mockRejectedValue({ status: 401 });
+    expect(await reconcilePendingPayments()).toEqual({ processed: 0, failed: 1, skipped: 0 });
+    expect(mocks.markMercadoPagoAccountError).toHaveBeenCalledWith("revoked");
   });
 });

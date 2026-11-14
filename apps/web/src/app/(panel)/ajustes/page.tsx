@@ -1,12 +1,16 @@
 import { CircleCheck, CircleSlash } from "lucide-react";
 import {
+  MERCADOPAGO_TEXT as MP,
   PROFESSIONAL_TEXT,
   SETTINGS_TEXT as T,
   formatPhone,
   professionalLogoNotice,
   professionalSignatureLines,
+  shouldWarnDepositWithoutMercadoPago,
+  type MercadoPagoConnectionStatus,
 } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
+import { getMercadoPagoConnectionView } from "@nutri-bot/db/domain";
 import { signIn } from "@/auth";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { Alert, Button, ButtonLink } from "@/components/ui";
@@ -20,6 +24,11 @@ import { BotToggle } from "./bot-toggle";
 import { GeneralForm } from "./general-form";
 import { GoogleCalendarForm, GoogleDisconnectButton } from "./google-calendar-form";
 import { LogoForm } from "./logo-form";
+import {
+  MercadoPagoCallbackBanner,
+  MercadoPagoConnectButton,
+  MercadoPagoDisconnectButton,
+} from "./mercadopago-section";
 import { PdfStyleForm } from "./pdf-style-form";
 import { SignatureForm } from "./signature-form";
 import { SignatureIdentityForm } from "./signature-identity-form";
@@ -37,11 +46,32 @@ function StatusValue({ ok, children }: { ok: boolean; children: string }) {
   );
 }
 
+/** HU-023: estado de la cuenta de Mercado Pago, con ícono + texto. "No conectada" en tono neutro salvo
+ *  que haya servicios con seña (ahí es una alerta). */
+function mercadoPagoStatusLabel(status: MercadoPagoConnectionStatus): string {
+  switch (status) {
+    case "connected":
+      return MP.connected;
+    case "needs_reconnect":
+      return MP.needsReconnect;
+    case "not_configured":
+      return MP.notConfigured;
+    default:
+      return MP.notConnected;
+  }
+}
+
+/** "12 de noviembre de 2026" en la zona de la profesional. */
+function formatConnectedAt(date: Date, tz: string): string {
+  return new Intl.DateTimeFormat("es-AR", { dateStyle: "long", timeZone: tz }).format(date);
+}
+
 export default async function AjustesPage() {
-  const [pro, botStatus, logo] = await Promise.all([
+  const [pro, botStatus, logo, mp] = await Promise.all([
     getProfessional(),
     prisma.botStatus.findUnique({ where: { id: 1 } }),
     prisma.professional.findUnique({ where: { id: 1 }, select: { logoData: true } }),
+    getMercadoPagoConnectionView(),
   ]);
   const googleConnected = Boolean(pro.googleRefreshToken);
   const botConnected = botStatus?.connected ?? false;
@@ -141,6 +171,86 @@ export default async function AjustesPage() {
     </>
   );
 
+  // HU-023: Ajustes → Mercado Pago (4 estados: no configurada, sin cuenta, conectada, hay que reconectar).
+  const mpHasAccount = mp.status === "connected" || mp.status === "needs_reconnect";
+  const mpStatusValue =
+    mp.status === "connected" ? (
+      <StatusValue ok>{MP.connected}</StatusValue>
+    ) : mp.status === "needs_reconnect" || (mp.status === "not_connected" && mp.hasActiveDepositServices) ? (
+      <StatusValue ok={false}>{mercadoPagoStatusLabel(mp.status)}</StatusValue>
+    ) : (
+      <span className="text-muted-foreground">{mercadoPagoStatusLabel(mp.status)}</span>
+    );
+  const mercadopago = (
+    <>
+      <MercadoPagoCallbackBanner />
+      {mp.status === "needs_reconnect" && mp.errorCode ? (
+        <Alert tone="danger">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>{MP.errorAlert(MP.errorReasons[mp.errorCode])}</p>
+            <MercadoPagoConnectButton reconnect />
+          </div>
+        </Alert>
+      ) : null}
+      {mp.status === "not_configured" ? (
+        <Alert tone="warning">
+          <p>{MP.callback.not_configured}</p>
+        </Alert>
+      ) : null}
+      <div>
+        <GroupedList footer={mpHasAccount ? undefined : MP.help}>
+          <GroupedListRow
+            label={MP.account}
+            value={mpStatusValue}
+            description={mpHasAccount && mp.liveMode === false ? MP.testAccount : undefined}
+          />
+          {mpHasAccount && (mp.nickname || mp.email) ? (
+            <GroupedListRow
+              label={MP.user}
+              value={
+                <span className="flex max-w-[11rem] flex-col items-end text-right sm:max-w-xs">
+                  <span className="break-all" translate="no">{mp.nickname ?? mp.email}</span>
+                  {mp.nickname && mp.email ? (
+                    <span className="break-all text-footnote text-muted-foreground" translate="no">{mp.email}</span>
+                  ) : null}
+                </span>
+              }
+            />
+          ) : null}
+          {mpHasAccount && mp.userId ? (
+            <GroupedListRow label={MP.userId} value={<span translate="no" className="tabular-nums">{mp.userId}</span>} />
+          ) : null}
+          {mpHasAccount && mp.connectedAt ? (
+            <GroupedListRow label={MP.connectedAt} value={formatConnectedAt(mp.connectedAt, pro.timezone)} />
+          ) : null}
+        </GroupedList>
+        <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
+          {mp.status === "connected" ? (
+            <>
+              <MercadoPagoConnectButton reconnect variant="secondary" />
+              <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
+            </>
+          ) : mp.status === "needs_reconnect" ? (
+            <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
+          ) : (
+            <MercadoPagoConnectButton disabled={mp.status === "not_configured"} />
+          )}
+        </div>
+      </div>
+    </>
+  );
+
+  const mercadoPagoBanner = shouldWarnDepositWithoutMercadoPago(mp) ? (
+    <Alert tone="warning" title={MP.depositWarningTitle}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p>{MP.depositWarningBody}</p>
+        <ButtonLink href="/ajustes?tab=mercadopago" variant="secondary">
+          {MP.depositWarningAction}
+        </ButtonLink>
+      </div>
+    </Alert>
+  ) : null;
+
   const pdf = (
     <>
       <SignatureIdentityForm
@@ -174,12 +284,14 @@ export default async function AjustesPage() {
 
   return (
     <AjustesTabs
-      panels={{ general, whatsapp, google, pdf }}
+      panels={{ general, whatsapp, google, mercadopago, pdf }}
       summaries={{
         whatsapp: botConnected ? T.connected : T.disconnected,
         google: googleConnected ? T.googleConnected : T.googleNotConnected,
+        mercadopago: mercadoPagoStatusLabel(mp.status),
       }}
       banner={banner}
+      mercadoPagoBanner={mercadoPagoBanner}
     />
   );
 }

@@ -1,6 +1,13 @@
 import { Tag } from "lucide-react";
-import { formatPrice, parseServiceReminders, serviceSummaryLine } from "@nutri-bot/core";
-import { EmptyState } from "@/components/ui";
+import {
+  MERCADOPAGO_TEXT as MP,
+  formatPrice,
+  parseServiceReminders,
+  serviceSummaryLine,
+  shouldWarnDepositWithoutMercadoPago,
+} from "@nutri-bot/core";
+import { getMercadoPagoConnectionView } from "@nutri-bot/db/domain";
+import { Alert, ButtonLink, EmptyState } from "@/components/ui";
 import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
 import { NewServiceButton } from "./new-service-button";
@@ -9,7 +16,9 @@ import { ServiceSections, type ServiceView } from "./service-card";
 export const dynamic = "force-dynamic";
 
 export default async function ServiciosPage() {
-  const [pro, services] = await Promise.all([getProfessional(), listServices()]);
+  const [pro, services, mp] = await Promise.all([getProfessional(), listServices(), getMercadoPagoConnectionView()]);
+  // HU-023: sin cuenta de Mercado Pago "conectada", los servicios con seña no se pueden reservar por WhatsApp.
+  const mercadoPagoReady = mp.status === "connected";
 
   // Solo datos planos al cliente (T9a): textos ya armados, nada de funciones ni componentes.
   const views: ServiceView[] = services.map((s) => {
@@ -55,8 +64,19 @@ export default async function ServiciosPage() {
           <h1 className="text-title-1 font-medium">Servicios</h1>
           <p className="mt-1 text-subheadline text-muted-foreground">Lo que el bot les ofrece a tus pacientes.</p>
         </div>
-        <NewServiceButton currency={pro.currency} />
+        <NewServiceButton currency={pro.currency} mercadoPagoReady={mercadoPagoReady} />
       </header>
+
+      {shouldWarnDepositWithoutMercadoPago(mp) ? (
+        <Alert tone="warning" title={MP.depositWarningTitle} className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>{MP.depositWarningBody}</p>
+            <ButtonLink href="/ajustes?tab=mercadopago" variant="secondary">
+              {MP.depositWarningAction}
+            </ButtonLink>
+          </div>
+        </Alert>
+      ) : null}
 
       {views.length === 0 ? (
         <div className="rounded-[1.75rem] bg-[#f6f5f8]">
@@ -64,11 +84,18 @@ export default async function ServiciosPage() {
             icon={Tag}
             title="Todavía no hay servicios"
             description="Cargá el primero para que el bot pueda ofrecerlo."
-            action={<NewServiceButton currency={pro.currency} label="Crear el primer servicio" variant="tinted" />}
+            action={
+              <NewServiceButton
+                currency={pro.currency}
+                mercadoPagoReady={mercadoPagoReady}
+                label="Crear el primer servicio"
+                variant="tinted"
+              />
+            }
           />
         </div>
       ) : (
-        <ServiceSections services={views} currency={pro.currency} />
+        <ServiceSections services={views} currency={pro.currency} mercadoPagoReady={mercadoPagoReady} />
       )}
     </div>
   );

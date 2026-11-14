@@ -110,6 +110,23 @@ export function depositExpired(params: { serviceName: string; startsAt: Date; tz
 Si todavía querés un turno, escribí *turno* para volver a intentar.`;
 }
 
+/** HU-023 (D3): al paciente, en BOOK_CONFIRM tras "sí", si el servicio pide seña y no hay cuenta usable. */
+export const DEPOSIT_UNAVAILABLE = `No pude generar el link de pago de la seña en este momento. 😕
+Te aviso a la nutricionista para que te contacte y coordinen el turno. También podés escribir *menú* para ver otras opciones.`;
+
+/** HU-023 (D5): a la profesional (PROFESSIONAL_ALERT a phoneJid), máx. 1 cada 24 h. */
+export function professionalDepositUnavailableAlert(params: {
+  patientName?: string | null;
+  patientPhone: string;
+  serviceName: string;
+}): string {
+  const who = params.patientName ?? params.patientPhone;
+  return `⚠️ ${who} quiso reservar *${params.serviceName}* pero no se pudo generar el link de la seña porque Mercado Pago no está conectado. Conectalo en el panel: Ajustes → Mercado Pago.`;
+}
+
+/** HU-023 (D5): a la profesional, una vez por incidente (revocado / renovación fallida / clave). */
+export const MERCADOPAGO_DISCONNECTED_ALERT = `⚠️ Se desconectó tu cuenta de Mercado Pago en NutriBot, así que por ahora los pacientes no pueden pagar señas. Volvé a conectarla en el panel: Ajustes → Mercado Pago.`;
+
 export const SLOT_TAKEN = `Ese horario se acaba de ocupar. Escribí *menú* para elegir otro.`;
 
 /** HU-013: el horario se ocupó pero el paciente ya había dejado motivo: se conserva y se ofrecen otros días. */

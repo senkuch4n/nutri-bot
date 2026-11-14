@@ -28,6 +28,7 @@ describe("DEPOSIT_AUTO_CANCEL_REASONS", () => {
     expect(DEPOSIT_AUTO_CANCEL_REASONS).toEqual({
       expired: "Venció el tiempo para pagar la seña",
       checkoutFailed: "No se pudo generar el checkout de la seña",
+      accountChanged: "Se desconectó o cambió la cuenta de Mercado Pago",
     });
   });
 });

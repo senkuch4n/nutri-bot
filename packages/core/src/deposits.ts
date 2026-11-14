@@ -1,3 +1,5 @@
+import { MERCADOPAGO_ACCOUNT_CHANGED_CANCEL_REASON } from "./mercadopago-oauth";
+
 export type DepositKind = "FIXED" | "PERCENT";
 
 /** Monto de la seña según el precio del servicio, redondeado a 2 decimales. */
@@ -14,4 +16,6 @@ export function computeDepositAmount(price: number, kind: DepositKind, value: nu
 export const DEPOSIT_AUTO_CANCEL_REASONS = {
   expired: "Venció el tiempo para pagar la seña",
   checkoutFailed: "No se pudo generar el checkout de la seña",
+  /** HU-023 (D6): señas pendientes canceladas al desconectar o cambiar la cuenta de Mercado Pago. */
+  accountChanged: MERCADOPAGO_ACCOUNT_CHANGED_CANCEL_REASON,
 } as const;

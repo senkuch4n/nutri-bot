@@ -10,7 +10,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { DEFAULT_SERVICE_REMINDERS, SERVICE_TEXT, validateServiceReminders, type ServiceReminder } from "@nutri-bot/core";
+import Link from "next/link";
+import {
+  DEFAULT_SERVICE_REMINDERS,
+  MERCADOPAGO_TEXT as MP,
+  SERVICE_TEXT,
+  validateServiceReminders,
+  type ServiceReminder,
+} from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
 import { NumberInput } from "@/components/number-input";
 import { Label } from "@/components/primitives/label";
@@ -79,6 +86,7 @@ export function ServiceSheet({
   description,
   currency,
   origin = null,
+  mercadoPagoReady,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -88,6 +96,8 @@ export function ServiceSheet({
   currency: string;
   /** Botón desde el que nace el diálogo. */
   origin?: HTMLElement | null;
+  /** HU-023: hay una cuenta de Mercado Pago conectada (si no, nota bajo "Pide seña"). */
+  mercadoPagoReady: boolean;
 }) {
   const compact = useMediaQuery("(max-width: 639px)");
   const confirm = useConfirm();
@@ -120,6 +130,7 @@ export function ServiceSheet({
       key={formKey}
       editing={editing}
       currency={currency}
+      mercadoPagoReady={mercadoPagoReady}
       onDirtyChange={setDirty}
       onDone={() => {
         setDirty(false);
@@ -239,11 +250,13 @@ function SwitchRow({
 export function ServiceForm({
   editing,
   currency,
+  mercadoPagoReady,
   onDone,
   onDirtyChange,
 }: {
   editing?: EditableService;
   currency: string;
+  mercadoPagoReady: boolean;
   onDone?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -405,6 +418,18 @@ export function ServiceForm({
         />
         {/* "0"/"1": la action no usa z.coerce.boolean() (Q17). */}
         <input type="hidden" name="requiresDeposit" value={requiresDeposit ? "1" : "0"} />
+        {requiresDeposit && !mercadoPagoReady ? (
+          // HU-023: solo avisa, no bloquea guardar.
+          <p className="text-footnote text-muted-foreground">
+            {MP.serviceFormNote}{" "}
+            <Link
+              href="/ajustes?tab=mercadopago"
+              className="font-medium text-primary underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {MP.serviceFormNoteAction}
+            </Link>
+          </p>
+        ) : null}
         {requiresDeposit ? (
           <div className="space-y-4">
             <SegmentedControl

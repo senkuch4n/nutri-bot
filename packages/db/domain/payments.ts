@@ -1,13 +1,33 @@
-import { computeDepositAmount, DEPOSIT_AUTO_CANCEL_REASONS, mapMercadoPagoStatus, messages } from "@nutri-bot/core";
+import { classifyMercadoPagoFailure, computeDepositAmount, DEPOSIT_AUTO_CANCEL_REASONS, mapMercadoPagoStatus, messages } from "@nutri-bot/core";
 import { MercadoPagoConfig, Payment as MercadoPagoPayment, Preference } from "mercadopago";
 import { prisma, type Payment as DbPayment } from "../index";
 import { getProfessional } from "./availability";
 import { PROFESSIONAL_SELECT } from "./professionalSelect";
+import {
+  getMercadoPagoCredentials,
+  markMercadoPagoAccountError,
+  MercadoPagoUnavailableError,
+  type MercadoPagoCredentials,
+} from "./mercadopagoAccount";
 
-function mercadoPagoClient(): MercadoPagoConfig {
-  const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
-  if (!accessToken) throw new Error("Falta MERCADOPAGO_ACCESS_TOKEN.");
+// HU-023: el token sale de la cuenta vinculada por OAuth (getMercadoPagoCredentials), no del .env.
+function mercadoPagoClient(accessToken: string): MercadoPagoConfig {
   return new MercadoPagoConfig({ accessToken, options: { timeout: 10_000 } });
+}
+
+/** HU-023: si MP responde que el token ya no vale (401 / invalid_token), marca la cuenta como
+ *  "Hay que reconectar" (uno por incidente) y re-tira el error original. */
+async function withRevocationGuard<T>(creds: MercadoPagoCredentials, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : undefined;
+    const code = typeof (error as { error?: unknown })?.error === "string" ? (error as { error: string }).error : null;
+    if (creds.source === "account" && classifyMercadoPagoFailure({ status, code }) === "revoked") {
+      await markMercadoPagoAccountError("revoked").catch(() => {});
+    }
+    throw error;
+  }
 }
 
 export async function createDepositCheckout(
@@ -16,7 +36,9 @@ export async function createDepositCheckout(
   try {
     const returnUrl = process.env.MERCADOPAGO_RETURN_URL?.trim();
     if (!returnUrl) throw new Error("Falta MERCADOPAGO_RETURN_URL. Configurá una URL pública de retorno para Mercado Pago.");
-    const client = mercadoPagoClient();
+    const creds = await getMercadoPagoCredentials({ kind: "current" });
+    if (!creds) throw new MercadoPagoUnavailableError("No hay cuenta de Mercado Pago usable");
+    const client = mercadoPagoClient(creds.accessToken);
 
     const [appointment, pro] = await Promise.all([
       prisma.appointment.findUniqueOrThrow({
@@ -38,9 +60,9 @@ export async function createDepositCheckout(
     if (amount <= 0) throw new Error("El monto de la seña debe ser mayor a cero.");
 
     const payment = await prisma.payment.create({
-      data: { appointmentId, kind: "DEPOSIT", status: "PENDING", amount },
+      data: { appointmentId, kind: "DEPOSIT", status: "PENDING", amount, mercadopagoUserId: creds.sellerUserId },
     });
-    const preference = await new Preference(client).create({
+    const preference = await withRevocationGuard(creds, () => new Preference(client).create({
       body: {
         items: [{ id: appointment.service.id, title: appointment.service.name, quantity: 1, unit_price: amount, currency_id: pro.currency }],
         external_reference: payment.id,
@@ -54,7 +76,7 @@ export async function createDepositCheckout(
         },
         auto_return: "approved",
       },
-    });
+    }));
     const checkoutUrl = preference.init_point;
     if (!preference.id || !checkoutUrl) throw new Error("Mercado Pago no devolvió un link de pago.");
 
@@ -91,8 +113,16 @@ export async function handleMercadoPagoWebhook(
   await syncMercadoPagoPayment(paymentId);
 }
 
-export async function syncMercadoPagoPayment(paymentId: string, expectedInternalId?: string): Promise<void> {
-  const mpPayment = await new MercadoPagoPayment(mercadoPagoClient()).get({ id: paymentId });
+export async function syncMercadoPagoPayment(
+  paymentId: string,
+  expectedInternalId?: string,
+  credentials?: MercadoPagoCredentials,
+): Promise<void> {
+  const creds = credentials ?? (await getMercadoPagoCredentials({ kind: "current" }));
+  if (!creds) throw new MercadoPagoUnavailableError("No hay cuenta de Mercado Pago usable");
+  const mpPayment = await withRevocationGuard(creds, () =>
+    new MercadoPagoPayment(mercadoPagoClient(creds.accessToken)).get({ id: paymentId }),
+  );
   const internalId = mpPayment.external_reference;
   if (!internalId || (expectedInternalId && internalId !== expectedInternalId)) return;
   await prisma.$transaction(async (tx) => {
@@ -103,6 +133,7 @@ export async function syncMercadoPagoPayment(paymentId: string, expectedInternal
       include: { appointment: { include: { patient: true, service: true } } },
     });
     if (!existing || existing.provider !== "mercadopago") return;
+    if (existing.mercadopagoUserId && existing.mercadopagoUserId !== creds.sellerUserId) return;
 
     const status = mapMercadoPagoStatus(mpPayment.status);
     const wasApproved = existing.status === "APPROVED";
@@ -160,26 +191,41 @@ export async function syncMercadoPagoPayment(paymentId: string, expectedInternal
 export async function reconcilePendingPayments(
   onError: (paymentId: string) => void = () => {},
   paymentIds?: string[],
-): Promise<{ processed: number; failed: number }> {
+): Promise<{ processed: number; failed: number; skipped: number }> {
   const pending = await prisma.payment.findMany({
     where: { status: "PENDING", provider: "mercadopago", ...(paymentIds ? { id: { in: paymentIds } } : {}) },
     orderBy: { createdAt: "asc" },
   });
-  if (pending.length === 0) return { processed: 0, failed: 0 };
-  const api = new MercadoPagoPayment(mercadoPagoClient());
+  if (pending.length === 0) return { processed: 0, failed: 0, skipped: 0 };
+  // HU-023: cada pago se consulta con la cuenta que lo creó (cache por mercadopagoUserId).
+  const credsBySeller = new Map<string | null, MercadoPagoCredentials | null>();
   let processed = 0;
   let failed = 0;
+  let skipped = 0;
   for (const payment of pending) {
     try {
+      const seller = payment.mercadopagoUserId ?? null;
+      if (!credsBySeller.has(seller)) {
+        credsBySeller.set(seller, await getMercadoPagoCredentials({ kind: "payment", sellerUserId: seller }));
+      }
+      const creds = credsBySeller.get(seller) ?? null;
+      if (!creds) {
+        // Sin credencial no es un fallo: expireStalePendingPayments libera la reserva a los 15 min.
+        skipped++;
+        continue;
+      }
+      const api = new MercadoPagoPayment(mercadoPagoClient(creds.accessToken));
       if (payment.externalId) {
-        await syncMercadoPagoPayment(payment.externalId, payment.id);
+        await syncMercadoPagoPayment(payment.externalId, payment.id, creds);
       }
       if (payment.preferenceId) {
         let offset = 0;
         while (true) {
-          const result = await api.search({ options: { external_reference: payment.id, limit: 100, offset, sort: "date_created", criteria: "asc" } });
+          const result = await withRevocationGuard(creds, () =>
+            api.search({ options: { external_reference: payment.id, limit: 100, offset, sort: "date_created", criteria: "asc" } }),
+          );
           for (const remote of result.results ?? []) {
-            if (remote.id != null) await syncMercadoPagoPayment(String(remote.id), payment.id);
+            if (remote.id != null) await syncMercadoPagoPayment(String(remote.id), payment.id, creds);
           }
           offset += result.results?.length ?? 0;
           if (!result.results?.length || offset >= (result.paging?.total ?? offset)) break;
@@ -191,7 +237,7 @@ export async function reconcilePendingPayments(
       onError(payment.id);
     }
   }
-  return { processed, failed };
+  return { processed, failed, skipped };
 }
 
 export async function expireStalePendingPayments(olderThanMinutes = 15): Promise<number> {
