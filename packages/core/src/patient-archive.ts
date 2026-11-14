@@ -43,6 +43,7 @@ const CONFIRM_DESCRIPTION =
 export const PATIENT_ARCHIVE_TEXT = {
   menuArchive: "Archivar paciente",
   menuUnarchive: "Desarchivar",
+  archivedBadge: "Archivado",
   confirmTitle: (name: string | null) => (name ? `¿Archivar a ${name}?` : "¿Archivar este contacto?"),
   confirmDescription: CONFIRM_DESCRIPTION,
   /** Sin nombre: el contacto (phoneLabel ?? HIDDEN_NUMBER_TEXT) + ". " + el mismo texto de confirmDescription. */

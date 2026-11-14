@@ -11,7 +11,7 @@ import {
   type ServiceReminderError,
 } from "@nutri-bot/core";
 import { Switch } from "@/components/primitives/switch";
-import { Button, Input, Select } from "@/components/ui";
+import { Button, Input, Select, cn, filledSurfaceClass } from "@/components/ui";
 
 interface Row {
   id: number;
@@ -120,7 +120,7 @@ export function RemindersEditor({
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed px-3 py-2.5 text-callout text-muted-foreground">
+        <p className="rounded-xl border border-dashed px-3 py-2.5 text-callout text-muted-foreground">
           Los turnos de este servicio no van a recibir recordatorios.
         </p>
       ) : (
@@ -150,13 +150,13 @@ export function RemindersEditor({
                     aria-invalid={error ? true : undefined}
                     aria-describedby={error ? errorId : undefined}
                     data-reminder-amount={index}
-                    className="h-11 w-20 tabular-nums"
+                    className={cn(filledSurfaceClass, "h-11 w-20 rounded-xl border-transparent px-3 tabular-nums")}
                   />
                   <Select
                     value={row.unit}
                     onChange={(e) => update(row.id, { unit: e.currentTarget.value as ReminderUnit })}
                     aria-label={`Unidad del recordatorio ${n}`}
-                    className="h-11 w-28"
+                    className={cn(filledSurfaceClass, "h-11 w-28 rounded-xl border-transparent px-3")}
                   >
                     <option value="DAYS">días</option>
                     <option value="HOURS">horas</option>
@@ -206,6 +206,7 @@ export function RemindersEditor({
         type="button"
         variant="tinted"
         onClick={add}
+        className="rounded-full"
         disabled={full}
         title={full ? SERVICE_REMINDERS_TEXT.tooMany : undefined}
       >

@@ -74,3 +74,22 @@ export function monthTitle(monthKey: string): string {
   const name = monthName(monthKey);
   return `${name.charAt(0).toLocaleUpperCase("es")}${name.slice(1)} ${monthKey.slice(0, 4)}`;
 }
+
+/** Grilla de un mes para un calendario chico: semanas de lunes a domingo ("yyyy-MM-dd"), con los días
+ *  del mes anterior y del siguiente que completan la primera y la última semana (4 a 6 semanas). */
+export function monthCalendarWeeks(monthKey: string): string[][] {
+  const parsed = parse(monthKey);
+  if (!parsed) throw new Error(`Mes inválido: ${monthKey}`);
+  const first = Date.UTC(parsed.year, parsed.month - 1, 1);
+  const daysInMonth = new Date(Date.UTC(parsed.year, parsed.month, 0)).getUTCDate();
+  // getUTCDay: 0 = domingo; se corre para que la semana empiece el lunes.
+  const lead = (new Date(first).getUTCDay() + 6) % 7;
+  const total = Math.ceil((lead + daysInMonth) / 7) * 7;
+  const DAY = 24 * 60 * 60 * 1000;
+  const weeks: string[][] = [];
+  for (let i = 0; i < total; i++) {
+    if (i % 7 === 0) weeks.push([]);
+    weeks.at(-1)!.push(new Date(first + (i - lead) * DAY).toISOString().slice(0, 10));
+  }
+  return weeks;
+}

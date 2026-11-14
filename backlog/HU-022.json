@@ -1,0 +1,15 @@
+{
+  "id": "HU-022",
+  "responsable": "imleticio",
+  "slug": "reprogramar-turno",
+  "titulo": "Reprogramar un turno desde el detalle",
+  "origen": "Pedido del usuario (2026-10-31): cambiar la hora de un turno desde su detalle con un selector tipo reloj, respetando la disponibilidad y los otros turnos.",
+  "estado": "implementando",
+  "intentos_revision": 0,
+  "hu": null,
+  "sdd": null,
+  "rama": "feat/ui-panel-turnos",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/51",
+  "flujo": "gentle-standard",
+  "notas": "Issue #51 creado 2026-10-31 (reserva el número). Se implementa sobre la rama de HU-021 porque usa el detalle del turno rediseñado; depende de #50. Decisión: al reprogramar se le avisa a la paciente por WhatsApp (mensaje AD_HOC, sin migración). Plan en odd/tasks/HU-022-reprogramar-turno.md (local)."
+}

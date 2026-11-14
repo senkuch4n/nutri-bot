@@ -40,6 +40,17 @@ describe("GET /api/appointments", () => {
     expect(mocks.findMany).not.toHaveBeenCalled();
   });
 
+  it("el color del servicio viaja como dato (la pastilla se pinta por estado, no por servicio)", async () => {
+    const noShow = { ...appt("n", { name: "Eva", phone: "2", whatsappJid: "2@s" }), status: "NO_SHOW" };
+    mocks.findMany.mockResolvedValue([appt("a", { name: "Brenda", phone: "3", whatsappJid: "3@s" }), noShow]);
+    const events = (await (await GET(new Request(URL_OK))).json()) as Array<Record<string, unknown>>;
+    for (const e of events) {
+      expect(e).not.toHaveProperty("backgroundColor");
+      expect(e).not.toHaveProperty("textColor");
+      expect(e.extendedProps).toMatchObject({ serviceColor: "#3366ff" });
+    }
+  });
+
   it("rango inválido → 400", async () => {
     const res = await GET(new Request("http://x/api/appointments?start=nada&end=2026-10-12"));
     expect(res.status).toBe(400);

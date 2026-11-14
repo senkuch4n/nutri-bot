@@ -67,33 +67,33 @@ function SidebarLink({
         }}
         aria-current={active ? "page" : undefined}
         aria-label={accessibleLabel}
-        // Activo: fondo + color + peso + ícono (no solo color; S2).
-        className={cn(sidebarItemClass, active && "font-semibold text-primary [&>svg]:text-primary")}
+        // Activo: chip blanco sobre el gris, como el área de trabajo; peso + ícono en tinta (no solo color; S2).
+        className={cn(sidebarItemClass, active && "font-semibold [&>svg]:text-foreground")}
       >
         {active && slide ? (
           <m.span
             layoutId="sidebar-active"
             aria-hidden
             transition={springs.indicator}
-            className="absolute inset-0 -z-10 rounded-md bg-primary-soft"
+            className="absolute inset-0 -z-10 rounded-xl bg-background shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_3px_rgb(0_0_0/0.06)]"
           />
         ) : active ? (
           // Menú del celular: fondo fijo. Sin `layoutId` adentro de un sheet que entra y sale (no hay
           // nada que deslizar: el menú se cierra al navegar) y sin nodos de proyección en su salida.
-          <span aria-hidden className="absolute inset-0 -z-10 rounded-md bg-primary-soft" />
+          <span aria-hidden className="absolute inset-0 -z-10 rounded-xl bg-background shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_3px_rgb(0_0_0/0.06)]" />
         ) : null}
         <Icon className="size-4 shrink-0" strokeWidth={active ? 2 : 1.75} aria-hidden />
         {hasCount ? (
           <>
             <span className="panel-sidebar-label flex min-w-0 flex-1 items-center gap-2" aria-hidden="true">
               <span className="truncate">{item.label}</span>
-              {/* Q3: tint, no rojo (el rojo queda para error/destructivo). */}
-              <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-caption font-semibold leading-5 text-primary-foreground tabular-nums">
+              {/* Q3: tinta, no rojo (el rojo queda para error/destructivo). */}
+              <span className="ml-auto shrink-0 rounded-full bg-foreground px-1.5 text-caption font-semibold leading-5 text-background tabular-nums">
                 {(count ?? 0) > 99 ? "99+" : count}
               </span>
             </span>
             {collapsed ? (
-              <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary" aria-hidden="true" />
+              <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-foreground ring-2 ring-[#f6f5f8]" aria-hidden="true" />
             ) : null}
           </>
         ) : (
@@ -170,7 +170,7 @@ export function SidebarContent({
         ))}
       </nav>
 
-      <div data-density={density} className="group/nav mt-auto space-y-0.5 border-t border-border p-2">
+      <div data-density={density} className="group/nav mt-auto space-y-0.5 border-t border-black/[0.05] p-2">
         <SidebarLink
           item={settingsItem}
           collapsed={collapsed}
@@ -185,9 +185,9 @@ export function SidebarContent({
             href="/ajustes/whatsapp"
             aria-label={status.label}
             onClick={onNavigate}
-            className="flex h-7 items-center gap-2.5 rounded-md px-2 text-footnote text-muted-foreground press-none transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring group-data-[density=touch]/nav:h-11"
+            className="flex h-8 items-center gap-2.5 rounded-xl px-2 text-footnote text-muted-foreground press-none transition-colors duration-hover hover:bg-black/[0.04] hover:text-foreground pressed:bg-black/[0.07] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring group-data-[density=touch]/nav:h-11"
           >
-            <span className="flex size-4 shrink-0 items-center justify-center">
+            <span className="flex size-[1.125rem] shrink-0 items-center justify-center">
               <span className={cn("size-2 rounded-full", status.dot)} aria-hidden />
             </span>
             <span className="panel-sidebar-label truncate" aria-hidden="true">{status.label}</span>

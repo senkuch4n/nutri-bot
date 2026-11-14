@@ -11,8 +11,10 @@ const mocks = vi.hoisted(() => ({
     $queryRaw: vi.fn(),
     service: { findUniqueOrThrow: vi.fn() },
     patient: { findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
-    appointment: { create: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn() },
+    appointment: { create: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn(), findUnique: vi.fn() },
     consultation: { create: vi.fn(), deleteMany: vi.fn() },
+    outboundMessage: { deleteMany: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    conversationState: { updateMany: vi.fn() },
   },
 }));
 
@@ -20,7 +22,9 @@ vi.mock("../index", () => ({
   prisma: mocks.prisma,
   Prisma: { PrismaClientKnownRequestError: class extends Error {} },
 }));
-vi.mock("./availability", () => ({
+vi.mock("./availability", async (importOriginal) => ({
+  // HU-022: canRescheduleAppointment es pura; corre la real.
+  canRescheduleAppointment: (await importOriginal<typeof import("./availability")>()).canRescheduleAppointment,
   getProfessional: mocks.getProfessional,
   checkSlotAvailable: mocks.checkSlotAvailable,
 }));
@@ -29,6 +33,8 @@ vi.mock("./outbox", () => ({ enqueueMessage: mocks.enqueueMessage }));
 import {
   createAppointment,
   InvalidBookingReasonError,
+  RescheduleError,
+  rescheduleAppointment,
   setAppointmentStatus,
   SlotUnavailableError,
   updateAppointmentReason,
@@ -290,5 +296,157 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
       await setAppointmentStatus({ id: "a1", status });
       expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("rescheduleAppointment (HU-022)", () => {
+  const NOW = new Date("2026-11-01T12:00:00Z");
+  const OLD_START = new Date("2026-11-05T13:00:00Z");
+  const NEW_START = new Date("2026-11-06T15:00:00Z");
+  const OLD_ISO = OLD_START.toISOString();
+  // 45 min aunque el servicio dure 30: se conserva la duración del turno.
+  const APPT = {
+    id: "a1",
+    patientId: "p1",
+    serviceId: "s1",
+    status: "CONFIRMED",
+    startsAt: OLD_START,
+    endsAt: new Date(OLD_START.getTime() + 45 * 60_000),
+    bookedAt: new Date("2026-10-20T12:00:00Z"),
+    patient: PATIENT,
+    service: SERVICE,
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
+    mocks.checkSlotAvailable.mockResolvedValue(true);
+    mocks.prisma.appointment.findUnique.mockResolvedValue(APPT);
+    mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: any }) => ({ ...APPT, ...data }));
+    mocks.prisma.outboundMessage.findMany.mockResolvedValue([]);
+    mocks.enqueueMessage.mockResolvedValue(true);
+  });
+
+  async function expectCode(code: string, params = { id: "a1", startsAt: NEW_START, now: NOW }) {
+    const err = await rescheduleAppointment(params).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RescheduleError);
+    expect((err as InstanceType<typeof RescheduleError>).code).toBe(code);
+  }
+  function expectNothingChanged() {
+    expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.conversationState.updateMany).not.toHaveBeenCalled();
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  }
+
+  it.each([
+    ["COMPLETED", OLD_START],
+    ["NO_SHOW", OLD_START],
+    ["CANCELLED", OLD_START],
+    ["CONFIRMED", new Date("2026-11-01T11:00:00Z")], // ya pasó
+  ])("S5: turno %s (%s) → NOT_RESCHEDULABLE sin tocar nada", async (status, startsAt) => {
+    mocks.prisma.appointment.findUnique.mockResolvedValue({ ...APPT, status, startsAt });
+    await expectCode("NOT_RESCHEDULABLE");
+    expect(mocks.checkSlotAvailable).not.toHaveBeenCalled();
+    expectNothingChanged();
+  });
+
+  it("S5: turno inexistente → NOT_RESCHEDULABLE", async () => {
+    mocks.prisma.appointment.findUnique.mockResolvedValue(null);
+    await expectCode("NOT_RESCHEDULABLE");
+    expectNothingChanged();
+  });
+
+  it("S4: revalida en la transacción con el lock compartido, excluyendo el propio turno; ocupado → SLOT_TAKEN sin cambios", async () => {
+    mocks.checkSlotAvailable.mockResolvedValue(false);
+    await expectCode("SLOT_TAKEN");
+    expect(mocks.checkSlotAvailable).toHaveBeenCalledWith(
+      { serviceId: "s1", startsAt: NEW_START, excludeAppointmentId: "a1", now: NOW },
+      mocks.prisma,
+    );
+    expect(mocks.prisma.$queryRaw.mock.calls[0]![0].join("?")).toContain('"Professional" WHERE id = 1 FOR UPDATE');
+    expect(mocks.prisma.$queryRaw.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.prisma.appointment.findUnique.mock.invocationCallOrder[0]!,
+    );
+    expectNothingChanged();
+  });
+
+  it("mismo horario → SAME_TIME sin cambios", async () => {
+    await expectCode("SAME_TIME", { id: "a1", startsAt: new Date(OLD_START), now: NOW });
+    expectNothingChanged();
+  });
+
+  it("S6: conserva la duración, resincroniza Google, reinicia la confirmación y sella bookedAt", async () => {
+    const updated = await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
+      where: { id: "a1" },
+      data: {
+        startsAt: NEW_START,
+        endsAt: new Date(NEW_START.getTime() + 45 * 60_000),
+        needsGoogleSync: true,
+        confirmationRequestedAt: null,
+        confirmationRespondedAt: null,
+        confirmationResponse: null,
+        bookedAt: NOW,
+      },
+    });
+    expect(updated.startsAt).toEqual(NEW_START);
+  });
+
+  it("S5/S6: AWAITING_PAYMENT se reprograma sin sellar bookedAt (lo sella el pago)", async () => {
+    mocks.prisma.appointment.findUnique.mockResolvedValue({ ...APPT, status: "AWAITING_PAYMENT", bookedAt: null });
+    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    const { data } = mocks.prisma.appointment.update.mock.calls[0]![0];
+    expect(data).not.toHaveProperty("bookedAt");
+    expect(data.startsAt).toEqual(NEW_START);
+  });
+
+  it("S6: borra los recordatorios/pedidos pendientes del horario viejo y marca prev: los ya enviados", async () => {
+    mocks.prisma.outboundMessage.findMany.mockResolvedValue([
+      { id: "m1", dedupeKey: "auto:24h" },
+      { id: "m2", dedupeKey: "" },
+    ]);
+    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    expect(mocks.prisma.outboundMessage.deleteMany).toHaveBeenCalledWith({
+      where: { appointmentId: "a1", kind: { in: ["REMINDER", "CONFIRMATION_REQUEST"] }, status: "PENDING" },
+    });
+    expect(mocks.prisma.outboundMessage.findMany).toHaveBeenCalledWith({
+      where: {
+        appointmentId: "a1",
+        kind: { in: ["REMINDER", "CONFIRMATION_REQUEST"] },
+        status: { not: "PENDING" },
+        NOT: { dedupeKey: { startsWith: "prev:" } },
+      },
+      select: { id: true, dedupeKey: true },
+    });
+    expect(mocks.prisma.outboundMessage.update.mock.calls.map((c) => c[0])).toEqual([
+      { where: { id: "m1" }, data: { dedupeKey: `prev:${OLD_ISO}:m1:auto:24h` } },
+      { where: { id: "m2" }, data: { dedupeKey: `prev:${OLD_ISO}:m2:` } },
+    ]);
+  });
+
+  it("S6: si la paciente quedó respondiendo la confirmación de ESTE turno, se reinicia esa conversación", async () => {
+    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    expect(mocks.prisma.conversationState.updateMany).toHaveBeenCalledWith({
+      where: { patientJid: PATIENT.whatsappJid, step: "CONFIRM_ATTENDANCE", context: { path: ["apptId"], equals: "a1" } },
+      data: { step: "DORMANT", context: {} },
+    });
+  });
+
+  it("S7: encola un AD_HOC a la paciente con el día y la hora nuevos, después de la transacción", async () => {
+    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    expect(mocks.enqueueMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueMessage).toHaveBeenCalledWith({
+      toJid: PATIENT.whatsappJid,
+      kind: "AD_HOC",
+      appointmentId: "a1",
+      dedupeKey: `reschedule:${NOW.toISOString()}`,
+      body: messages.rescheduledNotice({ serviceName: SERVICE.name, startsAt: NEW_START, tz: TZ }),
+    });
+    expect(mocks.enqueueMessage.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      mocks.prisma.appointment.update.mock.invocationCallOrder[0]!,
+    );
   });
 });

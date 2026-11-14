@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +45,8 @@ export function GroupedListRow({
   icon?: LucideIcon;
   accessory?: ReactNode;
   href?: string;
-  onClick?: () => void;
+  /** HU-021: recibe el evento (p. ej. para tomar el botón como origen de un MorphDialog). */
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   destructive?: boolean;
   disabled?: boolean;
   /** "lg" (HU-017c-1): fila de 56 px, título de 17 px semibold y descripción de 14 px (hasta 2 líneas). */

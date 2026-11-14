@@ -9,6 +9,7 @@ import {
   PHONE_INPUT_TEXT,
   buildPatientDirectory,
   classifyWhatsappJid,
+  isValidDayKey,
   parsePhoneInput,
   patientDisplayName,
   reminderStatusText,
@@ -25,7 +26,15 @@ import {
   updateAppointmentReason,
 } from "@/lib/appointments";
 import { findOrCreatePatient, phoneToJid } from "@/lib/patients";
-import { enqueueReminderNow, getAppointmentReminderStatus, getProfessional } from "@nutri-bot/db/domain";
+import {
+  enqueueReminderNow,
+  getAppointmentReminderStatus,
+  getProfessional,
+  getRescheduleSlots,
+  rescheduleAppointment,
+  RescheduleError,
+  type RescheduleErrorCode,
+} from "@nutri-bot/db/domain";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -110,6 +119,7 @@ export async function createAppointmentAction(
   }
 
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   // HU-019 (T4): crear el turno desarchiva a la paciente; la lista tiene que mostrarla de nuevo.
   revalidatePath("/pacientes");
   return { ok: true };
@@ -121,11 +131,15 @@ export async function createAppointmentAction(
 export type AppointmentPatientOption = Pick<
   PatientDirectoryRow,
   "id" | "name" | "contactKind" | "phoneLabel" | "phoneDigits" | "searchName" | "statusLine"
->;
+> & {
+  /** Última actividad (ISO): el último turno ya pasado (no cancelado) o el alta, el más nuevo. Ordena
+   *  "Recientes". Opcional: las opciones armadas a mano (paciente ya elegida) no la necesitan. */
+  recentAt?: string;
+};
 
 export async function listAppointmentPatientsAction(): Promise<AppointmentPatientOption[]> {
   const now = new Date();
-  const [pro, patients] = await Promise.all([
+  const [pro, patients, lastVisits] = await Promise.all([
     getProfessional(),
     prisma.patient.findMany({
       // HU-019 (T8): solo activas; core además descarta archivadas.
@@ -145,7 +159,20 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
         },
       },
     }),
+    prisma.appointment.groupBy({
+      by: ["patientId"],
+      where: { startsAt: { lt: now }, status: { not: "CANCELLED" } },
+      _max: { startsAt: true },
+    }),
   ]);
+  const lastVisitById = new Map(lastVisits.map((v) => [v.patientId, v._max.startsAt]));
+  const recentAtById = new Map(
+    patients.map((p) => {
+      const visit = lastVisitById.get(p.id);
+      const latest = visit && visit > p.createdAt ? visit : p.createdAt;
+      return [p.id, latest.toISOString()];
+    }),
+  );
   const inputs: PatientDirectoryInput[] = patients.map((p) => {
     const next = p.appointments[0];
     return {
@@ -172,6 +199,7 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
     phoneDigits: row.phoneDigits,
     searchName: row.searchName,
     statusLine: row.statusLine,
+    recentAt: recentAtById.get(row.id)!,
   }));
 }
 
@@ -182,6 +210,7 @@ export async function cancelAppointmentAction(id: string, reason?: string): Prom
     return { ok: false, error: "No se pudo cancelar el turno." };
   }
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   return { ok: true };
 }
 
@@ -231,6 +260,7 @@ export async function setStatusAction(
     return { ok: false, error: "No se pudo actualizar el turno." };
   }
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   if (result.consultation || result.removedEmptyConsultation) {
     revalidatePath(`/pacientes/${result.appointment.patientId}`);
   }
@@ -256,6 +286,62 @@ export async function saveAppointmentReasonAction(
     return { ok: false, error: "No se pudo guardar el motivo." };
   }
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   revalidatePath(`/pacientes/${updated.patientId}`, "layout");
   return { ok: true, reason: updated.reason };
+}
+
+// ── HU-022: reprogramar un turno ─────────────────────────────────────────────────────────────
+
+const RESCHEDULE_ERROR_TEXT: Record<RescheduleErrorCode, string> = {
+  SLOT_TAKEN: "Ese horario ya no está libre. Elegí otro.",
+  NOT_RESCHEDULABLE: "Este turno ya no se puede reprogramar.",
+  SAME_TIME: "El turno ya está en ese horario.",
+};
+
+/**
+ * HU-022 (S3): inicios libres del día `dayKey` ("yyyy-MM-dd" en la zona de la profesional) para
+ * reprogramar el turno, en ISO y ordenados. Un turno que no se puede reprogramar devuelve `[]`.
+ */
+export async function getRescheduleSlotsAction(
+  appointmentId: string,
+  dayKey: string,
+): Promise<{ ok: true; slots: string[] } | { ok: false; error: string }> {
+  if (!appointmentId || !isValidDayKey(dayKey)) return { ok: false, error: "Elegí un día válido." };
+  try {
+    const slots = await getRescheduleSlots({ appointmentId, dayKey });
+    return {
+      ok: true,
+      slots: [...slots].sort((a, b) => a.getTime() - b.getTime()).map((d) => d.toISOString()),
+    };
+  } catch {
+    return { ok: false, error: "No se pudieron cargar los horarios. Probá de nuevo." };
+  }
+}
+
+const rescheduleSchema = z.object({ id: z.string().min(1), startsAt: z.string().datetime() });
+
+/**
+ * HU-022 (S4–S7): cambia el día y la hora del turno. El dominio revalida el horario (no se confía en
+ * el cliente), reinicia recordatorios y confirmación y avisa a la paciente por WhatsApp.
+ */
+export async function rescheduleAppointmentAction(
+  appointmentId: string,
+  startsAtISO: string,
+): Promise<{ ok: true; start: string; end: string } | { ok: false; error: string }> {
+  const parsed = rescheduleSchema.safeParse({ id: appointmentId, startsAt: startsAtISO });
+  if (!parsed.success) return { ok: false, error: "Elegí un horario válido." };
+
+  let updated: Awaited<ReturnType<typeof rescheduleAppointment>>;
+  try {
+    updated = await rescheduleAppointment({ id: parsed.data.id, startsAt: new Date(parsed.data.startsAt) });
+  } catch (err) {
+    if (err instanceof RescheduleError) return { ok: false, error: RESCHEDULE_ERROR_TEXT[err.code] };
+    return { ok: false, error: "No se pudo reprogramar el turno. Probá de nuevo." };
+  }
+  revalidatePath("/");
+  revalidatePath("/turnos");
+  revalidatePath("/avisos"); // recordatorios borrados/renombrados y el aviso encolado
+  revalidatePath(`/pacientes/${updated.patientId}`, "layout");
+  return { ok: true, start: updated.startsAt.toISOString(), end: updated.endsAt.toISOString() };
 }

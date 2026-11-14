@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Copy, Plus, Search, UtensilsCrossed } from "lucide-react";
 import {
   WEEKDAY_LABELS,
@@ -26,6 +26,7 @@ import { KcalBreakdownPopover } from "@/components/kcal-breakdown-popover";
 import { copyDayAction } from "@/app/(panel)/weekly-menu-actions";
 import { CopyDayDialog } from "@/components/weekly-menu/copy-day-dialog";
 import { DaySelector, type DaySelection } from "@/components/weekly-menu/day-selector";
+import { CompactTotalsBar } from "@/components/weekly-menu/compact-totals-bar";
 import { DayTargetStrip, type PlanTargetView } from "@/components/weekly-menu/day-target-strip";
 import { toDayParam } from "@/components/weekly-menu/day-param";
 import { copiedDayMessage, itemLabel } from "@/components/weekly-menu/labels";
@@ -162,6 +163,24 @@ export function MealsEditor({
           average: weekly.weeklyAverage?.kcal ?? null,
         };
 
+  // Totales que siguen al scrollear (2026-10-31): el bloque completo queda en su lugar y, cuando sale de
+  // la vista hacia arriba, aparece arriba una barra compacta de una línea. Antes se pegaba el bloque entero
+  // (título, cinco tarjetas y el aviso), que tapaba media pantalla y dejaba ver el contenido por debajo.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [stripAbove, setStripAbove] = useState(false);
+  const hasStrip = meals.length > 0;
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    // Sin root: el viewport, recortado por el scroll que lo contenga (la página o el modal de la ficha).
+    // "Arriba" = fuera de la vista y por encima de la mitad de la pantalla (no por debajo).
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry) setStripAbove(!entry.isIntersecting && entry.boundingClientRect.bottom < window.innerHeight / 2);
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasStrip]);
+
   const dayLoaded = day ? weekly.loadedDays.includes(day) : false;
   const otherLoadedDays = day ? weekly.loadedDays.filter((d) => d !== day) : [];
 
@@ -172,8 +191,8 @@ export function MealsEditor({
           <DaySelector value={selected} onValueChange={setSelected} loadedDays={weekly.loadedDays} />
         ) : null}
 
-        {meals.length > 0 ? (
-          <div className="material-bar z-10 -mx-2 rounded-xl px-2 py-3 md:sticky md:top-14 lg:top-0">
+        {hasStrip ? (
+          <div ref={stripRef} className="-mx-2 rounded-xl px-2 py-3">
             {/* HU-020 (D10): con ítems pero ninguno con cantidad (p. ej. importado de PDF), un aviso en
                 vez de macros en cero. */}
             {hasAnyItem(meals) && !hasQuantifiedItems(meals) ? (
@@ -187,6 +206,22 @@ export function MealsEditor({
                 weeklyAverageKcal={strip.average}
               />
             )}
+          </div>
+        ) : null}
+
+        {/* Alto cero y pegada arriba (z-20: sobre el encabezado de la tabla semanal, sticky z-10): no ocupa
+            lugar; la barra cuelga de ella. Sin el margen de space-y. Desde 768 px, como antes el bloque. */}
+        {hasStrip ? (
+          <div className="sticky top-14 z-20 !mt-0 h-0 max-md:hidden lg:top-0">
+            <div className="absolute inset-x-0 top-2">
+              <CompactTotalsBar
+                // Sin cantidades (importado de PDF) el bloque muestra un aviso, no totales: la barra no aparece.
+                visible={stripAbove && !(hasAnyItem(meals) && !hasQuantifiedItems(meals))}
+                title={strip.title}
+                totals={strip.totals}
+                targetKcal={target?.kcal ?? null}
+              />
+            </div>
           </div>
         ) : null}
 

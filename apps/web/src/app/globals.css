@@ -244,6 +244,176 @@
   display: none;
 }
 
+/* ─── Acento en tinta (plan del paciente, 2026-10-31): dentro de .ink-accent el color de acción deja de ser
+   azul y pasa a negro, y los avisos informativos a gris. Redefine los tokens (no las clases), así botones,
+   links, selecciones, avisos y el anillo de foco de todo lo que haya adentro siguen el cambio. Los diálogos
+   que se abren en un portal (fuera del árbol) conservan el azul. */
+.ink-accent {
+  --primary: 240 3.3% 11.8%;
+  --primary-foreground: 0 0% 100%;
+  --primary-hover: 240 3% 24%;
+  --primary-pressed: 240 3% 32%;
+  --primary-vibrant: 240 3.3% 11.8%;
+  --primary-soft: 270 8% 94%;
+  --primary-soft-hover: 270 7% 90%;
+  --primary-soft-pressed: 270 6% 86%;
+  --link: 240 3.3% 11.8%;
+  --ring: 240 3.3% 11.8%;
+  --info: 240 3.3% 11.8%;
+  --info-muted: 270 8% 95.5%;
+}
+
+/* ─── Calendario: cada día es una tarjeta y cada turno una pastilla (referencia visual 2026-10-31).
+   Los colores son los de la referencia, no tokens: tarjeta casi blanca, y la pastilla se pinta por estado
+   (negro = confirmado, blanco = vino, rosa = no vino); el color del servicio lo lleva su punto. */
+.fc .fc-dayGridMonth-view {
+  --fc-border-color: transparent;
+  --fc-today-bg-color: transparent;
+}
+.fc .fc-dayGridMonth-view .fc-scrollgrid,
+.fc .fc-dayGridMonth-view td,
+.fc .fc-dayGridMonth-view th {
+  border: 0;
+}
+.fc .fc-dayGridMonth-view .fc-col-header-cell-cushion {
+  @apply py-3 text-callout font-normal capitalize text-muted-foreground;
+}
+/* Todas las tarjetas de una fila miden lo mismo que la más llena: la celda tiene alto propio (1px; la tabla
+   la estira igual) para que el 100% de la tarjeta se resuelva, y el espacio entre tarjetas es padding de la
+   celda (con margin, el 100% se desbordaría). */
+.fc .fc-dayGridMonth-view .fc-daygrid-day {
+  height: 1px;
+  padding: 0.3125rem;
+}
+.fc .fc-dayGridMonth-view .fc-daygrid-day-frame {
+  height: 100%;
+  min-height: 6rem;
+  padding-bottom: 0.5rem;
+  border-radius: 1.25rem;
+  background: #f7f6f8;
+}
+/* Días de otro mes: se ven, pero borrosos y apagados (no compiten con el mes actual). */
+.fc .fc-dayGridMonth-view .fc-day-other .fc-daygrid-day-frame {
+  background: transparent;
+  opacity: 0.35;
+  filter: blur(1.5px);
+}
+/* El sombreado de "fuera de horario" no aporta en Mes (se veía como una franja en Sáb y Dom). */
+.fc .fc-dayGridMonth-view .fc-non-business {
+  display: none;
+}
+.fc .fc-dayGridMonth-view .fc-daygrid-day-top {
+  flex-direction: row;
+  padding: 0.5rem 0.5rem 0.125rem;
+}
+.fc .fc-dayGridMonth-view .fc-daygrid-day-number {
+  @apply flex size-8 items-center justify-center rounded-full p-0 text-callout tabular-nums text-muted-foreground;
+}
+.fc .fc-dayGridMonth-view .fc-day-today .fc-daygrid-day-number {
+  @apply font-semibold;
+  background: #0a0a0a;
+  color: #fff;
+}
+.fc .fc-dayGridMonth-view .fc-daygrid-event {
+  margin: 0.375rem 0.5rem 0;
+}
+
+/* Toda la casilla abre el panel del día; el botón "agrandar" aparece al pasar el mouse o con el foco. */
+.fc .fc-dayGridMonth-view .fc-daygrid-day {
+  cursor: pointer;
+}
+.day-expand {
+  @apply absolute right-2 top-2 z-[3] inline-flex size-7 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity duration-hover;
+}
+.day-expand svg {
+  @apply size-3.5;
+}
+.fc .fc-daygrid-day:hover .day-expand,
+.day-expand:focus-visible {
+  opacity: 1;
+}
+.day-expand:hover {
+  @apply bg-black/[0.05] text-foreground;
+}
+.day-expand:focus-visible {
+  @apply outline outline-2 outline-offset-2 outline-ring;
+}
+@media (hover: none) {
+  .day-expand {
+    opacity: 1;
+  }
+}
+
+/* Fuera de .fc también (mismas clases en cualquier lado): pastilla por estado. */
+.appt-event {
+  --fc-event-bg-color: #0a0a0a;
+  --fc-event-border-color: #0a0a0a;
+  --fc-event-text-color: #fff;
+  background-color: var(--fc-event-bg-color);
+  border-color: var(--fc-event-border-color);
+  color: var(--fc-event-text-color);
+}
+.appt-event--completed {
+  --fc-event-bg-color: #fff;
+  --fc-event-border-color: #fff;
+  --fc-event-text-color: #0a0a0a;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+}
+.appt-event--no_show {
+  --fc-event-bg-color: #f9d3cf;
+  --fc-event-border-color: #f9d3cf;
+  --fc-event-text-color: #7a2a24;
+}
+.fc .fc-event.appt-event {
+  @apply rounded-full border-0 px-2.5 py-1.5 text-footnote font-medium;
+}
+/* Semana y Día: el turno ocupa su duración; pastilla redondeada, no cápsula, con el texto arriba. */
+.fc .fc-timegrid-event.appt-event {
+  @apply rounded-xl;
+}
+.fc .fc-event.appt-event:hover {
+  opacity: 0.88;
+}
+/* FullCalendar oscurece el turno enfocado o elegido con un recuadro sin redondeo y una sombra (queda al
+   cerrar su detalle, cuando el foco vuelve a la pastilla). El foco por teclado ya tiene su contorno.
+   "Vino" conserva su sombra propia. */
+.fc .fc-event.appt-event:is(:focus, .fc-event-selected):not(.appt-event--completed) {
+  box-shadow: none;
+}
+.fc .fc-event.appt-event:is(:focus, .fc-event-selected)::after {
+  display: none;
+}
+/* Entrada del calendario: cada pastilla pasa de borrosa a nítida, escalonada (--reveal-delay). */
+@keyframes appt-reveal {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+.fc .fc-event.appt-reveal {
+  animation: appt-reveal 560ms cubic-bezier(0.22, 1, 0.36, 1) var(--reveal-delay, 0ms) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc .fc-event.appt-reveal {
+    animation: none;
+  }
+}
+.appt-pill {
+  @apply flex min-w-0 items-center gap-1.5 leading-tight;
+}
+/* Punto del turno: color del servicio, marca del estado. El anillo en el color del texto lo separa del
+   fondo de la pastilla aunque el servicio sea oscuro sobre negro o claro sobre blanco. */
+.appt-dot {
+  @apply inline-flex size-4 shrink-0 items-center justify-center rounded-full;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--fc-event-text-color, currentColor) 45%, transparent);
+}
+
 /* ─── Inputs sin zoom en Safari iOS (§9.2, T17): ≥ 16 px en táctil; 17 px en el portal ───
    Sin @layer: gana a las utilidades text-* de cualquier pantalla (incluida la zona de imleticio). */
 @media (pointer: coarse) {

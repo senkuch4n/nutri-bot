@@ -5,17 +5,29 @@ import { AGENDA_TEXT, PHONE_INPUT_TEXT } from "@nutri-bot/core";
 const mocks = vi.hoisted(() => {
   class SlotUnavailableError extends Error {}
   class InvalidBookingReasonError extends Error {}
+  class RescheduleError extends Error {
+    constructor(readonly code: string) {
+      super(code);
+    }
+  }
   return {
     revalidatePath: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn(),
+    groupBy: vi.fn(),
     update: vi.fn(),
     upsert: vi.fn(),
     createAppointment: vi.fn(),
+    setAppointmentStatus: vi.fn(),
+    cancelAppointment: vi.fn(),
+    updateAppointmentReason: vi.fn(),
     findOrCreatePatient: vi.fn(),
     getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
     SlotUnavailableError,
     InvalidBookingReasonError,
+    RescheduleError,
+    getRescheduleSlots: vi.fn(),
+    rescheduleAppointment: vi.fn(),
   };
 });
 
@@ -23,18 +35,22 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
   prisma: {
     patient: { findUnique: mocks.findUnique, findMany: mocks.findMany, update: mocks.update, upsert: mocks.upsert },
+    appointment: { groupBy: mocks.groupBy },
   },
 }));
 vi.mock("@nutri-bot/db/domain", () => ({
   enqueueReminderNow: vi.fn(),
   getAppointmentReminderStatus: vi.fn(),
   getProfessional: mocks.getProfessional,
+  getRescheduleSlots: mocks.getRescheduleSlots,
+  rescheduleAppointment: mocks.rescheduleAppointment,
+  RescheduleError: mocks.RescheduleError,
 }));
 vi.mock("@/lib/appointments", () => ({
-  cancelAppointment: vi.fn(),
+  cancelAppointment: mocks.cancelAppointment,
   createAppointment: mocks.createAppointment,
-  setAppointmentStatus: vi.fn(),
-  updateAppointmentReason: vi.fn(),
+  setAppointmentStatus: mocks.setAppointmentStatus,
+  updateAppointmentReason: mocks.updateAppointmentReason,
   SlotUnavailableError: mocks.SlotUnavailableError,
   InvalidBookingReasonError: mocks.InvalidBookingReasonError,
 }));
@@ -43,7 +59,15 @@ vi.mock("@/lib/patients", () => ({
   phoneToJid: (phone: string) => `${phone.replace(/\D/g, "")}@s.whatsapp.net`,
 }));
 
-import { createAppointmentAction, listAppointmentPatientsAction } from "./actions";
+import {
+  cancelAppointmentAction,
+  createAppointmentAction,
+  getRescheduleSlotsAction,
+  listAppointmentPatientsAction,
+  rescheduleAppointmentAction,
+  saveAppointmentReasonAction,
+  setStatusAction,
+} from "./actions";
 
 const T = AGENDA_TEXT.create;
 const STARTS = "2026-10-08T13:00:00.000Z";
@@ -56,6 +80,7 @@ function form(fields: Record<string, string>): FormData {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.groupBy.mockResolvedValue([]);
   mocks.createAppointment.mockResolvedValue({ id: "appt-1" });
   mocks.findOrCreatePatient.mockResolvedValue({ id: "pat-new" });
 });
@@ -80,6 +105,7 @@ describe("createAppointmentAction, paciente existente", () => {
     expect(mocks.upsert).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes"); // HU-019: crear el turno desarchiva
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos"); // HU-021
   });
 
   it("paciente inexistente o un canal → patientGone, sin crear el turno", async () => {
@@ -215,10 +241,35 @@ describe("listAppointmentPatientsAction", () => {
     const rows = await listAppointmentPatientsAction();
     expect(rows.map((r) => r.id)).toEqual(["n2", "n1", "u1"]);
     expect(Object.keys(rows[0]!).sort()).toEqual(
-      ["contactKind", "id", "name", "phoneDigits", "phoneLabel", "searchName", "statusLine"].sort(),
+      ["contactKind", "id", "name", "phoneDigits", "phoneLabel", "recentAt", "searchName", "statusLine"].sort(),
     );
     expect(rows[0]).toMatchObject({ name: "Ana Díaz", contactKind: "hidden", phoneLabel: null, statusLine: "Sin turno" });
     expect(rows[1]).toMatchObject({ phoneLabel: "+54 9 351 000-0002", phoneDigits: "5493510000002" });
+  });
+
+  it("recentAt: el último turno ya pasado (no cancelado) o el alta, el que sea más nuevo", async () => {
+    const old = new Date("2026-01-01T00:00:00Z");
+    const fresh = new Date("2026-10-28T00:00:00Z");
+    mocks.findMany.mockResolvedValue([
+      { id: "seen", name: "Ana Díaz", phone: "5493510000001", whatsappJid: "5493510000001@s.whatsapp.net", createdAt: old, appointments: [] },
+      { id: "new", name: "Bea Gil", phone: "5493510000002", whatsappJid: "5493510000002@s.whatsapp.net", createdAt: fresh, appointments: [] },
+      { id: "none", name: "Cami Paz", phone: "5493510000003", whatsappJid: "5493510000003@s.whatsapp.net", createdAt: old, appointments: [] },
+    ]);
+    mocks.groupBy.mockResolvedValue([
+      { patientId: "seen", _max: { startsAt: new Date("2026-10-20T13:00:00Z") } },
+      { patientId: "new", _max: { startsAt: new Date("2026-03-01T13:00:00Z") } },
+    ]);
+    const rows = await listAppointmentPatientsAction();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r.recentAt]));
+    expect(byId).toEqual({
+      seen: "2026-10-20T13:00:00.000Z",
+      new: "2026-10-28T00:00:00.000Z",
+      none: "2026-01-01T00:00:00.000Z",
+    });
+    const args = mocks.groupBy.mock.calls[0]![0];
+    expect(args.by).toEqual(["patientId"]);
+    expect(args.where.status).toEqual({ not: "CANCELLED" });
+    expect(args.where.startsAt.lt).toBeInstanceOf(Date);
   });
 
   it("HU-019: pide solo activas y, si igual llega una archivada, core la descarta", async () => {
@@ -231,5 +282,108 @@ describe("listAppointmentPatientsAction", () => {
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { archivedAt: null } }));
     expect(mocks.findMany.mock.calls[0]![0].select.archivedAt).toBe(true);
     expect(rows.map((r) => r.id)).toEqual(["n1"]);
+  });
+});
+
+describe("HU-021: las actions del turno revalidan /turnos", () => {
+  it("setStatusAction ok → revalida el calendario y la lista de turnos", async () => {
+    mocks.setAppointmentStatus.mockResolvedValue({
+      appointment: { patientId: "pat-1" },
+      consultation: null,
+      removedEmptyConsultation: false,
+    });
+    expect(await setStatusAction("appt-1", "COMPLETED")).toEqual({ ok: true, consultation: null });
+    expect(mocks.setAppointmentStatus).toHaveBeenCalledWith({ id: "appt-1", status: "COMPLETED" });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+  });
+
+  it("setStatusAction con error del dominio → mensaje y sin revalidar", async () => {
+    mocks.setAppointmentStatus.mockRejectedValue(new Error("db down"));
+    expect(await setStatusAction("appt-1", "NO_SHOW")).toEqual({ ok: false, error: "No se pudo actualizar el turno." });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("cancelAppointmentAction ok → revalida el calendario y la lista de turnos", async () => {
+    mocks.cancelAppointment.mockResolvedValue(undefined);
+    expect(await cancelAppointmentAction("appt-1")).toEqual({ ok: true });
+    expect(mocks.cancelAppointment).toHaveBeenCalledWith({ id: "appt-1", by: "PROFESSIONAL", reason: undefined });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+  });
+
+  it("saveAppointmentReasonAction ok → también revalida /turnos", async () => {
+    mocks.updateAppointmentReason.mockResolvedValue({ patientId: "pat-1", reason: "Control" });
+    expect(await saveAppointmentReasonAction("appt-1", "Control")).toEqual({ ok: true, reason: "Control" });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+  });
+});
+
+describe("HU-022: reprogramar un turno", () => {
+  it("getRescheduleSlotsAction → ISO ordenados del día", async () => {
+    mocks.getRescheduleSlots.mockResolvedValue([
+      new Date("2026-11-05T16:00:00.000Z"),
+      new Date("2026-11-05T14:00:00.000Z"),
+    ]);
+    expect(await getRescheduleSlotsAction("appt-1", "2026-11-05")).toEqual({
+      ok: true,
+      slots: ["2026-11-05T14:00:00.000Z", "2026-11-05T16:00:00.000Z"],
+    });
+    expect(mocks.getRescheduleSlots).toHaveBeenCalledWith({ appointmentId: "appt-1", dayKey: "2026-11-05" });
+  });
+
+  it.each(["", "05/11/2026", "2026-02-30"])("getRescheduleSlotsAction con día inválido (%j) → error sin consultar", async (day) => {
+    expect(await getRescheduleSlotsAction("appt-1", day)).toEqual({ ok: false, error: "Elegí un día válido." });
+    expect(mocks.getRescheduleSlots).not.toHaveBeenCalled();
+  });
+
+  it("getRescheduleSlotsAction con error del dominio → mensaje", async () => {
+    mocks.getRescheduleSlots.mockRejectedValue(new Error("db down"));
+    expect(await getRescheduleSlotsAction("appt-1", "2026-11-05")).toEqual({
+      ok: false,
+      error: "No se pudieron cargar los horarios. Probá de nuevo.",
+    });
+  });
+
+  it("S4: rescheduleAppointmentAction ok → start/end nuevos y revalida calendario, turnos, avisos y ficha", async () => {
+    mocks.rescheduleAppointment.mockResolvedValue({
+      patientId: "pat-1",
+      startsAt: new Date("2026-11-05T14:00:00.000Z"),
+      endsAt: new Date("2026-11-05T14:45:00.000Z"),
+    });
+    expect(await rescheduleAppointmentAction("appt-1", "2026-11-05T14:00:00.000Z")).toEqual({
+      ok: true,
+      start: "2026-11-05T14:00:00.000Z",
+      end: "2026-11-05T14:45:00.000Z",
+    });
+    expect(mocks.rescheduleAppointment).toHaveBeenCalledWith({ id: "appt-1", startsAt: new Date("2026-11-05T14:00:00.000Z") });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1", "layout");
+  });
+
+  it("rescheduleAppointmentAction con fecha inválida → error sin llamar al dominio", async () => {
+    expect(await rescheduleAppointmentAction("appt-1", "mañana")).toEqual({ ok: false, error: "Elegí un horario válido." });
+    expect(mocks.rescheduleAppointment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["SLOT_TAKEN", "Ese horario ya no está libre. Elegí otro."],
+    ["NOT_RESCHEDULABLE", "Este turno ya no se puede reprogramar."],
+    ["SAME_TIME", "El turno ya está en ese horario."],
+  ])("S4/S5: RescheduleError %s → %j y sin revalidar", async (code, error) => {
+    mocks.rescheduleAppointment.mockRejectedValue(new mocks.RescheduleError(code));
+    expect(await rescheduleAppointmentAction("appt-1", "2026-11-05T14:00:00.000Z")).toEqual({ ok: false, error });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("rescheduleAppointmentAction con otro error → mensaje genérico", async () => {
+    mocks.rescheduleAppointment.mockRejectedValue(new Error("db down"));
+    expect(await rescheduleAppointmentAction("appt-1", "2026-11-05T14:00:00.000Z")).toEqual({
+      ok: false,
+      error: "No se pudo reprogramar el turno. Probá de nuevo.",
+    });
   });
 });

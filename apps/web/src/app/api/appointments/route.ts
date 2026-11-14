@@ -38,19 +38,13 @@ export async function GET(req: Request) {
     orderBy: { startsAt: "asc" },
   });
 
-  // Estados cerrados con los tokens del sistema (FullCalendar los pone inline y var() se resuelve en :root).
-  const statusColor: Record<string, string> = {
-    COMPLETED: "hsl(var(--success))",
-    NO_SHOW: "hsl(var(--destructive))",
-  };
-
+  // La pastilla se pinta por estado (clase appt-event--<estado>, globals.css); el color del servicio va
+  // como dato y lo lleva el punto de la pastilla.
   const events = appts.map((a) => ({
     id: a.id,
     title: appointmentEventTitle(a.patient, a.service.name),
     start: a.startsAt.toISOString(),
     end: a.endsAt.toISOString(),
-    backgroundColor: statusColor[a.status] ?? a.service.color,
-    borderColor: statusColor[a.status] ?? a.service.color,
     extendedProps: {
       status: a.status,
       patientName: a.patient.name,
@@ -59,6 +53,7 @@ export async function GET(req: Request) {
       patientLabel: patientDisplayName(a.patient),
       hasFullPayment: a.payments.length > 0,
       serviceName: a.service.name,
+      serviceColor: a.service.color,
       price: a.priceSnapshot.toString(),
       googleSynced: Boolean(a.googleEventId),
       patientId: a.patientId,

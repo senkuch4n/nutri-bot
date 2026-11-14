@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState, type Ref } from "react";
-import { Plus, Search } from "lucide-react";
+import { ChevronDown, Plus, Search } from "lucide-react";
 import {
   AGENDA_TEXT,
   HIDDEN_NUMBER_TEXT,
@@ -10,12 +10,15 @@ import {
   formatPhone,
   matchesPatientQuery,
   parsePhoneInput,
+  recentPatients,
 } from "@nutri-bot/core";
-import { Button, Field, Input, cn } from "@/components/ui";
+import { Button, Field, Input, cn, filledInputClass, filledSurfaceClass } from "@/components/ui";
 import type { AppointmentPatientOption } from "./actions";
 
 const T = AGENDA_TEXT.create;
 const MAX_RESULTS = 8;
+/** Con el buscador vacío y "Ver recientes" abierto: las de actividad más reciente; al resto se llega escribiendo. */
+const MAX_RECENT = 5;
 const UNNAMED = "Sin nombre";
 
 /** Para quién es el turno: buscando, una paciente existente o una nueva (nombre + teléfono escrito a mano). */
@@ -63,7 +66,7 @@ export function PatientPicker({
   if (choice.kind === "existing") {
     const o = choice.option;
     return (
-      <div className="flex min-h-11 items-center justify-between gap-3 rounded-lg bg-secondary px-3 py-2">
+      <div className={cn(filledSurfaceClass, "flex min-h-[3.25rem] items-center justify-between gap-3 py-2 pl-5 pr-3")}>
         <p className="min-w-0 text-callout">
           <span className="font-semibold">{o.name ?? UNNAMED}</span>
           <span className="text-muted-foreground"> · {o.phoneLabel ?? HIDDEN_NUMBER_TEXT}</span>
@@ -97,12 +100,15 @@ function PatientSearch({
   const listId = `${id}-lista`;
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  // Las recientes quedan escondidas hasta que se piden ("Ver recientes" o flecha abajo en el buscador vacío).
+  const [showRecent, setShowRecent] = useState(false);
 
   const results = useMemo(() => {
     if (!options) return [];
-    if (!query.trim()) return options.filter((o) => o.name !== null).slice(0, MAX_RESULTS);
+    if (!query.trim()) return showRecent ? recentPatients(options, MAX_RECENT) : [];
     return options.filter((o) => matchesPatientQuery(o, query)).slice(0, MAX_RESULTS);
-  }, [options, query]);
+  }, [options, query, showRecent]);
+  const hasRecent = options !== null && recentPatients(options, 1).length > 0;
   const activeIndex = Math.min(active, Math.max(results.length - 1, 0));
 
   function startNew() {
@@ -112,7 +118,11 @@ function PatientSearch({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown" && !query.trim() && !showRecent && hasRecent) {
+      e.preventDefault();
+      setShowRecent(true);
+      setActive(0);
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive(Math.min(activeIndex + 1, results.length - 1));
     } else if (e.key === "ArrowUp") {
@@ -138,7 +148,7 @@ function PatientSearch({
         {T.searchLabel}
       </label>
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+        <Search className="pointer-events-none absolute left-5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input
           ref={searchRef}
           id={`${id}-buscar`}
@@ -151,7 +161,7 @@ function PatientSearch({
           autoComplete="off"
           enterKeyHint="search"
           placeholder={T.searchPlaceholder}
-          className="h-11 pl-9"
+          className={`${filledInputClass} pl-12`}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -176,7 +186,31 @@ function PatientSearch({
         )
       ) : (
         <>
-          <ul id={listId} role="listbox" aria-label={T.who} className="divide-y divide-border overflow-hidden rounded-lg border empty:hidden">
+          {!query.trim() && hasRecent ? (
+            <button
+              type="button"
+              aria-expanded={showRecent}
+              aria-controls={listId}
+              onClick={() => {
+                setShowRecent((v) => !v);
+                setActive(0);
+              }}
+              className="inline-flex min-h-9 items-center gap-1 rounded-full px-2 text-footnote font-medium text-muted-foreground press-none transition-colors duration-hover hover:bg-overlay-hover hover:text-foreground pressed:bg-overlay-pressed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {showRecent ? T.recent : "Ver recientes"}
+              <ChevronDown
+                className={cn("size-3.5 transition-transform duration-hover", showRecent && "rotate-180")}
+                strokeWidth={2}
+                aria-hidden
+              />
+            </button>
+          ) : null}
+          <ul
+            id={listId}
+            role="listbox"
+            aria-label={query.trim() ? T.who : T.recent}
+            className={cn(filledSurfaceClass, "divide-y divide-[#f9f8fa] overflow-hidden empty:hidden")}
+          >
             {results.map((o, i) => (
               <li
                 key={o.id}
@@ -184,7 +218,7 @@ function PatientSearch({
                 role="option"
                 aria-selected={i === activeIndex}
                 className={cn(
-                  "flex min-h-11 cursor-pointer flex-col justify-center px-3 py-1.5 text-callout",
+                  "flex min-h-[3.25rem] cursor-pointer flex-col justify-center px-5 py-2 text-callout",
                   i === activeIndex ? "bg-overlay-hover" : "hover:bg-overlay-hover",
                 )}
                 // mousedown: elige antes de que el input pierda el foco.
@@ -205,7 +239,7 @@ function PatientSearch({
               {T.noResults(query.trim())}
             </p>
           ) : null}
-          <Button type="button" variant="tinted" onClick={startNew}>
+          <Button type="button" variant="tinted" className="h-12 rounded-full px-5" onClick={startNew}>
             <Plus aria-hidden />
             {T.newPatient}
           </Button>
@@ -247,6 +281,7 @@ function NewPatientFields({
       </div>
       <Field label={T.nameLabel} error={nameError}>
         <Input
+          className={filledInputClass}
           autoComplete="name"
           value={choice.name}
           aria-invalid={nameError ? true : undefined}
@@ -257,6 +292,7 @@ function NewPatientFields({
       <div>
         <Field label={T.phoneLabel} error={phoneError} hint={PHONE_INPUT_TEXT.foreignHint}>
           <Input
+            className={filledInputClass}
             type="tel"
             inputMode="tel"
             autoComplete="tel"
