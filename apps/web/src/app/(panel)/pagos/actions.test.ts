@@ -28,6 +28,7 @@ describe("registerManualPaymentAction", () => {
     expect(mocks.registerManualPayment).toHaveBeenCalledWith("appt-1", { kind: "FULL", amount: 15000 });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pagos");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/turnos"); // HU-021
   });
 
   it("si el dominio falla → mensaje claro, sin revalidar", async () => {

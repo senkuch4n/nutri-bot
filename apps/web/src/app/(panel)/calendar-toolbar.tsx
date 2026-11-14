@@ -1,22 +1,26 @@
 "use client";
 
-import type { Ref } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import type { ReactNode, Ref } from "react";
+import { ArrowLeft, ArrowRight, Columns4, Grid3x3, PanelTop, type LucideIcon } from "lucide-react";
 import { AGENDA_TEXT, calendarNavLabels, type CalendarView } from "@nutri-bot/core";
 import { Button } from "@/components/primitives/button";
 import { Skeleton } from "@/components/primitives/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/primitives/tooltip";
 import { SegmentedControl, type SegmentedOption } from "@/components/segmented-control";
-import { CALENDAR_VIEWS } from "@/lib/calendar-route";
 
-const VIEW_OPTIONS: ReadonlyArray<SegmentedOption<CalendarView>> = CALENDAR_VIEWS.map((v) => ({
+// Orden de la referencia visual (2026-10-31): día, semana y después mes.
+const VIEW_ICON: Record<CalendarView, LucideIcon> = { dia: PanelTop, semana: Columns4, mes: Grid3x3 };
+const VIEW_OPTIONS: ReadonlyArray<SegmentedOption<CalendarView>> = (["dia", "semana", "mes"] as const).map((v) => ({
   value: v,
-  label: AGENDA_TEXT.views[v],
+  label: null,
+  icon: VIEW_ICON[v],
+  "aria-label": AGENDA_TEXT.views[v],
 }));
 
-// Debajo de 640 px: dos renglones (título arriba; ‹ Hoy › y el segmentado a lo ancho abajo, Q14).
-// Desde 640 px: un renglón (‹ Hoy › · título · segmentado a la derecha).
-const ROW = "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3 sm:flex sm:flex-wrap";
+// Debajo de 640 px: título arriba y los controles abajo, a lo ancho. Desde 640 px: un renglón
+// (título a la izquierda; Filtros, vistas, Hoy y ← → a la derecha).
+const ROW = "flex flex-wrap items-center justify-between gap-x-3 gap-y-3";
+const ROUND = "size-11 rounded-full bg-secondary hover:bg-secondary/80";
 
 /**
  * Barra propia del calendario (HU-017b-1, SDD 4.4): reemplaza la de FullCalendar. Controles de 44 px
@@ -30,6 +34,7 @@ export function CalendarToolbar({
   onNext,
   onToday,
   onViewChange,
+  filters,
 }: {
   view: CalendarView;
   title: string;
@@ -38,38 +43,45 @@ export function CalendarToolbar({
   onNext: () => void;
   onToday: () => void;
   onViewChange: (view: CalendarView) => void;
+  /** Botón «Filtros» (calendar-filters.tsx), antes de las vistas. */
+  filters?: ReactNode;
 }) {
   const labels = calendarNavLabels(view);
   return (
     <div className={`mb-4 ${ROW}`}>
-      <div className="flex items-center gap-1">
-        <NavButton label={labels.prev} onClick={onPrev}>
-          <ChevronLeft aria-hidden />
-        </NavButton>
-        <Button type="button" variant="secondary" className="h-11 rounded-lg px-4 text-callout" onClick={onToday}>
-          {AGENDA_TEXT.today}
-        </Button>
-        <NavButton label={labels.next} onClick={onNext}>
-          <ChevronRight aria-hidden />
-        </NavButton>
-      </div>
       <h2
         ref={titleRef}
         tabIndex={-1}
         aria-live="polite"
-        className="col-span-2 -order-1 min-h-7 min-w-0 rounded-md text-balance text-title-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:order-none sm:flex-1 sm:px-2"
+        className="min-h-9 min-w-0 rounded-md text-balance text-[1.75rem] font-semibold leading-9 tracking-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         {title}
       </h2>
-      <SegmentedControl
-        value={view}
-        onValueChange={onViewChange}
-        options={VIEW_OPTIONS}
-        aria-label={AGENDA_TEXT.viewSelectorLabel}
-        size="lg"
-        fullWidth
-        className="sm:inline-grid sm:w-auto"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        {filters}
+        <SegmentedControl
+          value={view}
+          onValueChange={onViewChange}
+          options={VIEW_OPTIONS}
+          aria-label={AGENDA_TEXT.viewSelectorLabel}
+          size="lg"
+          className="h-11 p-1 [&>button]:px-3.5"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          className="h-11 rounded-full px-4 text-callout"
+          onClick={onToday}
+        >
+          {AGENDA_TEXT.today}
+        </Button>
+        <NavButton label={labels.prev} onClick={onPrev}>
+          <ArrowLeft aria-hidden />
+        </NavButton>
+        <NavButton label={labels.next} onClick={onNext}>
+          <ArrowRight aria-hidden />
+        </NavButton>
+      </div>
     </div>
   );
 }
@@ -78,7 +90,7 @@ function NavButton({ label, onClick, children }: { label: string; onClick: () =>
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon-lg" aria-label={label} onClick={onClick}>
+        <Button type="button" variant="ghost" size="icon-lg" className={ROUND} aria-label={label} onClick={onClick}>
           {children}
         </Button>
       </TooltipTrigger>
@@ -91,29 +103,34 @@ function NavButton({ label, onClick, children }: { label: string; onClick: () =>
 export function CalendarToolbarSkeleton() {
   return (
     <div className={`mb-4 ${ROW}`} aria-hidden>
-      <div className="flex items-center gap-1">
-        <Skeleton className="size-11 rounded-lg" />
-        <Skeleton className="h-11 w-16 rounded-lg" />
-        <Skeleton className="size-11 rounded-lg" />
+      <div className="flex min-h-9 items-center">
+        <Skeleton className="h-7 w-52 max-w-full" />
       </div>
-      <div className="col-span-2 -order-1 flex min-h-7 items-center sm:order-none sm:flex-1 sm:px-2">
-        <Skeleton className="h-6 w-48 max-w-full" />
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-11 w-28 rounded-full" />
+        <Skeleton className="h-11 w-36 rounded-full" />
+        <Skeleton className="h-11 w-16 rounded-full" />
+        <Skeleton className="size-11 rounded-full" />
+        <Skeleton className="size-11 rounded-full" />
       </div>
-      <Skeleton className="h-10 w-full rounded-full sm:w-56" />
     </div>
   );
 }
 
-/** Esqueleto de la grilla (el mismo de loading.tsx). */
+/** Esqueleto de la grilla (el mismo de loading.tsx): 7 columnas de tarjetas, como el mes. */
 export function CalendarGridSkeleton() {
   return (
     <div aria-hidden>
       <div className="mb-2 grid grid-cols-7 gap-2">
         {Array.from({ length: 7 }, (_, i) => (
-          <Skeleton key={i} className="h-4" />
+          <Skeleton key={i} className="mx-auto h-4 w-8" />
         ))}
       </div>
-      <Skeleton className="h-[26rem] w-full" />
+      <div className="grid grid-cols-7 gap-2">
+        {Array.from({ length: 35 }, (_, i) => (
+          <Skeleton key={i} className="h-20 rounded-2xl" />
+        ))}
+      </div>
     </div>
   );
 }

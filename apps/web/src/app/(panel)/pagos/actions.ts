@@ -30,5 +30,6 @@ export async function registerManualPaymentAction(
   }
   revalidatePath("/pagos");
   revalidatePath("/");
+  revalidatePath("/turnos"); // HU-021
   return { ok: true, kind: parsed.data.kind, amount: parsed.data.amount };
 }

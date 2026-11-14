@@ -22,9 +22,9 @@ function isCalendarView(value: string | null): value is CalendarView {
   return (CALENDAR_VIEWS as readonly string[]).includes(value ?? "");
 }
 
-/** Por ancho (D3, sin recordar la última elegida): wide (≥ 768 px) → "semana"; si no → "dia". */
+/** Por ancho (D3, sin recordar la última elegida): wide (≥ 768 px) → "mes"; si no → "dia". */
 export function defaultCalendarView(wide: boolean): CalendarView {
-  return wide ? "semana" : "dia";
+  return wide ? "mes" : "dia";
 }
 
 /** ?fecha= y ?vista= → lo que hay que mostrar.
@@ -71,4 +71,30 @@ export function calendarHref(
   url.searchParams.delete("vista");
   calendarRouteQuery(state, ctx).forEach((value, key) => url.searchParams.set(key, value));
   return url.toString();
+}
+
+/** Entrada del calendario: cada pastilla aparece un poco después que la anterior, hasta este tope. */
+export const REVEAL_STEP_MS = 40;
+export const REVEAL_MAX_DELAY_MS = 900;
+
+export function calendarRevealDelayMs(index: number): number {
+  return Math.min(index * REVEAL_STEP_MS, REVEAL_MAX_DELAY_MS);
+}
+
+/**
+ * Sesión de la entrada del calendario. Se cierra recién cuando se montó la primera tanda de pastillas
+ * (`schedule` corre después de ese render): FullCalendar llama a eventsSet con la lista vacía al montarse,
+ * antes de traer los turnos, así que cerrarla ahí dejaba la entrada sin animar.
+ */
+export function createCalendarReveal(schedule: (fn: () => void) => void) {
+  let active = true;
+  let index = 0;
+  return {
+    /** Retraso de la pastilla que se monta, o null si la entrada ya terminó. */
+    next(): number | null {
+      if (!active) return null;
+      if (index === 0) schedule(() => (active = false));
+      return calendarRevealDelayMs(index++);
+    },
+  };
 }

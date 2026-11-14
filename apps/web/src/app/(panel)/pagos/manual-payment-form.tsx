@@ -19,6 +19,8 @@ export interface AppointmentOption {
   patientLabel?: string;
   /** Opcional (017b-3): seña configurada del servicio; se precarga al elegir "Seña". */
   depositAmount?: string;
+  /** HU-021 (D9, opcional): saldo; si está, "Pago completo" arranca con este monto (editable). */
+  balanceAmount?: string;
 }
 
 /** "15000.00" → "15000" (el input numérico arranca con el precio del turno). */
@@ -28,6 +30,7 @@ function amountFromPrice(priceSnapshot: string | undefined): string {
 }
 
 function defaultAmount(option: AppointmentOption | undefined, kind: Kind): string {
+  if (kind === "FULL" && option?.balanceAmount) return amountFromPrice(option.balanceAmount);
   if (kind === "DEPOSIT" && option?.depositAmount) return amountFromPrice(option.depositAmount);
   return amountFromPrice(option?.priceSnapshot);
 }

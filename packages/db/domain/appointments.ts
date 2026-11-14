@@ -1,7 +1,8 @@
 import { computeDepositAmount, isConsultationEmpty, messages, validateBookingReasonInput } from "@nutri-bot/core";
 import { Prisma, prisma, type Actor, type Appointment, type AppointmentStatus } from "../index";
-import { getProfessional, checkSlotAvailable } from "./availability";
+import { getProfessional, checkSlotAvailable, canRescheduleAppointment } from "./availability";
 import { enqueueMessage } from "./outbox";
+import { PREVIOUS_SCHEDULE_KEY_PREFIX } from "./reminders";
 
 export class SlotUnavailableError extends Error {
   constructor() {
@@ -15,6 +16,20 @@ export class InvalidBookingReasonError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "InvalidBookingReasonError";
+  }
+}
+
+/**
+ * HU-022: no se pudo reprogramar. `NOT_RESCHEDULABLE`: el turno no existe, no está CONFIRMED ni
+ * AWAITING_PAYMENT, o ya empezó (S5). `SLOT_TAKEN`: el horario nuevo no está libre (S4).
+ * `SAME_TIME`: el turno ya está en ese horario. El panel traduce el código a su texto.
+ */
+export type RescheduleErrorCode = "NOT_RESCHEDULABLE" | "SLOT_TAKEN" | "SAME_TIME";
+
+export class RescheduleError extends Error {
+  constructor(readonly code: RescheduleErrorCode) {
+    super(`No se pudo reprogramar el turno (${code}).`);
+    this.name = "RescheduleError";
   }
 }
 
@@ -135,6 +150,108 @@ export async function updateAppointmentReason(params: {
     data: { reason: r.reason },
     select: { id: true, patientId: true, reason: true },
   });
+}
+
+/** HU-022: mensajes que llevan el horario del turno y se vuelven a mandar para el horario nuevo. */
+const SCHEDULE_MESSAGE_KINDS = ["REMINDER", "CONFIRMATION_REQUEST"] as const;
+
+/**
+ * HU-022: la profesional cambia el día y la hora de un turno desde el panel (S3–S7). En una
+ * transacción con el mismo lock que la reserva:
+ * - solo CONFIRMED o AWAITING_PAYMENT que todavía no empezó (S5);
+ * - revalida el horario nuevo excluyendo el propio turno (S4); ocupado → SLOT_TAKEN sin cambios;
+ * - conserva la duración, marca needsGoogleSync y reinicia la confirmación de asistencia (S6);
+ *   un CONFIRMED sella `bookedAt` = ahora, así no salen recordatorios cuyo momento ya pasó (D5 de
+ *   HU-014); un AWAITING_PAYMENT lo sigue sellando el pago;
+ * - borra los REMINDER / CONFIRMATION_REQUEST pendientes (tienen el horario viejo en el texto) y
+ *   renombra los ya enviados a `prev:<inicio viejo>:<id>:<clave>`, que enqueueServiceReminders
+ *   ignora: los recordatorios y la confirmación vuelven a salir para el horario nuevo;
+ * - si la paciente quedó respondiendo la confirmación de ESTE turno, esa conversación vuelve a DORMANT.
+ * Después encola el aviso a la paciente (AD_HOC, S7). Consumidor: web (rescheduleAppointmentAction).
+ */
+export async function rescheduleAppointment(params: {
+  id: string;
+  startsAt: Date;
+  now?: Date;
+}): Promise<Appointment> {
+  const now = params.now ?? new Date();
+  const pro = await getProfessional();
+
+  const { appointment, patientJid, serviceName } = await prisma.$transaction(async (tx) => {
+    // Mismo lock que createAppointment: dos escrituras de agenda no se cruzan.
+    await tx.$queryRaw`SELECT id FROM "Professional" WHERE id = 1 FOR UPDATE`;
+    const prev = await tx.appointment.findUnique({
+      where: { id: params.id },
+      include: { patient: true, service: true },
+    });
+    if (!prev || !canRescheduleAppointment(prev, now)) throw new RescheduleError("NOT_RESCHEDULABLE");
+    if (prev.startsAt.getTime() === params.startsAt.getTime()) throw new RescheduleError("SAME_TIME");
+
+    const ok = await checkSlotAvailable(
+      { serviceId: prev.serviceId, startsAt: params.startsAt, excludeAppointmentId: prev.id, now },
+      tx,
+    );
+    if (!ok) throw new RescheduleError("SLOT_TAKEN");
+
+    await tx.outboundMessage.deleteMany({
+      where: { appointmentId: prev.id, kind: { in: [...SCHEDULE_MESSAGE_KINDS] }, status: "PENDING" },
+    });
+    const sent = await tx.outboundMessage.findMany({
+      where: {
+        appointmentId: prev.id,
+        kind: { in: [...SCHEDULE_MESSAGE_KINDS] },
+        status: { not: "PENDING" },
+        NOT: { dedupeKey: { startsWith: PREVIOUS_SCHEDULE_KEY_PREFIX } },
+      },
+      select: { id: true, dedupeKey: true },
+    });
+    // El id evita chocar con la unicidad (appointmentId, kind, dedupeKey) si el turno vuelve a un
+    // horario que ya tuvo.
+    const oldIso = prev.startsAt.toISOString();
+    for (const m of sent) {
+      await tx.outboundMessage.update({
+        where: { id: m.id },
+        data: { dedupeKey: `${PREVIOUS_SCHEDULE_KEY_PREFIX}${oldIso}:${m.id}:${m.dedupeKey}` },
+      });
+    }
+
+    const durationMs = prev.endsAt.getTime() - prev.startsAt.getTime();
+    const appointment = await tx.appointment.update({
+      where: { id: prev.id },
+      data: {
+        startsAt: params.startsAt,
+        endsAt: new Date(params.startsAt.getTime() + durationMs),
+        needsGoogleSync: true,
+        confirmationRequestedAt: null,
+        confirmationRespondedAt: null,
+        confirmationResponse: null,
+        ...(prev.status === "CONFIRMED" ? { bookedAt: now } : {}),
+      },
+    });
+
+    // Un "sí"/"no" atrasado no tiene que responder por el horario nuevo.
+    await tx.conversationState.updateMany({
+      where: {
+        patientJid: prev.patient.whatsappJid,
+        step: "CONFIRM_ATTENDANCE",
+        context: { path: ["apptId"], equals: prev.id },
+      },
+      data: { step: "DORMANT", context: {} },
+    });
+
+    return { appointment, patientJid: prev.patient.whatsappJid, serviceName: prev.service.name };
+  });
+
+  await enqueueMessage({
+    toJid: patientJid,
+    kind: "AD_HOC",
+    appointmentId: appointment.id,
+    // Un aviso por reprogramación (la unicidad incluye appointmentId + kind + dedupeKey).
+    dedupeKey: `reschedule:${now.toISOString()}`,
+    body: messages.rescheduledNotice({ serviceName, startsAt: appointment.startsAt, tz: pro.timezone }),
+  });
+
+  return appointment;
 }
 
 export async function cancelAppointment(params: {

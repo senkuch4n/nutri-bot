@@ -47,10 +47,10 @@ export function MobileTopbar({
               <Menu strokeWidth={1.75} aria-hidden />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="flex flex-col p-0">
+          <SheetContent side="left" className="flex flex-col bg-[#f6f5f8] p-0">
             <SheetTitle className="sr-only">Menú</SheetTitle>
             <SheetDescription className="sr-only">Navegación principal del panel</SheetDescription>
-            <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
+            <div className="flex h-14 shrink-0 items-center border-b border-black/[0.05] px-4">
               <Wordmark subtitle={professionalName} className="min-w-0 flex-1 pr-10" />
             </div>
             <LayoutGroup id="sidebar-mobile">

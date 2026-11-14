@@ -64,6 +64,8 @@ const TabsTrigger = React.forwardRef<
         <m.span
           layoutId="tab-indicator"
           aria-hidden
+          // Para que una pantalla lo dibuje distinto (p. ej. la ficha: píldora en vez de subrayado).
+          data-tab-indicator=""
           transition={springs.indicator}
           // En orientación vertical de escritorio (Ajustes) la pantalla dibuja su propio activo.
           className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary lg:group-data-[orientation=vertical]/tab:hidden"

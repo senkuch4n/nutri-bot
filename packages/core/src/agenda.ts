@@ -87,6 +87,35 @@ export function todaySummaryText(c: AgendaDayCount): string {
   return `Hoy: ${turnos(c.total)} · ${rest}`;
 }
 
+/** Estado del día en el Inicio: "Sin turnos", "Quedan 2", "Queda 1" o "Ya terminaste". */
+export function homeDayStatus(c: AgendaDayCount): string {
+  if (c.total === 0) return "Sin turnos";
+  if (c.remaining === 0) return "Ya terminaste";
+  return c.remaining === 1 ? "Queda 1" : `Quedan ${c.remaining}`;
+}
+
+/** Textos exactos del Inicio (panel). */
+export const HOME_TEXT = {
+  navLabel: "Inicio",
+  greeting: (name: string | null) => (name ? `Hola ${name}` : "Hola"),
+  todayYouHave: "Hoy tenés",
+  todayCount: (n: number) => (n === 0 ? "Sin turnos" : turnos(n)),
+  newAppointment: "Nuevo turno",
+  todayLabel: "Hoy:",
+  nextLabel: "Tu próximo turno:",
+  todayListTitle: "Turnos de hoy",
+  todayTabs: "Turnos de hoy por estado",
+  pending: "Pendientes",
+  done: "Completados",
+  todayEmpty: "No hay turnos",
+  awaitingTitle: "Esperando la seña",
+  refresh: "Refrescar",
+  registerDeposit: "Registrar seña",
+  cancel: "Cancelar",
+  depositOf: (amount: string) => `Seña: ${amount}`,
+  awaitingEmpty: "No hay turnos esperando la seña.",
+} as const;
+
 /** "Esta semana: 18 turnos" · "Esta semana: 1 turno" · "Esta semana: sin turnos". */
 export function weekSummaryText(total: number): string {
   return total === 0 ? "Esta semana: sin turnos" : `Esta semana: ${turnos(total)}`;
@@ -124,7 +153,7 @@ function previousKey(dayKey: string): string {
  *  - semana: mismo mes "5 – 11 de octubre"; meses distintos "28 de septiembre – 4 de octubre";
  *    años distintos "28 de diciembre de 2026 – 3 de enero de 2027"; los dos en un año que no es el de
  *    todayKey: "5 – 11 de octubre de 2027". Separador " – " (raya corta con espacios).
- *  - mes: "Octubre 2026" (siempre con año). */
+ *  - mes: "Octubre de 2026" (siempre con año). */
 export function calendarPeriodTitle(
   view: CalendarView,
   startKey: string,
@@ -132,7 +161,7 @@ export function calendarPeriodTitle(
   todayKey: string,
 ): string {
   const todayYear = todayKey.slice(0, 4);
-  if (view === "mes") return capitalizeFirst(fmtKey(startKey, "MMMM yyyy"));
+  if (view === "mes") return capitalizeFirst(fmtKey(startKey, "MMMM 'de' yyyy"));
   if (view === "dia") {
     const pattern = startKey.slice(0, 4) === todayYear ? "EEEE d 'de' MMMM" : "EEEE d 'de' MMMM 'de' yyyy";
     return capitalizeFirst(fmtKey(startKey, pattern));
@@ -171,6 +200,17 @@ export const AGENDA_TEXT = {
   noNext: "Sin turnos próximos",
   legendServices: "Servicios",
   legendStates: "Estados",
+  /** Panel del día (Mes: la casilla se agranda a un panel a la derecha). */
+  dayPanel: {
+    expand: "Ver el día",
+    newHere: "Nuevo turno este día",
+    list: "Lista",
+    agenda: "Agenda",
+    tabsLabel: "Vista del día",
+    empty: "No hay turnos este día.",
+    pendingPayment: "Cobro pendiente",
+    hasNote: "Tiene nota",
+  },
   loading: "Cargando turnos",
   loadError: "No se pudieron cargar los turnos.",
   sheet: {
@@ -199,6 +239,15 @@ export const AGENDA_TEXT = {
     toastReminderPending: "Ya hay un recordatorio por salir",
     toastReasonSaved: "Motivo guardado",
     backToConfirmedTitle: "¿Volver el turno a confirmado?", // se conserva el texto de HU-003 (D3)
+    patient: "Paciente:",
+    sections: { when: "Fecha y hora", status: "Estado", finance: "Finanzas", more: "Más" },
+    statusLabel: "Estado del turno",
+    minutes: (n: number) => `${n} min`,
+    paid: "Pagado",
+    phone: "Teléfono",
+    edit: "Editar",
+    sendReminderShort: "Enviar",
+    consultation: "Consulta",
   },
   cancel: {
     title: (patient: string) => `¿Cancelar el turno de ${patient}?`,
@@ -216,6 +265,7 @@ export const AGENDA_TEXT = {
   create: {
     title: "Nuevo turno",
     who: "¿Para quién?",
+    recent: "Recientes",
     searchLabel: "Buscar paciente por nombre o teléfono",
     searchPlaceholder: "Buscá por nombre o teléfono",
     noResults: (q: string) => `No encontramos a «${q}»`,
@@ -252,3 +302,105 @@ export const AGENDA_TEXT = {
     genericError: "No se pudo crear el turno. Probá de nuevo.",
   },
 } as const;
+
+const INK = "#0a0a0a";
+const WHITE = "#ffffff";
+
+/** Luminancia relativa WCAG de un hex (#rgb o #rrggbb); null si no es un hex válido. */
+function relativeLuminance(hex: string): number | null {
+  const raw = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())?.[1];
+  if (!raw) return null;
+  const digits = raw.length === 3 ? raw.replace(/./g, (c) => c + c) : raw;
+  const channel = (i: number) => {
+    const c = parseInt(digits.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+
+/** Fecha corta del turno en la zona de la profesional: "5 oct 26". */
+export function appointmentShortDate(startsAt: Date, tz: string): string {
+  return formatInTimeZone(startsAt, tz, "d MMM yy", { locale: esLocale }).replace(".", "");
+}
+
+/** Duración del turno en minutos, entre dos ISO. */
+export function appointmentDurationMinutes(startIso: string, endIso: string): number {
+  return Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000);
+}
+
+/** Título del panel del día: "Lunes, 5 de octubre" (con el año solo si no es el de hoy). */
+export function calendarDayPanelTitle(dayKey: string, todayKey: string): string {
+  const pattern = dayKey.slice(0, 4) === todayKey.slice(0, 4) ? "EEEE, d 'de' MMMM" : "EEEE, d 'de' MMMM 'de' yyyy";
+  return capitalizeFirst(fmtKey(dayKey, pattern));
+}
+
+/** Minutos desde la medianoche según la hora escrita en un ISO con offset ("…T08:30:00-03:00" → 510).
+ *  FullCalendar con zona con nombre ya entrega la hora local de la profesional: no se convierte. */
+export function minutesOfDay(iso: string): number {
+  return Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
+}
+
+interface TimelineItem {
+  startMin: number;
+  endMin: number;
+}
+
+function hhmmssToMinutes(value: string): number {
+  return Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+}
+
+/** Rango de la agenda del día: la franja configurada, ampliada a horas enteras si algún turno queda afuera. */
+export function dayTimelineRange(
+  slotMin: string,
+  slotMax: string,
+  items: readonly TimelineItem[],
+): { fromMin: number; toMin: number } {
+  let fromMin = hhmmssToMinutes(slotMin);
+  let toMin = hhmmssToMinutes(slotMax);
+  for (const it of items) {
+    fromMin = Math.min(fromMin, Math.floor(it.startMin / 60) * 60);
+    toMin = Math.max(toMin, Math.ceil(it.endMin / 60) * 60);
+  }
+  return { fromMin, toMin: Math.min(toMin, 24 * 60) };
+}
+
+/** Posición de un turno en la agenda del día, en porcentaje del alto, recortada al rango. */
+export function dayTimelineBlock(
+  item: TimelineItem,
+  range: { fromMin: number; toMin: number },
+): { top: number; height: number } {
+  const span = range.toMin - range.fromMin;
+  const start = Math.max(item.startMin, range.fromMin);
+  const end = Math.min(Math.max(item.endMin, start), range.toMin);
+  return { top: ((start - range.fromMin) / span) * 100, height: ((end - start) / span) * 100 };
+}
+
+/** Filtros del calendario: qué servicios (por nombre) y estados se ocultan. Vacío = se ve todo. */
+export interface CalendarFilters {
+  hiddenServices: readonly string[];
+  hiddenStatuses: readonly string[];
+}
+
+export function calendarFilterHides(event: { serviceName: string; status: string }, filters: CalendarFilters): boolean {
+  return filters.hiddenServices.includes(event.serviceName) || filters.hiddenStatuses.includes(event.status);
+}
+
+export function calendarFilterCount(filters: CalendarFilters): number {
+  return filters.hiddenServices.length + filters.hiddenStatuses.length;
+}
+
+/** Agrega el valor si no estaba o lo saca si estaba; devuelve una lista nueva. */
+export function toggleCalendarFilter(list: readonly string[], value: string): string[] {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+}
+
+/** Texto legible sobre el color de un servicio en el calendario: blanco o casi negro, el que tenga
+ *  más contraste WCAG. Un color inválido cae en blanco (el fondo de respaldo es oscuro). */
+export function readableTextOn(hex: string): typeof WHITE | typeof INK {
+  const l = relativeLuminance(hex);
+  if (l === null) return WHITE;
+  const inkL = relativeLuminance(INK) as number;
+  const onWhite = 1.05 / (l + 0.05);
+  const onInk = (l + 0.05) / (inkL + 0.05);
+  return onWhite >= onInk ? WHITE : INK;
+}
