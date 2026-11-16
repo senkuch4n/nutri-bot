@@ -19,7 +19,8 @@ pasa, entra por SSH al VPS y ejecuta `deploy/deploy.sh <sha>`:
 2. `pg_dump` a `/root/backups/nutribot-<fecha>-<sha>.dump` (se guardan los últimos 14).
 3. `docker compose build`, `run --rm migrate` y `up -d`. Si falla el build o la migración, los
    contenedores viejos siguen corriendo.
-4. Chequea que `https://$DOMAIN/login` responda y que db, web, bot y caddy estén corriendo.
+4. Chequea que `https://$DOMAIN/login` responda y que todos los servicios activos del compose estén
+   corriendo (db, web, bot y, si no está apagado, caddy).
 
 Las variables nuevas de `.env` se cargan en el VPS **antes** de mergear a `main`: el deploy no las
 agrega. También se puede relanzar desde Actions → Deploy → "Run workflow".
@@ -54,6 +55,16 @@ Restaurar un respaldo: `docker compose exec -T db pg_restore -U nutri -d nutribo
 docker compose ps
 docker compose logs -f web | bot | caddy
 ```
+
+## VPS compartido con Factum
+
+Desde el 2026-11-16 el VPS también corre Factum (`/srv/factum`), y los puertos 80/443 los atiende el
+Caddy de Factum para los dos sitios. En el VPS hay un `deploy/compose.override.yml` **no versionado**
+que apaga el `caddy` de acá (profile `sin-uso`) y suma `web` a la red `factum_web` con el alias
+`numa-web`. El sitio de nutribot está en `/srv/factum/repo/deploy/cloud/caddy-sitios/numa.caddy`
+(también no versionado): para cambiar el dominio se edita ese archivo y `DOMAIN` en `.env`, y se
+recrea el Caddy de Factum (`/srv/factum/repo/deploy/cloud/scripts/compose.sh up -d --force-recreate caddy`,
+como `deploy`).
 
 El QR de WhatsApp se escanea desde el panel (`/ajustes/whatsapp`). La sesión vive en el volumen
 `whatsapp-auth`: ningún otro proceso puede correr el bot con el mismo número.
