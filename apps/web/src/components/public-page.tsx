@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Wordmark } from "@/components/brand";
 
 /** Mail de contacto de Arzium que figura en las páginas públicas (privacidad, pedidos de datos). */
-export const ARZIUM_CONTACT_EMAIL = "contacto@arzium.com.ar";
+export const ARZIUM_CONTACT_EMAIL = "arzium.dev@gmail.com";
 
 /** Pie compartido por las páginas públicas y la pantalla de login (requisito de Google: el link a
  *  la política de privacidad tiene que verse desde la página de inicio). */
