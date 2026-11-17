@@ -1,5 +1,6 @@
 import { signIn } from "@/auth";
 import { GoogleG, Wordmark } from "@/components/brand";
+import { PublicFooterLinks } from "@/components/public-page";
 import { SubmitButton } from "@/components/submit-button";
 
 /**
@@ -35,6 +36,7 @@ export function LoginScreen() {
         <p className="mt-6 text-center text-footnote text-muted-foreground">
           Si no podés entrar, pedí que sumen tu correo a la lista de acceso.
         </p>
+        <PublicFooterLinks className="mt-4" />
       </div>
     </main>
   );
