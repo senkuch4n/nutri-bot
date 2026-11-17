@@ -73,7 +73,9 @@ main() {
   docker compose ps --format '{{.Service}}: {{.State}}'
   local running
   running="$(docker compose ps --status running --services)"
-  for svc in db web bot caddy; do
+  # Los servicios activos del compose (sin los de un profile apagado): en el VPS compartido con Factum
+  # el caddy de nutribot está apagado por deploy/compose.override.yml y el proxy es el de Factum.
+  for svc in $(docker compose config --services); do
     grep -qx "$svc" <<<"$running" || { echo "El servicio $svc no está corriendo." >&2; docker compose logs --tail 50 "$svc"; exit 1; }
   done
 
