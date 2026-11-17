@@ -224,7 +224,7 @@ agenda visible) y se libera sola a los 15 minutos si no se completa el pago.
 
 1. **Aplicación "Numa"** (Mercado Pago Developers → Tus integraciones → Numa):
    - URL de redireccionamiento exacta: `https://<dominio>/api/mercadopago/oauth/callback` (el origen
-     de `AUTH_URL` + esa ruta; hoy `https://169-58-151-56.sslip.io/api/mercadopago/oauth/callback`).
+     de `AUTH_URL` + esa ruta; hoy `https://numa.arzium.com.ar/api/mercadopago/oauth/callback`).
      Si cambia el dominio, hay que actualizarla en la aplicación.
    - **Habilitar PKCE** (el panel manda `code_challenge` S256).
    - Confirmar que los permisos incluyen `offline_access`: sin eso Mercado Pago no deja renovar el

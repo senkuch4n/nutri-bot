@@ -1,7 +1,8 @@
 # Producción en el VPS
 
 Desde 2026-11-12 producción corre en un VPS propio (Ubuntu 24.04, `169.58.151.56`) en vez de
-Vercel + Neon: Postgres, web, bot y Caddy en Docker Compose. URL: https://169-58-151-56.sslip.io
+Vercel + Neon: Postgres, web, bot y Caddy en Docker Compose. URL: https://numa.arzium.com.ar (desde 2026-11-17; antes
+`169-58-151-56.sslip.io`, que redirige al nuevo).
 
 - Código en `/opt/nutribot` (en `main`, lo maneja `deploy.sh`); este directorio es `/opt/nutribot/deploy`.
 - Secretos en `/opt/nutribot/deploy/.env` (no versionado, `chmod 600`; plantilla en `.env.example`).
@@ -64,7 +65,10 @@ que apaga el `caddy` de acá (profile `sin-uso`) y suma `web` a la red `factum_w
 `numa-web`. El sitio de nutribot está en `/srv/factum/repo/deploy/cloud/caddy-sitios/numa.caddy`
 (también no versionado): para cambiar el dominio se edita ese archivo y `DOMAIN` en `.env`, y se
 recrea el Caddy de Factum (`/srv/factum/repo/deploy/cloud/scripts/compose.sh up -d --force-recreate caddy`,
-como `deploy`).
+como `deploy`). Sin cortar Factum alcanza con recargarlo en caliente:
+`docker exec factum-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`
+(antes, `caddy validate` con los mismos argumentos). Después de cambiar `DOMAIN`, `docker compose up -d`
+acá y actualizar las URLs en Google OAuth y en la aplicación Numa de Mercado Pago.
 
 El QR de WhatsApp se escanea desde el panel (`/ajustes/whatsapp`). La sesión vive en el volumen
 `whatsapp-auth`: ningún otro proceso puede correr el bot con el mismo número.
