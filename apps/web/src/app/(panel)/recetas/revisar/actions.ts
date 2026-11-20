@@ -6,19 +6,17 @@ import {
   RecipeNotFoundError,
   RecipeNotPublishableError,
   RecipeStatusError,
-  chooseImportCandidateAsPhoto,
-  deleteDraftRecipe,
-  listDraftQueue,
-  publishRecipe,
-  updateRecipe,
+  recipeReviewForTenant,
+  recipesForTenant,
 } from "@nutri-bot/db/domain";
 import { errorCode } from "@/lib/error-code";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import {
   INVALID_PAYLOAD,
   NOT_FOUND,
   SAVE_ERROR,
   applyPhotoIntent,
-  hasPanelSession,
+  type PhotoIntent,
   parsePayload,
   readPhotoIntent,
   toRecipeInput,
@@ -39,8 +37,11 @@ function revalidateReview(id: string) {
 }
 
 /** El que sigue a `id` en la cola (filtrada por archivo); si era el último, el primero que quede. */
-async function nextInQueue(id: string, file: string | null): Promise<string | null> {
-  const queue = await listDraftQueue(file ? { file } : undefined);
+type Review = ReturnType<typeof recipeReviewForTenant>;
+type Recipes = ReturnType<typeof recipesForTenant>;
+
+async function nextInQueue(review: Review, id: string, file: string | null): Promise<string | null> {
+  const queue = await review.queue(file ? { file } : undefined);
   const index = queue.findIndex((q) => q.id === id);
   const after = index >= 0 ? queue[index + 1] : undefined;
   if (after) return after.id;
@@ -52,12 +53,14 @@ const queueFile = (formData: FormData): string | null => {
   return typeof raw === "string" && raw.trim() !== "" ? raw : null;
 };
 
-/** Paso común: valida sesión, payload y foto, y guarda el borrador (updateRecipe sobre DRAFT). */
+/** Paso común: valida pertenencia, payload y foto, y guarda solo sobre DRAFT. */
 async function saveDraft(
   formData: FormData,
   name: string,
-): Promise<{ ok: true; id: string; photo: Awaited<ReturnType<typeof readPhotoIntent>> & { ok: true } } | { ok: false; state: RecipeActionState }> {
-  if (!(await hasPanelSession())) return { ok: false, state: { ok: false, error: RECIPE_TEXT.sessionExpired } };
+): Promise<{ ok: true; id: string; photo: PhotoIntent; recipes: Recipes; review: Review } | { ok: false; state: RecipeActionState }> {
+  const access = await resolvePrivateContentAccess();
+  if (!access) return { ok: false, state: { ok: false, error: RECIPE_TEXT.sessionExpired } };
+  const recipes = recipesForTenant(access.tenantId);
   const payload = parsePayload(formData.get("payload"));
   const { id, input } = payload ? toRecipeInput(payload) : { id: undefined, input: null };
   if (!payload || !id || !input) return { ok: false, state: { ok: false, error: INVALID_PAYLOAD } };
@@ -66,14 +69,24 @@ async function saveDraft(
   if (!photo.ok) return { ok: false, state: { ok: false, photoError: photo.photoError } };
 
   try {
-    await updateRecipe(id, input);
+    await recipes.updateDraft(id, input);
   } catch (err) {
     if (err instanceof RecipeNotFoundError) return { ok: false, state: { ok: false, error: NOT_FOUND } };
-    if (err instanceof RecipeNotPublishableError) return { ok: false, state: { ok: false, error: NOT_DRAFT } };
+    if (err instanceof RecipeStatusError) return { ok: false, state: { ok: false, error: NOT_DRAFT } };
     console.error(`${name}: no se pudo guardar`, errorCode(err));
     return { ok: false, state: { ok: false, error: SAVE_ERROR } };
   }
-  return { ok: true, id, photo };
+  return { ok: true, id, photo: photo.photo, recipes, review: recipeReviewForTenant(access.tenantId) };
+}
+
+async function saveDraftPhoto(saved: { id: string; photo: PhotoIntent; recipes: Recipes; review: Review }, formData: FormData) {
+  const { id, photo, recipes, review } = saved;
+  const candidateId = formData.get("candidateId");
+  if (typeof candidateId === "string" && candidateId !== "") {
+    await review.chooseCandidate(id, candidateId, photo.credit ?? null);
+  } else {
+    await applyPhotoIntent(id, photo, recipes);
+  }
 }
 
 /**
@@ -83,14 +96,9 @@ async function saveDraft(
 export async function saveDraftAction(formData: FormData): Promise<RecipeActionState> {
   const saved = await saveDraft(formData, "saveDraftAction");
   if (!saved.ok) return saved.state;
-  const { id, photo } = saved;
+  const { id } = saved;
   try {
-    const candidateId = formData.get("candidateId");
-    if (typeof candidateId === "string" && candidateId !== "") {
-      await chooseImportCandidateAsPhoto(id, candidateId, photo.photo.credit ?? null);
-    } else {
-      await applyPhotoIntent(id, photo.photo);
-    }
+    await saveDraftPhoto(saved, formData);
   } catch (err) {
     console.error("saveDraftAction: no se pudo guardar la foto", errorCode(err));
     revalidateReview(id);
@@ -108,15 +116,10 @@ export async function saveDraftAction(formData: FormData): Promise<RecipeActionS
 export async function publishDraftAction(formData: FormData): Promise<RecipeActionState & { nextId?: string | null }> {
   const saved = await saveDraft(formData, "publishDraftAction");
   if (!saved.ok) return saved.state;
-  const { id, photo } = saved;
+  const { id, recipes, review } = saved;
 
   try {
-    const candidateId = formData.get("candidateId");
-    if (typeof candidateId === "string" && candidateId !== "") {
-      await chooseImportCandidateAsPhoto(id, candidateId, photo.photo.credit ?? null);
-    } else {
-      await applyPhotoIntent(id, photo.photo);
-    }
+    await saveDraftPhoto(saved, formData);
   } catch (err) {
     console.error("publishDraftAction: no se pudo guardar la foto", errorCode(err));
     revalidateReview(id);
@@ -124,9 +127,9 @@ export async function publishDraftAction(formData: FormData): Promise<RecipeActi
   }
 
   // La cola se lee antes de publicar, para saber cuál venía después de este.
-  const nextId = await nextInQueue(id, queueFile(formData));
+  const nextId = await nextInQueue(review, id, queueFile(formData));
   try {
-    await publishRecipe(id);
+    await recipes.publishDraft(id);
   } catch (err) {
     revalidateReview(id);
     if (err instanceof RecipeNotPublishableError) return { ok: false, issues: err.issues, id };
@@ -144,12 +147,13 @@ export async function discardDraftAction(
   id: string,
   file?: string | null,
 ): Promise<{ ok: boolean; nextId: string | null; error?: string }> {
-  if (!(await hasPanelSession())) return { ok: false, nextId: null, error: RECIPE_TEXT.sessionExpired };
-  const nextId = await nextInQueue(id, file ?? null);
+  const access = await resolvePrivateContentAccess();
+  if (!access) return { ok: false, nextId: null, error: RECIPE_TEXT.sessionExpired };
+  const nextId = await nextInQueue(recipeReviewForTenant(access.tenantId), id, file ?? null);
   try {
-    await deleteDraftRecipe(id);
+    await recipesForTenant(access.tenantId).discardDraft(id);
   } catch (err) {
-    if (err instanceof RecipeNotFoundError) return { ok: false, nextId, error: NOT_FOUND };
+    if (err instanceof RecipeNotFoundError) return { ok: false, nextId: null, error: NOT_FOUND };
     if (err instanceof RecipeStatusError) return { ok: false, nextId, error: NOT_DRAFT };
     console.error("discardDraftAction: no se pudo descartar", errorCode(err));
     return { ok: false, nextId: null, error: SAVE_ERROR };

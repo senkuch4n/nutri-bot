@@ -10,12 +10,17 @@ const mocks = vi.hoisted(() => {
   class RecipeNotFoundError extends Error {}
   return {
     auth: vi.fn(),
+    findUser: vi.fn(),
+    recipesForTenant: vi.fn(),
     revalidatePath: vi.fn(),
     createRecipe: vi.fn(),
     updateRecipe: vi.fn(),
     setRecipePhoto: vi.fn(),
     setRecipePhotoCredit: vi.fn(),
     removeRecipePhoto: vi.fn(),
+    scopedSetPhoto: vi.fn(),
+    scopedSetPhotoCredit: vi.fn(),
+    scopedRemovePhoto: vi.fn(),
     archiveRecipe: vi.fn(),
     unarchiveRecipe: vi.fn(),
     processRecipePhoto: vi.fn(),
@@ -24,15 +29,25 @@ const mocks = vi.hoisted(() => {
   };
 });
 vi.mock("@/auth", () => ({ auth: mocks.auth }));
+vi.mock("server-only", () => ({}));
+vi.mock("@nutri-bot/db", () => ({ prisma: { user: { findFirst: mocks.findUser } } }));
+
+const tenantId = "tenant-a";
+function allowPanel() {
+  mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" }, privateContentUserId: "user-a" });
+  mocks.findUser.mockResolvedValue({ memberships: [{ tenantId, role: "STAFF" }] });
+  mocks.recipesForTenant.mockReturnValue({
+    create: mocks.createRecipe, update: mocks.updateRecipe,
+    archive: mocks.archiveRecipe, unarchive: mocks.unarchiveRecipe,
+    setPhoto: mocks.scopedSetPhoto, setPhotoCredit: mocks.scopedSetPhotoCredit, removePhoto: mocks.scopedRemovePhoto,
+  });
+}
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db/domain", () => ({
-  createRecipe: mocks.createRecipe,
-  updateRecipe: mocks.updateRecipe,
+  recipesForTenant: mocks.recipesForTenant,
   setRecipePhoto: mocks.setRecipePhoto,
   setRecipePhotoCredit: mocks.setRecipePhotoCredit,
   removeRecipePhoto: mocks.removeRecipePhoto,
-  archiveRecipe: mocks.archiveRecipe,
-  unarchiveRecipe: mocks.unarchiveRecipe,
   RecipeNotPublishableError: mocks.RecipeNotPublishableError,
   RecipeNotFoundError: mocks.RecipeNotFoundError,
 }));
@@ -72,9 +87,9 @@ describe("saveRecipeAction", () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" } });
+    allowPanel();
     mocks.createRecipe.mockResolvedValue({ id: "r-new" });
-    mocks.setRecipePhoto.mockResolvedValue({ photoId: "ph1" });
+    mocks.scopedSetPhoto.mockResolvedValue({ photoId: "ph1" });
     mocks.processRecipePhoto.mockResolvedValue({ data: Buffer.from("w"), thumbData: Buffer.from("t"), byteSize: 1, width: 1200, height: 900 });
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -86,6 +101,20 @@ describe("saveRecipeAction", () => {
     expect(mocks.createRecipe).not.toHaveBeenCalled();
   });
 
+  it.each([{ memberships: [] }, { memberships: [{ tenantId, role: "OWNER" }, { tenantId: "tenant-b", role: "STAFF" }] }])(
+    "denies authenticated sessions with missing or ambiguous membership (%j)", async (user) => {
+      mocks.findUser.mockResolvedValue(user);
+      const denied = { ok: false, error: "Tu sesión venció. Volvé a entrar." };
+      expect(await Promise.all([
+        saveRecipeAction(form()), saveRecipeAction(form({ payload: { ...payload, id: "r1" } })),
+        archiveRecipeAction("r1"), unarchiveRecipeAction("r1"),
+      ])).toEqual([denied, denied, denied, denied]);
+      for (const fn of [mocks.createRecipe, mocks.updateRecipe, mocks.archiveRecipe, mocks.unarchiveRecipe, mocks.revalidatePath]) {
+        expect(fn).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("payload inválido para zod (o JSON roto) → error, sin guardar", async () => {
     expect((await saveRecipeAction(form({ payload: { ...payload, type: "PIZZA" } }))).ok).toBe(false);
     expect((await saveRecipeAction(form({ payload: "{no es json" }))).ok).toBe(false);
@@ -93,12 +122,22 @@ describe("saveRecipeAction", () => {
   });
 
   it("crea sin id y actualiza con id", async () => {
-    expect(await saveRecipeAction(form())).toEqual({ ok: true, id: "r-new" });
-    expect(mocks.createRecipe.mock.calls[0]![0]).not.toHaveProperty("id");
+    expect(await saveRecipeAction(form({ payload: { ...payload, tenantId: "tenant-b" } }))).toEqual({ ok: true, id: "r-new" });
+    expect(mocks.recipesForTenant).toHaveBeenCalledWith("tenant-a");
+    expect(mocks.createRecipe).toHaveBeenCalledWith(payload);
     expect(await saveRecipeAction(form({ payload: { ...payload, id: "r1" } }))).toEqual({ ok: true, id: "r1" });
     expect(mocks.updateRecipe).toHaveBeenCalledWith("r1", expect.objectContaining({ name: "Albóndigas de prueba" }));
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/recetas");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/recetas/r1");
+  });
+
+  it("foreign or absent recipe does not apply photo intent or invalidate cache", async () => {
+    mocks.updateRecipe.mockRejectedValue(new mocks.RecipeNotFoundError());
+    expect(await saveRecipeAction(form({ payload: { ...payload, id: "foreign" }, removePhoto: "1" })))
+      .toEqual({ ok: false, error: "La receta ya no existe." });
+    expect(mocks.removeRecipePhoto).not.toHaveBeenCalled();
+    expect(mocks.scopedRemovePhoto).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("receta incompleta → issues del dominio", async () => {
@@ -123,7 +162,8 @@ describe("saveRecipeAction", () => {
   it("foto válida → se procesa y se guarda con el crédito", async () => {
     const r = await saveRecipeAction(form({ photo: new File([JPG], "f.jpg", { type: "image/jpeg" }), photoCredit: " Foto: Prueba " }));
     expect(r).toEqual({ ok: true, id: "r-new" });
-    expect(mocks.setRecipePhoto).toHaveBeenCalledWith("r-new", { data: Buffer.from("w"), thumbData: Buffer.from("t"), byteSize: 1, credit: "Foto: Prueba" });
+    expect(mocks.scopedSetPhoto).toHaveBeenCalledWith("r-new", { data: Buffer.from("w"), thumbData: Buffer.from("t"), byteSize: 1, credit: "Foto: Prueba" });
+    expect(mocks.setRecipePhoto).not.toHaveBeenCalled();
   });
 
   it("si la receta se guarda y falla processRecipePhoto → { ok:false, photoError } con el id", async () => {
@@ -135,9 +175,11 @@ describe("saveRecipeAction", () => {
 
   it("quitar foto y cambiar solo el crédito", async () => {
     await saveRecipeAction(form({ payload: { ...payload, id: "r1" }, removePhoto: "1" }));
-    expect(mocks.removeRecipePhoto).toHaveBeenCalledWith("r1");
+    expect(mocks.scopedRemovePhoto).toHaveBeenCalledWith("r1");
+    expect(mocks.removeRecipePhoto).not.toHaveBeenCalled();
     await saveRecipeAction(form({ payload: { ...payload, id: "r1" }, photoCredit: "" }));
-    expect(mocks.setRecipePhotoCredit).toHaveBeenCalledWith("r1", null);
+    expect(mocks.scopedSetPhotoCredit).toHaveBeenCalledWith("r1", null);
+    expect(mocks.setRecipePhotoCredit).not.toHaveBeenCalled();
   });
 
   it("los console.error no incluyen el payload", async () => {
@@ -153,7 +195,7 @@ describe("saveRecipeAction", () => {
 describe("archivar y volver a publicar", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" } });
+    allowPanel();
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
   afterEach(() => vi.restoreAllMocks());

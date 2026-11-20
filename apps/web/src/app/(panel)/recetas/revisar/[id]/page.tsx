@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { recipeFileTitle } from "@nutri-bot/core/recipe-import";
-import { getRecipe, listDraftFiles, listDraftQueue, listFoodsForRecipes } from "@nutri-bot/db/domain";
+import { recipeReviewForTenant, recipesForTenant } from "@nutri-bot/db/domain";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { ReviewScreen } from "./review-screen";
 import type { RecipeReview } from "./review-parts";
 
@@ -21,18 +22,22 @@ export default async function RevisarBorradorPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await resolvePrivateContentAccess();
+  if (!access) notFound();
+  const recipes = recipesForTenant(access.tenantId);
+  const draftReview = recipeReviewForTenant(access.tenantId);
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const file = typeof query.archivo === "string" && query.archivo.trim() !== "" ? query.archivo : null;
-  const recipe = await getRecipe(id);
+  const recipe = await recipes.get(id);
   if (!recipe) notFound();
   // Ya publicada o archivada: se edita en la ficha.
   if (recipe.status !== "DRAFT") redirect(`/recetas/${id}`);
 
   const foodIds = recipe.ingredients.flatMap((i) => (i.food ? [i.food.id] : []));
   const [queue, files, foods] = await Promise.all([
-    listDraftQueue(file ? { file } : undefined),
-    listDraftFiles(),
-    listFoodsForRecipes(foodIds),
+    draftReview.queue(file ? { file } : undefined),
+    draftReview.files(),
+    recipes.foods(foodIds),
   ]);
   const index = queue.findIndex((q) => q.id === id);
   const nextId = (index >= 0 ? queue[index + 1]?.id : undefined) ?? queue.find((q) => q.id !== id)?.id ?? null;
