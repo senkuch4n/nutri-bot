@@ -17,6 +17,7 @@ model Tenant {
   mercadoPagoAccount     MercadoPagoAccount?
   mercadoPagoOAuthStates MercadoPagoOAuthState[]
   botStatus              BotStatus?
+  outboundMessages       OutboundMessage[]
 }
 
 model User {
@@ -256,6 +257,7 @@ model AnthropometricReport {
   updatedAt         DateTime       @updatedAt
 
   messages OutboundMessage[]
+  tenantMessages OutboundMessage[] @relation("OutboundMessageTenantReport")
 
   @@unique([id, tenantId])
 }
@@ -539,6 +541,7 @@ model Appointment {
   updatedAt       DateTime          @updatedAt
 
   messages OutboundMessage[]
+  tenantMessages OutboundMessage[] @relation("OutboundMessageTenantAppointment")
   payments Payment[]
   consultation Consultation?
 
@@ -546,6 +549,7 @@ model Appointment {
   @@index([status, startsAt])
   @@index([patientId, startsAt])
   @@index([tenantId, agendaId, startsAt])
+  @@unique([id, tenantId])
 }
 
 enum MessageKind {
@@ -654,6 +658,13 @@ model OutboundMessage {
   status        MessageStatus @default(PENDING)
   attempts      Int           @default(0)
   lastError     String?
+  /// Nullable while legacy writers still enqueue without a tenant.
+  tenantId      String?
+  tenant        Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// PostgreSQL sets only the reference ID to null on delete, not tenantId.
+  tenantAppointment Appointment? @relation("OutboundMessageTenantAppointment", fields: [appointmentId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+  tenantPlan NutritionPlan? @relation("OutboundMessageTenantPlan", fields: [planId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+  tenantReport AnthropometricReport? @relation("OutboundMessageTenantReport", fields: [anthropometricReportId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
   appointmentId String?
   plan          NutritionPlan? @relation(fields: [planId], references: [id])
@@ -672,6 +683,7 @@ model OutboundMessage {
   // Evita duplicar confirmaciones / recordatorios para un mismo turno (HU-014: + dedupeKey).
   @@unique([appointmentId, kind, dedupeKey])
   @@index([status, createdAt])
+  @@index([tenantId])
 }
 
 /// Grupos de SARA 2 (tablas 1 a 26) + OTROS (solo propios). El orden es el de la tabla.
@@ -820,6 +832,7 @@ model NutritionPlan {
   /// HU-020 (D9): textos del plan (recomendaciones, reemplazos…).
   sections       PlanSection[]
   messages       OutboundMessage[]
+  tenantMessages OutboundMessage[] @relation("OutboundMessageTenantPlan")
   consultations  Consultation[]
 
   @@index([patientId, status])
