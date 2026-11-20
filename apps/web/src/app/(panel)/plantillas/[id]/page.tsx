@@ -7,6 +7,7 @@ import { TemplateReview } from "@/components/template-import/template-review";
 import { MealsEditor } from "@/components/meals-editor";
 import { initialDayFor } from "@/components/weekly-menu/day-param";
 import { toMealView } from "@/lib/meal-view";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { TemplateMetaForm } from "./template-meta-form";
 import { DeleteTemplateButton } from "./delete-template-button";
 import {
@@ -27,13 +28,15 @@ export default async function TemplateDetailPage({
   searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = await params;
+  const access = await resolvePrivateContentAccess();
+  if (!access) notFound();
+  const template = await getTemplate(id, access.tenantId);
+  if (!template) notFound();
   const query = (await searchParams) ?? {};
-  const [template, foods, measures] = await Promise.all([
-    getTemplate(id),
+  const [foods, measures] = await Promise.all([
     listFoods({ activeOnly: true, source: "SARA2" }),
     listMeasuresForPicker(),
   ]);
-  if (!template) notFound();
 
   const meals = toMealView(template.meals);
   const boundUpdate = updateTemplateAction.bind(null, template.id);

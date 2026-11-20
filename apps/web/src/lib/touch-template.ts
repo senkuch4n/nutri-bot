@@ -7,8 +7,9 @@ import { markTemplateReviewed } from "@nutri-bot/db/domain";
  * lo marca revisado (desde ahí `plans:import` no lo pisa) y revalida la lista y la plantilla.
  * Abrir la página no marca: solo las acciones que cambian algo llaman a esto.
  */
-export async function touchTemplate(templateId: string): Promise<void> {
-  await markTemplateReviewed(templateId);
+export async function touchTemplate(templateId: string, tenantId?: string): Promise<void> {
+  if (tenantId === undefined) await markTemplateReviewed(templateId);
+  else await markTemplateReviewed(templateId, tenantId);
   revalidatePath("/plantillas");
   revalidatePath(`/plantillas/${templateId}`);
 }

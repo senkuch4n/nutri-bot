@@ -15,7 +15,7 @@ import {
 import type { TemplateImportActionResult } from "@/components/template-import/types";
 import { errorCode } from "@/lib/error-code";
 import { touchTemplate } from "@/lib/touch-template";
-import { hasPanelSession } from "../recetas/recipe-save";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 
 // HU-020 (SDD 6.2): revisión de un borrador importado de PDF (publicar, avisos, texto sin ubicar,
 // vincular receta). "use server": exporta SOLO funciones async; los tipos viven en
@@ -40,12 +40,13 @@ function logError(err: unknown): void {
 }
 
 export async function publishTemplateAction(input: { templateId: string }): Promise<TemplateImportActionResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const access = await resolvePrivateContentAccess();
+  if (!access) return SESSION_EXPIRED;
   const parsed = templateSchema.safeParse(input);
   if (!parsed.success) return GENERIC;
   try {
-    await publishTemplate(parsed.data.templateId);
-    await touchTemplate(parsed.data.templateId);
+    await publishTemplate(parsed.data.templateId, access.tenantId);
+    await touchTemplate(parsed.data.templateId, access.tenantId);
     return { ok: true };
   } catch (err) {
     if (err instanceof TemplateNotPublishableError) return { ok: false, error: PLAN_IMPORT_TEXT.publishBlocked(err.unplaced) };
@@ -59,17 +60,18 @@ export async function dismissTemplateHintAction(input: {
   templateId: string;
   hintId: string;
 }): Promise<TemplateImportActionResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const access = await resolvePrivateContentAccess();
+  if (!access) return SESSION_EXPIRED;
   const parsed = hintSchema.safeParse(input);
   if (!parsed.success) return GENERIC;
   try {
-    await dismissTemplateHint(parsed.data.templateId, parsed.data.hintId);
-    await touchTemplate(parsed.data.templateId);
+    await dismissTemplateHint(parsed.data.templateId, parsed.data.hintId, access.tenantId);
+    await touchTemplate(parsed.data.templateId, access.tenantId);
     return { ok: true };
   } catch (err) {
     if (err instanceof TemplateHintNotFoundError) {
       // Ya no estaba (otra pestaña): se revalida y listo.
-      await touchTemplate(parsed.data.templateId);
+      await touchTemplate(parsed.data.templateId, access.tenantId);
       return { ok: true };
     }
     logError(err);
@@ -82,12 +84,13 @@ export async function resolveUnplacedHintAction(input: {
   hintId: string;
   target: { kind: "meal"; mealId: string; weekday: (typeof WEEKDAYS)[number] | null } | { kind: "section"; sectionId: string | null };
 }): Promise<TemplateImportActionResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const access = await resolvePrivateContentAccess();
+  if (!access) return SESSION_EXPIRED;
   const parsed = resolveSchema.safeParse(input);
   if (!parsed.success) return GENERIC;
   try {
-    await resolveUnplacedHint(parsed.data.templateId, parsed.data.hintId, parsed.data.target);
-    await touchTemplate(parsed.data.templateId);
+    await resolveUnplacedHint(parsed.data.templateId, parsed.data.hintId, parsed.data.target, access.tenantId);
+    await touchTemplate(parsed.data.templateId, access.tenantId);
     return { ok: true };
   } catch (err) {
     logError(err);
@@ -101,12 +104,13 @@ export async function linkHintRecipeAction(input: {
   hintId: string;
   portions: number;
 }): Promise<TemplateImportActionResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const access = await resolvePrivateContentAccess();
+  if (!access) return SESSION_EXPIRED;
   const parsed = linkSchema.safeParse(input);
   if (!parsed.success) return GENERIC;
   try {
-    await linkHintRecipe(parsed.data.templateId, parsed.data.hintId, parsed.data.portions);
-    await touchTemplate(parsed.data.templateId);
+    await linkHintRecipe(parsed.data.templateId, parsed.data.hintId, parsed.data.portions, access.tenantId);
+    await touchTemplate(parsed.data.templateId, access.tenantId);
     return { ok: true };
   } catch (err) {
     logError(err);

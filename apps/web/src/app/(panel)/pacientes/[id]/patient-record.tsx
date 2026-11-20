@@ -39,6 +39,7 @@ import {
   type LatestMeasurement,
 } from "@nutri-bot/db/domain";
 import { getProfessional } from "@/lib/professional";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { listServices } from "@/lib/services";
 import { EditPatientProvider } from "./edit-patient-sheet";
@@ -59,7 +60,7 @@ export type PatientRecordVariant = "page" | "modal";
  *  sobre la lista (ruta interceptada en `pacientes/(directorio)/@modal`). Con `variant="modal"` no
  *  muestra el link "← Pacientes" y el encabezado se pega arriba del diálogo, no de la página. */
 export async function PatientRecord({ id, variant }: { id: string; variant: PatientRecordVariant }) {
-  const [pro, patient, plans, templates, diaryEntries, measurements, consultations, prescriptions, services] =
+  const [pro, patient, plans, access, diaryEntries, measurements, consultations, prescriptions, services] =
     await Promise.all([
       getProfessional(),
       prisma.patient.findUnique({
@@ -78,7 +79,7 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
         },
       }),
       listPatientPlans(id),
-      listTemplates({ status: "PUBLISHED" }),
+      resolvePrivateContentAccess(),
       listDiaryEntries(id),
       getLatestFormulaMeasurements(id),
       listPatientConsultations(id),
@@ -86,6 +87,9 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
       listServices({ activeOnly: true }),
     ]);
   if (!patient) notFound();
+  const templates = access && patient.tenantId === access.tenantId
+    ? await listTemplates({ status: "PUBLISHED", tenantId: access.tenantId })
+    : null;
 
   const tz = pro.timezone;
   const now = new Date();
@@ -339,7 +343,7 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
                   ? `Indicado en la consulta del ${formatInTimeZone(p.consultations[0].consultedAt, tz, "dd/MM")}`
                   : null,
               }))}
-              templates={templates.map((t) => ({ id: t.id, title: t.title }))}
+              templates={templates?.map((t) => ({ id: t.id, title: t.title })) ?? null}
             />
           ),
           historial: (
