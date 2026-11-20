@@ -21,11 +21,14 @@ model Tenant {
   foods                  Food[]
   foodMeasures           FoodMeasure[]
   foodVisibility         FoodVisibilityPreference[]
+  recipes                Recipe[]
+  planTemplates          PlanTemplate[]
 }
 
 model User {
   id          String             @id @default(cuid())
   email       String             @unique
+  googleSubject String?          @unique
   memberships TenantMembership[]
 }
 
@@ -944,8 +947,11 @@ model PlanTemplate {
   updatedAt   DateTime              @updatedAt
   meals       TemplateMeal[]
   sections    PlanTemplateSection[]
+  tenantId    String?
+  tenant      Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([status, title])
+  @@index([tenantId])
 }
 
 /// HU-020 (D9): textos de la plantilla (recomendaciones, consumo diario, reemplazos…). Se copian al plan.
@@ -1123,8 +1129,11 @@ model Recipe {
   importImages  RecipeImportImage[]
   planItems     PlanMealItem[]
   templateItems TemplateMealItem[]
+  tenantId      String?
+  tenant        Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([status, name])
+  @@index([tenantId])
 }
 
 /// HU-018a: ingrediente. Con alimento suma macros si tiene gramos; sin alimento es texto libre.
