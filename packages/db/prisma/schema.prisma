@@ -7,9 +7,54 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// Fila única. Datos y configuración de la nutricionista.
+model Tenant {
+  id            String             @id @default(cuid())
+  professionals Professional[]
+  agendas       Agenda[]
+  memberships   TenantMembership[]
+}
+
+model User {
+  id          String             @id @default(cuid())
+  email       String             @unique
+  memberships TenantMembership[]
+}
+
+enum TenantRole {
+  OWNER
+  STAFF
+}
+
+model TenantMembership {
+  tenantId String
+  userId   String
+  role     TenantRole
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user     User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([tenantId, userId])
+  @@index([userId])
+}
+
+model Agenda {
+  id             String       @id @default(cuid())
+  tenantId       String
+  professionalId Int
+  /// The foundation migration enforces at most one primary agenda per tenant with a partial index.
+  isPrimary      Boolean      @default(false)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  professional   Professional @relation(fields: [professionalId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@index([tenantId, professionalId])
+}
+
+/// Professional profile; independent of the identity used to sign in.
 model Professional {
   id                 Int      @id @default(1)
+  /// Optional during expansion so older binaries can still write the legacy profile.
+  tenantId           String?
+  tenant             Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  agendas            Agenda[]
   name               String
   email              String
   phoneJid           String?
@@ -55,6 +100,9 @@ model Professional {
   googleSyncError    String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
 }
 
 model Patient {

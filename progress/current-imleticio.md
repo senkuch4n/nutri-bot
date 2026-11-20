@@ -1,6 +1,10 @@
 # Bitácora de imleticio
 
-## Sin HU activa
+## HU-024 · Modelo multi-tenant y migración de la base de datos
+- Issue #67 asignado a `imleticio`; estado del Project #5: **En curso**.
+- Rama local `feat/HU-024-modelo-multi-tenant` desde `develop`. Alcance en `docs/hu-modelo-multi-tenant.md`; especificación técnica en `Refactorizaciones/modelo-multi-tenant.md`. Baseline de 27 migraciones validado en Postgres 16 local descartable, sin usar el entorno habitual. Sin PR. Implementación inicial de la fundación aditiva, con pruebas solo en bases descartables.
+
+## Seguimiento anterior
 - **HU-021 · Lista de turnos** (issue #50): `aprobada` 2026-10-26. Rama local `feat/HU-021-lista-turnos`
   (sale de `feat/morph-dialog`). Pendiente, cuando el usuario lo pida: push, PR a `develop` con `Closes #50`,
   label del issue (título y cuerpo ya actualizados el 2026-10-26). Ajuste visual V1 (02a464a): la pantalla copia la captura. Falta el recorrido visual (§10.1 de la SDD).

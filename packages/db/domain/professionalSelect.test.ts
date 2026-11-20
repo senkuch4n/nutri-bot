@@ -11,9 +11,10 @@ import { PROFESSIONAL_SELECT } from "./professionalSelect";
 import { getProfessional } from "./availability";
 
 describe("PROFESSIONAL_SELECT", () => {
-  it("no pide los bytes de la firma ni del logo", () => {
+  it("no pide los bytes de imágenes ni metadata de ownership", () => {
     expect(PROFESSIONAL_SELECT).not.toHaveProperty("signatureData");
     expect(PROFESSIONAL_SELECT).not.toHaveProperty("logoData");
+    expect(PROFESSIONAL_SELECT).not.toHaveProperty("tenantId");
   });
 
   it("cubre todas las demás columnas escalares de Professional", () => {
@@ -22,7 +23,7 @@ describe("PROFESSIONAL_SELECT", () => {
     const scalars = model!.fields
       .filter((f) => f.kind === "scalar")
       .map((f) => f.name)
-      .filter((n) => n !== "signatureData" && n !== "logoData")
+      .filter((n) => n !== "signatureData" && n !== "logoData" && n !== "tenantId")
       .sort();
     expect(Object.keys(PROFESSIONAL_SELECT).sort()).toEqual(scalars);
     expect(Object.values(PROFESSIONAL_SELECT).every((v) => v === true)).toBe(true);
