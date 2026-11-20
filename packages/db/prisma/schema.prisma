@@ -18,6 +18,9 @@ model Tenant {
   mercadoPagoOAuthStates MercadoPagoOAuthState[]
   botStatus              BotStatus?
   outboundMessages       OutboundMessage[]
+  foods                  Food[]
+  foodMeasures           FoodMeasure[]
+  foodVisibility         FoodVisibilityPreference[]
 }
 
 model User {
@@ -730,6 +733,10 @@ model Food {
   source              FoodSource @default(PROPIO)
   /// Solo SARA2, único: "sara2:t03:arroz-blanco-hervido". Lo usa el cargador para el upsert (D14).
   sourceKey           String?    @unique
+  tenantId            String?
+  tenant              Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Disponibilidad oficial; `active` conserva la semántica legacy y la baja de alimentos propios.
+  catalogActive       Boolean    @default(true)
   /// Solo propios: marca, rótulo, de dónde salió el dato (D13).
   reference           String?
   /// true = el grupo lo asignó la migración de la HU-005 (D2); se apaga al guardar el propio.
@@ -759,9 +766,23 @@ model Food {
   templateItems     TemplateMealItem[]
   recipeIngredients RecipeIngredient[] // HU-018a
   measures          FoodMeasure[] // HU-018d
+  visibility        FoodVisibilityPreference[]
 
   @@index([group])
   @@index([source, active])
+  @@index([tenantId])
+}
+
+/// Preferencia dispersa; solo admite alimentos oficiales (restricción SQL).
+model FoodVisibilityPreference {
+  tenantId String
+  foodId   String
+  visible  Boolean
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  food     Food    @relation(fields: [foodId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, foodId])
+  @@index([foodId])
 }
 
 /// HU-018d: medida casera de un alimento ("1 taza = 180 g"). La equivalencia es POR alimento.
@@ -771,9 +792,12 @@ model FoodMeasure {
   id        String   @id @default(cuid())
   food      Food     @relation(fields: [foodId], references: [id], onDelete: Cascade)
   foodId    String
+  /// Default transitorio para escritores legacy; retirar tras T3.
+  tenantId  String   @default("legacy-tenant")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   /// Singular, como lo escribió ella ("taza", "unidad mediana"). trim + espacios colapsados, 1..40.
   name      String
-  /// foodSearchText(name) (core): unicidad por alimento sin mayúsculas ni tildes.
+  /// foodSearchText(name) (core): unicidad por tenant y alimento sin mayúsculas ni tildes.
   nameKey   String
   /// Plural escrito a mano (D6). null = el automático (pluralizeMeasureName de core). 1..40.
   plural    String?
@@ -784,7 +808,7 @@ model FoodMeasure {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([foodId, nameKey])
+  @@unique([tenantId, foodId, nameKey])
   @@index([foodId, order])
 }
 

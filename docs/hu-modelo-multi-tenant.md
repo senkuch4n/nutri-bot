@@ -21,7 +21,7 @@ Hoy el panel y el bot dependen de una única fila `Professional(1)` y la disponi
 | Identidad, pertenencia, profesional, agenda, disponibilidad y turnos | Separar identidad de acceso y perfil profesional. La agenda y sus turnos pertenecen al consultorio; documentar cómo se asociarán futuras agendas con sus profesionales sin cambiar ese límite. |
 | Pacientes, historia clínica, consultas, reportes, diario y nutrición | Datos privados del consultorio, incluso cuando la propiedad sea indirecta. El mismo identificador de WhatsApp puede corresponder a pacientes distintos en consultorios distintos. |
 | Pagos, credenciales, conversaciones, cola y estado del bot | Identificar la propiedad sin cambiar el flujo de señas ni activar conexiones de otros consultorios. La suscripción a Arzium no usa la cuenta de señas. |
-| Alimentos, recetas y plantillas | Mantener privados los alimentos propios, recetas y plantillas aunque sean importados. La especificación técnica debe distinguir la referencia SARA2 de los datos propios y documentar las únicas referencias compartidas permitidas. |
+| Alimentos, recetas y plantillas | Compartir solo los alimentos oficiales SARA2 y sus nutrientes. Mantener privados los alimentos propios, las medidas caseras, las preferencias de visibilidad, las recetas y las plantillas aunque sean importadas. |
 
 ## Criterios de aceptación
 
@@ -33,6 +33,7 @@ Hoy el panel y el bot dependen de una única fila `Professional(1)` y la disponi
 | CA-4 · Migración segura | Al ensayar la migración aditiva sobre una copia saneada y descartable se crea el consultorio inicial y se conservan IDs, relaciones, datos clínicos, agenda, pagos y configuraciones existentes. Se verifican los conteos y las relaciones antes y después, y se demuestra la restauración en un entorno descartable. Los flujos de seña siguen funcionando sin cambiar ni exponer secretos. |
 | CA-5 · Inventario y accesos | La documentación clasifica cada modelo persistente como propio de un tenant, heredado por relación o compartido por diseño. Los flujos de panel, bot y dominio que dependen de un consultorio no seleccionan silenciosamente `Professional(1)`. Si queda un adaptador temporal para compatibilidad, su uso, límites y retiro quedan documentados. |
 | CA-6 · Facturación separada | El diseño identifica al `Tenant` como único titular de la futura suscripción a Arzium, independientemente de qué `User` o `Professional` se vincule a él. No se crea una suscripción, no se cobra y no se reutiliza la cuenta de Mercado Pago de señas para ese fin. |
+| CA-7 · Catálogo compartido, personalizaciones privadas | Un consultorio nuevo ve todo el catálogo oficial vigente sin heredar las preferencias del original. La migración mantiene IDs y referencias, y asigna las personalizaciones existentes solo al original. Actualizar SARA2 no sobrescribe preferencias, medidas ni alimentos propios. |
 
 ## Fuera de alcance
 
