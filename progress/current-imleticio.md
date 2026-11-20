@@ -1,8 +1,8 @@
 # Bitácora de imleticio
 
 ## HU-024 · Modelo multi-tenant y migración de la base de datos
-- Issue #67 asignado a `imleticio`; estado del Project #5: **En curso**.
-- Rama local `feat/HU-024-modelo-multi-tenant` desde `develop`. Alcance en `docs/hu-modelo-multi-tenant.md`; especificación técnica en `Refactorizaciones/modelo-multi-tenant.md`. Baseline de 27 migraciones validado en Postgres 16 local descartable, sin usar el entorno habitual. Sin PR. Implementación inicial de la fundación aditiva, con pruebas solo en bases descartables.
+- Issue #67 asignado a `imleticio`; estado del Project #5: **En curso**. Docker local recuperado; migración de agenda verificada de forma independiente con Postgres descartable.
+- Rama local `feat/HU-024-modelo-multi-tenant` desde `develop`. Alcance en `docs/hu-modelo-multi-tenant.md`; especificación técnica en `Refactorizaciones/modelo-multi-tenant.md`. Baseline de 27 migraciones validado en Postgres 16 local descartable, sin usar el entorno habitual. Sin PR. Fundación aditiva en `9ec8fc7`; primer corte de T2 verificado (agenda, pacientes, servicios, disponibilidad y turnos). Pruebas solo en bases descartables.
 
 ## Seguimiento anterior
 - **HU-021 · Lista de turnos** (issue #50): `aprobada` 2026-10-26. Rama local `feat/HU-021-lista-turnos`
