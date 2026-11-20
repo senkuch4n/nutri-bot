@@ -134,11 +134,14 @@ model Patient {
   updatedAt    DateTime      @updatedAt
   appointments Appointment[] @relation("PatientAppointments")
   tenantAppointments Appointment[] @relation("PatientTenantAppointments")
-  nutritionPlans NutritionPlan[]
+  nutritionPlans NutritionPlan[] @relation("PatientNutritionPlanLegacy")
+  tenantNutritionPlanAnchors NutritionPlan[] @relation("PatientNutritionPlanTenant")
   clinicalRecord ClinicalRecord?
-  evolutionEntries EvolutionEntry[]
+  evolutionEntries EvolutionEntry[] @relation("PatientEvolutionEntryLegacy")
+  tenantEvolutionEntryAnchors EvolutionEntry[] @relation("PatientEvolutionEntryTenant")
   diaryEntries DiaryEntry[]
-  consultations Consultation[]
+  consultations Consultation[] @relation("PatientConsultationLegacy")
+  tenantConsultationAnchors Consultation[] @relation("PatientConsultationTenant")
   inquiries    PatientInquiry[]
   botAiQuestions BotAiQuestion[]
 
@@ -172,7 +175,9 @@ model ClinicalRecord {
 model EvolutionEntry {
   id         String   @id @default(cuid())
   patientId  String
-  patient    Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient    Patient  @relation("PatientEvolutionEntryLegacy", fields: [patientId], references: [id], onDelete: Cascade)
+  tenantId String?
+  tenantPatient Patient? @relation("PatientEvolutionEntryTenant", fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
   recordedAt DateTime
   weightKg   Decimal? @db.Decimal(5, 2)
   heightCm   Decimal? @db.Decimal(5, 2)
@@ -217,7 +222,10 @@ model EvolutionEntry {
   @@unique([consultationId, study])
 
   /// HU-007: informe antropométrico del estudio ISAK (solo filas con study = ISAK).
-  anthropometricReport AnthropometricReport?
+  anthropometricReport AnthropometricReport? @relation("EvolutionEntryAnthropometricReportLegacy")
+  tenantAnthropometricReportAnchors AnthropometricReport[] @relation("EvolutionEntryAnthropometricReportTenant")
+
+  @@unique([id, tenantId])
 }
 
 /// HU-007: informe antropométrico de un estudio ISAK (1:1 con la fila ISAK de EvolutionEntry).
@@ -228,7 +236,9 @@ model EvolutionEntry {
 model AnthropometricReport {
   id                String         @id @default(cuid())
   isakEntryId       String         @unique
-  isakEntry         EvolutionEntry @relation(fields: [isakEntryId], references: [id], onDelete: Cascade)
+  isakEntry         EvolutionEntry @relation("EvolutionEntryAnthropometricReportLegacy", fields: [isakEntryId], references: [id], onDelete: Cascade)
+  tenantId String?
+  tenantIsakEntry EvolutionEntry? @relation("EvolutionEntryAnthropometricReportTenant", fields: [isakEntryId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
   girthsText        String?
   distributionText  String?
   adiposeMuscleText String?
@@ -246,6 +256,8 @@ model AnthropometricReport {
   updatedAt         DateTime       @updatedAt
 
   messages OutboundMessage[]
+
+  @@unique([id, tenantId])
 }
 
 /// Una visita del paciente (HU-003). Viene de un turno (appointmentId, único) o es "Sin turno".
@@ -253,7 +265,9 @@ model AnthropometricReport {
 model Consultation {
   id            String          @id @default(cuid())
   patientId     String
-  patient       Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient       Patient         @relation("PatientConsultationLegacy", fields: [patientId], references: [id], onDelete: Cascade)
+  tenantId String?
+  tenantPatient Patient? @relation("PatientConsultationTenant", fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
   appointmentId String?         @unique
   appointment   Appointment?    @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   /// Turno: = Appointment.startsAt. Sin turno: el día elegido a las 12:00 en Professional.timezone.
@@ -269,6 +283,8 @@ model Consultation {
 
   @@index([patientId, consultedAt])
   @@index([planId])
+
+  @@unique([id, tenantId])
 }
 
 /// Prescripción energética de una consulta (HU-004). Una por consulta; editar la reemplaza.
@@ -787,7 +803,9 @@ enum Weekday {
 
 model NutritionPlan {
   id             String            @id @default(cuid())
-  patient        Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient        Patient           @relation("PatientNutritionPlanLegacy", fields: [patientId], references: [id], onDelete: Cascade)
+  tenantId String?
+  tenantPatient Patient? @relation("PatientNutritionPlanTenant", fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
   patientId      String
   title          String
   notes          String?
@@ -805,6 +823,8 @@ model NutritionPlan {
   consultations  Consultation[]
 
   @@index([patientId, status])
+
+  @@unique([id, tenantId])
 }
 
 model PlanMeal {
