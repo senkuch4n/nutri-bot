@@ -6,7 +6,7 @@ import {
 } from "@nutri-bot/core";
 import type { RecipeImportDraft } from "@nutri-bot/core/recipe-import";
 import { prisma, type Prisma } from "../index";
-import { RecipeNotFoundError, setRecipePhoto } from "./recipes";
+import { RecipeNotFoundError, recipesForTenant, setRecipePhoto } from "./recipes";
 
 // HU-018a-2 (SDD 5.2, 8.1): borradores de la carga asistida. El parser no elige alimentos ni inventa
 // gramos: los ingredientes entran con foodId null y los gramos que dijo el texto. Ninguna función
@@ -139,18 +139,26 @@ export interface DraftQueueItem {
 }
 
 /** Cola de revisión: DRAFT ordenados por importFile, importPage, name. Filtro opcional por archivo. */
-export async function listDraftQueue(params?: { file?: string }): Promise<DraftQueueItem[]> {
+export function listDraftQueue(params?: { file?: string }): Promise<DraftQueueItem[]> {
+  return readDraftQueue(params);
+}
+
+async function readDraftQueue(params?: { file?: string }, tenantId?: string): Promise<DraftQueueItem[]> {
   return prisma.recipe.findMany({
-    where: { status: "DRAFT", ...(params?.file ? { importFile: params.file } : {}) },
+    where: { ...(tenantId === undefined ? {} : { tenantId }), status: "DRAFT", ...(params?.file ? { importFile: params.file } : {}) },
     orderBy: [{ importFile: "asc" }, { importPage: "asc" }, { name: "asc" }],
     select: { id: true, name: true, importFile: true, importPage: true },
   });
 }
 
-export async function listDraftFiles(): Promise<{ file: string; count: number }[]> {
+export function listDraftFiles(): Promise<{ file: string; count: number }[]> {
+  return readDraftFiles();
+}
+
+async function readDraftFiles(tenantId?: string): Promise<{ file: string; count: number }[]> {
   const groups = await prisma.recipe.groupBy({
     by: ["importFile"],
-    where: { status: "DRAFT", importFile: { not: null } },
+    where: { ...(tenantId === undefined ? {} : { tenantId }), status: "DRAFT", importFile: { not: null } },
     _count: { _all: true },
     orderBy: { importFile: "asc" },
   });
@@ -158,12 +166,21 @@ export async function listDraftFiles(): Promise<{ file: string; count: number }[
 }
 
 /** Bytes de una imagen de la carga asistida (WebP). PAGE no tiene miniatura: devuelve la imagen. */
-export async function getImportImageBytes(
-  imageId: string,
+export function getImportImageBytes(imageId: string, size: "full" | "thumb") {
+  return readImportImageBytes({ id: imageId }, size);
+}
+
+export function getTenantImportImageBytes(tenantId: string, imageId: string, size: "full" | "thumb") {
+  if (!tenantId) throw new Error("Se requiere el consultorio de la receta.");
+  return readImportImageBytes({ id: imageId, recipe: { tenantId } }, size);
+}
+
+async function readImportImageBytes(
+  where: Prisma.RecipeImportImageWhereUniqueInput,
   size: "full" | "thumb",
 ): Promise<{ data: Buffer; mimeType: "image/webp" } | null> {
   const row = await prisma.recipeImportImage.findUnique({
-    where: { id: imageId },
+    where,
     select: size === "thumb" ? { thumbData: true, data: true } : { data: true },
   });
   if (!row) return null;
@@ -173,18 +190,39 @@ export async function getImportImageBytes(
 }
 
 /** Copia la candidata a RecipePhoto (setRecipePhoto con sus bytes ya procesados). */
-export async function chooseImportCandidateAsPhoto(
+export function chooseImportCandidateAsPhoto(
   recipeId: string,
   imageId: string,
   credit: string | null,
 ): Promise<{ photoId: string }> {
+  return copyCandidate(recipeId, imageId, credit, setRecipePhoto);
+}
+
+/** Panel draft review. The tenant must come from the server's authorized membership. */
+export function recipeReviewForTenant(tenantId: string) {
+  const { setPhoto } = recipesForTenant(tenantId);
+  return {
+    queue: (params?: { file?: string }) => readDraftQueue(params, tenantId),
+    files: () => readDraftFiles(tenantId),
+    chooseCandidate: (recipeId: string, imageId: string, credit: string | null) =>
+      copyCandidate(recipeId, imageId, credit, setPhoto, tenantId),
+  };
+}
+
+async function copyCandidate(
+  recipeId: string,
+  imageId: string,
+  credit: string | null,
+  writePhoto: typeof setRecipePhoto,
+  tenantId?: string,
+): Promise<{ photoId: string }> {
   const img = await prisma.recipeImportImage.findFirst({
-    where: { id: imageId, recipeId, kind: "CANDIDATE" },
+    where: { id: imageId, recipeId, kind: "CANDIDATE", ...(tenantId === undefined ? {} : { recipe: { tenantId } }) },
     select: { data: true, thumbData: true },
   });
   if (!img || !img.thumbData) throw new RecipeNotFoundError();
   const data = Buffer.from(img.data);
-  return setRecipePhoto(recipeId, { data, thumbData: Buffer.from(img.thumbData), byteSize: data.length, credit });
+  return writePhoto(recipeId, { data, thumbData: Buffer.from(img.thumbData), byteSize: data.length, credit });
 }
 
 /** Deshacer una corrida: borra SOLO los ids dados que sigan DRAFT y sin reviewedAt. Devuelve cuántos borró. */
