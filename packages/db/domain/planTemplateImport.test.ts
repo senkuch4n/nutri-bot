@@ -169,6 +169,80 @@ describe("deleteUnreviewedTemplateDrafts / markTemplateReviewed", () => {
 });
 
 const unplaced = (id: string) => ({ id, kind: "UNPLACED", text: `texto ${id}`, page: 2 });
+const scopedHint = { ...draft.hints[0], itemId: "it4" };
+const owner = { id: "t1", tenantId: "mine" };
+
+describe("tenant-scoped import review", () => {
+  beforeEach(() => {
+    p().planTemplate.findUnique.mockImplementation(async ({ where }: { where: { tenantId?: string } }) =>
+      where.tenantId === "foreign" ? null : { status: "DRAFT", importHints: [scopedHint, unplaced("h2")], reviewedAt: null });
+    p().templateMealItem.findUnique.mockResolvedValue({ id: "it4", meal: { templateId: "t1" } });
+    p().recipe.findUnique.mockImplementation(async ({ where }: { where: { tenantId?: string } }) =>
+      where.tenantId === undefined ? { status: "PUBLISHED" } : null);
+  });
+
+  it.each([
+    ["publish", () => publishTemplate("t1", "foreign")],
+    ["dismiss", () => dismissTemplateHint("t1", "h2", "foreign")],
+    ["resolve", () => resolveUnplacedHint("t1", "h2", { kind: "section", sectionId: null }, "foreign")],
+    ["link", () => linkHintRecipe("t1", "h1", 1, "foreign")],
+  ] as const)("%s rejects a foreign template before writing", async (_name, invoke) => {
+    await expect(invoke()).rejects.toThrow("La plantilla no existe.");
+    expect(p().planTemplate.update).not.toHaveBeenCalled();
+    expect(p().planTemplate.updateMany).not.toHaveBeenCalled();
+    expect(p().planTemplateSection.create).not.toHaveBeenCalled();
+    expect(p().templateMealItem.update).not.toHaveBeenCalled();
+    expect(p().recipe.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("does not write when a published suggestion points to a foreign recipe", async () => {
+    await expect(linkHintRecipe("t1", "h1", 1, "mine")).rejects.toBeInstanceOf(RecipeNotAvailableError);
+    expect(p().recipe.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "r2", tenantId: "mine" } }));
+    expect(p().templateMealItem.update).not.toHaveBeenCalled();
+    expect(p().planTemplate.update).not.toHaveBeenCalled();
+    expect(p().planTemplate.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("publishes an owned template with a scoped write", async () => {
+    p().planTemplate.findUnique.mockResolvedValue({ status: "DRAFT", importHints: [], reviewedAt: null });
+    await publishTemplate("t1", "mine");
+    expect(p().planTemplate.update).toHaveBeenCalledWith({ where: { ...owner, status: "DRAFT" }, data: { status: "PUBLISHED", importHints: "DbNull", reviewedAt: expect.any(Date) } });
+  });
+
+  it("dismisses an owned hint and preserves the first-review guard", async () => {
+    await dismissTemplateHint("t1", "h2", "mine");
+    expect(p().planTemplate.update).toHaveBeenCalledWith({ where: { ...owner, status: "DRAFT" }, data: { importHints: [scopedHint] } });
+    expect(p().planTemplate.updateMany).toHaveBeenCalledWith({ where: { ...owner, status: "DRAFT", origin: "IMPORT", reviewedAt: null }, data: { reviewedAt: expect.any(Date) } });
+  });
+
+  it("resolves to a meal by connecting only to the owned parent", async () => {
+    p().templateMeal.findFirst.mockResolvedValue({ id: "m1", mode: "EVERY_DAY" });
+    await resolveUnplacedHint("t1", "h2", { kind: "meal", mealId: "m1", weekday: null }, "mine");
+    expect(p().templateMealItem.create).toHaveBeenCalledWith({ data: expect.objectContaining({ meal: { connect: { id: "m1", templateId: "t1", template: { tenantId: "mine", status: "DRAFT" } } }, customLabel: "texto h2", order: 0 }) });
+    expect(p().planTemplate.update).toHaveBeenCalledWith({ where: { ...owner, status: "DRAFT" }, data: { importHints: [scopedHint] } });
+  });
+
+  it("resolves to a new section by connecting only to the owned template", async () => {
+    await resolveUnplacedHint("t1", "h2", { kind: "section", sectionId: null }, "mine");
+    expect(p().planTemplateSection.create).toHaveBeenCalledWith({ data: { template: { connect: { ...owner, status: "DRAFT" } }, title: "Texto importado", body: "texto h2", order: 0 }, select: { id: true } });
+  });
+
+  it("appends to an existing section with the owned parent in the write", async () => {
+    p().planTemplateSection.findFirst.mockResolvedValue({ id: "s1", title: "Notes", body: "Original" });
+    await resolveUnplacedHint("t1", "h2", { kind: "section", sectionId: "s1" }, "mine");
+    expect(p().planTemplateSection.updateMany).toHaveBeenCalledWith({ where: { id: "s1", templateId: "t1", template: { tenantId: "mine", status: "DRAFT" } }, data: { body: "Original\n\ntexto h2" } });
+  });
+
+  it("links an owned published recipe and writes only to an item of the owned template", async () => {
+    p().recipe.findUnique.mockResolvedValue({ status: "PUBLISHED" });
+    await linkHintRecipe("t1", "h1", 1.5, "mine");
+    expect(p().templateMealItem.update).toHaveBeenCalledWith({
+      where: { id: "it4", meal: { templateId: "t1", template: { tenantId: "mine", status: "DRAFT" } } },
+      data: expect.objectContaining({ recipe: { connect: { id: "r2", tenantId: "mine", status: "PUBLISHED" } }, food: { disconnect: true }, portions: 1.5, customLabel: null }),
+    });
+    expect(p().planTemplate.update).toHaveBeenCalledWith({ where: { ...owner, status: "DRAFT" }, data: { importHints: [unplaced("h2")] } });
+  });
+});
 
 describe("publishTemplate", () => {
   it("con 2 UNPLACED → TemplateNotPublishableError(2) sin update", async () => {
