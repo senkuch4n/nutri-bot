@@ -14,6 +14,9 @@ model Tenant {
   memberships   TenantMembership[]
   patients      Patient[]
   services      Service[]
+  mercadoPagoAccount     MercadoPagoAccount?
+  mercadoPagoOAuthStates MercadoPagoOAuthState[]
+  botStatus              BotStatus?
 }
 
 model User {
@@ -565,14 +568,16 @@ model Payment {
   @@index([externalId])
 }
 
-/// HU-023: cuenta de Mercado Pago vinculada por OAuth (aplicación "Numa"). Fila única id = 1 (hay
-/// una sola Professional). La fila puede existir sin cuenta vinculada (guarda el tope del aviso
+/// HU-023: cuenta de Mercado Pago vinculada por OAuth (aplicación "Numa"). Los consumidores
+/// legacy siguen usando id = 1. La fila puede existir sin cuenta vinculada (guarda el tope del aviso
 /// "falta Mercado Pago"). Se crea perezosamente con INSERT ... ON CONFLICT DO NOTHING.
 /// DATO SENSIBLE: accessTokenEnc / refreshTokenEnc van cifrados (AES-256-GCM con
 /// MERCADOPAGO_TOKEN_KEY, formato "v1.<iv>.<tag>.<ct>" en base64url). Solo los lee
 /// domain/mercadopagoAccount.ts; nunca viajan al navegador ni a los logs.
 model MercadoPagoAccount {
   id              Int       @id @default(1)
+  tenantId        String?   @unique
+  tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   /// user_id de MP de la cuenta vinculada (número, guardado como texto). null = sin cuenta.
   userId          String?
   nickname        String?
@@ -602,6 +607,8 @@ model MercadoPagoAccount {
 /// DELETE ... RETURNING al volver del callback. Vence a los 10 minutos.
 model MercadoPagoOAuthState {
   id              String   @id @default(cuid())
+  tenantId        String?
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   /// sha256 (hex) del state que viaja a MP. El state en claro no se guarda.
   stateHash       String   @unique
   /// code_verifier de PKCE, cifrado con la misma clave que los tokens.
@@ -612,6 +619,7 @@ model MercadoPagoOAuthState {
   createdAt       DateTime @default(now())
 
   @@index([expiresAt])
+  @@index([tenantId])
 }
 
 enum MessageStatus {
@@ -1130,9 +1138,11 @@ model ConversationState {
   updatedAt  DateTime @updatedAt
 }
 
-/// Estado singleton del proceso del bot: conexión y último QR.
+/// Estado de conexión y último QR del bot. Los consumidores legacy siguen usando id = 1.
 model BotStatus {
   id              Int       @id @default(1)
+  tenantId        String?   @unique
+  tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   connected       Boolean   @default(false)
   qr              String?
   lastConnectedAt DateTime?

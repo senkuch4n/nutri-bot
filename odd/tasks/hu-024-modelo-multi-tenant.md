@@ -15,7 +15,8 @@ Issue: #67. Rama: `feat/HU-024-modelo-multi-tenant`. Alcance: `docs/hu-modelo-mu
 ## Tasks
 
 - **T1** — Fundación aditiva y enlace de la instalación inicial. S1–S7 en la base y el modelo; sin alta de usuarios ni integraciones. Ruta: inline, verificación independiente (riesgo 1). Estado: hecho. Commit: `9ec8fc7`.
-- **T2** — Propiedad, backfill y restricciones por grupo de modelos. S1–S3, S6–S7. Ruta: expansiones aditivas por grupo, inline con verificación independiente. Estado: en curso; primer corte de agenda verificado. Commit: —.
+- **T2** — Propiedad, backfill y restricciones por grupo de modelos. S1–S3, S6–S7. Ruta: expansiones aditivas por grupo, inline con verificación independiente. Estado: en curso; primer corte de agenda verificado y guardado en `5e2a664`. Los demás grupos siguen pendientes.
+  - **T2a** — Propiedad aditiva de la cuenta de señas, estado OAuth y metadatos de conexión WhatsApp. S1–S3, S6–S7. Ruta: worker acotado (contexto) y verificación independiente (riesgo 1). Estado: en curso. Commit: —.
 - **T3** — Contexto explícito, lectores, escritores y fixtures en panel/bot/dominio. S1–S6. Ruta: por definir después de T2. Estado: pendiente. Commit: —.
 - **T4** — Aislamiento, compatibilidad y restauración verificadas en Postgres descartable. S1–S7. Ruta: verificación independiente (riesgo 1). Estado: pendiente. Commit: —.
 
@@ -44,4 +45,5 @@ Issue: #67. Rama: `feat/HU-024-modelo-multi-tenant`. Alcance: `docs/hu-modelo-mu
 - **L4** — T1 `9ec8fc7`: RED por falta de `Tenant`; GREEN en instalación limpia y upgrade descartable. Prisma validado y regenerado, typecheck correcto, suite 2.861/2.861. Una corrección amplió la prueba a todas las columnas previas de `Professional` y filas relacionadas sintéticas; la verificación independiente pasó. Project #5 sigue «En curso». Sin push, PR ni migración fuera del sandbox.
 - **L5** — T2 comienza por pacientes, agenda, servicios y turnos. El bot y el panel todavía usan selectores Prisma globales por JID; la expansión no debe quitar ese índice global antes de migrar los consumidores (T3).
 - **L6** — Agenda T2: restauración de referencia, RED por columna de propiedad ausente y GREEN de backfill y enlaces cruzados en Postgres descartable; Prisma, typecheck y 2.861 tests pasaron. El verificador independiente no pudo acceder al socket de Docker y no certificó el corte. Sin commit. Project #5 Bloqueada; motivo registrado en #67.
-- **L7** — Docker restablecido. En el corte de agenda pasaron también la comparación de columnas previas, las escrituras legacy, la instalación limpia y el rollback sin agenda inicial, con verificación independiente. Project #5 comprobado de nuevo en «En curso».
+- **L7** — Docker restablecido. En el corte de agenda pasaron también la comparación de columnas previas, las escrituras legacy, la instalación limpia y el rollback sin agenda inicial, con verificación independiente. Project #5 comprobado de nuevo en «En curso». Corte de agenda: `5e2a664`.
+- **L8** — «termina con el 024»; luego «continua con el 024». Project #5 verificado en «En curso»; se retoma desde `5e2a664` y se separa el corte de integración del de agenda.
