@@ -7,7 +7,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   callbacks: {
     ...authConfig.callbacks,
-    async jwt({ token, account, profile }) {
+    async jwt({ token, account, profile, trigger }) {
+      // session.update() supplies client data, not an authenticated OAuth identity.
+      if (trigger === "update") return token;
       // En el login con Google guardamos el refresh_token en la ficha de la profesional para
       // que el bot pueda sincronizar el calendario, pero solo el de la dueña del calendario
       // (ver `shouldStoreCalendarToken`): otro login no puede pisarlo.
@@ -30,7 +32,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           });
         }
       }
+      if (account) {
+        delete token.privateContentUserId;
+        const subject = profile?.sub;
+        if (
+          account.provider === "google" &&
+          profile?.email_verified === true &&
+          typeof subject === "string" && subject.length > 0 &&
+          subject === account.providerAccountId
+        ) {
+          const boundUser = await prisma.user.findUnique({
+            where: { googleSubject: subject },
+            select: { id: true },
+          });
+          if (boundUser) token.privateContentUserId = boundUser.id;
+        }
+      }
       return token;
+    },
+    async session({ session, token }) {
+      if (typeof token.privateContentUserId === "string" && token.privateContentUserId) {
+        session.privateContentUserId = token.privateContentUserId;
+      }
+      return session;
     },
   },
 });
