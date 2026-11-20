@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MorphDialog, MorphDialogContent } from "@/components/primitives/morph-dialog";
+import { cn } from "@/lib/utils";
 import { AppointmentDetailBody, type SelectedAppointment } from "../appointment-detail-sheet";
 
 /**
@@ -46,7 +47,13 @@ export function AppointmentDetailDialog({
       <MorphDialogContent
         // Fondo claro y ✕ a la izquierda; la barra de íconos del cuerpo le deja lugar (pl-14). Ancho para las
         // dos columnas del detalle (Fecha y hora · Estado / Finanzas · Más).
-        className="w-[min(100%,46rem)] bg-[#f9f8fa] [&_[data-appointment-header]]:pl-14"
+        className={cn(
+          "w-[min(100%,46rem)] bg-[#f9f8fa] [&_[data-appointment-header]]:pl-14",
+          anchored && [
+            "[&_[data-morph-scroll-body]]:max-h-[min(85dvh,var(--morph-anchor-available-height,85dvh))]",
+            "[&_[data-morph-scroll-body]]:[scrollbar-width:thin] [&_[data-morph-scroll-body]]:[scrollbar-color:rgb(0_0_0/0.2)_transparent]",
+          ],
+        )}
         closeSide="left"
         anchor={anchored ? "origin" : "center"}
         onOpenAutoFocus={(e) => {
