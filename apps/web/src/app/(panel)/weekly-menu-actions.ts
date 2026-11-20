@@ -14,6 +14,8 @@ import {
 } from "@nutri-bot/db/domain";
 import { WEEKDAYS, type Weekday } from "@nutri-bot/core";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { touchTemplate } from "@/lib/touch-template";
 
 // HU-018b (SDD 6.1): acciones del editor semanal, compartidas por planes y plantillas. Cada una
 // valida con zod, llama a domain (que verifica que la comida sea del dueño), revalida y devuelve un
@@ -34,13 +36,22 @@ const ownerSchema = z.object({ kind: kindSchema, ownerId: idSchema });
 async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>>(
   schema: S,
   input: unknown,
-  fn: (data: z.infer<S>) => Promise<MealSnapshot[] | void>,
+  fn: (data: z.infer<S>, ...scope: [] | [tenantId: string]) => Promise<MealSnapshot[] | void>,
 ): Promise<MenuActionResult> {
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, error: GENERIC_ERROR };
   try {
-    const undo = await fn(parsed.data);
-    await revalidateMenuOwner(parsed.data.kind, parsed.data.ownerId);
+    const { kind, ownerId } = parsed.data;
+    let undo: MealSnapshot[] | void;
+    if (kind === "template") {
+      const access = await resolvePrivateContentAccess();
+      if (!access) return { ok: false, error: GENERIC_ERROR };
+      undo = await fn(parsed.data, access.tenantId);
+      await touchTemplate(ownerId, access.tenantId);
+    } else {
+      undo = await fn(parsed.data);
+      await revalidateMenuOwner(kind, ownerId);
+    }
     return undo ? { ok: true, undo } : { ok: true };
   } catch (err) {
     console.error("[weekly-menu]", err);
@@ -56,8 +67,8 @@ const setModeSchema = ownerSchema.extend({
 export async function setMealModeAction(input: {
   kind: MealOwnerKind; ownerId: string; mealId: string; mode: "EVERY_DAY" | "PER_DAY"; keepWeekday?: Weekday;
 }): Promise<MenuActionResult> {
-  return run(setModeSchema, input, async (d) => [
-    await setMealMode(d.kind, d.ownerId, d.mealId, { mode: d.mode, keepWeekday: d.keepWeekday }),
+  return run(setModeSchema, input, async (d, ...scope) => [
+    await setMealMode(d.kind, d.ownerId, d.mealId, { mode: d.mode, keepWeekday: d.keepWeekday }, ...scope),
   ]);
 }
 
@@ -65,21 +76,21 @@ const setOptionsSchema = ownerSchema.extend({ mealId: idSchema, isOptions: z.boo
 export async function setMealOptionsAction(input: {
   kind: MealOwnerKind; ownerId: string; mealId: string; isOptions: boolean;
 }): Promise<MenuActionResult> {
-  return run(setOptionsSchema, input, (d) => setMealOptions(d.kind, d.ownerId, d.mealId, d.isOptions));
+  return run(setOptionsSchema, input, (d, ...scope) => setMealOptions(d.kind, d.ownerId, d.mealId, d.isOptions, ...scope));
 }
 
 const copyDaySchema = ownerSchema.extend({ from: weekdaySchema, to: z.array(weekdaySchema).min(1).max(6) });
 export async function copyDayAction(input: {
   kind: MealOwnerKind; ownerId: string; from: Weekday; to: Weekday[];
 }): Promise<MenuActionResult> {
-  return run(copyDaySchema, input, (d) => copyDay(d.kind, d.ownerId, { from: d.from, to: d.to }));
+  return run(copyDaySchema, input, (d, ...scope) => copyDay(d.kind, d.ownerId, { from: d.from, to: d.to }, ...scope));
 }
 
 const repeatSchema = ownerSchema.extend({ mealId: idSchema, from: weekdaySchema });
 export async function repeatMealAction(input: {
   kind: MealOwnerKind; ownerId: string; mealId: string; from: Weekday;
 }): Promise<MenuActionResult> {
-  return run(repeatSchema, input, async (d) => [await repeatMealInAllDays(d.kind, d.ownerId, d.mealId, d.from)]);
+  return run(repeatSchema, input, async (d, ...scope) => [await repeatMealInAllDays(d.kind, d.ownerId, d.mealId, d.from, ...scope)]);
 }
 
 // Foto para Deshacer: viene del cliente, así que se valida estricta (SDD 6.1). La pertenencia de cada
@@ -128,19 +139,19 @@ const restoreSchema = ownerSchema.extend({
 export async function restoreMealsAction(input: {
   kind: MealOwnerKind; ownerId: string; snapshots: MealSnapshot[];
 }): Promise<MenuActionResult> {
-  return run(restoreSchema, input, (d) => restoreMealSnapshots(d.kind, d.ownerId, d.snapshots));
+  return run(restoreSchema, input, (d, ...scope) => restoreMealSnapshots(d.kind, d.ownerId, d.snapshots, ...scope));
 }
 
 const renameSchema = ownerSchema.extend({ mealId: idSchema, name: z.string().trim().min(1).max(60) });
 export async function renameMealAction(input: {
   kind: MealOwnerKind; ownerId: string; mealId: string; name: string;
 }): Promise<MenuActionResult> {
-  return run(renameSchema, input, (d) => renameMeal(d.kind, d.ownerId, d.mealId, d.name));
+  return run(renameSchema, input, (d, ...scope) => renameMeal(d.kind, d.ownerId, d.mealId, d.name, ...scope));
 }
 
 const moveSchema = ownerSchema.extend({ mealId: idSchema, direction: z.enum(["up", "down"]) });
 export async function moveMealAction(input: {
   kind: MealOwnerKind; ownerId: string; mealId: string; direction: "up" | "down";
 }): Promise<MenuActionResult> {
-  return run(moveSchema, input, (d) => moveMeal(d.kind, d.ownerId, d.mealId, d.direction));
+  return run(moveSchema, input, (d, ...scope) => moveMeal(d.kind, d.ownerId, d.mealId, d.direction, ...scope));
 }

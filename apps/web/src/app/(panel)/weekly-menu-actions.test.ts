@@ -6,18 +6,21 @@ const mocks = vi.hoisted(() => ({
   restoreMealSnapshots: vi.fn(), setMealMode: vi.fn(), setMealOptions: vi.fn(),
   revalidatePath: vi.fn(), findPlan: vi.fn(),
   // HU-020 (T10): la rama template de revalidateMenuOwner marca el borrador importado como revisado.
-  markTemplateReviewed: vi.fn(),
+  markTemplateReviewed: vi.fn(), resolveAccess: vi.fn(),
 }));
 
 vi.mock("@nutri-bot/db/domain", () => mocks);
 vi.mock("@nutri-bot/db", () => ({ prisma: { nutritionPlan: { findUnique: mocks.findPlan } } }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.resolveAccess }));
 
 import { resolvedMeasurePlural } from "@nutri-bot/core";
 import {
   copyDayAction,
   renameMealAction,
+  moveMealAction,
+  repeatMealAction,
   restoreMealsAction,
   setMealModeAction,
   setMealOptionsAction,
@@ -31,10 +34,33 @@ const snapshot = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
+  mocks.resolveAccess.mockResolvedValue({ tenantId: "tenant-a" });
   mocks.findPlan.mockResolvedValue({ patientId: "pat1" });
 });
 
 describe("weekly-menu-actions", () => {
+  const template = { kind: "template" as const, ownerId: "t1", mealId: "meal1", tenantId: "tenant-b" };
+  it.each([
+    ["copyDay", () => copyDayAction({ ...template, from: "MON", to: ["TUE"] })],
+    ["moveMeal", () => moveMealAction({ ...template, direction: "up" })],
+    ["renameMeal", () => renameMealAction({ ...template, name: "Cena" })],
+    ["repeatMealInAllDays", () => repeatMealAction({ ...template, from: "MON" })],
+    ["restoreMealSnapshots", () => restoreMealsAction({ ...template, snapshots: [snapshot] })],
+    ["setMealMode", () => setMealModeAction({ ...template, mode: "PER_DAY" })],
+    ["setMealOptions", () => setMealOptionsAction({ ...template, isOptions: true })],
+  ] as const)("%s denies absent membership and forwards only the server tenant", async (operation, action) => {
+    mocks.resolveAccess.mockResolvedValueOnce(null);
+    expect(await action()).toEqual({ ok: false, error: "No se pudo guardar. Probá de nuevo." });
+    expect(mocks[operation]).not.toHaveBeenCalled();
+    expect(mocks.markTemplateReviewed).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+
+    mocks[operation].mockResolvedValueOnce(undefined);
+    expect((await action()).ok).toBe(true);
+    expect(mocks[operation].mock.lastCall?.at(-1)).toBe("tenant-a");
+    expect(mocks.markTemplateReviewed).toHaveBeenCalledWith("t1", "tenant-a");
+    expect(mocks.revalidatePath.mock.calls).toEqual([["/plantillas"], ["/plantillas/t1"]]);
+  });
   it("copyDayAction devuelve las fotos para Deshacer y revalida las rutas del plan", async () => {
     mocks.copyDay.mockResolvedValue([snapshot]);
     const result = await copyDayAction({ kind: "plan", ownerId: "plan1", from: "MON", to: ["TUE", "WED"] });
@@ -47,8 +73,8 @@ describe("weekly-menu-actions", () => {
     mocks.setMealMode.mockResolvedValue(snapshot);
     const result = await setMealModeAction({ kind: "template", ownerId: "t1", mealId: "meal1", mode: "PER_DAY" });
     expect(result).toEqual({ ok: true, undo: [snapshot] });
-    expect(mocks.setMealMode).toHaveBeenCalledWith("template", "t1", "meal1", { mode: "PER_DAY", keepWeekday: undefined });
-    expect(mocks.markTemplateReviewed).toHaveBeenCalledWith("t1");
+    expect(mocks.setMealMode).toHaveBeenCalledWith("template", "t1", "meal1", { mode: "PER_DAY", keepWeekday: undefined }, "tenant-a");
+    expect(mocks.markTemplateReviewed).toHaveBeenCalledWith("t1", "tenant-a");
     expect(mocks.revalidatePath.mock.calls).toEqual([["/plantillas"], ["/plantillas/t1"]]);
   });
 

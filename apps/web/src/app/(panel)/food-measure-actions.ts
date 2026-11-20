@@ -23,6 +23,8 @@ import type {
 } from "@/components/food-measures/types";
 import { errorCode } from "@/lib/error-code";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { touchTemplate } from "@/lib/touch-template";
 import { hasPanelSession } from "./recetas/recipe-save";
 
 // HU-018d (SDD 6.1): actions de las medidas caseras de un alimento (ficha y editor del plan). Este
@@ -164,8 +166,15 @@ export async function setMeasureItemQtyAction(input: {
   if (!parsed.success) return { ok: false, error: MEASURE_TEXT.qtyError };
   const d = parsed.data;
   try {
-    await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty);
-    await revalidateMenuOwner(d.kind, d.ownerId);
+    if (d.kind === "template") {
+      const access = await resolvePrivateContentAccess();
+      if (!access) return SESSION_EXPIRED;
+      await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty, access.tenantId);
+      await touchTemplate(d.ownerId, access.tenantId);
+    } else {
+      await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty);
+      await revalidateMenuOwner(d.kind, d.ownerId);
+    }
     return { ok: true };
   } catch (err) {
     logError(err);

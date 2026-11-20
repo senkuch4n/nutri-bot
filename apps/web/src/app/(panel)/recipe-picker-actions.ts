@@ -6,7 +6,7 @@ import {
   RecipeNotAvailableError,
   addRecipeItems,
   getRecipePreview,
-  listRecipeCards,
+  recipesForTenant,
   removeMenuItems,
   setRecipeItemPortions,
   type MealOwnerKind,
@@ -20,7 +20,8 @@ import type {
 import { errorCode } from "@/lib/error-code";
 import { toRecipeCardView } from "@/lib/recipe-view";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
-import { hasPanelSession } from "./recetas/recipe-save";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { touchTemplate } from "@/lib/touch-template";
 
 // HU-018c (SDD 6.1): actions del buscador de recetas. Este archivo es "use server": exporta SOLO
 // funciones async (Turbopack rechaza tipos o constantes). Los tipos viven en
@@ -52,11 +53,17 @@ function logError(err: unknown): void {
   console.error("[recipe-picker]", errorCode(err));
 }
 
+async function refreshPickerOwner(kind: MealOwnerKind, ownerId: string, tenantId: string): Promise<void> {
+  if (kind === "template") await touchTemplate(ownerId, tenantId);
+  else await revalidateMenuOwner(kind, ownerId);
+}
+
 /** Recetas publicadas para la grilla del buscador (se llama cada vez que se abre). */
 export async function listPickerRecipesAction(): Promise<ListPickerRecipesResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
   try {
-    const cards = await listRecipeCards({ status: "PUBLISHED" });
+    const access = await resolvePrivateContentAccess();
+    if (!access) return SESSION_EXPIRED;
+    const cards = await recipesForTenant(access.tenantId).list("PUBLISHED");
     return { ok: true, cards: cards.map((c) => toRecipeCardView(c, "panel")) };
   } catch (err) {
     logError(err);
@@ -66,11 +73,12 @@ export async function listPickerRecipesAction(): Promise<ListPickerRecipesResult
 
 /** HU-018c-2: detalle de la receta (diálogo del buscador). Un borrador o una receta que no existe → notPublished. */
 export async function getRecipePreviewAction(recipeId: string): Promise<RecipePreviewResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
-  const parsed = idSchema.safeParse(recipeId);
-  if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.notPublished };
   try {
-    const recipe = await getRecipePreview(parsed.data);
+    const access = await resolvePrivateContentAccess();
+    if (!access) return SESSION_EXPIRED;
+    const parsed = idSchema.safeParse(recipeId);
+    if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.notPublished };
+    const recipe = await getRecipePreview(parsed.data, access.tenantId);
     if (!recipe) return { ok: false, error: RECIPE_PICKER_TEXT.notPublished };
     return { ok: true, recipe };
   } catch (err) {
@@ -87,18 +95,19 @@ export async function addRecipeToMealAction(input: {
   recipeId: string;
   weekdays: Weekday[] | null;
 }): Promise<AddRecipeResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
-  const parsed = addSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.addError };
-  const d = parsed.data;
   try {
+    const access = await resolvePrivateContentAccess();
+    if (!access) return SESSION_EXPIRED;
+    const parsed = addSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.addError };
+    const d = parsed.data;
     const { itemIds } = await addRecipeItems(d.kind, d.ownerId, {
       mealId: d.mealId,
       recipeId: d.recipeId,
       portions: 1,
       weekdays: d.weekdays,
-    });
-    await revalidateMenuOwner(d.kind, d.ownerId);
+    }, access.tenantId);
+    await refreshPickerOwner(d.kind, d.ownerId, access.tenantId);
     return { ok: true, itemIds };
   } catch (err) {
     logError(err);
@@ -114,13 +123,14 @@ export async function setRecipeItemPortionsAction(input: {
   itemId: string;
   portions: number;
 }): Promise<PickerMutationResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
-  const parsed = portionsSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.portionsError };
-  const d = parsed.data;
   try {
-    await setRecipeItemPortions(d.kind, d.ownerId, d.itemId, d.portions);
-    await revalidateMenuOwner(d.kind, d.ownerId);
+    const access = await resolvePrivateContentAccess();
+    if (!access) return SESSION_EXPIRED;
+    const parsed = portionsSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.portionsError };
+    const d = parsed.data;
+    await setRecipeItemPortions(d.kind, d.ownerId, d.itemId, d.portions, access.tenantId);
+    await refreshPickerOwner(d.kind, d.ownerId, access.tenantId);
     return { ok: true };
   } catch (err) {
     logError(err);
@@ -134,13 +144,15 @@ export async function removeRecipeItemsAction(input: {
   ownerId: string;
   itemIds: string[];
 }): Promise<PickerMutationResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
-  const parsed = removeSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.removeError };
-  const d = parsed.data;
   try {
-    await removeMenuItems(d.kind, d.ownerId, d.itemIds);
-    await revalidateMenuOwner(d.kind, d.ownerId);
+    const access = await resolvePrivateContentAccess();
+    if (!access) return SESSION_EXPIRED;
+    const parsed = removeSchema.safeParse(input);
+    if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.removeError };
+    const d = parsed.data;
+    const count = await removeMenuItems(d.kind, d.ownerId, d.itemIds, access.tenantId);
+    if (count === 0) return { ok: false, error: RECIPE_PICKER_TEXT.removeError };
+    await refreshPickerOwner(d.kind, d.ownerId, access.tenantId);
     return { ok: true };
   } catch (err) {
     logError(err);
