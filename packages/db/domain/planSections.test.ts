@@ -56,6 +56,14 @@ describe("addSection", () => {
     expect(p().planSection.create).not.toHaveBeenCalled();
   });
 
+  it("preserva el filtro por plan al contar secciones y calcular el orden", async () => {
+    p().planSection.aggregate.mockResolvedValue({ _max: { order: 3 } });
+    await addSection("plan", "p1", { title: "T", body: "x" });
+    expect(p().planSection.count).toHaveBeenCalledWith({ where: { planId: "p1" } });
+    expect(p().planSection.aggregate).toHaveBeenCalledWith({ where: { planId: "p1" }, _max: { order: true } });
+    expect(p().planSection.create).toHaveBeenCalledWith({ data: { planId: "p1", title: "T", body: "x", order: 4 }, select: { id: true } });
+  });
+
   it("con 30 → PlanSectionLimitError", async () => {
     p().planSection.count.mockResolvedValue(30);
     await expect(addSection("plan", "p1", { title: "T", body: "x" })).rejects.toBeInstanceOf(PlanSectionLimitError);
@@ -101,6 +109,50 @@ describe("moveSection", () => {
     await moveSection("plan", "p1", "c", 1);
     await moveSection("plan", "p1", "a", -1);
     expect(p().planSection.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("scoped template section edits", () => {
+  const owner = { templateId: "t1", template: { tenantId: "tenant-a" } };
+  const value = { title: "T", body: "b" };
+
+  it("scopes count, order and parent connect without imposing draft status", async () => {
+    const s = p().planTemplateSection;
+    s.aggregate.mockResolvedValue({ _max: { order: 2 } });
+    expect(await addSection("template", "t1", value, "tenant-a")).toEqual({ id: "new" });
+    expect(s.count).toHaveBeenCalledWith({ where: owner });
+    expect(s.aggregate).toHaveBeenCalledWith({ where: owner, _max: { order: true } });
+    expect(s.create).toHaveBeenCalledWith({
+      data: { template: { connect: { id: "t1", tenantId: "tenant-a" } }, ...value, order: 3 },
+      select: { id: true },
+    });
+  });
+
+  it("edit and delete reject unmatched tenant or parent", async () => {
+    const s = p().planTemplateSection;
+    const where = { id: "s1", ...owner };
+    s.updateMany.mockResolvedValueOnce({ count: 0 });
+    s.deleteMany.mockResolvedValueOnce({ count: 0 });
+    await expect(updateSection("template", "t1", "s1", value, "tenant-a")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(deleteSection("template", "t1", "s1", "tenant-a")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    expect(s.updateMany.mock.calls).toEqual([[{ where, data: value }]]);
+    expect(s.deleteMany.mock.calls).toEqual([[{ where }]]);
+  });
+
+  it("reorder scopes its read and both writes; aborts when a write no longer matches", async () => {
+    const s = p().planTemplateSection;
+    s.findMany.mockResolvedValueOnce([]);
+    await expect(moveSection("template", "t1", "b", -1, "tenant-a")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    expect(s.updateMany).not.toHaveBeenCalled();
+    s.findMany.mockResolvedValue([{ id: "a", order: 0 }, { id: "b", order: 1 }]);
+    await moveSection("template", "t1", "b", -1, "tenant-a");
+    expect(s.findMany).toHaveBeenCalledWith({ where: owner, select: { id: true, order: true }, orderBy: { order: "asc" } });
+    expect(s.updateMany.mock.calls).toEqual([
+      [{ where: { id: "b", ...owner }, data: { order: 0 } }],
+      [{ where: { id: "a", ...owner }, data: { order: 1 } }],
+    ]);
+    s.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    await expect(moveSection("template", "t1", "b", -1, "tenant-a")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
   });
 });
 
