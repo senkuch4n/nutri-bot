@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   findOrCreatePatient: vi.fn(),
   archivePatient: vi.fn(),
+  getLegacySchedulingTenantId: vi.fn(),
   unarchivePatient: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -22,6 +23,7 @@ vi.mock("@nutri-bot/db", () => ({
 }));
 vi.mock("@nutri-bot/db/domain", () => ({
   archivePatient: mocks.archivePatient,
+  getLegacySchedulingTenantId: mocks.getLegacySchedulingTenantId,
   unarchivePatient: mocks.unarchivePatient,
   updatePatientFormulaData: vi.fn(),
   getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
@@ -55,6 +57,7 @@ beforeEach(() => {
   mocks.transaction.mockReset();
   mocks.transaction.mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops));
   mocks.findUnique.mockReset();
+  mocks.getLegacySchedulingTenantId.mockReset().mockResolvedValue("legacy-tenant");
   mocks.findOrCreatePatient.mockReset();
   mocks.findOrCreatePatient.mockResolvedValue({ id: "pat-new" });
   mocks.archivePatient.mockReset();
@@ -64,10 +67,10 @@ beforeEach(() => {
 describe("createPatientAction", () => {
   it("normaliza el teléfono, crea la paciente y devuelve su id", async () => {
     mocks.findUnique.mockResolvedValue(null);
-    const result = await createPatientAction({ ok: false }, form({ name: " Lucía Pérez ", phone: "0351 15 555 2345" }));
+    const result = await createPatientAction({ ok: false }, form({ name: " Lucía Pérez ", phone: "0351 15 555 2345", tenantId: "foreign" }));
     expect(result).toEqual({ ok: true, id: "pat-new", name: "Lucía Pérez" });
     expect(mocks.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { whatsappJid: "5493515552345@s.whatsapp.net" } }),
+      expect.objectContaining({ where: { tenantId_whatsappJid: { tenantId: "legacy-tenant", whatsappJid: "5493515552345@s.whatsapp.net" } } }),
     );
     expect(mocks.findOrCreatePatient).toHaveBeenCalledWith({ phone: "5493515552345", name: "Lucía Pérez" });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
@@ -105,6 +108,24 @@ describe("createPatientAction", () => {
       fieldErrors: { phone: "Ese número es de Ana López, que está archivada." },
     });
     expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
+  });
+
+  it("traduce el conflicto global sin ofrecer una ficha ni revelar datos", async () => {
+    mocks.findUnique.mockResolvedValueOnce(null);
+    mocks.findOrCreatePatient.mockRejectedValueOnce(Object.assign(new Error("private details"), { code: "P2002" }));
+    const result = await createPatientAction({ ok: false }, form({ name: "Lucía", phone: "351 555 2345" }));
+    expect(result).toEqual({ ok: false, fieldErrors: { phone: "Ese número ya está registrado" } });
+    expect(mocks.findUnique).toHaveBeenCalledTimes(1);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("no consulta ni escribe pacientes sin alcance verificado", async () => {
+    mocks.getLegacySchedulingTenantId.mockRejectedValueOnce(new Error("missing scope"));
+    const result = await createPatientAction({ ok: false }, form({ name: "Lucía", phone: "351 555 2345" }));
+    expect(result).toEqual({ ok: false, error: "No se pudo guardar. Probá de nuevo." });
+    expect(mocks.findUnique).not.toHaveBeenCalled();
+    expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("valida nombre y teléfono sin tocar la base", async () => {

@@ -6,7 +6,8 @@ import {
   type PatientDirectoryInput,
 } from "@nutri-bot/core";
 import { PageHeader } from "@/components/ui";
-import { getProfessional } from "@/lib/professional";
+import { listLegacyPatientLastContacts } from "@nutri-bot/db/domain/conversationState";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { ArchivedPatientList } from "../archived-patient-list";
 import { NewPatientDialog } from "../new-patient-dialog";
 import { PatientDirectory } from "../patient-directory";
@@ -16,21 +17,25 @@ export const dynamic = "force-dynamic";
 // HU-019 (T14): la vista de archivadas es la misma ruta con `?vista=archivadas`.
 const ARCHIVED_SELECT = { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true } as const;
 
+function listArchivedPatients(tenantId: string) {
+  return prisma.patient.findMany({ where: { tenantId, archivedAt: { not: null } }, select: ARCHIVED_SELECT });
+}
+
 export default async function PacientesPage({
   searchParams,
 }: {
   searchParams: Promise<{ vista?: string | string[] }>;
 }) {
   const { vista } = await searchParams;
-  if (vista === "archivadas") return <ArchivedView />;
+  const { scope: { tenantId, agendaId }, professional: { timezone } } = await resolveLegacySchedulingScope();
+  if (vista === "archivadas") return archivedView(await listArchivedPatients(tenantId), timezone);
 
   const now = new Date();
-  const [pro, patients, conversations, archived] = await Promise.all([
-    getProfessional(),
+  const [patients, archived] = await Promise.all([
     // Sin orderBy: el orden (alfabético es-AR y "Por completar") lo arma core.
     prisma.patient.findMany({
       // HU-019 (T8): solo activas; core además descarta archivadas.
-      where: { archivedAt: null },
+      where: { tenantId, archivedAt: null },
       select: {
         id: true,
         name: true,
@@ -39,18 +44,18 @@ export default async function PacientesPage({
         createdAt: true,
         archivedAt: true,
         appointments: {
-          where: { status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
+          where: { tenantId, agendaId, status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
           orderBy: { startsAt: "asc" },
           take: 1,
           select: { startsAt: true, status: true },
         },
-        consultations: { orderBy: { consultedAt: "desc" }, take: 1, select: { consultedAt: true } },
+        consultations: { where: { tenantId }, orderBy: { consultedAt: "desc" }, take: 1, select: { consultedAt: true } },
       },
     }),
-    prisma.conversationState.findMany({ select: { patientJid: true, updatedAt: true } }),
-    prisma.patient.findMany({ where: { archivedAt: { not: null } }, select: ARCHIVED_SELECT }),
+    listArchivedPatients(tenantId),
   ]);
 
+  const conversations = await listLegacyPatientLastContacts(patients.map((patient) => patient.whatsappJid));
   const lastContactByJid = new Map(conversations.map((c) => [c.patientJid, c.updatedAt]));
   const inputs: PatientDirectoryInput[] = patients.map((p) => {
     const next = p.appointments[0];
@@ -69,9 +74,9 @@ export default async function PacientesPage({
       archivedAt: p.archivedAt,
     };
   });
-  const { named, unnamed } = buildPatientDirectory(inputs, now, pro.timezone);
+  const { named, unnamed } = buildPatientDirectory(inputs, now, timezone);
   // El contador cuenta las mismas filas que muestra la vista (sin canales ni grupos).
-  const archivedCount = buildArchivedPatientList(archivedInputs(archived), pro.timezone).length;
+  const archivedCount = buildArchivedPatientList(archivedInputs(archived), timezone).length;
 
   return (
     <PatientDirectory
@@ -90,12 +95,8 @@ function archivedInputs(rows: ArchivedSelect[]) {
 }
 
 /** HU-019 (D2, SDD 7.4): `/pacientes?vista=archivadas`. Sin "Nuevo paciente". */
-async function ArchivedView() {
-  const [pro, archived] = await Promise.all([
-    getProfessional(),
-    prisma.patient.findMany({ where: { archivedAt: { not: null } }, select: ARCHIVED_SELECT }),
-  ]);
-  const rows = buildArchivedPatientList(archivedInputs(archived), pro.timezone);
+function archivedView(archived: ArchivedSelect[], timezone: string) {
+  const rows = buildArchivedPatientList(archivedInputs(archived), timezone);
   return (
     <div>
       <PageHeader

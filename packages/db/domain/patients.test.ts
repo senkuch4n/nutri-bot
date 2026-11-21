@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => {
     prisma: {
       $transaction: vi.fn(),
       $queryRaw: vi.fn(),
-      patient: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+      agenda: { findUnique: vi.fn() },
+      patient: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), upsert: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
       appointment: { findMany: vi.fn() },
     },
   };
@@ -16,7 +17,54 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 
-import { archivePatient, unarchivePatient } from "./patients";
+import * as patients from "./patients";
+import { archivePatient, findOrCreatePatient, findOrCreatePatientByJid, unarchivePatient } from "./patients";
+
+it("reads a JID only within the verified original agenda's tenant", async () => {
+  vi.resetAllMocks();
+  const whatsappJid = "123@s.whatsapp.net";
+  const patient = { id: "own", whatsappJid, tenantId: "legacy-tenant" };
+  const notFound = new Error("Patient not found");
+  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: {} });
+  mocks.prisma.patient.findUniqueOrThrow.mockResolvedValueOnce(patient).mockRejectedValueOnce(notFound);
+  await expect(patients.findLegacyPatientByJidOrThrow(whatsappJid)).resolves.toBe(patient);
+  await expect(patients.findLegacyPatientByJidOrThrow(whatsappJid)).rejects.toBe(notFound);
+  expect(mocks.prisma.patient.findUniqueOrThrow).toHaveBeenCalledTimes(2);
+  for (const args of mocks.prisma.patient.findUniqueOrThrow.mock.calls) {
+    expect(args).toEqual([{ where: { tenantId_whatsappJid: { tenantId: "legacy-tenant", whatsappJid } } }]);
+  }
+  mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+  await expect(patients.findLegacyPatientByJidOrThrow(whatsappJid)).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+  expect(mocks.prisma.patient.findUniqueOrThrow).toHaveBeenCalledTimes(2);
+  expect(mocks.prisma.patient.upsert).not.toHaveBeenCalled();
+});
+
+it.each(["panel", "bot"])("%s keeps the global JID key but refuses to update a foreign or unowned patient", async (caller) => {
+  vi.resetAllMocks();
+  const whatsappJid = "123@s.whatsapp.net";
+  const book = () => caller === "panel" ? findOrCreatePatient({ phone: "123", name: "Nueva" }) : findOrCreatePatientByJid(whatsappJid);
+  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: {} });
+  const duplicate = new Error("Global JID already exists");
+  for (const tenantId of ["other-tenant", null, "legacy-tenant"]) {
+    const patient = { whatsappJid, tenantId, name: "Original" };
+    mocks.prisma.patient.upsert.mockImplementation(async ({ where, update }) => {
+      const identity = where.tenantId_whatsappJid ?? where;
+      if (identity.tenantId !== undefined && identity.tenantId !== patient.tenantId) throw duplicate;
+      return Object.assign(patient, update);
+    });
+    if (tenantId === "legacy-tenant") {
+      await expect(book()).resolves.toBe(patient);
+    } else {
+      await expect(book()).rejects.toBe(duplicate);
+      expect(patient).toEqual({ whatsappJid, tenantId, name: "Original" });
+    }
+  }
+  expect(mocks.prisma.patient.upsert).toHaveBeenLastCalledWith({
+    where: { tenantId_whatsappJid: { whatsappJid, tenantId: "legacy-tenant" } },
+    update: caller === "panel" ? { name: "Nueva" } : {},
+    create: { whatsappJid, phone: "123", tenantId: "legacy-tenant", ...(caller === "panel" ? { name: "Nueva" } : {}) },
+  });
+});
 
 const NOW = new Date("2026-10-24T15:00:00Z");
 const ARCHIVED_BEFORE = new Date("2026-09-01T12:00:00Z");

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
 import {
   archivePatient,
+  getLegacySchedulingTenantId,
   getProfessional,
   unarchivePatient,
   updatePatientFormulaData,
@@ -184,8 +185,9 @@ export async function createPatientAction(
   if (Object.keys(fieldErrors).length > 0 || !phone.ok) return { ok: false, fieldErrors };
 
   try {
+    const tenantId = await getLegacySchedulingTenantId();
     const taken = await prisma.patient.findUnique({
-      where: { whatsappJid: phoneToJid(phone.digits) },
+      where: { tenantId_whatsappJid: { tenantId, whatsappJid: phoneToJid(phone.digits) } },
       select: { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true },
     });
     if (taken?.archivedAt) {
@@ -203,9 +205,16 @@ export async function createPatientAction(
         fieldErrors: { phone: PATIENT_DIRECTORY_TEXT.phoneTaken(patientDisplayName(taken)) },
       };
     }
-    const created = await findOrCreatePatient({ phone: phone.digits, name });
-    revalidatePath("/pacientes");
-    return { ok: true, id: created.id, name };
+    try {
+      const created = await findOrCreatePatient({ phone: phone.digits, name });
+      revalidatePath("/pacientes");
+      return { ok: true, id: created.id, name };
+    } catch (err) {
+      if ((err as { code?: string } | null)?.code === "P2002") {
+        return { ok: false, fieldErrors: { phone: "Ese número ya está registrado" } };
+      }
+      throw err;
+    }
   } catch {
     return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
   }
