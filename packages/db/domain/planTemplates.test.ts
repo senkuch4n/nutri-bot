@@ -22,6 +22,12 @@ beforeEach(() => {
   mocks.prisma.templateMeal = { createMany: vi.fn(), create: vi.fn(), count: vi.fn(), findUnique: vi.fn(), update: vi.fn(), delete: vi.fn() };
   mocks.prisma.templateMealItem = { create: vi.fn(), delete: vi.fn(), findFirst: vi.fn() };
   mocks.prisma.nutritionPlan = { create: vi.fn(), findUnique: vi.fn() };
+  mocks.prisma.food = { findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => [
+    { id: "official", source: "SARA2", tenantId: null, active: false, catalogPresent: false },
+    { id: "own", source: "PROPIO", tenantId: "tenantA" },
+    { id: "foreign", source: "PROPIO", tenantId: "tenantB" },
+    { id: "unowned", source: "PROPIO", tenantId: null },
+  ].filter(({ id }) => where.id.in.includes(id))) };
   mocks.prisma.$transaction = vi.fn((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
 });
 
@@ -129,6 +135,29 @@ describe("direct template ownership", () => {
     expect(p().templateMealItem.delete).toHaveBeenCalledWith({ where: { id: "i2", meal: relation } });
   });
 
+  it.each(["foreign", "unowned", "missing"])("rejects a scoped %s food before changing the meal", async (foodId) => {
+    p().templateMeal.findUnique.mockResolvedValue({ mode: "EVERY_DAY" });
+    await expect(addTemplateMealItem("m1", { foodId, order: 1 }, scope)).rejects.toThrow("El alimento no está disponible para este consultorio.");
+    expect(p().templateMeal.update).not.toHaveBeenCalled();
+    expect(p().templateMealItem.create).not.toHaveBeenCalled();
+  });
+
+  it.each(["official", "own"])("accepts the scoped %s reference without altering it", async (foodId) => {
+    p().templateMeal.findUnique.mockResolvedValue({ mode: "EVERY_DAY" });
+    p().templateMeal.update.mockResolvedValue({ id: "m1" });
+    await expect(addTemplateMealItem("m1", { foodId, order: 1 }, scope)).resolves.toEqual({ id: "m1" });
+    expect(p().templateMeal.update).toHaveBeenCalledWith({ where: { id: "m1", ...relation }, data: {
+      items: { create: { foodId, order: 1, weekday: null } },
+    }, select: { id: true } });
+  });
+
+  it("leaves legacy adds to the existing item create and database checks", async () => {
+    p().templateMeal.findUnique.mockResolvedValue({ mode: "EVERY_DAY" });
+    await addTemplateMealItem("m1", { foodId: "unowned", order: 1 });
+    expect(p().templateMealItem.create).toHaveBeenCalledWith({ data: { mealId: "m1", foodId: "unowned", order: 1, weekday: null } });
+    expect(p().food.findMany).not.toHaveBeenCalled();
+  });
+
   it("scopes item order by meal, day, template and tenant", async () => {
     p().templateMealItem.findFirst.mockResolvedValue({ order: 4 });
     expect(await nextItemOrder("template", "m1", "TUE", scope)).toBe(5);
@@ -216,9 +245,19 @@ describe("tenant-scoped template application", () => {
     expect(p().nutritionPlan.findUnique).not.toHaveBeenCalled();
   });
 
+  it("rejects a stored food ID with no matching food before copying", async () => {
+    p().planTemplate.findUnique.mockResolvedValue({ ...template, meals: [{ ...template.meals[0], items: [
+      { ...template.meals[0]!.items[1], food: null },
+    ] }] });
+    await expect(applyTemplateToPatient("tpl1", "pat1", tenantId)).rejects.toMatchObject({ name: "TemplateApplicationUnavailableError", message: "Plantilla no encontrada" });
+    expect(p().nutritionPlan.create).not.toHaveBeenCalled();
+  });
+
   it("copies valid content into a plan owned by the destination tenant", async () => {
     const sections = [{ title: "Texto", body: "Contenido", order: 3 }];
-    p().planTemplate.findUnique.mockResolvedValue({ ...template, sections });
+    p().planTemplate.findUnique.mockResolvedValue({ ...template, sections, meals: template.meals.map((meal) => ({
+      ...meal, items: meal.items.map((item) => ({ ...item, food: item.foodId ? { source: "SARA2" } : null })),
+    })) });
     expect(await applyTemplateToPatient("tpl1", "pat1", tenantId)).toEqual(plan);
     expect(p().patient.findUnique).toHaveBeenCalledWith({ where: { id: "pat1", tenantId }, select: { id: true } });
     expect(p().planTemplate.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "tpl1", tenantId } }));

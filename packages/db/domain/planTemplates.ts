@@ -1,6 +1,7 @@
 import { RECIPE_ITEM_SELECT } from "./recipes";
 import { prisma, type MealMode, type Prisma, type Weekday } from "../index";
 import { getPlan } from "./nutritionPlans";
+import { FOOD_REFERENCE_UNAVAILABLE, unavailableFoodReferences } from "./foodReferenceOwnership";
 import {
   assertWeekdayMatchesMeal, createDefaultWeeklyMeals, resolveNewMealMode, templateMealScope,
   type TemplateMealScope,
@@ -111,9 +112,14 @@ export async function addTemplateMealItem(mealId: string, data: TemplateItemData
   const weekday = data.weekday ?? null;
   await assertWeekdayMatchesMeal("template", mealId, weekday, scope);
   if (scope) {
-    return prisma.templateMeal.update({
-      where: { id: mealId, ...templateMealScope(scope) },
-      data: { items: { create: { ...data, weekday } } }, select: { id: true },
+    return prisma.$transaction(async (tx) => {
+      if (data.foodId != null && (await unavailableFoodReferences(tx, scope.tenantId, [data.foodId])).size > 0) {
+        throw new Error(FOOD_REFERENCE_UNAVAILABLE);
+      }
+      return tx.templateMeal.update({
+        where: { id: mealId, ...templateMealScope(scope) },
+        data: { items: { create: { ...data, weekday } } }, select: { id: true },
+      });
     });
   }
   return prisma.templateMealItem.create({ data: { mealId, ...data, weekday } });
@@ -169,6 +175,7 @@ export async function applyTemplateToPatient(templateId: string, patientId: stri
 
       const items = template.meals.flatMap((meal) => meal.items);
       if (items.some((item) => item.food && item.food.source !== "SARA2")) throw new TemplateContainsHistoricalFoodError();
+      if (items.some((item) => item.foodId !== null && !item.food)) throw new TemplateApplicationUnavailableError();
       const recipeIds = [...new Set(items.flatMap((item) => item.recipeId ? [item.recipeId] : []))];
       // Don't hydrate recipe data or create a new link to another tenant's recipe.
       if (recipeIds.length && await tx.recipe.count({ where: { id: { in: recipeIds }, tenantId } }) !== recipeIds.length) {

@@ -73,6 +73,27 @@ it("scopes all child operations, retaining meal and item ordering", async () => 
   expect(mocks.touch.mock.calls).toEqual(Array.from({ length: 4 }, () => ["t", "mine"]));
 });
 
+it.each([null, { source: "PROPIO", active: true, tenantId: "mine" }, { source: "SARA2", active: false }])(
+  "rejects a non-selectable food without saving or marking review (%j)", async (food) => {
+    const form = fields();
+    form.set("foodId", "submitted-food");
+    mocks.getFood.mockResolvedValue(food);
+    await expect(actions.addTemplateMealItemAction(form)).rejects.toThrow("Solo se pueden agregar alimentos activos de SARA 2.");
+    expect(mocks.addTemplateMealItem).not.toHaveBeenCalled();
+    expect(mocks.nextItemOrder).not.toHaveBeenCalled();
+    expect(mocks.touch).not.toHaveBeenCalled();
+  },
+);
+
+it("adds an active official food using the authenticated scope", async () => {
+  const form = fields();
+  form.set("foodId", "official");
+  mocks.getFood.mockResolvedValue({ source: "SARA2", active: true });
+  await expect(actions.addTemplateMealItemAction(form)).resolves.toBeUndefined();
+  expect(mocks.addTemplateMealItem).toHaveBeenCalledWith("m", expect.objectContaining({ foodId: "official", order: 3 }), scope);
+  expect(mocks.touch).toHaveBeenCalledWith("t", "mine");
+});
+
 it("rejects unknown or mismatched parents without touching review or choosing an item order", async () => {
   mocks.getTemplate.mockResolvedValue(null);
   mocks.getTemplateMeal.mockResolvedValue(null);

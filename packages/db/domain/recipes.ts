@@ -13,6 +13,7 @@ import {
   type RecipeTypeKey,
 } from "@nutri-bot/core";
 import { prisma, type Prisma } from "../index";
+import { FOOD_REFERENCE_UNAVAILABLE, unavailableFoodReferences } from "./foodReferenceOwnership";
 
 // HU-018a: recetario. Los macros no se guardan: se calculan con computeRecipeMacros (core) desde
 // los ingredientes cada vez que se leen (D4, D10). Ninguna función devuelve bytes, salvo
@@ -600,6 +601,18 @@ function assertPublishable(input: RecipeInput, origin: "MANUAL" | "IMPORT"): voi
   if (issues.length > 0) throw new RecipeNotPublishableError(issues);
 }
 
+async function assertRecipeFoodReferences(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  ingredients: readonly { foodId: string | null }[],
+): Promise<void> {
+  const unavailable = await unavailableFoodReferences(tx, tenantId, ingredients.flatMap(({ foodId }) => foodId ? [foodId] : []));
+  if (unavailable.size === 0) return;
+  throw new RecipeNotPublishableError(ingredients.flatMap(({ foodId }, index) =>
+    foodId && unavailable.has(foodId) ? [{ field: "ingredient", index, message: FOOD_REFERENCE_UNAVAILABLE }] : [],
+  ));
+}
+
 /** Crea y publica (manual: "Guardar" publica). Si no valida → RecipeNotPublishableError. */
 export function createRecipe(input: RecipeInput): Promise<{ id: string }> {
   return insertRecipe(input);
@@ -608,6 +621,7 @@ export function createRecipe(input: RecipeInput): Promise<{ id: string }> {
 async function insertRecipe(input: RecipeInput, tenantId?: string): Promise<{ id: string }> {
   assertPublishable(input, "MANUAL");
   return prisma.$transaction(async (tx) => {
+    if (tenantId !== undefined) await assertRecipeFoodReferences(tx, tenantId, input.ingredients);
     const recipe = await tx.recipe.create({
       data: {
         ...recipeData(input, "MANUAL"), ...(tenantId === undefined ? {} : { tenantId }),
@@ -640,6 +654,7 @@ async function writeRecipe(id: string, input: RecipeInput, tenantId?: string, dr
   if (draftOnly && current.status !== "DRAFT") throw new RecipeStatusError();
   if (current.status !== "DRAFT") assertPublishable(input, current.origin);
   await prisma.$transaction(async (tx) => {
+    if (tenantId !== undefined) await assertRecipeFoodReferences(tx, tenantId, input.ingredients);
     const data = {
       ...recipeData(input, current.origin),
       ...(current.status === "DRAFT" && current.reviewedAt === null ? { reviewedAt: new Date() } : {}),
@@ -668,34 +683,37 @@ export function publishRecipe(id: string): Promise<void> {
 
 async function publishDraft(id: string, tenantId?: string): Promise<void> {
   const where = tenantId === undefined ? { id } : { id, tenantId };
-  const r = await prisma.recipe.findUnique({
-    where,
-    select: {
-      status: true,
-      origin: true,
-      name: true,
-      type: true,
-      moments: true,
-      yieldPortions: true,
-      portionHousehold: true,
-      sourceName: true,
-      ingredients: { orderBy: { order: "asc" }, select: { foodId: true, label: true, grams: true, noQuantity: true } },
-    },
-  });
-  if (!r) throw new RecipeNotFoundError();
-  if (r.status !== "DRAFT") throw new RecipeStatusError("Solo se publica un borrador.");
-  const issues = validateRecipeForPublish({
-    name: r.name,
-    type: r.type,
-    moments: r.moments,
-    yieldPortions: num(r.yieldPortions),
-    portionHousehold: r.portionHousehold,
-    origin: r.origin,
-    sourceName: r.sourceName,
-    ingredients: r.ingredients.map((i) => ({ ...i, grams: num(i.grams) })),
-  });
-  if (issues.length > 0) throw new RecipeNotPublishableError(issues);
-  await prisma.$transaction(async (tx) => {
+  const validateDraft = async (db: Prisma.TransactionClient) => {
+    const r = await db.recipe.findUnique({
+      where,
+      select: {
+        status: true,
+        origin: true,
+        name: true,
+        type: true,
+        moments: true,
+        yieldPortions: true,
+        portionHousehold: true,
+        sourceName: true,
+        ingredients: { orderBy: { order: "asc" }, select: { foodId: true, label: true, grams: true, noQuantity: true } },
+      },
+    });
+    if (!r) throw new RecipeNotFoundError();
+    if (r.status !== "DRAFT") throw new RecipeStatusError("Solo se publica un borrador.");
+    const issues = validateRecipeForPublish({
+      name: r.name,
+      type: r.type,
+      moments: r.moments,
+      yieldPortions: num(r.yieldPortions),
+      portionHousehold: r.portionHousehold,
+      origin: r.origin,
+      sourceName: r.sourceName,
+      ingredients: r.ingredients.map((i) => ({ ...i, grams: num(i.grams) })),
+    });
+    if (issues.length > 0) throw new RecipeNotPublishableError(issues);
+    if (tenantId !== undefined) await assertRecipeFoodReferences(db, tenantId, r.ingredients);
+  };
+  const publish = async (tx: Prisma.TransactionClient) => {
     const data = { status: "PUBLISHED", publishedAt: new Date() } as const;
     if (tenantId === undefined) {
       await tx.recipe.update({ where, data });
@@ -704,7 +722,17 @@ async function publishDraft(id: string, tenantId?: string): Promise<void> {
       if (result.count !== 1) await rejectDraftWrite(tx, where);
     }
     await tx.recipeImportImage.deleteMany({ where: { recipeId: id, ...(tenantId === undefined ? {} : { recipe: { tenantId } }) } });
-  });
+  };
+  if (tenantId === undefined) {
+    await validateDraft(prisma);
+    await prisma.$transaction(publish);
+  } else {
+    // Draft edits also write the parent; a concurrent edit cannot replace the validated snapshot.
+    await prisma.$transaction(async (tx) => {
+      await validateDraft(tx);
+      await publish(tx);
+    }, { isolationLevel: "Serializable" });
+  }
 }
 
 async function transition(id: string, from: RecipeStatusKey, to: RecipeStatusKey, tenantId?: string): Promise<void> {
