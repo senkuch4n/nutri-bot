@@ -236,7 +236,10 @@ async function createWeeklyItems(
     await item.create({ data: {
       ...data,
       meal: { connect: mealMutationWhere(mealId, scope) },
-      ...(foodId !== null && { food: { connect: { id: foodId } } }),
+      ...(foodId !== null && { food: { connect: {
+        id: foodId,
+        OR: [{ source: "SARA2" }, { source: "PROPIO", tenantId: scope.tenantId }],
+      } } }),
       ...(recipeId !== null && { recipe: { connect: { id: recipeId, tenantId: scope.tenantId } } }),
     } satisfies Prisma.TemplateMealItemCreateInput });
   }

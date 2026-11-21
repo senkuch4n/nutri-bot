@@ -101,6 +101,52 @@ describe("tenant-scoped weekly template operations", () => {
     ]);
   });
 
+  it.each([
+    ["official", true], ["own", true], ["foreign", false], ["ownerless", false], ["unknown", false],
+  ] as const)("repeats scoped food references only when visible to the tenant: %s", async (id, allowed) => {
+    const foods = [
+      { id: "official", source: "SARA2", tenantId: null, active: false },
+      { id: "own", source: "PROPIO", tenantId: "tenant-a" },
+      { id: "foreign", source: "PROPIO", tenantId: "tenant-b" },
+      { id: "ownerless", source: "PROPIO", tenantId: null },
+    ];
+    const days = ["TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+    const original = { weekday: "TUE", foodId: "original" };
+    let stored = [original];
+    let staged = [...stored];
+    p().templateMeal.findFirst.mockResolvedValue(meal("PER_DAY", [item(id, "MON", 0, { foodId: id })]));
+    // Model the nested filter and commit-on-success only; this does not exercise Prisma or PostgreSQL.
+    p().$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const result = await fn(p());
+      stored = staged;
+      return result;
+    });
+    p().templateMealItem.deleteMany.mockImplementation(() => { staged = []; });
+    const missing = new Error("mock nested connect found no food");
+    p().templateMealItem.create.mockImplementation(({ data }: { data: {
+      weekday: string;
+      food: { connect: { id: string; OR?: { source: string; tenantId?: string }[] } };
+    } }) => {
+      const { id, OR } = data.food.connect;
+      const match = foods.some((food) => food.id === id && (!OR || OR.some((filter) =>
+        Object.entries(filter).every(([key, value]) => food[key as keyof typeof food] === value))));
+      if (!match) throw missing;
+      staged.push({ weekday: data.weekday, foodId: id });
+    });
+
+    const repeat = repeatMealInAllDays("template", "t1", "meal1", "MON", "tenant-a");
+    if (allowed) {
+      await expect(repeat).resolves.toMatchObject({ items: [{ weekday: "MON", foodId: id }] });
+      expect(stored).toEqual(days.map((weekday) => ({ weekday, foodId: id })));
+    } else {
+      await expect(repeat).rejects.toBe(missing);
+      expect(stored).toEqual([original]);
+    }
+    expect(p().templateMealItem.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      food: { connect: { id, OR: [{ source: "SARA2" }, { source: "PROPIO", tenantId: "tenant-a" }] } },
+    }) });
+  });
+
   it("repeats own recipe items with scoped deletion and connections", async () => {
     p().templateMeal.findFirst.mockResolvedValue(meal("PER_DAY", [tenantRecipeItem]));
     p().recipe.count.mockResolvedValue(1);
@@ -218,6 +264,15 @@ describe("repeatMealInAllDays", () => {
     });
     expect(createdRows(p().planMealItem).map((r: any) => r.weekday)).toEqual(["TUE", "WED", "THU", "FRI", "SAT", "SUN"]);
     expect(before.items).toHaveLength(2);
+  });
+  it("repeats a legacy plan food ID without applying a template scope", async () => {
+    p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", [item("legacy", "MON")]));
+    const undo = await repeatMealInAllDays("plan", "plan1", "meal1", "MON");
+    expect(undo.items).toMatchObject([{ weekday: "MON", foodId: "f-legacy" }]);
+    expect(createdRows(p().planMealItem)).toEqual(
+      ["TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((weekday) => ({ ...undo.items[0], mealId: "meal1", weekday })),
+    );
+    expect(p().planMealItem.create).not.toHaveBeenCalled();
   });
   it("en una comida EVERY_DAY → MealModeError", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", []));
