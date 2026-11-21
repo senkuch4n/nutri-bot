@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getProfessional: vi.fn(),
   getAvailableSlotsForService: vi.fn(),
   prisma: {
+    agenda: { findUnique: vi.fn() },
     botAiQuestion: { count: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
     service: { findMany: vi.fn() },
     appointment: { findMany: vi.fn() },
@@ -57,6 +58,7 @@ const SERVICE = {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.getProfessional.mockResolvedValue(PRO);
+  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: PRO });
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
@@ -252,12 +254,24 @@ describe("runBotAiTool", () => {
 });
 
 describe("clearExpiredSessionText", () => {
+  it("rechaza la limpieza sin verificar la instalación original", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+    mocks.prisma.conversationState.updateMany.mockResolvedValue({ count: 2 });
+    await expect(clearExpiredSessionText({ sessionTimeoutMs: 60_000, now: NOW }))
+      .rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    expect(mocks.prisma.conversationState.updateMany).not.toHaveBeenCalled();
+  });
+
   it("pasa a DORMANT con contexto vacío solo las sesiones vencidas con texto del paciente (IA y motivo)", async () => {
     mocks.prisma.conversationState.updateMany.mockResolvedValue({ count: 2 });
     const n = await clearExpiredSessionText({ sessionTimeoutMs: 20 * 60_000, now: new Date("2026-10-02T12:00:00Z") });
     expect(n).toBe(2);
     expect(mocks.prisma.conversationState.updateMany).toHaveBeenCalledWith({
-      where: { step: { in: ["AWAIT_QUESTION", "BOOK_REASON", "BOOK_CONFIRM"] }, updatedAt: { lt: new Date("2026-10-02T11:40:00Z") } },
+      where: {
+        tenantId: "legacy-tenant",
+        step: { in: ["AWAIT_QUESTION", "BOOK_REASON", "BOOK_CONFIRM"] },
+        updatedAt: { lt: new Date("2026-10-02T11:40:00Z") },
+      },
       data: { step: "DORMANT", context: {} },
     });
   });

@@ -6,7 +6,7 @@ import {
   type AfterHoursConfig,
 } from "@nutri-bot/core";
 import { prisma } from "../index";
-import { getProfessional } from "./availability";
+import { resolveLegacyDigestScope } from "./legacySchedulingScope";
 
 /** Tope por mensaje: lo que exceda se recorta (sin aviso al paciente). */
 export const INQUIRY_MESSAGE_MAX = 4000;
@@ -164,12 +164,14 @@ export async function enqueueAfterHoursDigest(
     alertJid?: string | null;
   } = {},
 ): Promise<{ digested: number; outboundId: string | null }> {
-  const pro = await getProfessional();
+  const { scope: { tenantId }, professional: pro } = await resolveLegacyDigestScope();
   const config = opts.config ?? afterHoursConfigFrom(pro);
   const now = opts.now ?? new Date();
 
   if (isWithinAfterHours(now, config, pro.timezone)) return { digested: 0, outboundId: null };
 
+  // Each inquiry belongs to its Patient via a required FK; no JID inference.
+  const patient = { tenantId };
   return prisma.$transaction(async (tx) => {
     const rows = await tx.patientInquiry.findMany({
       where: {
@@ -177,6 +179,7 @@ export async function enqueueAfterHoursDigest(
         receivedAfterHours: true,
         digestedAt: null,
         receivedAt: { lte: now },
+        patient,
         ...(opts.scope ? { patientId: { in: opts.scope.patientIds } } : {}),
       },
       include: { patient: { select: { name: true, phone: true } } },
@@ -189,6 +192,7 @@ export async function enqueueAfterHoursDigest(
     if (alertJid) {
       const outbound = await tx.outboundMessage.create({
         data: {
+          tenantId,
           toJid: alertJid,
           kind: "PROFESSIONAL_ALERT",
           body: messages.afterHoursDigest({
@@ -206,7 +210,7 @@ export async function enqueueAfterHoursDigest(
 
     const ids = rows.map((r) => r.id);
     const { count } = await tx.patientInquiry.updateMany({
-      where: { id: { in: ids }, digestedAt: null },
+      where: { id: { in: ids }, digestedAt: null, patient },
       data: { digestedAt: now },
     });
     if (count !== ids.length) {
