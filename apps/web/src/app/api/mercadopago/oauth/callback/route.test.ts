@@ -59,6 +59,21 @@ describe("GET /api/mercadopago/oauth/callback", () => {
     },
   );
 
+  it("una excepción del callback se traduce a rejected sin exponer detalles ni revalidar", async () => {
+    mocks.complete.mockRejectedValue(new Error("provider detail TG-code"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await GET(new Request(CALLBACK));
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toBe("https://panel.example.test/ajustes?tab=mercadopago&mp=rejected");
+      expect(await res.text()).toBe("");
+      expect(log.mock.calls).toEqual([["[mercadopago] oauth_callback_failed"]]);
+      expect(mocks.revalidatePath).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("sin AUTH_URL usa la URL del request", async () => {
     vi.stubEnv("AUTH_URL", "");
     mocks.complete.mockResolvedValue("denied");

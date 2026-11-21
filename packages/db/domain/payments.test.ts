@@ -4,7 +4,8 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), search: vi.fn(), createPreferenc
   getMercadoPagoCredentials: vi.fn(), markMercadoPagoAccountError: vi.fn(), prisma: {
   $transaction: vi.fn(), $queryRaw: vi.fn(),
   payment: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-  appointment: { findUniqueOrThrow: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
+  appointment: { findUniqueOrThrow: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
+  agenda: { findUnique: vi.fn() },
   professional: { findUniqueOrThrow: vi.fn(), findUnique: vi.fn() },
   outboundMessage: { createMany: vi.fn() },
 } }));
@@ -22,7 +23,28 @@ vi.mock("mercadopago", () => ({
 }));
 import { createDepositCheckout, expireStalePendingPayments, handleMercadoPagoWebhook, reconcilePendingPayments, syncMercadoPagoPayment } from "./payments";
 
-describe("checkout return URL configuration", () => {
+describe("checkout return URL configuration and legacy ownership", () => {
+  const scope = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
+  const reservation = { id: "appointment", ...scope, patientId: "patient", serviceId: "service" };
+  const scopedReservation = { ...reservation, tenantPatient: { isNot: null }, tenantService: { isNot: null } };
+  const awaiting = { ...scopedReservation, status: "AWAITING_PAYMENT" };
+  const verifiedRelations = { tenantPatient: { id: "patient" }, agenda: { professional: { currency: "ARS" } } };
+  const fixture = () => {
+    const service = { id: "service", name: "Test service", price: 10000, requiresDeposit: true, depositKind: "FIXED", depositValue: 10000 };
+    return { ...reservation, status: "AWAITING_PAYMENT", createdAt: new Date("2026-10-02T12:00:00Z"), service, tenantService: service, ...verifiedRelations };
+  };
+  const expectNoCheckoutSideEffects = () => {
+    expect(mocks.getMercadoPagoCredentials).not.toHaveBeenCalled();
+    expect(mocks.createPreference).not.toHaveBeenCalled();
+    expect(mocks.markMercadoPagoAccountError).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.appointment.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.createMany).not.toHaveBeenCalled();
+  };
+
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.getMercadoPagoCredentials.mockResolvedValue(CREDS);
@@ -30,10 +52,11 @@ describe("checkout return URL configuration", () => {
     vi.stubEnv("AUTH_URL", "http://localhost:3000");
     vi.stubEnv("MERCADOPAGO_RETURN_URL", "https://return.example.test/result");
     vi.stubEnv("MERCADOPAGO_NOTIFICATION_URL", "https://notifications.example.test/api/webhooks/mercadopago");
-    mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue({
-      status: "AWAITING_PAYMENT", createdAt: new Date("2026-10-02T12:00:00Z"),
-      service: { id: "service", name: "Test service", price: 10000, requiresDeposit: true, depositKind: "FIXED", depositValue: 10000 },
-    });
+    const appointment = fixture();
+    mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(appointment);
+    mocks.prisma.appointment.findUnique.mockResolvedValue(appointment);
+    mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: {} });
+    mocks.prisma.$queryRaw.mockResolvedValue([{ id: "appointment" }]);
     mocks.prisma.professional.findUnique.mockResolvedValue({ currency: "ARS" });
     mocks.prisma.payment.create.mockResolvedValue({ id: "internal" });
     mocks.createPreference.mockResolvedValue({ id: "preference", init_point: "https://checkout.example.test" });
@@ -41,6 +64,56 @@ describe("checkout return URL configuration", () => {
     mocks.prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
   });
   afterEach(() => vi.unstubAllEnvs());
+
+  it("fails closed if the original agenda cannot be verified", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+    await expect(createDepositCheckout("appointment")).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    expect(mocks.prisma.appointment.findUnique).not.toHaveBeenCalled();
+    expectNoCheckoutSideEffects();
+  });
+
+  it.each([
+    null,
+    { tenantId: "other-tenant", agendaId: "other-agenda" },
+    { agendaId: "other-agenda" },
+    { tenantId: null, agendaId: null },
+    { tenantPatient: null },
+    { tenantService: null },
+  ])("rejects unresolved or foreign appointment/relations (%j) without side effects", async (override) => {
+    const row = override && { ...fixture(), ...override };
+    mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(row);
+    mocks.prisma.appointment.findUnique.mockImplementation(async ({ where }) =>
+      row && row.id === where.id && row.tenantId === where.tenantId && row.agendaId === where.agendaId ? row : null);
+    await expect(createDepositCheckout("appointment")).rejects.toThrow("No se pudo verificar el turno de la instalación original.");
+    expectNoCheckoutSideEffects();
+  });
+
+  it("does not create a payment or preference if the appointment cannot be locked after credential resolution", async () => {
+    mocks.getMercadoPagoCredentials.mockImplementation(async () => {
+      mocks.prisma.$queryRaw.mockResolvedValue([]);
+      mocks.prisma.appointment.updateMany.mockResolvedValue({ count: 0 });
+      return CREDS;
+    });
+    await expect(createDepositCheckout("appointment")).rejects.toThrow("No se pudo verificar el turno de la instalación original.");
+    expect(mocks.prisma.payment.create).not.toHaveBeenCalled();
+    expect(mocks.createPreference).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.appointment.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not persist or return a preference if ownership changes during the provider request", async () => {
+    mocks.createPreference.mockImplementation(async () => {
+      mocks.prisma.$queryRaw.mockResolvedValue([]);
+      return { id: "preference", init_point: "https://checkout.example.test" };
+    });
+    await expect(createDepositCheckout("appointment")).rejects.toThrow("No se pudo verificar el turno de la instalación original.");
+    expect(mocks.prisma.payment.create).toHaveBeenCalledTimes(1);
+    expect(mocks.createPreference).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.payment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.appointment.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.updateMany).not.toHaveBeenCalled();
+  });
 
   it("uses the independent return URL and preserves the exact notification URL", async () => {
     await createDepositCheckout("appointment");
@@ -55,6 +128,14 @@ describe("checkout return URL configuration", () => {
       expires: true,
       expiration_date_to: "2026-10-02T12:15:00.000Z",
     }) });
+    expect(mocks.prisma.agenda.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id_tenantId: { id: scope.agendaId, tenantId: scope.tenantId }, isPrimary: true, professionalId: 1 },
+    }));
+    expect(mocks.createPreference.mock.calls[0]?.[0].body.items[0].currency_id).toBe("ARS");
+    expect(mocks.prisma.payment.update).toHaveBeenCalledWith({
+      where: { id: "internal", appointmentId: "appointment", status: "PENDING", appointment: awaiting },
+      data: { preferenceId: "preference", checkoutUrl: "https://checkout.example.test" },
+    });
     expect(process.env.AUTH_URL).toBe("http://localhost:3000");
   });
   it("creates checkout without a notification URL environment variable", async () => {
@@ -63,9 +144,9 @@ describe("checkout return URL configuration", () => {
     expect(mocks.createPreference.mock.calls[0]?.[0].body).toHaveProperty("notification_url", undefined);
   });
   it.each(["PERCENT", "FIXED"])("uses the configured %s amount", async (depositKind) => {
-    const appointment = await mocks.prisma.appointment.findUniqueOrThrow();
-    appointment.service.depositKind = depositKind;
-    appointment.service.depositValue = depositKind === "PERCENT" ? 30 : 2500;
+    const appointment = await mocks.prisma.appointment.findUnique();
+    appointment.tenantService.depositKind = depositKind;
+    appointment.tenantService.depositValue = depositKind === "PERCENT" ? 30 : 2500;
     const amount = depositKind === "PERCENT" ? 3000 : 2500;
     await expect(createDepositCheckout("appointment")).resolves.toEqual({ amount, paymentId: "internal", checkoutUrl: "https://checkout.example.test" });
     expect(mocks.prisma.payment.create).toHaveBeenCalledWith({ data: { appointmentId: "appointment", kind: "DEPOSIT", status: "PENDING", amount, mercadopagoUserId: "seller-1" } });
@@ -76,14 +157,14 @@ describe("checkout return URL configuration", () => {
     if (failure === "missing-link") mocks.createPreference.mockResolvedValue({ id: "preference" });
     if (failure === "no-credentials") mocks.getMercadoPagoCredentials.mockResolvedValue(null);
     if (failure === "invalid-deposit") {
-      const appointment = await mocks.prisma.appointment.findUniqueOrThrow();
-      appointment.service.depositValue = NaN;
+      const appointment = await mocks.prisma.appointment.findUnique();
+      appointment.tenantService.depositValue = NaN;
     }
     await expect(createDepositCheckout("appointment")).rejects.toThrow();
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: expect.objectContaining({ status: "CANCELLED" }),
+      where: awaiting, data: expect.objectContaining({ status: "CANCELLED" }),
     }));
-    expect(mocks.prisma.payment.updateMany).toHaveBeenCalledWith({ where: { appointmentId: "appointment", status: "PENDING" }, data: { status: "CANCELLED" } });
+    expect(mocks.prisma.payment.updateMany).toHaveBeenCalledWith({ where: { appointmentId: "appointment", status: "PENDING", appointment: scopedReservation }, data: { status: "CANCELLED" } });
     if (["no-credentials", "invalid-deposit"].includes(failure)) expect(mocks.prisma.payment.create).not.toHaveBeenCalled();
   });
 
@@ -101,7 +182,7 @@ describe("checkout return URL configuration", () => {
     await expect(createDepositCheckout("appointment")).rejects.toEqual({ status: 401, error: "unauthorized" });
     expect(mocks.markMercadoPagoAccountError).toHaveBeenCalledWith("revoked");
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: expect.objectContaining({ status: "CANCELLED" }),
+      where: awaiting, data: expect.objectContaining({ status: "CANCELLED" }),
     }));
   });
 
@@ -126,33 +207,108 @@ describe("checkout return URL configuration", () => {
     expect(mocks.prisma.payment.updateMany).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, "", "   "])("rejects a missing or blank return URL (%s) before writing data or calling Mercado Pago", async (value) => {
+  it.each([undefined, "", "   "])("rejects a missing or blank return URL (%s) and releases only the verified reservation", async (value) => {
     vi.stubEnv("MERCADOPAGO_RETURN_URL", value);
     await expect(createDepositCheckout("appointment")).rejects.toThrow("Falta MERCADOPAGO_RETURN_URL");
-    expect(mocks.prisma.appointment.findUniqueOrThrow).not.toHaveBeenCalled();
+    expect(mocks.getMercadoPagoCredentials).not.toHaveBeenCalled();
     expect(mocks.prisma.payment.create).not.toHaveBeenCalled();
     expect(mocks.createPreference).not.toHaveBeenCalled();
-    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalled();
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: awaiting }));
   });
 });
 
 describe("payment reconciliation without database or network", () => {
+  const scope = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
+  const ownership = { ...scope, tenantPatient: { isNot: null }, tenantService: { isNot: null } };
+  const appointmentKey = { id: "appointment", patientId: "patient", serviceId: "service" };
+  const awaiting = { ...appointmentKey, ...ownership, status: "AWAITING_PAYMENT" };
   let payment: any;
+
+  function matchesOwnership(where: any, appointment: any) {
+    return appointment && (where?.tenantId === undefined || where.tenantId === appointment.tenantId)
+      && (where?.agendaId === undefined || where.agendaId === appointment.agendaId)
+      && (where?.tenantPatient?.isNot !== null || !!appointment.tenantPatient)
+      && (where?.tenantService?.isNot !== null || !!appointment.tenantService);
+  }
+
+  function expectNoMutations() {
+    expect(mocks.prisma.payment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.appointment.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.createMany).not.toHaveBeenCalled();
+  }
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.getMercadoPagoCredentials.mockResolvedValue(CREDS);
     mocks.markMercadoPagoAccountError.mockResolvedValue(undefined);
     payment = { id: "internal", provider: "mercadopago", kind: "DEPOSIT", status: "PENDING", paidAt: null,
-      appointment: { id: "appointment", status: "AWAITING_PAYMENT", startsAt: new Date("2026-10-01T12:00:00Z"),
-        patient: { whatsappJid: "fake", name: "Test", phone: "fake" }, service: { name: "Test service" } } };
+      appointment: { ...appointmentKey, ...scope, status: "AWAITING_PAYMENT", startsAt: new Date("2026-10-01T12:00:00Z"),
+        patient: { whatsappJid: "fake", name: "Test", phone: "fake" }, service: { name: "Test service" },
+        tenantPatient: { whatsappJid: "fake", name: "Test", phone: "fake" }, tenantService: { name: "Test service" } } };
+    mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires", phoneJid: "fake-pro" } });
+    mocks.prisma.$queryRaw.mockResolvedValue([{ id: "internal" }]);
     mocks.prisma.$transaction.mockImplementation((fn) => fn(mocks.prisma));
-    mocks.prisma.payment.findUnique.mockImplementation(async () => payment);
+    mocks.prisma.payment.findUnique.mockImplementation(async ({ where }) => matchesOwnership(where.appointment, payment?.appointment) ? payment : null);
     mocks.prisma.payment.update.mockImplementation(async ({ data }) => { Object.assign(payment, data); return payment; });
     mocks.prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
     mocks.prisma.professional.findUniqueOrThrow.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires", phoneJid: "fake-pro" });
     mocks.prisma.professional.findUnique.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires" });
     mocks.get.mockResolvedValue({ id: 123, external_reference: "internal", status: "approved", date_approved: "2026-10-01T11:00:00Z" });
   });
+  it.each([
+    { tenantId: "other-tenant", agendaId: "other-agenda" },
+    { agendaId: "other-agenda" },
+    { tenantId: null, agendaId: null },
+    { tenantPatient: null },
+    { tenantService: null },
+  ])("leaves ineligible targets untouched across all payment maintenance (%j)", async (override) => {
+    Object.assign(payment.appointment, override);
+    const snapshot = structuredClone(payment);
+    payment.externalId = "123";
+    mocks.prisma.payment.findMany.mockImplementation(async ({ where }) => matchesOwnership(where.appointment, payment.appointment) ? [payment] : []);
+    mocks.prisma.appointment.findMany.mockImplementation(async ({ where }) => matchesOwnership(where, payment.appointment) ? [payment.appointment] : []);
+
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).resolves.toBeUndefined();
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
+    expectNoMutations();
+    const onError = vi.fn();
+    await expect(reconcilePendingPayments(onError, [payment.id])).resolves.toEqual({ processed: 0, failed: 0, skipped: 0 });
+    await expect(expireStalePendingPayments()).resolves.toBe(0);
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expectNoMutations();
+    expect(payment).toEqual({ ...snapshot, externalId: "123" });
+  });
+
+  it("fails closed before payment or provider work when the original agenda is unavailable", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+    const error = "No se pudo verificar la agenda de la instalación original.";
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).rejects.toThrow(error);
+    await expect(reconcilePendingPayments()).rejects.toThrow(error);
+    await expect(expireStalePendingPayments()).rejects.toThrow(error);
+    expect(mocks.getMercadoPagoCredentials).not.toHaveBeenCalled();
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expectNoMutations();
+  });
+
+  it("ignores a provider-verified reference without a local payment", async () => {
+    mocks.prisma.$queryRaw.mockResolvedValue([]);
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).resolves.toBeUndefined();
+    expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
+    expectNoMutations();
+  });
+
+  it("leaves the payment untouched if the appointment no longer matches at lock time", async () => {
+    mocks.prisma.$queryRaw.mockResolvedValueOnce([{ id: "internal" }]).mockResolvedValueOnce([]);
+    await syncMercadoPagoPayment("123");
+    expect(payment.status).toBe("PENDING");
+    expectNoMutations();
+  });
+
   it("confirms and enqueues once when webhook and polling repeat approval", async () => {
     await syncMercadoPagoPayment("123");
     await syncMercadoPagoPayment("123");
@@ -161,8 +317,13 @@ describe("payment reconciliation without database or network", () => {
     expect(payment.paidAt).toEqual(new Date("2026-10-01T11:00:00Z"));
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
-    expect(mocks.prisma.$queryRaw).toHaveBeenCalledTimes(2);
-    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: expect.any(Date) } });
+    expect(mocks.prisma.$queryRaw).toHaveBeenCalledTimes(4);
+    const [paymentLock, appointmentLock] = mocks.prisma.$queryRaw.mock.calls;
+    expect(paymentLock?.[0].join("")).toContain('FROM "Payment"');
+    expect(appointmentLock?.[0].join("")).toContain('FROM "Appointment"');
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: awaiting, data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: expect.any(Date) } });
+    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenNthCalledWith(1, { skipDuplicates: true, data: [expect.objectContaining({ tenantId: scope.tenantId, toJid: "fake", kind: "CONFIRMATION" })] });
+    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenNthCalledWith(2, { skipDuplicates: true, data: [expect.objectContaining({ tenantId: scope.tenantId, toJid: "fake-pro", kind: "PROFESSIONAL_ALERT" })] });
   });
   it("does not duplicate messages when a replayed webhook and polling process the same approval", async () => {
     mocks.prisma.payment.findMany.mockResolvedValue([{ id: "internal", externalId: "123" }]);
@@ -219,7 +380,7 @@ describe("payment reconciliation without database or network", () => {
     expect(mocks.search.mock.calls[0]?.[0].options.external_reference).toBe("internal");
     expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
     expect(payment.status).toBe("APPROVED");
-    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: expect.any(Date) } });
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: awaiting, data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: expect.any(Date) } });
     expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
     await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" });
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
@@ -285,7 +446,7 @@ describe("payment reconciliation without database or network", () => {
     await syncMercadoPagoPayment("123");
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
     const { where, data } = mocks.prisma.appointment.updateMany.mock.calls[0]![0];
-    expect(where).toEqual({ id: "appointment", status: "AWAITING_PAYMENT" });
+    expect(where).toEqual(awaiting);
     expect(data.status).toBe("CONFIRMED");
     expect(data.needsGoogleSync).toBe(true);
     expect(data.bookedAt).toBeInstanceOf(Date);
@@ -295,10 +456,10 @@ describe("payment reconciliation without database or network", () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([payment.appointment]);
     expect(await expireStalePendingPayments()).toBe(1);
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "appointment", status: "AWAITING_PAYMENT" }, data: expect.objectContaining({ status: "CANCELLED" }),
+      where: { ...awaiting, createdAt: { lt: expect.any(Date) } }, data: expect.objectContaining({ status: "CANCELLED" }),
     }));
-    expect(mocks.prisma.payment.updateMany).toHaveBeenCalledWith({ where: { appointmentId: "appointment", status: "PENDING" }, data: { status: "EXPIRED" } });
-    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ kind: "CANCELLATION", appointmentId: "appointment" })] }));
+    expect(mocks.prisma.payment.updateMany).toHaveBeenCalledWith({ where: { appointmentId: "appointment", status: "PENDING", appointment: { ...appointmentKey, ...ownership } }, data: { status: "EXPIRED" } });
+    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ tenantId: scope.tenantId, toJid: "fake", kind: "CANCELLATION", appointmentId: "appointment" })] }));
     mocks.prisma.appointment.updateMany.mockResolvedValue({ count: 0 });
     expect(await expireStalePendingPayments()).toBe(0);
     expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(1);

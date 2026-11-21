@@ -1,8 +1,7 @@
 import { classifyMercadoPagoFailure, computeDepositAmount, DEPOSIT_AUTO_CANCEL_REASONS, mapMercadoPagoStatus, messages } from "@nutri-bot/core";
 import { MercadoPagoConfig, Payment as MercadoPagoPayment, Preference } from "mercadopago";
-import { prisma, type Payment as DbPayment } from "../index";
-import { getProfessional } from "./availability";
-import { PROFESSIONAL_SELECT } from "./professionalSelect";
+import { prisma, type Payment as DbPayment, type Prisma } from "../index";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 import {
   getMercadoPagoCredentials,
   markMercadoPagoAccountError,
@@ -30,41 +29,76 @@ async function withRevocationGuard<T>(creds: MercadoPagoCredentials, call: () =>
   }
 }
 
+type LegacyPaymentScope = Awaited<ReturnType<typeof resolveLegacySchedulingScope>>["scope"];
+type PaymentReservation = LegacyPaymentScope & { id: string; patientId: string; serviceId: string };
+const verifiedAppointmentLinks = { tenantPatient: { isNot: null }, tenantService: { isNot: null } } as const;
+const UNVERIFIED_CHECKOUT = "No se pudo verificar el turno de la instalación original.";
+
+async function lockPaymentReservation(tx: Prisma.TransactionClient, reservation: PaymentReservation, awaitingOnly: boolean) {
+  const { id, tenantId, agendaId, patientId, serviceId } = reservation;
+  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Appointment"
+    WHERE id = ${id} AND "tenantId" = ${tenantId} AND "agendaId" = ${agendaId}
+      AND "patientId" = ${patientId} AND "serviceId" = ${serviceId}
+      AND (NOT ${awaitingOnly} OR status = 'AWAITING_PAYMENT')
+    FOR NO KEY UPDATE`;
+  // With the appointment locked, composite FKs protect the verified recipient and service.
+  return rows.length > 0;
+}
+
+async function lockReservationPayments(tx: Prisma.TransactionClient, reservation: PaymentReservation) {
+  const { id, tenantId, agendaId, patientId, serviceId } = reservation;
+  await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${id}
+    AND EXISTS (SELECT 1 FROM "Appointment" WHERE id = "Payment"."appointmentId"
+      AND "tenantId" = ${tenantId} AND "agendaId" = ${agendaId}
+      AND "patientId" = ${patientId} AND "serviceId" = ${serviceId})
+    ORDER BY id FOR UPDATE`;
+}
+
 export async function createDepositCheckout(
   appointmentId: string,
 ): Promise<{ checkoutUrl: string; paymentId: string; amount: number }> {
+  const { scope } = await resolveLegacySchedulingScope();
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId, ...scope, ...verifiedAppointmentLinks },
+    include: {
+      tenantService: true,
+      tenantPatient: { select: { id: true } },
+      agenda: { select: { professional: { select: { currency: true } } } },
+    },
+  });
+  if (!appointment?.tenantPatient || !appointment.tenantService || !appointment.agenda) throw new Error(UNVERIFIED_CHECKOUT);
+  if (appointment.status !== "AWAITING_PAYMENT") throw new Error("El turno no está esperando una seña.");
+
+  const { tenantService: service, agenda: { professional: { currency } } } = appointment;
+  const reservation = { id: appointmentId, ...scope, patientId: appointment.patientId, serviceId: appointment.serviceId };
+  const ownedReservation = { ...reservation, ...verifiedAppointmentLinks };
+  const awaitingReservation = { ...ownedReservation, status: "AWAITING_PAYMENT" } as const;
   try {
     const returnUrl = process.env.MERCADOPAGO_RETURN_URL?.trim();
     if (!returnUrl) throw new Error("Falta MERCADOPAGO_RETURN_URL. Configurá una URL pública de retorno para Mercado Pago.");
     const creds = await getMercadoPagoCredentials({ kind: "current" });
     if (!creds) throw new MercadoPagoUnavailableError("No hay cuenta de Mercado Pago usable");
-    const client = mercadoPagoClient(creds.accessToken);
-
-    const [appointment, pro] = await Promise.all([
-      prisma.appointment.findUniqueOrThrow({
-        where: { id: appointmentId },
-        include: { service: true, patient: true },
-      }),
-      getProfessional(),
-    ]);
-    if (appointment.status !== "AWAITING_PAYMENT") throw new Error("El turno no está esperando una seña.");
-    if (!appointment.service.requiresDeposit || !appointment.service.depositKind || appointment.service.depositValue == null) {
+    if (!service.requiresDeposit || !service.depositKind || service.depositValue == null) {
       throw new Error("El servicio no tiene una seña configurada.");
     }
 
     const amount = computeDepositAmount(
-      Number(appointment.service.price),
-      appointment.service.depositKind,
-      Number(appointment.service.depositValue),
+      Number(service.price),
+      service.depositKind,
+      Number(service.depositValue),
     );
     if (amount <= 0) throw new Error("El monto de la seña debe ser mayor a cero.");
 
-    const payment = await prisma.payment.create({
-      data: { appointmentId, kind: "DEPOSIT", status: "PENDING", amount, mercadopagoUserId: creds.sellerUserId },
+    const payment = await prisma.$transaction(async (tx) => {
+      if (!await lockPaymentReservation(tx, reservation, true)) throw new Error(UNVERIFIED_CHECKOUT);
+      return tx.payment.create({
+        data: { appointmentId, kind: "DEPOSIT", status: "PENDING", amount, mercadopagoUserId: creds.sellerUserId },
+      });
     });
-    const preference = await withRevocationGuard(creds, () => new Preference(client).create({
+    // Do not hold DB locks during the provider request. Recheck before saving or returning the link.
+    const preference = await withRevocationGuard(creds, () => new Preference(mercadoPagoClient(creds.accessToken)).create({
       body: {
-        items: [{ id: appointment.service.id, title: appointment.service.name, quantity: 1, unit_price: amount, currency_id: pro.currency }],
+        items: [{ id: service.id, title: service.name, quantity: 1, unit_price: amount, currency_id: currency }],
         external_reference: payment.id,
         notification_url: process.env.MERCADOPAGO_NOTIFICATION_URL || undefined,
         expires: true,
@@ -80,22 +114,27 @@ export async function createDepositCheckout(
     const checkoutUrl = preference.init_point;
     if (!preference.id || !checkoutUrl) throw new Error("Mercado Pago no devolvió un link de pago.");
 
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { preferenceId: preference.id, checkoutUrl },
+    await prisma.$transaction(async (tx) => {
+      await lockReservationPayments(tx, reservation);
+      if (!await lockPaymentReservation(tx, reservation, true)) throw new Error(UNVERIFIED_CHECKOUT);
+      await tx.payment.update({
+        where: { id: payment.id, appointmentId, status: "PENDING", appointment: awaitingReservation },
+        data: { preferenceId: preference.id, checkoutUrl },
+      });
     });
     return { checkoutUrl, paymentId: payment.id, amount };
   } catch (error) {
     // Release only this reservation, atomically with its pending payments. Use the
     // same lock order as reconciliation/expiry so a concurrent approval wins safely.
     await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${appointmentId} ORDER BY id FOR UPDATE`;
+      await lockReservationPayments(tx, reservation);
+      if (!await lockPaymentReservation(tx, reservation, true)) return;
       const cancelled = await tx.appointment.updateMany({
-        where: { id: appointmentId, status: "AWAITING_PAYMENT" },
+        where: awaitingReservation,
         data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: DEPOSIT_AUTO_CANCEL_REASONS.checkoutFailed },
       });
       if (cancelled.count > 0) {
-        await tx.payment.updateMany({ where: { appointmentId, status: "PENDING" }, data: { status: "CANCELLED" } });
+        await tx.payment.updateMany({ where: { appointmentId, status: "PENDING", appointment: ownedReservation }, data: { status: "CANCELLED" } });
       }
     });
     throw error;
@@ -118,6 +157,7 @@ export async function syncMercadoPagoPayment(
   expectedInternalId?: string,
   credentials?: MercadoPagoCredentials,
 ): Promise<void> {
+  const { scope, professional: pro } = await resolveLegacySchedulingScope();
   const creds = credentials ?? (await getMercadoPagoCredentials({ kind: "current" }));
   if (!creds) throw new MercadoPagoUnavailableError("No hay cuenta de Mercado Pago usable");
   const mpPayment = await withRevocationGuard(creds, () =>
@@ -126,20 +166,27 @@ export async function syncMercadoPagoPayment(
   const internalId = mpPayment.external_reference;
   if (!internalId || (expectedInternalId && internalId !== expectedInternalId)) return;
   await prisma.$transaction(async (tx) => {
-    // Serialize webhook and polling for the same payment, including outbox writes.
-    await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${internalId} FOR UPDATE`;
+    // Serialize webhook and polling. Lock the payment before locking its appointment.
+    const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Payment" WHERE id = ${internalId}
+      AND provider = 'mercadopago' AND EXISTS (SELECT 1 FROM "Appointment" WHERE id = "Payment"."appointmentId"
+        AND "tenantId" = ${scope.tenantId} AND "agendaId" = ${scope.agendaId}) FOR UPDATE`;
+    if (!locked.length) return;
     const existing = await tx.payment.findUnique({
-      where: { id: internalId },
-      include: { appointment: { include: { patient: true, service: true } } },
+      where: { id: internalId, provider: "mercadopago", appointment: { ...scope, ...verifiedAppointmentLinks } },
+      include: { appointment: { include: { tenantPatient: true, tenantService: true } } },
     });
-    if (!existing || existing.provider !== "mercadopago") return;
+    const appointment = existing?.appointment;
+    if (!existing || !appointment?.tenantPatient || !appointment.tenantService) return;
     if (existing.mercadopagoUserId && existing.mercadopagoUserId !== creds.sellerUserId) return;
+    const reservation = { ...scope, id: appointment.id, patientId: appointment.patientId, serviceId: appointment.serviceId };
+    const ownedReservation = { ...reservation, ...verifiedAppointmentLinks };
+    if (!await lockPaymentReservation(tx, reservation, false)) return;
 
     const status = mapMercadoPagoStatus(mpPayment.status);
     const wasApproved = existing.status === "APPROVED";
     if (wasApproved && status !== "APPROVED" && status !== "CANCELLED") return;
     const updated = await tx.payment.update({
-      where: { id: existing.id },
+      where: { id: existing.id, provider: "mercadopago", appointment: ownedReservation },
       data: {
         status,
         externalId: String(mpPayment.id ?? paymentId),
@@ -152,33 +199,33 @@ export async function syncMercadoPagoPayment(
     if (status !== "APPROVED" || wasApproved || updated.kind !== "DEPOSIT") return;
     if (existing.appointment.status !== "AWAITING_PAYMENT") return;
 
-    const pro = await tx.professional.findUniqueOrThrow({ where: { id: 1 }, select: PROFESSIONAL_SELECT });
-    const appointment = existing.appointment;
     const confirmed = await tx.appointment.updateMany({
-      where: { id: appointment.id, status: "AWAITING_PAYMENT" },
+      where: { ...ownedReservation, status: "AWAITING_PAYMENT" },
       // HU-014 (D5): la aprobación de la seña es la reserva en firme.
       data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: new Date() },
     });
     if (confirmed.count === 0) return;
     await tx.outboundMessage.createMany({ skipDuplicates: true, data: [{
-      toJid: appointment.patient.whatsappJid,
+      tenantId: scope.tenantId,
+      toJid: appointment.tenantPatient.whatsappJid,
       kind: "CONFIRMATION",
       appointmentId: appointment.id,
       body: messages.bookingConfirmed({
-        serviceName: appointment.service.name,
+        serviceName: appointment.tenantService.name,
         startsAt: appointment.startsAt,
         tz: pro.timezone,
       }),
     }] });
     if (pro.phoneJid) {
       await tx.outboundMessage.createMany({ skipDuplicates: true, data: [{
+        tenantId: scope.tenantId,
         toJid: pro.phoneJid,
         kind: "PROFESSIONAL_ALERT",
         appointmentId: appointment.id,
         body: messages.professionalNewBookingAlert({
-          patientName: appointment.patient.name,
-          patientPhone: appointment.patient.phone,
-          serviceName: appointment.service.name,
+          patientName: appointment.tenantPatient.name,
+          patientPhone: appointment.tenantPatient.phone,
+          serviceName: appointment.tenantService.name,
           startsAt: appointment.startsAt,
           tz: pro.timezone,
           reason: appointment.reason,
@@ -192,8 +239,14 @@ export async function reconcilePendingPayments(
   onError: (paymentId: string) => void = () => {},
   paymentIds?: string[],
 ): Promise<{ processed: number; failed: number; skipped: number }> {
+  const { scope } = await resolveLegacySchedulingScope();
   const pending = await prisma.payment.findMany({
-    where: { status: "PENDING", provider: "mercadopago", ...(paymentIds ? { id: { in: paymentIds } } : {}) },
+    where: {
+      status: "PENDING",
+      provider: "mercadopago",
+      appointment: { ...scope, ...verifiedAppointmentLinks },
+      ...(paymentIds ? { id: { in: paymentIds } } : {}),
+    },
     orderBy: { createdAt: "asc" },
   });
   if (pending.length === 0) return { processed: 0, failed: 0, skipped: 0 };
@@ -242,27 +295,32 @@ export async function reconcilePendingPayments(
 
 export async function expireStalePendingPayments(olderThanMinutes = 15): Promise<number> {
   const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
+  const { scope, professional: pro } = await resolveLegacySchedulingScope();
+  const stale = { status: "AWAITING_PAYMENT", createdAt: { lt: cutoff } } as const;
   const appointments = await prisma.appointment.findMany({
-    where: { status: "AWAITING_PAYMENT", createdAt: { lt: cutoff } },
-    include: { patient: true, service: true },
+    where: { ...scope, ...verifiedAppointmentLinks, ...stale },
+    include: { tenantPatient: true, tenantService: true },
   });
-  if (appointments.length === 0) return 0;
-  const pro = await getProfessional();
   let expired = 0;
   for (const appointment of appointments) {
+    const { id, patientId, serviceId, tenantPatient, tenantService } = appointment;
+    if (!tenantPatient || !tenantService) continue;
+    const reservation = { ...scope, id, patientId, serviceId };
+    const ownedReservation = { ...reservation, ...verifiedAppointmentLinks };
     expired += await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${appointment.id} ORDER BY id FOR UPDATE`;
+      await lockReservationPayments(tx, reservation);
       const cancelled = await tx.appointment.updateMany({
-        where: { id: appointment.id, status: "AWAITING_PAYMENT" },
+        where: { ...ownedReservation, ...stale },
         data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: DEPOSIT_AUTO_CANCEL_REASONS.expired },
       });
       if (cancelled.count === 0) return 0;
-      await tx.payment.updateMany({ where: { appointmentId: appointment.id, status: "PENDING" }, data: { status: "EXPIRED" } });
+      await tx.payment.updateMany({ where: { appointmentId: id, status: "PENDING", appointment: ownedReservation }, data: { status: "EXPIRED" } });
       await tx.outboundMessage.createMany({ skipDuplicates: true, data: [{
-        toJid: appointment.patient.whatsappJid,
+        tenantId: scope.tenantId,
+        toJid: tenantPatient.whatsappJid,
         kind: "CANCELLATION",
-        appointmentId: appointment.id,
-        body: messages.depositExpired({ serviceName: appointment.service.name, startsAt: appointment.startsAt, tz: pro.timezone }),
+        appointmentId: id,
+        body: messages.depositExpired({ serviceName: tenantService.name, startsAt: appointment.startsAt, tz: pro.timezone }),
       }] });
       return 1;
     });

@@ -21,6 +21,7 @@ import {
   type MercadoPagoTokenSet,
 } from "@nutri-bot/core";
 import { prisma, type Prisma } from "../index";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 import {
   MercadoPagoApiError,
   exchangeMercadoPagoCode,
@@ -70,6 +71,7 @@ export type MercadoPagoConnectionView = {
 };
 
 type Tx = Prisma.TransactionClient;
+type LegacyContext = Awaited<ReturnType<typeof resolveLegacySchedulingScope>>;
 
 type AccountRow = {
   id: number;
@@ -116,65 +118,81 @@ function staleDepositWhere(keepSellerUserId: string | null): Prisma.PaymentWhere
 // Internos
 // ---------------------------------------------------------------------------------------------
 
-async function ensureAccountRow(tx: Tx, now: Date): Promise<void> {
-  await tx.$executeRaw`INSERT INTO "MercadoPagoAccount" (id, "updatedAt") VALUES (${ACCOUNT_ID}, ${now}) ON CONFLICT (id) DO NOTHING`;
+async function singletonHasUnverifiedOwner(tenantId: LegacyContext["scope"]["tenantId"]): Promise<boolean> {
+  // Solo se consulta el dueño para distinguir una fila ausente de una fila no autorizada.
+  const owner = await prisma.mercadoPagoAccount.findUnique({ where: { id: ACCOUNT_ID }, select: { tenantId: true } });
+  return owner !== null && owner.tenantId !== tenantId;
+}
+
+async function ensureAccountRow(tx: Tx, now: Date, tenantId: LegacyContext["scope"]["tenantId"]): Promise<void> {
+  await tx.$executeRaw`INSERT INTO "MercadoPagoAccount" (id, "updatedAt", "tenantId") VALUES (${ACCOUNT_ID}, ${now}, ${tenantId}) ON CONFLICT DO NOTHING`;
 }
 
 /** Orden de locks (anti-deadlock): fila de cuenta → filas de Payment. Nunca al revés. */
-async function lockAccountRow(tx: Tx, now: Date): Promise<AccountRow> {
-  await ensureAccountRow(tx, now);
+async function lockAccountRow(tx: Tx, now: Date) {
+  const context = await resolveLegacySchedulingScope(tx);
+  const { tenantId } = context.scope;
+  await ensureAccountRow(tx, now, tenantId);
   const rows = await tx.$queryRaw<AccountRow[]>`
     SELECT id, "userId", "accessTokenEnc", "refreshTokenEnc", "expiresAt", "errorCode", "errorNotifiedAt"
-    FROM "MercadoPagoAccount" WHERE id = ${ACCOUNT_ID} FOR UPDATE`;
+    FROM "MercadoPagoAccount" WHERE id = ${ACCOUNT_ID} AND "tenantId" = ${tenantId} FOR UPDATE`;
   const row = rows[0];
-  if (!row) throw new Error("No se pudo leer la cuenta de Mercado Pago");
-  return row;
+  if (!row) throw new MercadoPagoUnavailableError();
+  return { ...context, row };
 }
 
 /** Marca el incidente con la fila ya bloqueada y encola el aviso (uno por incidente, D5). */
-async function markErrorLocked(tx: Tx, row: AccountRow, code: MercadoPagoErrorCode, now: Date): Promise<void> {
+async function markErrorLocked(
+  tx: Tx,
+  { row, scope: { tenantId }, professional }: Awaited<ReturnType<typeof lockAccountRow>>,
+  code: MercadoPagoErrorCode,
+  now: Date,
+): Promise<void> {
   if (row.errorCode || !row.userId) return;
   let notifiedAt: Date | null = row.errorNotifiedAt;
-  if (!notifiedAt) {
-    const pro = await tx.professional.findUnique({ where: { id: 1 }, select: { phoneJid: true } });
-    if (pro?.phoneJid) {
-      await tx.outboundMessage.create({
-        data: { toJid: pro.phoneJid, kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
-      });
-      notifiedAt = now;
-    }
+  if (!notifiedAt && professional.phoneJid) {
+    await tx.outboundMessage.create({
+      data: { tenantId, toJid: professional.phoneJid, kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
+    });
+    notifiedAt = now;
   }
   await tx.mercadoPagoAccount.update({
-    where: { id: ACCOUNT_ID },
+    where: { id: ACCOUNT_ID, tenantId },
     data: { errorCode: code, errorAt: now, errorNotifiedAt: notifiedAt },
   });
 }
 
 /** D6: cancela las señas pendientes que no se pueden cobrar con `keepSellerUserId` y avisa al paciente. */
-async function cancelDepositsNotPayableWith(tx: Tx, keepSellerUserId: string | null): Promise<number> {
+async function cancelDepositsNotPayableWith(
+  tx: Tx,
+  { scope, professional: { timezone: tz } }: LegacyContext,
+  keepSellerUserId: string | null,
+): Promise<number> {
+  const { tenantId, agendaId } = scope;
   const appointments = await tx.appointment.findMany({
-    where: { status: "AWAITING_PAYMENT", payments: { some: staleDepositWhere(keepSellerUserId) } },
+    where: { ...scope, status: "AWAITING_PAYMENT", payments: { some: staleDepositWhere(keepSellerUserId) } },
     include: { patient: true, service: true },
   });
-  if (appointments.length === 0) return 0;
-  const pro = await tx.professional.findUnique({ where: { id: 1 }, select: { timezone: true } });
-  const tz = pro?.timezone ?? "America/Argentina/Buenos_Aires";
   let cancelledCount = 0;
   for (const appointment of appointments) {
     // Mismo orden de lock que expireStalePendingPayments.
-    await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${appointment.id} ORDER BY id FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM "Payment" WHERE "appointmentId" = ${appointment.id}
+      AND EXISTS (SELECT 1 FROM "Appointment" WHERE id = "Payment"."appointmentId"
+        AND "tenantId" = ${tenantId} AND "agendaId" = ${agendaId})
+      ORDER BY id FOR UPDATE`;
     const cancelled = await tx.appointment.updateMany({
-      where: { id: appointment.id, status: "AWAITING_PAYMENT" },
+      where: { id: appointment.id, ...scope, status: "AWAITING_PAYMENT" },
       data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: MERCADOPAGO_ACCOUNT_CHANGED_CANCEL_REASON },
     });
     if (cancelled.count === 0) continue;
     await tx.payment.updateMany({
-      where: { appointmentId: appointment.id, status: "PENDING" },
+      where: { appointmentId: appointment.id, status: "PENDING", appointment: scope },
       data: { status: "CANCELLED" },
     });
     await tx.outboundMessage.createMany({
       skipDuplicates: true,
       data: [{
+        tenantId,
         toJid: appointment.patient.whatsappJid,
         kind: "CANCELLATION",
         appointmentId: appointment.id,
@@ -193,9 +211,9 @@ async function saveConnection(
   now: Date,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    await lockAccountRow(tx, now);
+    const context = await lockAccountRow(tx, now);
     await tx.mercadoPagoAccount.update({
-      where: { id: ACCOUNT_ID },
+      where: { id: ACCOUNT_ID, tenantId: context.scope.tenantId },
       data: {
         userId: tokens.userId,
         nickname: user.nickname,
@@ -213,7 +231,7 @@ async function saveConnection(
       },
     });
     // Si es la misma cuenta no hay nada para cancelar; se llama igual.
-    await cancelDepositsNotPayableWith(tx, tokens.userId);
+    await cancelDepositsNotPayableWith(tx, context, tokens.userId);
   }, TX_OPTIONS);
 }
 
@@ -223,15 +241,16 @@ async function saveConnection(
 
 /** Panel (web). Sin tokens, sin HTTP, sin descifrar. select explícito sin *Enc. */
 export async function getMercadoPagoConnectionView(): Promise<MercadoPagoConnectionView> {
+  const { scope } = await resolveLegacySchedulingScope();
   const [row, pendingDepositCount, depositServices] = await Promise.all([
     prisma.mercadoPagoAccount.findUnique({
-      where: { id: ACCOUNT_ID },
+      where: { id: ACCOUNT_ID, tenantId: scope.tenantId },
       select: { userId: true, nickname: true, email: true, liveMode: true, connectedAt: true, errorCode: true },
     }),
     prisma.payment.count({
-      where: { ...staleDepositWhere(null), appointment: { status: "AWAITING_PAYMENT" } },
+      where: { ...staleDepositWhere(null), appointment: { ...scope, status: "AWAITING_PAYMENT" } },
     }),
-    prisma.service.count({ where: { active: true, requiresDeposit: true } }),
+    prisma.service.count({ where: { tenantId: scope.tenantId, active: true, requiresDeposit: true } }),
   ]);
   const hasAccount = Boolean(row?.userId);
   const errorCode = hasAccount && row && isErrorCode(row.errorCode) ? row.errorCode : null;
@@ -294,7 +313,7 @@ async function consumeOAuthState(state: string, sessionEmail: string, now: Date)
   return rows[0]?.codeVerifierEnc ?? null;
 }
 
-/** Web (ruta callback). Nunca tira por errores de MP: devuelve el resultado para el banner. */
+/** Web (ruta callback). Los errores del proveedor se convierten en un resultado para el banner. */
 export async function completeMercadoPagoOAuth(
   input: { sessionEmail: string; query: URLSearchParams },
   deps?: MercadoPagoHttpDeps,
@@ -308,6 +327,10 @@ export async function completeMercadoPagoOAuth(
 
   const parsed = parseMercadoPagoCallback(input.query);
   if (parsed.kind === "invalid") return "invalid_state";
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  // La primera conexión admite una fila ausente, pero no readopta una fila ajena o sin dueño.
+  // saveConnection vuelve a verificar la agenda y el dueño bajo lock antes de guardar.
+  if (await singletonHasUnverifiedOwner(tenantId)) return "rejected";
   if (parsed.kind === "denied") {
     if (parsed.state) await consumeOAuthState(parsed.state, sessionEmail, now);
     return "denied";
@@ -350,9 +373,9 @@ export async function completeMercadoPagoOAuth(
 export async function disconnectMercadoPagoAccount(): Promise<{ cancelledDeposits: number }> {
   const now = new Date();
   const cancelledDeposits = await prisma.$transaction(async (tx) => {
-    await lockAccountRow(tx, now);
+    const context = await lockAccountRow(tx, now);
     await tx.mercadoPagoAccount.update({
-      where: { id: ACCOUNT_ID },
+      where: { id: ACCOUNT_ID, tenantId: context.scope.tenantId },
       data: {
         userId: null,
         nickname: null,
@@ -369,7 +392,7 @@ export async function disconnectMercadoPagoAccount(): Promise<{ cancelledDeposit
         errorNotifiedAt: null,
       },
     });
-    return cancelDepositsNotPayableWith(tx, null);
+    return cancelDepositsNotPayableWith(tx, context, null);
   }, TX_OPTIONS);
   return { cancelledDeposits };
 }
@@ -381,8 +404,12 @@ export async function getMercadoPagoCredentials(
   deps?: MercadoPagoHttpDeps,
 ): Promise<MercadoPagoCredentials | null> {
   const { env, now: nowFn } = resolveDeps(deps);
+  const context = await resolveLegacySchedulingScope().catch(() => null);
+  if (!context) return null;
+  const { tenantId } = context.scope;
+  const accountWhere = { id: ACCOUNT_ID, tenantId };
   const row = await prisma.mercadoPagoAccount.findUnique({
-    where: { id: ACCOUNT_ID },
+    where: accountWhere,
     select: { userId: true, accessTokenEnc: true, refreshTokenEnc: true, expiresAt: true, errorCode: true },
   });
   const hasAccount = Boolean(row?.userId && row.accessTokenEnc && row.refreshTokenEnc);
@@ -410,7 +437,7 @@ export async function getMercadoPagoCredentials(
         const result = await refreshMercadoPagoAccountToken({ force: true }, deps);
         if (result !== "refreshed") return null;
         const fresh = await prisma.mercadoPagoAccount.findUnique({
-          where: { id: ACCOUNT_ID },
+          where: accountWhere,
           select: { userId: true, accessTokenEnc: true, errorCode: true },
         });
         if (!fresh?.userId || !fresh.accessTokenEnc || fresh.errorCode || fresh.userId !== row.userId) return null;
@@ -429,6 +456,7 @@ export async function getMercadoPagoCredentials(
   const fallbackApplies =
     (scope.kind === "current" && !hasAccount) || (scope.kind === "payment" && scope.sellerUserId === null);
   if (fallbackApplies && allowsMercadoPagoEnvToken(env)) {
+    if (!row && await singletonHasUnverifiedOwner(tenantId)) return null;
     return { accessToken: env.MERCADOPAGO_ACCESS_TOKEN!.trim(), sellerUserId: null, source: "env_fallback" };
   }
   return null;
@@ -453,7 +481,8 @@ export async function refreshMercadoPagoAccountToken(
   return prisma.$transaction(async (tx) => {
     const now = nowFn();
     // Releer con el lock tomado: otro proceso pudo haber renovado mientras esperábamos.
-    const row = await lockAccountRow(tx, now);
+    const context = await lockAccountRow(tx, now);
+    const { row } = context;
     if (!row.userId || !row.refreshTokenEnc || !row.accessTokenEnc || row.errorCode) return "not_connected";
     if (row.expiresAt) {
       if (opts.force ? !isMercadoPagoTokenExpired(row.expiresAt, now) : !needsMercadoPagoRefresh(row.expiresAt, now)) {
@@ -465,7 +494,7 @@ export async function refreshMercadoPagoAccountToken(
     try {
       refreshToken = openSecret(row.refreshTokenEnc, key, SECRET_AAD.refreshToken);
     } catch {
-      await markErrorLocked(tx, row, "decrypt_failed", now);
+      await markErrorLocked(tx, context, "decrypt_failed", now);
       return "refresh_failed";
     }
 
@@ -478,15 +507,15 @@ export async function refreshMercadoPagoAccountToken(
       const kind = apiError?.kind ?? "transient";
       if (kind === "transient") return "transient_error";
       if (kind === "revoked") {
-        await markErrorLocked(tx, row, "revoked", now);
+        await markErrorLocked(tx, context, "revoked", now);
         return "revoked";
       }
-      await markErrorLocked(tx, row, "refresh_failed", now);
+      await markErrorLocked(tx, context, "refresh_failed", now);
       return "refresh_failed";
     }
 
     await tx.mercadoPagoAccount.update({
-      where: { id: ACCOUNT_ID },
+      where: { id: ACCOUNT_ID, tenantId: context.scope.tenantId },
       data: {
         accessTokenEnc: sealSecret(tokens.accessToken, key, SECRET_AAD.accessToken),
         refreshTokenEnc: sealSecret(tokens.refreshToken, key, SECRET_AAD.refreshToken),
@@ -504,8 +533,8 @@ export async function refreshMercadoPagoAccountToken(
 export async function markMercadoPagoAccountError(code: MercadoPagoErrorCode): Promise<void> {
   const now = new Date();
   await prisma.$transaction(async (tx) => {
-    const row = await lockAccountRow(tx, now);
-    await markErrorLocked(tx, row, code, now);
+    const context = await lockAccountRow(tx, now);
+    await markErrorLocked(tx, context, code, now);
   }, TX_OPTIONS);
 }
 
@@ -518,17 +547,19 @@ export async function notifyMercadoPagoMissingForBooking(p: {
   const now = new Date();
   const cutoff = new Date(now.getTime() - MERCADOPAGO_ALERT_THROTTLE_HOURS * 60 * 60_000);
   return prisma.$transaction(async (tx) => {
-    await ensureAccountRow(tx, now);
+    const { scope: { tenantId }, professional } = await resolveLegacySchedulingScope(tx);
+    await ensureAccountRow(tx, now, tenantId);
+    // An existing NULL or foreign owner is never adopted or used for throttling.
     const updated = await tx.$queryRaw<{ id: number }[]>`
       UPDATE "MercadoPagoAccount" SET "missingAlertAt" = ${now}, "updatedAt" = ${now}
-      WHERE id = ${ACCOUNT_ID} AND ("missingAlertAt" IS NULL OR "missingAlertAt" <= ${cutoff})
+      WHERE id = ${ACCOUNT_ID} AND "tenantId" = ${tenantId}
+        AND ("missingAlertAt" IS NULL OR "missingAlertAt" <= ${cutoff})
       RETURNING id`;
-    if (updated.length === 0) return false;
-    const pro = await tx.professional.findUnique({ where: { id: 1 }, select: { phoneJid: true } });
-    if (!pro?.phoneJid) return false;
+    if (updated.length === 0 || !professional.phoneJid) return false;
     await tx.outboundMessage.create({
       data: {
-        toJid: pro.phoneJid,
+        tenantId,
+        toJid: professional.phoneJid,
         kind: "PROFESSIONAL_ALERT",
         body: messages.professionalDepositUnavailableAlert({
           patientName: p.patientName,
