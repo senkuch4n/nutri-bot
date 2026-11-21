@@ -23,6 +23,7 @@ model Tenant {
   foodVisibility         FoodVisibilityPreference[]
   recipes                Recipe[]
   planTemplates          PlanTemplate[]
+  conversationStates     ConversationState[]
 }
 
 model User {
@@ -125,8 +126,8 @@ model Patient {
   id           String        @id @default(cuid())
   tenantId     String?
   tenant       Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  /// Keep the legacy global selector until all writers and readers use tenant ownership.
-  whatsappJid  String        @unique
+  /// El índice parcial SQL conserva como máximo un JID sin dueño.
+  whatsappJid  String
   phone        String
   name         String?
   birthDate    DateTime? @db.Date
@@ -1198,10 +1199,16 @@ model RecipeImportImage {
 
 /// Máquina de estados de la conversación del bot, por paciente.
 model ConversationState {
-  patientJid String   @id
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patientJid String
+  /// NULL conserva un estado histórico inactivo; no es accesible desde el bot.
+  tenantId   String?
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   step       String   @default("MENU")
   context    Json     @default("{}")
   updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, patientJid])
 }
 
 /// Estado de conexión y último QR del bot. Los consumidores legacy siguen usando id = 1.
