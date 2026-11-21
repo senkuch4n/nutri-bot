@@ -1,17 +1,20 @@
 import type { NextAuthConfig } from "next-auth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { configure, findUser, findProfessional, updateProfessional } = vi.hoisted(() => ({
+const { configure, findUser, findAgenda, findProfessional, updateProfessional, updateScopedProfessional } = vi.hoisted(() => ({
   configure: vi.fn<(config: NextAuthConfig) => object>(() => ({})),
   findUser: vi.fn(),
+  findAgenda: vi.fn(),
   findProfessional: vi.fn(),
   updateProfessional: vi.fn(),
+  updateScopedProfessional: vi.fn(),
 }));
 
 vi.mock("next-auth", () => ({ default: configure }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {
   user: { findUnique: findUser },
-  professional: { findUnique: findProfessional, update: updateProfessional },
+  agenda: { findUnique: findAgenda },
+  professional: { findUnique: findProfessional, update: updateProfessional, updateMany: updateScopedProfessional },
 } }));
 
 import "./auth";
@@ -22,12 +25,16 @@ const jwt = callbacks.jwt;
 const account = { provider: "google", providerAccountId: "google-123", type: "oidc" } as const;
 const profile = { sub: "google-123", email_verified: true, email: "test@example.invalid" };
 const login = { token: {}, user: {}, account, profile, trigger: "signIn" } as const;
+const calendarLogin = () => ({ ...login, token: {}, account: { ...account, refresh_token: "calendar-token" } });
+const verifiedAgenda = { professional: { googleRefreshToken: null, googleSyncError: null } };
 
 describe("private content identity callbacks", () => {
   beforeEach(() => {
     findUser.mockReset().mockResolvedValue({ id: "bound-user" });
     findProfessional.mockReset();
     updateProfessional.mockReset();
+    findAgenda.mockReset().mockResolvedValue(verifiedAgenda);
+    updateScopedProfessional.mockReset().mockResolvedValue({ count: 1 });
   });
 
   it("binds only the stored user id from the verified Google subject", async () => {
@@ -71,19 +78,59 @@ describe("private content identity callbacks", () => {
     },
   );
 
-  it("preserves the legacy calendar refresh token bootstrap", async () => {
-    findProfessional.mockResolvedValue({ googleRefreshToken: null, googleSyncError: null });
+  it("preserves a plain session bootstrap without checking Calendar", async () => {
+    const token = { privateContentUserId: "bound-user" };
+    expect(await jwt({ token, user: {}, account: null })).toEqual(token);
+    expect(findUser).not.toHaveBeenCalled();
+    expect(findAgenda).not.toHaveBeenCalled();
+    expect(findProfessional).not.toHaveBeenCalled();
+    expect(updateProfessional).not.toHaveBeenCalled();
+    expect(updateScopedProfessional).not.toHaveBeenCalled();
+  });
+
+  it("binds the Google user without storing a Calendar token when the original agenda is missing", async () => {
+    findAgenda.mockResolvedValue(null);
     vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", profile.email);
     try {
-      await jwt({ ...login, account: { ...account, refresh_token: "calendar-token" }, token: {} });
-      expect(updateProfessional).toHaveBeenCalledTimes(1);
-      expect(updateProfessional).toHaveBeenCalledWith({
-        where: { id: 1 },
-        data: { googleRefreshToken: "calendar-token", googleSyncError: null },
-        select: { id: true },
-      });
+      expect(await jwt(calendarLogin())).toEqual({ privateContentUserId: "bound-user" });
+      expect(updateProfessional).not.toHaveBeenCalled();
+      expect(updateScopedProfessional).not.toHaveBeenCalled();
+      expect(findAgenda).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it.each([1, 0])("only writes to the verified owner while the agenda is attached (updated %i)", async (count) => {
+    updateScopedProfessional.mockResolvedValue({ count });
+    vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", profile.email);
+    try {
+      expect(await jwt(calendarLogin())).toEqual({ privateContentUserId: "bound-user" });
+      expect(findAgenda).toHaveBeenCalledOnce();
+      expect(findAgenda).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id_tenantId: { id: "legacy-agenda", tenantId: "legacy-tenant" }, isPrimary: true, professionalId: 1 },
+      }));
+      expect(updateScopedProfessional).toHaveBeenCalledOnce();
+      expect(updateScopedProfessional).toHaveBeenCalledWith({
+        where: {
+          id: 1,
+          tenantId: "legacy-tenant",
+          agendas: { some: { id: "legacy-agenda", tenantId: "legacy-tenant", isPrimary: true } },
+        },
+        data: { googleRefreshToken: "calendar-token", googleSyncError: null },
+      });
+      expect(findProfessional).not.toHaveBeenCalled();
+      expect(updateProfessional).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("does not treat an agenda database error as failed agenda verification", async () => {
+    const error = new Error("database unavailable");
+    findAgenda.mockRejectedValue(error);
+    await expect(jwt(calendarLogin())).rejects.toBe(error);
+    expect(findUser).not.toHaveBeenCalled();
+    expect(updateScopedProfessional).not.toHaveBeenCalled();
   });
 });

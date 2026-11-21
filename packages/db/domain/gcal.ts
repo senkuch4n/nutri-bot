@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import { prisma } from "../index";
-import { getProfessional } from "./availability";
+import { resolveLegacyCalendarScope } from "./legacySchedulingScope";
 
 function oauthClient(refreshToken: string) {
   const client = new google.auth.OAuth2(
@@ -16,12 +16,18 @@ function oauthClient(refreshToken: string) {
  * Calendar de la profesional (sincronización de una vía app -> Google).
  */
 export async function syncGoogleCalendar(): Promise<{ processed: number; error?: string }> {
-  const pro = await getProfessional();
+  const { scope, agendaOwner, professional: pro } = await resolveLegacyCalendarScope();
   if (!pro.googleRefreshToken) return { processed: 0 };
 
+  const appointmentScope = { ...scope, agenda: agendaOwner };
   const pending = await prisma.appointment.findMany({
-    where: { needsGoogleSync: true },
-    include: { patient: true, service: true },
+    where: { ...appointmentScope, needsGoogleSync: true },
+    // The appointment's composite FKs enforce same-tenant patient and service ownership.
+    select: {
+      id: true, status: true, googleEventId: true, startsAt: true, endsAt: true,
+      patient: { select: { name: true, phone: true } },
+      service: { select: { name: true } },
+    },
     orderBy: { updatedAt: "asc" },
     take: 25,
   });
@@ -29,10 +35,16 @@ export async function syncGoogleCalendar(): Promise<{ processed: number; error?:
 
   const calendar = google.calendar({ version: "v3", auth: oauthClient(pro.googleRefreshToken) });
   const calendarId = pro.googleCalendarId || "primary";
+  const professionalScope = {
+    id: agendaOwner.professionalId,
+    tenantId: scope.tenantId,
+    agendas: { some: { id: scope.agendaId, tenantId: scope.tenantId, ...agendaOwner } },
+  };
   let processed = 0;
 
   try {
     for (const appt of pending) {
+      const where = { id: appt.id, ...appointmentScope };
       if (appt.status === "CONFIRMED" && !appt.googleEventId) {
         const res = await calendar.events.insert({
           calendarId,
@@ -44,7 +56,7 @@ export async function syncGoogleCalendar(): Promise<{ processed: number; error?:
           },
         });
         await prisma.appointment.update({
-          where: { id: appt.id },
+          where,
           data: { googleEventId: res.data.id ?? null, needsGoogleSync: false },
         });
       } else if (appt.status === "CONFIRMED" && appt.googleEventId) {
@@ -56,7 +68,7 @@ export async function syncGoogleCalendar(): Promise<{ processed: number; error?:
             end: { dateTime: appt.endsAt.toISOString(), timeZone: pro.timezone },
           },
         });
-        await prisma.appointment.update({ where: { id: appt.id }, data: { needsGoogleSync: false } });
+        await prisma.appointment.update({ where, data: { needsGoogleSync: false } });
       } else if (appt.status !== "CONFIRMED" && appt.googleEventId) {
         try {
           await calendar.events.delete({ calendarId, eventId: appt.googleEventId });
@@ -66,22 +78,22 @@ export async function syncGoogleCalendar(): Promise<{ processed: number; error?:
           if (code !== 404 && code !== 410) throw err;
         }
         await prisma.appointment.update({
-          where: { id: appt.id },
+          where,
           data: { needsGoogleSync: false, googleEventId: null },
         });
       } else {
-        await prisma.appointment.update({ where: { id: appt.id }, data: { needsGoogleSync: false } });
+        await prisma.appointment.update({ where, data: { needsGoogleSync: false } });
       }
       processed++;
     }
 
     if (pro.googleSyncError) {
-      await prisma.professional.update({ where: { id: 1 }, data: { googleSyncError: null }, select: { id: true } });
+      await prisma.professional.update({ where: professionalScope, data: { googleSyncError: null }, select: { id: true } });
     }
     return { processed };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido de Google Calendar";
-    await prisma.professional.update({ where: { id: 1 }, data: { googleSyncError: message }, select: { id: true } });
+    await prisma.professional.update({ where: professionalScope, data: { googleSyncError: message }, select: { id: true } });
     return { processed, error: message };
   }
 }
