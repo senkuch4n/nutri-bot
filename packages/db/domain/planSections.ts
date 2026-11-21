@@ -70,20 +70,34 @@ export async function listSections(
   })) as { id: string; title: string; body: string; order: number }[];
 }
 
-async function nextOrder(section: SectionDelegate, ownerField: string, ownerId: string): Promise<number> {
-  const agg = (await section.aggregate({ where: { [ownerField]: ownerId }, _max: { order: true } })) as {
+async function nextOrder(section: SectionDelegate, where: object): Promise<number> {
+  const agg = (await section.aggregate({ where, _max: { order: true } })) as {
     _max: { order: number | null };
   };
   return agg._max.order === null ? 0 : agg._max.order + 1;
 }
 
-async function createIn(db: Db, kind: MealOwnerKind, ownerId: string, value: { title: string; body: string }) {
+function templateOwner(kind: MealOwnerKind, tenantId?: string) {
+  if (tenantId === undefined) return undefined;
+  if (kind !== "template") throw new PlanSectionNotFoundError();
+  return { tenantId };
+}
+
+async function createIn(
+  db: Db, kind: MealOwnerKind, ownerId: string, value: { title: string; body: string },
+  scope?: { tenantId: string; status?: "DRAFT" },
+) {
   const { section, ownerField } = sectionDb(kind, db);
-  const count = await section.count({ where: { [ownerField]: ownerId } });
+  const owner = { [ownerField]: ownerId };
+  const where = scope ? { ...owner, template: scope } : owner;
+  const count = await section.count({ where });
   if (count >= PLAN_SECTION_LIMITS.maxPerOwner) throw new PlanSectionLimitError();
-  const order = await nextOrder(section, ownerField, ownerId);
+  const order = await nextOrder(section, where);
   return (await section.create({
-    data: { [ownerField]: ownerId, title: value.title, body: value.body, order },
+    data: {
+      ...(scope ? { template: { connect: { id: ownerId, ...scope } } } : owner),
+      title: value.title, body: value.body, order,
+    },
     select: { id: true },
   })) as { id: string };
 }
@@ -93,9 +107,11 @@ export async function addSection(
   kind: MealOwnerKind,
   ownerId: string,
   input: { title: string; body: string },
+  tenantId?: string,
 ): Promise<{ id: string }> {
   const value = validated(input);
-  return prisma.$transaction((tx) => createIn(tx, kind, ownerId, value));
+  const scope = templateOwner(kind, tenantId);
+  return prisma.$transaction((tx) => createIn(tx, kind, ownerId, value, scope));
 }
 
 export async function updateSection(
@@ -103,16 +119,19 @@ export async function updateSection(
   ownerId: string,
   sectionId: string,
   input: { title: string; body: string },
+  tenantId?: string,
 ): Promise<void> {
   const value = validated(input);
+  const template = templateOwner(kind, tenantId);
   const { section, ownerField } = sectionDb(kind, prisma);
-  const r = await section.updateMany({ where: { id: sectionId, [ownerField]: ownerId }, data: value });
+  const r = await section.updateMany({ where: { id: sectionId, [ownerField]: ownerId, ...(template && { template }) }, data: value });
   if (r.count === 0) throw new PlanSectionNotFoundError();
 }
 
-export async function deleteSection(kind: MealOwnerKind, ownerId: string, sectionId: string): Promise<void> {
+export async function deleteSection(kind: MealOwnerKind, ownerId: string, sectionId: string, tenantId?: string): Promise<void> {
+  const template = templateOwner(kind, tenantId);
   const { section, ownerField } = sectionDb(kind, prisma);
-  const r = await section.deleteMany({ where: { id: sectionId, [ownerField]: ownerId } });
+  const r = await section.deleteMany({ where: { id: sectionId, [ownerField]: ownerId, ...(template && { template }) } });
   if (r.count === 0) throw new PlanSectionNotFoundError();
 }
 
@@ -122,11 +141,14 @@ export async function moveSection(
   ownerId: string,
   sectionId: string,
   direction: -1 | 1,
+  tenantId?: string,
 ): Promise<void> {
+  const template = templateOwner(kind, tenantId);
   await prisma.$transaction(async (tx) => {
     const { section, ownerField } = sectionDb(kind, tx);
+    const where = { [ownerField]: ownerId, ...(template && { template }) };
     const all = (await section.findMany({
-      where: { [ownerField]: ownerId },
+      where,
       orderBy: { order: "asc" },
       select: { id: true, order: true },
     })) as { id: string; order: number }[];
@@ -135,8 +157,10 @@ export async function moveSection(
     const other = all[idx + direction];
     if (!other) return;
     const me = all[idx]!;
-    await section.updateMany({ where: { id: me.id, [ownerField]: ownerId }, data: { order: other.order } });
-    await section.updateMany({ where: { id: other.id, [ownerField]: ownerId }, data: { order: me.order } });
+    const first = await section.updateMany({ where: { id: me.id, ...where }, data: { order: other.order } });
+    if (template && first.count === 0) throw new PlanSectionNotFoundError();
+    const second = await section.updateMany({ where: { id: other.id, ...where }, data: { order: me.order } });
+    if (template && second.count === 0) throw new PlanSectionNotFoundError();
   });
 }
 
@@ -150,19 +174,23 @@ export async function appendToSection(
   ownerId: string,
   sectionId: string | null,
   text: string,
+  tenantId?: string,
 ): Promise<{ id: string }> {
+  if (tenantId !== undefined && kind !== "template") throw new PlanSectionNotFoundError();
+  const draftOwner = tenantId === undefined ? undefined : { tenantId, status: "DRAFT" as const };
   if (sectionId === null) {
-    return createIn(tx, kind, ownerId, validated({ title: PLAN_IMPORT_TEXT.newSectionTitle, body: text }));
+    return createIn(tx, kind, ownerId, validated({ title: PLAN_IMPORT_TEXT.newSectionTitle, body: text }), draftOwner);
   }
   const { section, ownerField } = sectionDb(kind, tx);
+  const where = { id: sectionId, [ownerField]: ownerId, ...(draftOwner && { template: draftOwner }) };
   const current = (await section.findFirst({
-    where: { id: sectionId, [ownerField]: ownerId },
+    where,
     select: { id: true, title: true, body: true },
   })) as { id: string; title: string; body: string } | null;
   if (!current) throw new PlanSectionNotFoundError();
   const body = `${current.body}\n\n${text.trim()}`;
   const value = validated({ title: current.title, body });
-  const r = await section.updateMany({ where: { id: sectionId, [ownerField]: ownerId }, data: { body: value.body } });
+  const r = await section.updateMany({ where, data: { body: value.body } });
   if (r.count === 0) throw new PlanSectionNotFoundError();
   return { id: sectionId };
 }

@@ -28,6 +28,7 @@ import {
   listRecipeCards,
   patientCanSeeRecipePhoto,
   publishRecipe,
+  recipesForTenant,
   setRecipePhoto,
   unarchiveRecipe,
   updateRecipe,
@@ -42,6 +43,12 @@ beforeEach(() => {
   for (const key of ["recipe", "recipeIngredient", "recipePhoto", "recipeImportImage", "nutritionPlan", "planTemplate", "food"]) {
     mocks.prisma[key] = delegate();
   }
+  p().food.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) => [
+    { id: "f1", source: "SARA2", tenantId: null, active: false, catalogPresent: false },
+    { id: "f2", source: "PROPIO", tenantId: "tenant-a" },
+    { id: "foreign-food", source: "PROPIO", tenantId: "tenant-b" },
+    { id: "unowned-food", source: "PROPIO", tenantId: null },
+  ].filter(({ id }) => where.id.in.includes(id)));
   mocks.prisma.$transaction = vi.fn((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
 });
 
@@ -63,6 +70,121 @@ const validInput: RecipeInput = {
     { foodId: null, label: "Pan rallado", grams: null, noQuantity: false, household: null, rawText: null },
   ],
 };
+
+describe("tenant recipe media", () => {
+  const recipes = recipesForTenant("tenant-a");
+  const photo = { data: Buffer.from("full"), thumbData: Buffer.from("thumb"), byteSize: 4, credit: " credit " };
+  const where = { recipeId: "r1", recipe: { tenantId: "tenant-a" } };
+
+  it("selects bytes only from the photo's owning recipe", async () => {
+    const rows = [{ id: "own", tenantId: "tenant-a" }, { id: "foreign", tenantId: "tenant-b" }];
+    p().recipePhoto.findUnique.mockImplementation(({ where, select }: {
+      where: { id: string; recipe?: { tenantId: string } }; select: { data?: boolean };
+    }) => rows.some((row) => row.id === where.id && row.tenantId === where.recipe?.tenantId)
+      ? { ...(select.data ? { data: photo.data } : { thumbData: photo.thumbData }), mimeType: "image/webp" } : null);
+    expect(await recipes.getPhotoBytes("foreign", "full")).toBeNull();
+    expect(await recipes.getPhotoBytes("own", "full")).toEqual({ data: photo.data, mimeType: "image/webp" });
+    expect(await recipes.getPhotoBytes("own", "thumb")).toEqual({ data: photo.thumbData, mimeType: "image/webp" });
+  });
+
+  it("rejects replacement before any write when the recipe is not owned", async () => {
+    p().$queryRaw = vi.fn().mockResolvedValue([]);
+    await expect(recipes.setPhoto("r1", photo)).rejects.toBeInstanceOf(RecipeNotFoundError);
+    expect(p().$queryRaw.mock.calls[0][0].join("?")).toContain('FROM "Recipe" WHERE id = ? AND "tenantId" = ? FOR UPDATE');
+    expect(p().$queryRaw.mock.calls[0].slice(1)).toEqual(["r1", "tenant-a"]);
+    expect(p().recipePhoto.deleteMany).not.toHaveBeenCalled();
+    expect(p().recipePhoto.create).not.toHaveBeenCalled();
+  });
+
+  it("replaces an owned photo atomically and returns a new image ID", async () => {
+    p().$queryRaw = vi.fn().mockResolvedValue([{ id: "r1" }]);
+    p().recipePhoto.create.mockResolvedValue({ id: "new-photo" });
+    expect(await recipes.setPhoto("r1", photo)).toEqual({ photoId: "new-photo" });
+    expect(p().$transaction).toHaveBeenCalledTimes(1);
+    expect(p().recipePhoto.deleteMany).toHaveBeenCalledWith({ where });
+    expect(p().recipePhoto.create).toHaveBeenCalledWith({
+      data: { ...photo, recipeId: "r1", credit: "credit", mimeType: "image/webp" }, select: { id: true },
+    });
+  });
+
+  it("always predicates remove and credit-only writes on the owning recipe, including the no-photo case", async () => {
+    p().recipePhoto.deleteMany.mockResolvedValue({ count: 0 });
+    p().recipePhoto.updateMany.mockResolvedValue({ count: 0 });
+    await expect(recipes.removePhoto("r1")).resolves.toBeUndefined();
+    await expect(recipes.setPhotoCredit("r1", " ")).resolves.toBeUndefined();
+    expect(p().recipePhoto.deleteMany).toHaveBeenCalledWith({ where });
+    expect(p().recipePhoto.updateMany).toHaveBeenCalledWith({ where, data: { credit: null } });
+  });
+});
+
+describe("direct tenant recipe operations", () => {
+  const tenantId = "tenant-a";
+  const foreign = { id: "foreign", tenantId: "tenant-b", status: "PUBLISHED", origin: "MANUAL" };
+  const own = { ...foreign, id: "own", tenantId };
+  const rows = [foreign, own];
+
+  it("scopes list, counts and detail to the same owner", async () => {
+    type RecipeFilter = { where: { tenantId: string; status?: string; id?: string } };
+    p().recipe.findMany.mockImplementation(async ({ where }: RecipeFilter) => rows.filter((r) => r.tenantId === where.tenantId && r.status === where.status)
+      .map((r) => ({ ...r, name: r.id, ingredients: [], tags: [], updatedAt: new Date() })));
+    p().recipe.groupBy.mockImplementation(async ({ where }: RecipeFilter) => [{ status: "PUBLISHED", _count: { _all: rows.filter((r) => r.tenantId === where.tenantId).length } }]);
+    p().recipe.findUnique.mockImplementation(async ({ where }: RecipeFilter) => rows.find((r) => r.id === where.id && r.tenantId === where.tenantId) ?? null);
+    const recipes = recipesForTenant(tenantId);
+    expect((await recipes.list("PUBLISHED")).map((r) => r.id)).toEqual(["own"]);
+    expect(await recipes.counts()).toEqual({ PUBLISHED: 1, DRAFT: 0, ARCHIVED: 0 });
+    expect(await recipes.get("foreign")).toBeNull();
+    expect(p().recipe.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "foreign", tenantId } }));
+  });
+
+  it("creates with the trusted owner and scopes the actual edit before replacing ingredients", async () => {
+    p().recipe.create.mockResolvedValue({ id: "new" });
+    p().recipe.findUnique.mockResolvedValue(own);
+    p().recipe.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const recipes = recipesForTenant(tenantId);
+    await expect(recipes.create(validInput)).resolves.toEqual({ id: "new" });
+    expect(p().recipe.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ tenantId }) }));
+    await recipes.update("own", validInput);
+    expect(p().recipe.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "own", tenantId } }));
+    expect(p().recipeIngredient.deleteMany).toHaveBeenCalledWith({ where: { recipeId: "own" } });
+    await expect(recipes.update("own", validInput)).rejects.toThrow("La receta no existe.");
+    expect(p().recipeIngredient.deleteMany).toHaveBeenCalledTimes(1);
+    expect(p().recipeIngredient.createMany).toHaveBeenCalledTimes(2); // one create and one successful edit
+    p().recipe.findUnique.mockResolvedValue(null);
+    await expect(recipes.update("foreign", validInput)).rejects.toThrow("La receta no existe.");
+    expect(p().recipe.findUnique).toHaveBeenLastCalledWith(expect.objectContaining({ where: { id: "foreign", tenantId } }));
+    expect(p().recipe.updateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["create", "update", "updateDraft"] as const)("%s rejects foreign, unowned and missing foods before any mutation", async (operation) => {
+    p().recipe.findUnique.mockResolvedValue({ ...own, status: operation === "updateDraft" ? "DRAFT" : "PUBLISHED" });
+    p().recipe.create.mockResolvedValue({ id: "new" });
+    p().recipe.updateMany.mockResolvedValue({ count: 1 });
+    const recipes = recipesForTenant(tenantId);
+    const input = { ...validInput, ingredients: ["foreign-food", "unowned-food", "missing"].map((foodId) => ({ ...validInput.ingredients[0]!, foodId })) };
+    await expect(operation === "create" ? recipes.create(input) : recipes[operation]("own", input)).rejects.toMatchObject({
+      name: "RecipeNotPublishableError",
+      issues: [0, 1, 2].map((index) => ({ field: "ingredient", index, message: "El alimento no está disponible para este consultorio." })),
+    });
+    expect(p().recipe.create).not.toHaveBeenCalled();
+    expect(p().recipe.updateMany).not.toHaveBeenCalled();
+    expect(p().recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(p().recipeIngredient.createMany).not.toHaveBeenCalled();
+  });
+
+  it.each([["archive", "PUBLISHED", "ARCHIVED"], ["unarchive", "ARCHIVED", "PUBLISHED"]] as const)(
+    "%s guards the actual transition and conceals foreign IDs", async (method, from, to) => {
+      p().recipe.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+      p().recipe.findUnique.mockResolvedValue(null);
+      const recipes = recipesForTenant(tenantId);
+      await expect(recipes[method]("own")).resolves.toBeUndefined();
+      await expect(recipes[method]("foreign")).rejects.toThrow("La receta no existe.");
+      expect(p().recipe.updateMany.mock.calls.map(([args]: [unknown]) => args)).toEqual(["own", "foreign"].map((id) => ({
+        where: { id, tenantId, status: from }, data: { status: to },
+      })));
+      expect(p().recipe.findUnique).toHaveBeenCalledWith({ where: { id: "foreign", tenantId }, select: { id: true } });
+    },
+  );
+});
 
 describe("createRecipe", () => {
   it("con datos inválidos tira RecipeNotPublishableError con las issues y no crea nada", async () => {
@@ -87,6 +209,7 @@ describe("createRecipe", () => {
       ["r1", 2, null, null, false],
     ]);
     expect(rows[0].household).toBeNull();
+    expect(p().food.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -99,6 +222,7 @@ describe("updateRecipe", () => {
     const rows = p().recipeIngredient.createMany.mock.calls[0][0].data;
     expect(rows.map((r: any) => r.order)).toEqual([0, 1, 2]);
     expect(p().recipe.update.mock.calls[0][0].data).not.toHaveProperty("reviewedAt");
+    expect(p().food.findMany).not.toHaveBeenCalled();
     await expect(updateRecipe("r1", { ...validInput, type: null })).rejects.toBeInstanceOf(RecipeNotPublishableError);
   });
 
@@ -126,11 +250,69 @@ describe("transiciones", () => {
     portionHousehold: "1 unidad", sourceName: "Fuente", ingredients: [{ foodId: "f1", label: null, grams: dec(30), noQuantity: false }],
   };
 
+  const scoped = recipesForTenant("tenant-a");
+  const draftFilter = { id: "own", tenantId: "tenant-a", status: "DRAFT" };
+
+  it("rejects a foreign draft for all three operations before any mutation", async () => {
+    p().recipe.findUnique.mockImplementation(({ where }: { where: { id: string; tenantId?: string } }) =>
+      where.id === "foreign" && (!where.tenantId || where.tenantId === "tenant-b") ? draftRow : null);
+    await expect(scoped.updateDraft("foreign", validInput)).rejects.toBeInstanceOf(RecipeNotFoundError);
+    await expect(scoped.publishDraft("foreign")).rejects.toBeInstanceOf(RecipeNotFoundError);
+    await expect(scoped.discardDraft("foreign")).rejects.toBeInstanceOf(RecipeNotFoundError);
+    expect(p().recipe.updateMany).not.toHaveBeenCalled();
+    expect(p().recipeIngredient.deleteMany).not.toHaveBeenCalled();
+    expect(p().recipeImportImage.deleteMany).not.toHaveBeenCalled();
+    expect(p().recipe.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("updates an owned draft and marks review, but does not replace ingredients if the guarded write fails", async () => {
+    p().recipe.findUnique.mockResolvedValue({ ...draftRow, reviewedAt: null });
+    p().recipe.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    await scoped.updateDraft("own", validInput);
+    expect(p().recipe.updateMany).toHaveBeenCalledWith({ where: draftFilter, data: expect.objectContaining({ reviewedAt: expect.any(Date) }) });
+    p().recipe.findUnique.mockResolvedValueOnce(draftRow).mockResolvedValueOnce({ status: "PUBLISHED" });
+    await expect(scoped.updateDraft("own", validInput)).rejects.toBeInstanceOf(RecipeStatusError);
+    expect(p().recipeIngredient.deleteMany).toHaveBeenCalledTimes(1);
+    expect(p().recipeIngredient.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("cannot publish a stored draft with an unresolved food link or remove its images", async () => {
+    p().recipe.findUnique.mockResolvedValue({ ...draftRow, ingredients: [{ ...draftRow.ingredients[0], foodId: "unowned-food" }] });
+    p().recipe.updateMany.mockResolvedValue({ count: 1 });
+    await expect(scoped.publishDraft("own")).rejects.toMatchObject({
+      name: "RecipeNotPublishableError", issues: [{ field: "ingredient", index: 0, message: "El alimento no está disponible para este consultorio." }],
+    });
+    expect(p().recipe.updateMany).not.toHaveBeenCalled();
+    expect(p().recipeImportImage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("publishes an owned draft before cleaning its images, never after a failed guarded write", async () => {
+    p().recipe.findUnique.mockResolvedValue(draftRow);
+    p().recipe.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    await scoped.publishDraft("own");
+    expect(p().recipe.updateMany).toHaveBeenCalledWith({ where: draftFilter, data: { status: "PUBLISHED", publishedAt: expect.any(Date) } });
+    expect(p().recipeImportImage.deleteMany).toHaveBeenCalledWith({ where: { recipeId: "own", recipe: { tenantId: "tenant-a" } } });
+    await expect(scoped.publishDraft("own")).rejects.toBeInstanceOf(RecipeStatusError);
+    expect(p().recipeImportImage.deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards only an owned draft without dependent items", async () => {
+    p().recipe.findUnique.mockResolvedValue(draftRow);
+    p().recipe.deleteMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    await scoped.discardDraft("own");
+    expect(p().recipe.deleteMany).toHaveBeenCalledWith({
+      where: { ...draftFilter, planItems: { none: {} }, templateItems: { none: {} } },
+    });
+    await expect(scoped.discardDraft("own")).rejects.toThrow("La receta se usa en planes o plantillas.");
+    expect(p().recipe.delete).not.toHaveBeenCalled();
+  });
+
   it("publishRecipe solo desde DRAFT y borra las importImages", async () => {
     p().recipe.findUnique.mockResolvedValue(draftRow);
     await publishRecipe("r1");
     expect(p().recipe.update).toHaveBeenCalledWith({ where: { id: "r1" }, data: { status: "PUBLISHED", publishedAt: expect.any(Date) } });
     expect(p().recipeImportImage.deleteMany).toHaveBeenCalledWith({ where: { recipeId: "r1" } });
+    expect(p().food.findMany).not.toHaveBeenCalled();
 
     p().recipe.findUnique.mockResolvedValue({ ...draftRow, status: "PUBLISHED" });
     await expect(publishRecipe("r1")).rejects.toBeInstanceOf(RecipeStatusError);
@@ -319,6 +501,19 @@ describe("RecipePreview (018c-2)", () => {
     ]);
     expect(r).toMatchObject({ yieldPortions: 4, photo: { id: "ph1", credit: "Foto propia" }, sourceName: "Nutriarte", macrosIncomplete: false });
     expect(r!.perPortion!.kcal).toBe(200);
+  });
+
+  it("getRecipePreview limita el picker a su tenant sin esconder recetas propias archivadas", async () => {
+    const archived = { ...row, status: "ARCHIVED" };
+    p().recipe.findFirst.mockImplementation(({ where }: { where: { tenantId?: string } }) =>
+      where.tenantId === "tenant-a" ? null : archived);
+    expect(await getRecipePreview("r1", "tenant-a")).toBeNull();
+    expect(await getRecipePreview("r1", "tenant-b")).toMatchObject({ id: "r1", status: "ARCHIVED" });
+    for (const tenantId of ["tenant-a", "tenant-b"]) {
+      expect(p().recipe.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: "r1", tenantId, status: { not: "DRAFT" } },
+      }));
+    }
   });
 
   it("getRecipePreview da null si la receta es un borrador o no existe", async () => {

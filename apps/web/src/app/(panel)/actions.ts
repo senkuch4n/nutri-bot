@@ -30,6 +30,7 @@ import {
   enqueueReminderNow,
   getAppointmentReminderStatus,
   getProfessional,
+  getLegacySchedulingTenantId,
   getRescheduleSlots,
   rescheduleAppointment,
   RescheduleError,
@@ -75,8 +76,9 @@ export async function createAppointmentAction(
   try {
     let patientId: string;
     if (parsed.data.patientId) {
+      const tenantId = await getLegacySchedulingTenantId();
       const existing = await prisma.patient.findUnique({
-        where: { id: parsed.data.patientId },
+        where: { id: parsed.data.patientId, tenantId },
         select: { id: true, whatsappJid: true },
       });
       if (!existing || classifyWhatsappJid(existing.whatsappJid) === "not_person") {
@@ -88,8 +90,9 @@ export async function createAppointmentAction(
       if (name.length < 2) return { ok: false, error: T.nameRequired };
       const phone = parsePhoneInput(parsed.data.patientPhone ?? "");
       if (!phone.ok) return { ok: false, error: PHONE_INPUT_TEXT[phone.error] };
+      const tenantId = await getLegacySchedulingTenantId();
       const taken = await prisma.patient.findUnique({
-        where: { whatsappJid: phoneToJid(phone.digits) },
+        where: { tenantId_whatsappJid: { tenantId, whatsappJid: phoneToJid(phone.digits) } },
         select: { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true },
       });
       if (taken) {
@@ -101,8 +104,20 @@ export async function createAppointmentAction(
           existingPatient: { id: taken.id, name: taken.name?.trim() || null, label, archived },
         };
       }
-      const created = await findOrCreatePatient({ phone: phone.digits, name });
-      patientId = created.id;
+      const service = await prisma.service.findUnique({
+        where: { id: parsed.data.serviceId, tenantId },
+        select: { id: true },
+      });
+      if (!service) return { ok: false, error: T.genericError };
+      try {
+        const created = await findOrCreatePatient({ phone: phone.digits, name });
+        patientId = created.id;
+      } catch (err) {
+        if ((err as { code?: string } | null)?.code === "P2002") {
+          return { ok: false, error: "Ese número ya está registrado" };
+        }
+        throw err;
+      }
     }
 
     await createAppointment({

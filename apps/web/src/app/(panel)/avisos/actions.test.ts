@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   createMany: vi.fn(),
   updateMany: vi.fn(),
+  resolveScope: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
@@ -15,7 +16,20 @@ vi.mock("@nutri-bot/db", () => ({
   },
 }));
 
-import { broadcastMessageAction, retryMessageAction } from "./actions";
+vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: mocks.resolveScope }));
+
+import { broadcastMessageAction, retryAllFailedAction, retryMessageAction } from "./actions";
+
+const tenantId = "legacy-tenant";
+const outboxWhere = { OR: [
+  { tenantId },
+  { tenantId: null, AND: [
+    { OR: [{ appointment: { tenantId } }, { plan: { tenantId } }, { anthropometricReport: { tenantId } }] },
+    { OR: [{ appointmentId: null }, { appointment: { tenantId } }] },
+    { OR: [{ planId: null }, { plan: { tenantId } }] },
+    { OR: [{ anthropometricReportId: null }, { anthropometricReport: { tenantId } }] },
+  ] },
+] };
 
 function form(body: string): FormData {
   const fd = new FormData();
@@ -35,6 +49,7 @@ const PEOPLE = [
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.createMany.mockResolvedValue({ count: 0 });
+  mocks.resolveScope.mockResolvedValue({ scope: { tenantId } });
 });
 
 describe("broadcastMessageAction", () => {
@@ -43,13 +58,14 @@ describe("broadcastMessageAction", () => {
     const res = await broadcastMessageAction({ ok: false }, form("  Vacaciones del 10 al 20  "));
     expect(res).toEqual({ ok: true, sent: 3 });
     expect(mocks.createMany).toHaveBeenCalledTimes(1);
-    const data = mocks.createMany.mock.calls[0]![0].data as Array<{ toJid: string; body: string; kind: string }>;
+    const data = mocks.createMany.mock.calls[0]![0].data as Array<{ toJid: string; body: string; kind: string; tenantId: string }>;
     expect(data.map((d) => d.toJid)).toEqual([
       "5493510000001@s.whatsapp.net",
       "123456789@lid",
       "5493510000002@s.whatsapp.net",
     ]);
     expect(data.every((d) => d.kind === "AD_HOC" && d.body === "Vacaciones del 10 al 20")).toBe(true);
+    expect(data.map((d) => d.tenantId)).toEqual([tenantId, tenantId, tenantId]);
     expect(data.some((d) => /@(newsletter|g\.us|broadcast)$/.test(d.toJid))).toBe(false);
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
   });
@@ -67,7 +83,7 @@ describe("broadcastMessageAction", () => {
     ]);
     const res = await broadcastMessageAction({ ok: false }, form("Vacaciones del 10 al 20"));
     expect(mocks.findMany).toHaveBeenCalledWith({
-      where: { archivedAt: null },
+      where: { tenantId, archivedAt: null },
       select: { whatsappJid: true, archivedAt: true },
     });
     expect(res).toEqual({ ok: true, sent: 10 });
@@ -119,10 +135,33 @@ describe("broadcastMessageAction", () => {
 describe("retryMessageAction", () => {
   it("solo vuelve a PENDING una fila que sigue FAILED, por id", async () => {
     mocks.updateMany.mockResolvedValue({ count: 1 });
-    await retryMessageAction("m1");
+    await expect(retryMessageAction("m1")).resolves.toBeUndefined();
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
     expect(mocks.updateMany).toHaveBeenCalledWith({
-      where: { id: "m1", status: "FAILED" },
+      where: { ...outboxWhere, id: "m1", status: "FAILED" },
       data: { status: "PENDING", lastError: null },
     });
   });
+});
+
+it("reintenta en lote solo los FAILED visibles y mantiene la revalidación", async () => {
+  mocks.updateMany.mockResolvedValue({ count: 0 });
+  await expect(retryAllFailedAction()).resolves.toBeUndefined();
+  expect(mocks.updateMany.mock.calls).toEqual([[
+    { where: { ...outboxWhere, status: "FAILED" }, data: { status: "PENDING", lastError: null } },
+  ]]);
+  expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
+});
+
+it.each([
+  ["comunicado", () => broadcastMessageAction({ ok: false }, form("Hola a todas"))],
+  ["reintento individual", () => retryMessageAction("m1")],
+  ["reintento en lote", () => retryAllFailedAction()],
+] as const)("no consulta ni escribe sin alcance: %s", async (_name, act) => {
+  mocks.resolveScope.mockRejectedValue(new Error("missing scope"));
+  await expect(act()).rejects.toThrow("missing scope");
+  expect(mocks.findMany).not.toHaveBeenCalled();
+  expect(mocks.createMany).not.toHaveBeenCalled();
+  expect(mocks.updateMany).not.toHaveBeenCalled();
+  expect(mocks.revalidatePath).not.toHaveBeenCalled();
 });

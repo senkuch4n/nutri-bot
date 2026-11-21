@@ -5,18 +5,15 @@ import { RECIPE_TEXT } from "@nutri-bot/core";
 import {
   RecipeNotFoundError,
   RecipeNotPublishableError,
-  archiveRecipe,
-  createRecipe,
-  unarchiveRecipe,
-  updateRecipe,
+  recipesForTenant,
 } from "@nutri-bot/db/domain";
 import { errorCode } from "@/lib/error-code";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import {
   NOT_FOUND,
   INVALID_PAYLOAD,
   SAVE_ERROR,
   applyPhotoIntent,
-  hasPanelSession,
   parsePayload,
   readPhotoIntent,
   toRecipeInput,
@@ -40,7 +37,9 @@ function revalidateRecipe(id: string) {
  * Si la receta se guardó y la foto falla → { ok:false, photoError, id }.
  */
 export async function saveRecipeAction(formData: FormData): Promise<RecipeActionState> {
-  if (!(await hasPanelSession())) return { ok: false, error: RECIPE_TEXT.sessionExpired };
+  const access = await resolvePrivateContentAccess();
+  if (!access) return { ok: false, error: RECIPE_TEXT.sessionExpired };
+  const recipes = recipesForTenant(access.tenantId);
 
   const payload = parsePayload(formData.get("payload"));
   if (!payload) return { ok: false, error: INVALID_PAYLOAD };
@@ -53,10 +52,10 @@ export async function saveRecipeAction(formData: FormData): Promise<RecipeAction
   let id: string;
   try {
     if (existingId) {
-      await updateRecipe(existingId, input);
+      await recipes.update(existingId, input);
       id = existingId;
     } else {
-      id = (await createRecipe(input)).id;
+      id = (await recipes.create(input)).id;
     }
   } catch (err) {
     if (err instanceof RecipeNotPublishableError) return { ok: false, issues: err.issues };
@@ -66,7 +65,7 @@ export async function saveRecipeAction(formData: FormData): Promise<RecipeAction
   }
 
   try {
-    await applyPhotoIntent(id, photo.photo);
+    await applyPhotoIntent(id, photo.photo, recipes);
   } catch (err) {
     console.error("saveRecipeAction: no se pudo guardar la foto", errorCode(err));
     revalidateRecipe(id);
@@ -80,11 +79,12 @@ export async function saveRecipeAction(formData: FormData): Promise<RecipeAction
 async function runTransition(
   name: string,
   id: string,
-  fn: (id: string) => Promise<void>,
+  transition: "archive" | "unarchive",
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!(await hasPanelSession())) return { ok: false, error: RECIPE_TEXT.sessionExpired };
+  const access = await resolvePrivateContentAccess();
+  if (!access) return { ok: false, error: RECIPE_TEXT.sessionExpired };
   try {
-    await fn(id);
+    await recipesForTenant(access.tenantId)[transition](id);
   } catch (err) {
     console.error(`${name}: no se pudo cambiar el estado`, errorCode(err));
     return { ok: false, error: err instanceof RecipeNotFoundError ? NOT_FOUND : SAVE_ERROR };
@@ -94,9 +94,9 @@ async function runTransition(
 }
 
 export async function archiveRecipeAction(id: string): Promise<{ ok: boolean; error?: string }> {
-  return runTransition("archiveRecipeAction", id, archiveRecipe);
+  return runTransition("archiveRecipeAction", id, "archive");
 }
 
 export async function unarchiveRecipeAction(id: string): Promise<{ ok: boolean; error?: string }> {
-  return runTransition("unarchiveRecipeAction", id, unarchiveRecipe);
+  return runTransition("unarchiveRecipeAction", id, "unarchive");
 }

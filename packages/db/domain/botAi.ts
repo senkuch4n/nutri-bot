@@ -12,6 +12,9 @@ import {
 } from "@nutri-bot/core";
 import { prisma } from "../index";
 import { getAvailableSlotsForService, getProfessional } from "./availability";
+import { clearExpiredLegacyConversationText } from "./conversationState";
+
+export { SESSION_STEPS_WITH_PATIENT_TEXT } from "./conversationState";
 
 /** Resultados que cuentan para los límites diarios (todos los que llamaron a la IA). */
 export const BOT_AI_COUNTED_OUTCOMES: BotAiOutcome[] = [
@@ -116,13 +119,6 @@ export async function purgeExpiredBotAiQuestions(opts: {
 }
 
 /**
- * Pasos de la conversación cuyo contexto guarda texto escrito por el paciente: el historial con la
- * IA (HU-012, `AWAIT_QUESTION`) y el motivo de consulta mientras reserva (HU-013, `BOOK_REASON` y
- * `BOOK_CONFIRM`). Los demás pasos solo guardan ids.
- */
-export const SESSION_STEPS_WITH_PATIENT_TEXT = ["AWAIT_QUESTION", "BOOK_REASON", "BOOK_CONFIRM"] as const;
-
-/**
  * BOT (cron). Privacidad: una sesión vencida (sin actividad en `sessionTimeoutMs`) en un paso que
  * guarda texto del paciente pasa a DORMANT con contexto vacío, que es como el bot ya la trata al
  * volver a escribir. Si el paciente escribe justo antes, su `updatedAt` cambia y la fila no entra.
@@ -137,15 +133,7 @@ export async function clearExpiredSessionText(opts: {
     throw new Error("clearExpiredSessionText: sessionTimeoutMs tiene que ser > 0");
   }
   const now = opts.now ?? new Date();
-  const res = await prisma.conversationState.updateMany({
-    where: {
-      step: { in: [...SESSION_STEPS_WITH_PATIENT_TEXT] },
-      updatedAt: { lt: new Date(now.getTime() - opts.sessionTimeoutMs) },
-      ...(opts.scope ? { patientJid: { in: opts.scope.jids } } : {}),
-    },
-    data: { step: "DORMANT", context: {} },
-  });
-  return res.count;
+  return clearExpiredLegacyConversationText(new Date(now.getTime() - opts.sessionTimeoutMs), opts.scope?.jids);
 }
 
 export type BotAiToolResult = { content: string; isError: boolean };

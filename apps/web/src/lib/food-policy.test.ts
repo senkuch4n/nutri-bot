@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isValidElement, type ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
-  listFoods: vi.fn(), getPlan: vi.fn(), getTemplate: vi.fn(), getFood: vi.fn(),
+  access: vi.fn(), listTemplates: vi.fn().mockResolvedValue([]),
+  TemplateContainsHistoricalFoodError: class TemplateContainsHistoricalFoodError extends Error {},
+  TemplateApplicationUnavailableError: class TemplateApplicationUnavailableError extends Error {},
+  listPatientPlans: vi.fn().mockResolvedValue([]), listDiaryEntries: vi.fn().mockResolvedValue([]),
+  listPatientConsultations: vi.fn().mockResolvedValue([]), listLatestPrescriptions: vi.fn().mockResolvedValue([]),
+  listFoods: vi.fn(), getPlan: vi.fn(), getTemplate: vi.fn(), getTemplateMeal: vi.fn().mockResolvedValue({ id: "meal" }), getFood: vi.fn(),
   addMeal: vi.fn(), addMealItem: vi.fn(), addTemplateMealItem: vi.fn(),
   applyTemplateToPatient: vi.fn(), completion: vi.fn(),
   // HU-018b: el orden del ítem sale de nextItemOrder y la IA reemplaza las comidas vacías.
@@ -21,7 +26,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@nutri-bot/db/domain", () => ({
   ...mocks,
-  getLatestFormulaMeasurements: vi.fn().mockResolvedValue({ weightKg: null, heightCm: null }),
+  getLatestFormulaMeasurements: vi.fn().mockResolvedValue({ weightKg: null, heightCm: null, bodyFatPercent: null }),
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {
   patient: { findUnique: mocks.patient, findUniqueOrThrow: mocks.patient },
@@ -39,13 +44,18 @@ vi.mock("@/app/(panel)/plan-section-actions", () => ({}));
 vi.mock("@/app/(panel)/plantillas/import-actions", () => ({}));
 vi.mock("server-only", () => ({})); // lib/revalidate-menu-owner (HU-018c)
 vi.mock("next/navigation", () => ({ notFound: vi.fn(), redirect: vi.fn() }));
+vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
 vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
 vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
 vi.mock("@/lib/plan-pdf", () => ({ renderPlanPdf: vi.fn() }));
 
+vi.mock("@/lib/services", () => ({ listServices: vi.fn().mockResolvedValue([]) }));
+
+import { PatientRecord } from "../app/(panel)/pacientes/[id]/patient-record";
 import PlanPage from "../app/(panel)/pacientes/[id]/planes/[planId]/page";
 import { PlanDetail } from "../app/(panel)/pacientes/[id]/planes/[planId]/plan-detail";
 import TemplatePage from "../app/(panel)/plantillas/[id]/page";
+import TemplatesPage from "../app/(panel)/plantillas/page";
 import FoodsPage from "../app/(panel)/alimentos/page";
 import { generateAiPlanAction } from "../app/(panel)/pacientes/[id]/planes/[planId]/ai-actions";
 import { addPlanMealItemAction } from "../app/(panel)/pacientes/[id]/planes/[planId]/actions";
@@ -53,7 +63,7 @@ import { addTemplateMealItemAction } from "../app/(panel)/plantillas/actions";
 import { applyTemplateAction } from "../app/(panel)/pacientes/[id]/planes/actions";
 import { createOwnFoodAction } from "../app/(panel)/alimentos/actions";
 import NewFoodPage from "../app/(panel)/alimentos/nuevo/page";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 const sara = { id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", active: true, kcalPer100: 100, proteinPer100: 1, carbsPer100: 20, fatPer100: 1 };
 const own = { ...sara, id: "own", name: "Historical food", source: "PROPIO" };
@@ -73,6 +83,7 @@ function form(values: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.access.mockResolvedValue({ tenantId: "tenant", role: "OWNER" });
   mocks.listFoods.mockImplementation(async (params) => {
     const foods = [sara, own];
     return params.source ? foods.filter((food) => food.source === params.source) : foods;
@@ -84,6 +95,62 @@ beforeEach(() => {
   mocks.clinical.mockResolvedValue(null);
   mocks.addMeal.mockResolvedValue({ id: "new-meal" });
   mocks.completion.mockResolvedValue({ choices: [{ message: { content: JSON.stringify({ meals: [{ name: "Meal", items: [{ ref: 1, quantityGrams: 100 }] }] }) } }] });
+});
+
+describe("patient record template picker", () => {
+  beforeEach(() => {
+    mocks.patient.mockResolvedValue({ id: "patient", tenantId: "tenant", name: "Patient", birthDate: null, sex: null,
+      archivedAt: null, createdAt: new Date(0), phone: "5491100000000", whatsappJid: "5491100000000@s.whatsapp.net",
+      appointments: [], clinicalRecord: null, evolutionEntries: [] });
+    mocks.listTemplates.mockResolvedValue([{ id: "template", title: "Template" }]);
+  });
+
+  async function planPanel() {
+    const record = await PatientRecord({ id: "patient", variant: "page" });
+    const tabProps = propsWith(record, "panels")[0];
+    const plans = (tabProps?.panels as { planes?: ReactNode } | undefined)?.planes;
+    return isValidElement(plans) ? plans.props : undefined;
+  }
+
+  it("lists published templates for the patient's trusted tenant", async () => {
+    expect(await planPanel()).toMatchObject({ patientId: "patient", templates: [{ id: "template", title: "Template" }] });
+    expect(mocks.listTemplates).toHaveBeenCalledWith({ status: "PUBLISHED", tenantId: "tenant" });
+  });
+
+  it.each([null, { tenantId: "other", role: "OWNER" }])("preserves unrelated patient views but hides the picker for membership %j", async (access) => {
+    mocks.access.mockResolvedValue(access);
+    expect(await planPanel()).toMatchObject({ patientId: "patient", plans: [], templates: null });
+    expect(mocks.listTemplates).not.toHaveBeenCalled();
+    expect(mocks.listPatientPlans).toHaveBeenCalledWith("patient");
+    expect(mocks.listPatientConsultations).toHaveBeenCalledWith("patient");
+    expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+describe("private template pages", () => {
+  it("lists only the authorized tenant's templates", async () => {
+    await TemplatesPage();
+    expect(mocks.listTemplates).toHaveBeenCalledWith({ tenantId: "tenant" });
+  });
+
+  it("does not query templates without membership", async () => {
+    mocks.access.mockResolvedValue(null);
+    vi.mocked(notFound).mockImplementationOnce(() => { throw new Error("404"); });
+    await expect(TemplatesPage()).rejects.toThrow("404");
+    vi.mocked(notFound).mockImplementationOnce(() => { throw new Error("404"); });
+    await expect(TemplatePage({ params: Promise.resolve({ id: "other" }) })).rejects.toThrow("404");
+    expect(mocks.listTemplates).not.toHaveBeenCalled();
+    expect(mocks.getTemplate).not.toHaveBeenCalled();
+  });
+
+  it("does not render an unknown or foreign detail or load its editor", async () => {
+    mocks.getTemplate.mockResolvedValueOnce(null);
+    vi.mocked(notFound).mockImplementationOnce(() => { throw new Error("404"); });
+    await expect(TemplatePage({ params: Promise.resolve({ id: "other" }) })).rejects.toThrow("404");
+    expect(mocks.getTemplate).toHaveBeenCalledWith("other", "tenant");
+    expect(mocks.listFoods).not.toHaveBeenCalled();
+    expect(mocks.listMeasuresForPicker).not.toHaveBeenCalled();
+  });
 });
 
 describe("SARA2-only new food selections", () => {
@@ -110,6 +177,7 @@ describe("SARA2-only new food selections", () => {
       id: "meal", name: "Historical", items: [{ id: "item", foodId: "own", food: { ...own, fiberPer100: null, alcoholPer100: null }, quantityGrams: 100, customLabel: null, notes: null }],
     }] });
     const page = await TemplatePage({ params: Promise.resolve({ id: "template" }) });
+    expect(mocks.getTemplate).toHaveBeenCalledWith("template", "tenant");
     expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
     expect(propsWith(page, "ownerField")[0]?.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);
     expect(propsWith(page, "ownerField")[0]?.meals).toMatchObject([{ items: [{ foodId: "own", foodName: "Historical food" }] }]);
@@ -150,7 +218,8 @@ describe("SARA2-only new food selections", () => {
     mocks.getFood.mockResolvedValue(sara);
     await action(form({ planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", quantityGrams: "100" }));
     const write = action === addPlanMealItemAction ? mocks.addMealItem : mocks.addTemplateMealItem;
-    expect(write).toHaveBeenCalledWith("meal", expect.objectContaining({ foodId: "sara" }));
+    const scope = action === addPlanMealItemAction ? [] : [{ templateId: "template", tenantId: "tenant" }];
+    expect(write).toHaveBeenCalledWith("meal", expect.objectContaining({ foodId: "sara" }), ...scope);
   });
 
   it("disables the own-food creation action and redirects its old page", async () => {
@@ -160,11 +229,12 @@ describe("SARA2-only new food selections", () => {
   });
 
   it("does not copy PROPIO from a historical template into a new plan", async () => {
-    mocks.getTemplate.mockResolvedValue({ meals: [{ items: [{ food: own }] }] });
-    const result = await applyTemplateAction({ ok: false }, form({ patientId: "patient", templateId: "template" }));
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("PROPIO históricos");
-    expect(mocks.applyTemplateToPatient).not.toHaveBeenCalled();
+    const message = "Esta plantilla contiene alimentos PROPIO históricos. Para crear un plan nuevo, usá una plantilla con alimentos SARA 2.";
+    mocks.applyTemplateToPatient.mockRejectedValueOnce(new mocks.TemplateContainsHistoricalFoodError(message));
+    expect(await applyTemplateAction({ ok: false }, form({ patientId: "patient", templateId: "template" }))).toEqual({
+      ok: false, error: message,
+    });
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it.each([addPlanMealItemAction, addTemplateMealItemAction])("HU-018d: alta en medida casera usa los gramos de la medida e ignora quantityGrams", async (action) => {
@@ -176,10 +246,11 @@ describe("SARA2-only new food selections", () => {
     }));
     expect(mocks.resolveMeasureItem).toHaveBeenCalledWith("sara", "m1", 1.5);
     const write = action === addPlanMealItemAction ? mocks.addMealItem : mocks.addTemplateMealItem;
+    const scope = action === addPlanMealItemAction ? [] : [{ templateId: "template", tenantId: "tenant" }];
     expect(write).toHaveBeenCalledWith("meal", {
       foodId: "sara", customLabel: null, notes: null, order: 0, weekday: "TUE",
       measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270,
-    });
+    }, ...scope);
   });
 
   it.each([addPlanMealItemAction, addTemplateMealItemAction])("HU-018d: cantidad inválida no escribe y un PROPIO con medida sigue rechazado", async (action) => {

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    professional: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() },
+    agenda: { findUnique: vi.fn() },
     service: { findUnique: vi.fn() },
     availabilityRule: { findMany: vi.fn() },
     availabilityException: { findMany: vi.fn() },
@@ -28,7 +28,7 @@ const local = (hhmm: string) => new Date(`${DAY}T${hhmm}:00-03:00`);
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("MIN_LEAD_MINUTES", "120");
-  mocks.prisma.professional.findUnique.mockResolvedValue({ id: 1, timezone: TZ });
+  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { id: 1, timezone: TZ } });
   mocks.prisma.service.findUnique.mockResolvedValue({ id: "s1", durationMin: 60, active: true });
   // Jueves 09:00–14:00 → inicios 09, 10, 11, 12 y 13.
   mocks.prisma.availabilityRule.findMany.mockResolvedValue([
@@ -45,7 +45,15 @@ describe("getAvailableSlotsForService", () => {
     const slots = await getAvailableSlotsForService({ serviceId: "s1", from: DAY_START, to: DAY_END, now: NOW });
     expect(slots).toEqual([local("11:00"), local("13:00")]);
     const { where } = mocks.prisma.appointment.findMany.mock.calls[0]![0];
+    expect(mocks.prisma.agenda.findUnique).toHaveBeenCalledWith({
+      where: { id_tenantId: { id: "legacy-agenda", tenantId: "legacy-tenant" }, isPrimary: true, professionalId: 1 },
+      select: { professional: { select: { timezone: true, phoneJid: true } } },
+    });
+    const agenda = { agendaId: "legacy-agenda", agenda: { tenantId: "legacy-tenant" } };
+    expect(mocks.prisma.availabilityRule.findMany).toHaveBeenCalledWith({ where: { ...agenda, active: true } });
+    expect(mocks.prisma.availabilityException.findMany).toHaveBeenCalledWith({ where: agenda });
     expect(where).toEqual({
+      tenantId: "legacy-tenant", agendaId: "legacy-agenda",
       status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] },
       startsAt: { lt: DAY_END },
       endsAt: { gt: DAY_START },
@@ -63,7 +71,11 @@ describe("getRescheduleSlots (HU-022)", () => {
     const slots = await getRescheduleSlots({ appointmentId: "a1", dayKey: DAY, now: NOW });
     // 09 y 10 caen antes de la anticipación, 12 está ocupado por otro turno.
     expect(slots).toEqual([local("11:00"), local("13:00")]);
-    expect(mocks.prisma.service.findUnique).toHaveBeenCalledWith({ where: { id: "s1" } });
+    expect(mocks.prisma.appointment.findUnique).toHaveBeenCalledWith({
+      where: { id: "a1", tenantId: "legacy-tenant", agendaId: "legacy-agenda" },
+      select: { id: true, serviceId: true, status: true, startsAt: true },
+    });
+    expect(mocks.prisma.service.findUnique).toHaveBeenCalledWith({ where: { id: "s1", tenantId: "legacy-tenant" } });
     const { where } = mocks.prisma.appointment.findMany.mock.calls[0]![0];
     expect(where).toMatchObject({ id: { not: "a1" }, startsAt: { lt: DAY_END }, endsAt: { gt: DAY_START } });
   });

@@ -71,7 +71,7 @@ async function cleanup() {
 const n = (d: { toString(): string } | null | undefined) => (d == null ? null : Number(d.toString()));
 
 async function main() {
-  const existing = await prisma.patient.findUnique({ where: { whatsappJid: TEST_JID }, select: { id: true } });
+  const existing = await prisma.patient.findFirst({ where: { whatsappJid: TEST_JID }, select: { id: true } });
   assert.equal(existing, null, "Ya existe un paciente con el teléfono de prueba: no se toca. Revisalo a mano.");
 
   const foods = await prisma.food.findMany({

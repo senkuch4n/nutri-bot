@@ -1,7 +1,8 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ListChecks } from "lucide-react";
 import { RECIPE_TEXT } from "@nutri-bot/core";
-import { listDraftQueue } from "@nutri-bot/db/domain";
+import { recipeReviewForTenant } from "@nutri-bot/db/domain";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +14,17 @@ export default async function RevisarPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await resolvePrivateContentAccess();
+  if (!access) notFound();
+  const review = recipeReviewForTenant(access.tenantId);
   const query = await searchParams;
   const file = typeof query.archivo === "string" && query.archivo.trim() !== "" ? query.archivo : null;
-  const queue = await listDraftQueue(file ? { file } : undefined);
+  const queue = await review.queue(file ? { file } : undefined);
   const first = queue[0];
   if (first) redirect(`/recetas/revisar/${first.id}${file ? `?archivo=${encodeURIComponent(file)}` : ""}`);
 
   // Terminó el recetario elegido pero quedan otros.
-  const others = file ? (await listDraftQueue()).length : 0;
+  const others = file ? (await review.queue()).length : 0;
 
   return (
     <div>

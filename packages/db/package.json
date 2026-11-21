@@ -8,10 +8,14 @@
   "exports": {
     ".": "./index.ts",
     "./domain": "./domain/index.ts",
+    "./domain/conversationState": "./domain/conversationState.ts",
+    "./domain/legacySchedulingScope": "./domain/legacySchedulingScope.ts",
+    "./domain/outbox": "./domain/outbox.ts",
     "./media": "./media/recipe-photo.ts"
   },
   "scripts": {
     "generate": "prisma generate",
+    "legacy-memberships": "tsx scripts/legacy-memberships.ts",
     "migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",

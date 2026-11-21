@@ -1,6 +1,16 @@
 # Bitácora de imleticio
 
-## Sin HU activa
+## HU-024 · Modelo multi-tenant y migración de la base de datos
+- Issue #67 asignado a `imleticio`; estado del Project #5: **En curso**. Docker local recuperado; migración de agenda verificada de forma independiente con Postgres descartable.
+- Rama local `feat/HU-024-modelo-multi-tenant` desde `develop`. Alcance en `docs/hu-modelo-multi-tenant.md`; especificación técnica en `Refactorizaciones/modelo-multi-tenant.md`. Baseline de 27 migraciones validado en Postgres 16 local descartable, sin usar el entorno habitual. Sin PR. Fundación aditiva en `9ec8fc7`; primer corte de T2 verificado (agenda, pacientes, servicios, disponibilidad y turnos). Pruebas solo en bases descartables.
+
+- T2e.1b implementado en `c08a46a`: cinco defensas reconstruidas y sus controles positivos aprobados independientemente; suite 2.994 aprobadas y una omitida, y corroboración focal de 76 aprobadas. No se reprodujo un defecto funcional. El [ensayo HTTP autenticado](review_HU-024-http.md) aprobó las lecturas con dos consultorios, incluido el rechazo al revocar la pertenencia; también preservó una receta y foto legacy en un upgrade acotado. T2e.1b y T2e.1 cerrados en ODD L53: el [ensayo independiente de escritura HTTP](review_HU-024-http-write.md) confirmó archivado propio y rechazó escritura ajena, sin pertenencia y con pertenencia revocada sin cambios persistidos. Quedan T2e.2 (referencias privadas), T3 (contexto explícito) y T4 (aislamiento integral, upgrade y restauración). Ver [reporte de dominio](review_HU-024.md) y [ODD](../odd/tasks/hu-024-modelo-multi-tenant.md) para los límites de la evidencia. La publicación está pospuesta por el conflicto con HU-022, independientemente de la verificación local. Sin push, PR ni merge.
+
+- T2e.2a implementado localmente: diagnóstico de cruces históricos, rollback transaccional de datos y DDL en PostgreSQL, guardas persistentes y de menú, y escrituras válidas/legacy preservadas. Tras corregir la pérdida del diagnóstico, la revisión independiente comprobó el ciclo real de recuperación con Prisma (P3018/23514, historial, rollback, resolve y retry con integridad). No dio aprobación final: el probe dejó su evidencia en un temporal fuera del scratch configurado. Suite anterior del autor: 2.996 aprobadas, una omitida. Ver [SDD](../Refactorizaciones/modelo-multi-tenant.md) y ODD L56–L58. Sin commit de T2e.2a ni migración real. T2e.2b verificó persistencia, escritores directos y menú semanal autenticado en los commits locales `5f4361d`, `e8097c6` y `a737316`, sin repetir el ciclo de Prisma de recetas ni aprobarlo. Ver [SDD de alimentos](../Refactorizaciones/referencias-alimentos-multi-tenant.md) y ODD L59–L62. T3 y T4 siguen abiertos.
+
+- T3 en curso en el worktree `hu-024`: guardas en turnos, disponibilidad y relaciones clínicas seleccionadas, consumidores JID compuestos, Avisos y primeros límites de Calendar/Mercado Pago; evidencia y pendientes en ODD L65–L71. Sin migraciones ni cambios de claves; revisión T2e.2a sigue pendiente.
+
+## Seguimiento anterior
 - **HU-021 · Lista de turnos** (issue #50): `aprobada` 2026-10-26. Rama local `feat/HU-021-lista-turnos`
   (sale de `feat/morph-dialog`). Pendiente, cuando el usuario lo pida: push, PR a `develop` con `Closes #50`,
   label del issue (título y cuerpo ya actualizados el 2026-10-26). Ajuste visual V1 (02a464a): la pantalla copia la captura. Falta el recorrido visual (§10.1 de la SDD).

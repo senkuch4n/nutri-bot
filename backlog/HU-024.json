@@ -1,0 +1,14 @@
+{
+  "id": "HU-024",
+  "responsable": "imleticio",
+  "slug": "modelo-multi-tenant",
+  "titulo": "Modelo multi-tenant y migración de la base de datos",
+  "origen": "Backlog SaaS de NutriBot, issue #67",
+  "estado": "implementando",
+  "intentos_revision": 0,
+  "hu": "docs/hu-modelo-multi-tenant.md",
+  "sdd": "Refactorizaciones/modelo-multi-tenant.md",
+  "rama": "feat/HU-024-modelo-multi-tenant",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/67",
+  "notas": "Asignación confirmada en GitHub. Project #5: En curso. Se recuperó el Docker local y el primer corte de T2 pasó la verificación independiente en Postgres descartable. Especificación técnica e inventario verificados en develop. El MVP define un tenant por consultorio con una profesional principal, una agenda y conexiones propias de WhatsApp y Mercado Pago para señas; la futura suscripción pertenece al tenant. Primera etapa: fundación aditiva y enlace inicial. Solo se ensaya en una base local descartable."
+}

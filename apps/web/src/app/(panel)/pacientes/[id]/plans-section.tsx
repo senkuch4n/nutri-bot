@@ -44,7 +44,7 @@ export function PlansSection({
 }: {
   patientId: string;
   plans: PlanRow[];
-  templates: { id: string; title: string }[];
+  templates: { id: string; title: string }[] | null;
 }) {
   const [createState, createAction, creating] = useActionState(createPlanAction, initial);
   const [applyState, applyAction, applying] = useActionState(applyTemplateAction, initial);
@@ -61,7 +61,7 @@ export function PlansSection({
             <EmptyState
               icon={ClipboardList}
               title="Este paciente todavía no tiene planes"
-              description="Creá el primero desde cero o a partir de una plantilla."
+              description={templates ? "Creá el primero desde cero o a partir de una plantilla." : "Creá el primero desde cero."}
             />
           </div>
         ) : (
@@ -89,19 +89,21 @@ export function PlansSection({
       </section>
 
       <Card title="Nuevo plan">
-        <SegmentedControl
-          value={mode}
-          onValueChange={setMode}
-          options={[
-            { value: "nuevo", label: "Plan nuevo" },
-            { value: "plantilla", label: "Desde plantilla" },
-          ]}
-          aria-label="Cómo crear el plan"
-          fullWidth
-          className="mb-4"
-        />
+        {templates !== null && (
+          <SegmentedControl
+            value={mode}
+            onValueChange={setMode}
+            options={[
+              { value: "nuevo", label: "Plan nuevo" },
+              { value: "plantilla", label: "Desde plantilla" },
+            ]}
+            aria-label="Cómo crear el plan"
+            fullWidth
+            className="mb-4"
+          />
+        )}
 
-        {mode === "nuevo" ? (
+        {templates === null || mode === "nuevo" ? (
           <form action={createAction} className="space-y-4">
             <input type="hidden" name="patientId" value={patientId} />
             <Field label="Título del plan">

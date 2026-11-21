@@ -1,6 +1,6 @@
 import { prisma } from "@nutri-bot/db";
 import { formatInTimeZone } from "@nutri-bot/core";
-import { getProfessional } from "@/lib/professional";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { listServices } from "@/lib/services";
 import { CalendarClient } from "../calendar-client";
 
@@ -20,15 +20,16 @@ function hhmmss(min: number): string {
  * Next, que puede restaurar las props del render original, no lleva a otro día.
  */
 export default async function CalendarPage() {
-  const pro = await getProfessional();
-  const tz = pro.timezone;
-  const now = new Date();
+  const { scope: { agendaId, tenantId }, professional: { timezone: tz } } = await resolveLegacySchedulingScope();
+  const todayKey = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
 
-  const todayKey = formatInTimeZone(now, tz, "yyyy-MM-dd");
-
-  const [services, rules] = await Promise.all([
+  const [{ currency }, services, rules] = await Promise.all([
+    prisma.professional.findUniqueOrThrow({
+      where: { id_tenantId: { id: 1, tenantId } },
+      select: { currency: true },
+    }),
     listServices({ activeOnly: true }),
-    prisma.availabilityRule.findMany({ where: { active: true } }),
+    prisma.availabilityRule.findMany({ where: { agendaId, agenda: { tenantId }, active: true } }),
   ]);
 
   const businessHours = rules.map((r) => ({
@@ -45,7 +46,7 @@ export default async function CalendarPage() {
   return (
     <CalendarClient
       tz={tz}
-      currency={pro.currency}
+      currency={currency}
       todayKey={todayKey}
       services={services.map((s) => ({ id: s.id, name: s.name, durationMin: s.durationMin }))}
       legend={services.map((s) => ({ name: s.name, color: s.color }))}

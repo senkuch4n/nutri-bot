@@ -16,8 +16,10 @@ import {
   chooseImportCandidateAsPhoto,
   deleteUnreviewedDrafts,
   getImportImageBytes,
+  getTenantImportImageBytes,
   listDraftFiles,
   listDraftQueue,
+  recipeReviewForTenant,
   upsertImportedDraft,
   type ImportImageInput,
 } from "./recipeImport";
@@ -143,6 +145,53 @@ describe("cola y archivos", () => {
   });
 });
 
+describe("revisión por consultorio", () => {
+  const owner = "tenant-a";
+  const recipeReview = () => recipeReviewForTenant(owner);
+
+  it("filtra cola y recuentos por consultorio aun con el mismo nombre de archivo", async () => {
+    const own = { id: "own", name: "A", importFile: "A.pdf", importPage: 1 };
+    const foreign = { ...own, id: "foreign", importPage: 2 };
+    const rows = [{ ...own, tenantId: owner }, { ...foreign, tenantId: "tenant-b" }];
+    p().recipe.findMany.mockImplementation(({ where }: { where: { tenantId?: string; importFile?: string } }) =>
+      rows.filter((r) => (!where.tenantId || r.tenantId === where.tenantId) && (!where.importFile || r.importFile === where.importFile))
+        .map(({ tenantId: _, ...r }) => r));
+    p().recipe.groupBy.mockImplementation(({ where }: { where: { tenantId?: string } }) =>
+      [{ importFile: "A.pdf", _count: { _all: rows.filter((r) => !where.tenantId || r.tenantId === where.tenantId).length } }]);
+    await expect(recipeReview().queue({ file: "A.pdf" })).resolves.toEqual([own]);
+    expect(p().recipe.findMany).toHaveBeenCalledWith({
+      where: { tenantId: owner, status: "DRAFT", importFile: "A.pdf" },
+      orderBy: [{ importFile: "asc" }, { importPage: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, importFile: true, importPage: true },
+    });
+    await expect(recipeReview().files()).resolves.toEqual([{ file: "A.pdf", count: 1 }]);
+    expect(p().recipe.groupBy).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: owner, status: "DRAFT", importFile: { not: null } } }));
+  });
+
+  it("solo copia una candidata de la receta del consultorio, con el escritor acotado", async () => {
+    const rows = [
+      { id: "own", recipeId: "r1", tenantId: owner, kind: "CANDIDATE" },
+      { id: "page", recipeId: "r1", tenantId: owner, kind: "PAGE" },
+      { id: "other", recipeId: "r2", tenantId: owner, kind: "CANDIDATE" },
+      { id: "foreign", recipeId: "r3", tenantId: "tenant-b", kind: "CANDIDATE" },
+    ];
+    p().recipeImportImage.findFirst.mockImplementation(({ where }: {
+      where: { id: string; recipeId: string; kind: string; recipe?: { tenantId: string } };
+    }) => rows.some((r) => r.id === where.id && r.recipeId === where.recipeId && r.kind === where.kind
+      && (!where.recipe || r.tenantId === where.recipe.tenantId)) ? images[1] : null);
+    p().$queryRaw = vi.fn().mockResolvedValue([{ id: "r1" }]);
+    p().recipePhoto.create.mockResolvedValue({ id: "photo" });
+    for (const [recipe, image] of [["r3", "foreign"], ["r1", "page"], ["r1", "other"]] as const) {
+      await expect(recipeReview().chooseCandidate(recipe, image, null)).rejects.toThrow("La receta no existe.");
+    }
+    expect(p().$transaction).not.toHaveBeenCalled();
+    expect(p().recipePhoto.create).not.toHaveBeenCalled();
+    await expect(recipeReview().chooseCandidate("r1", "own", " X ")).resolves.toEqual({ photoId: "photo" });
+    expect(p().recipePhoto.deleteMany).toHaveBeenCalledWith({ where: { recipeId: "r1", recipe: { tenantId: owner } } });
+    expect(p().recipePhoto.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ recipeId: "r1", credit: "X" }) }));
+  });
+});
+
 describe("imágenes", () => {
   it("getImportImageBytes: thumb de una candidata; PAGE sin thumb devuelve la imagen; null si no existe", async () => {
     p().recipeImportImage.findUnique.mockResolvedValueOnce({ thumbData: Buffer.from("t"), data: Buffer.from("f") });
@@ -151,6 +200,20 @@ describe("imágenes", () => {
     expect(await getImportImageBytes("pg", "thumb")).toEqual({ data: Buffer.from("page"), mimeType: "image/webp" });
     p().recipeImportImage.findUnique.mockResolvedValueOnce(null);
     expect(await getImportImageBytes("x", "full")).toBeNull();
+  });
+
+  it("reads only images owned through the recipe, retaining candidate and PAGE sizes", async () => {
+    const rows = [
+      { id: "candidate", tenantId: "tenant-a", data: Buffer.from("full"), thumbData: Buffer.from("thumb") },
+      { id: "page", tenantId: "tenant-a", data: Buffer.from("page"), thumbData: null },
+      { id: "foreign", tenantId: "tenant-b", data: Buffer.from("foreign"), thumbData: null },
+    ];
+    p().recipeImportImage.findUnique.mockImplementation(({ where }: { where: { id: string; recipe?: { tenantId: string } } }) =>
+      rows.find((row) => row.id === where.id && row.tenantId === where.recipe?.tenantId) ?? null);
+    expect(await getTenantImportImageBytes("tenant-a", "foreign", "full")).toBeNull();
+    expect(await getTenantImportImageBytes("tenant-a", "candidate", "full")).toEqual({ data: Buffer.from("full"), mimeType: "image/webp" });
+    expect(await getTenantImportImageBytes("tenant-a", "candidate", "thumb")).toEqual({ data: Buffer.from("thumb"), mimeType: "image/webp" });
+    expect(await getTenantImportImageBytes("tenant-a", "page", "thumb")).toEqual({ data: Buffer.from("page"), mimeType: "image/webp" });
   });
 
   it("chooseImportCandidateAsPhoto copia la candidata DE ESA receta a RecipePhoto", async () => {

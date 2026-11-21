@@ -181,39 +181,63 @@ export async function deleteUnreviewedTemplateDrafts(ids: readonly string[]): Pr
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
-async function markReviewedIn(db: Db, templateId: string): Promise<void> {
+// Omitting the tenant preserves legacy calls; panel callers always pass membership.
+const tenantFilter = (tenantId?: string) => tenantId === undefined ? {} : { tenantId };
+const ownedDraft = (tenantId: string) => ({ tenantId, status: "DRAFT" as const });
+const draftFilter = (tenantId?: string) => tenantId === undefined ? {} : ownedDraft(tenantId);
+
+class ReviewTemplateNotFoundError extends Error {
+  constructor() {
+    super("La plantilla no existe.");
+    this.name = "ReviewTemplateNotFoundError";
+  }
+}
+
+function reviewMealFilter(templateId: string, tenantId?: string) {
+  return { templateId, ...(tenantId === undefined ? {} : { template: ownedDraft(tenantId) }) };
+}
+
+async function markReviewedIn(db: Db, templateId: string, tenantId?: string): Promise<void> {
   await db.planTemplate.updateMany({
-    where: { id: templateId, status: "DRAFT", origin: "IMPORT", reviewedAt: null },
+    where: { id: templateId, status: "DRAFT", origin: "IMPORT", reviewedAt: null, ...(tenantId === undefined ? {} : { tenantId }) },
     data: { reviewedAt: new Date() },
   });
 }
 
 /** T10. No-op salvo DRAFT + IMPORT + reviewedAt null. */
-export async function markTemplateReviewed(templateId: string): Promise<void> {
-  await markReviewedIn(prisma, templateId);
+export async function markTemplateReviewed(templateId: string, tenantId?: string): Promise<void> {
+  await markReviewedIn(prisma, templateId, tenantId);
 }
 
 /** T12. Exige 0 avisos UNPLACED. */
-export async function publishTemplate(templateId: string): Promise<void> {
+export async function publishTemplate(templateId: string, tenantId?: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const t = await tx.planTemplate.findUnique({
-      where: { id: templateId },
+      where: { id: templateId, ...tenantFilter(tenantId) },
       select: { status: true, importHints: true, reviewedAt: true },
     });
-    if (!t) throw new TemplateHintNotFoundError("La plantilla no existe.");
+    if (!t) {
+      if (tenantId !== undefined) throw new ReviewTemplateNotFoundError();
+      throw new TemplateHintNotFoundError("La plantilla no existe.");
+    }
     if (t.status === "PUBLISHED") return;
     const unplaced = parseTemplateHints(t.importHints).filter((h) => h.kind === "UNPLACED").length;
     if (unplaced > 0) throw new TemplateNotPublishableError(unplaced);
     await tx.planTemplate.update({
-      where: { id: templateId },
+      where: { id: templateId, ...draftFilter(tenantId) },
       data: { status: "PUBLISHED", importHints: Prisma.DbNull, reviewedAt: t.reviewedAt ?? new Date() },
     });
   });
 }
 
 /** Lee los avisos de un borrador dentro de la transacción; si no es borrador o no está el aviso, lanza. */
-async function loadDraftHint(tx: Prisma.TransactionClient, templateId: string, hintId: string) {
-  const t = await tx.planTemplate.findUnique({ where: { id: templateId }, select: { status: true, importHints: true } });
+async function loadDraftHint(tx: Prisma.TransactionClient, templateId: string, hintId: string, tenantId?: string) {
+  const t = await tx.planTemplate.findUnique({
+    where: { id: templateId, ...tenantFilter(tenantId) },
+    select: { status: true, importHints: true },
+  });
+  // A missing owned template is not a stale hint: dismiss must not touch or revalidate it.
+  if (!t && tenantId !== undefined) throw new ReviewTemplateNotFoundError();
   if (!t || t.status !== "DRAFT") throw new TemplateHintNotFoundError();
   const hints = parseTemplateHints(t.importHints);
   const hint = hints.find((h) => h.id === hintId);
@@ -221,19 +245,19 @@ async function loadDraftHint(tx: Prisma.TransactionClient, templateId: string, h
   return { hints, hint };
 }
 
-async function saveWithout(tx: Prisma.TransactionClient, templateId: string, hints: TemplateImportHint[], hintId: string) {
+async function saveWithout(tx: Prisma.TransactionClient, templateId: string, hints: TemplateImportHint[], hintId: string, tenantId?: string) {
   await tx.planTemplate.update({
-    where: { id: templateId },
+    where: { id: templateId, ...draftFilter(tenantId) },
     data: { importHints: asJson(hints.filter((h) => h.id !== hintId)) },
   });
-  await markReviewedIn(tx, templateId);
+  await markReviewedIn(tx, templateId, tenantId);
 }
 
 /** Saca el aviso (cualquier tipo; para RECIPE_SUGGESTION es "Dejar como texto"). */
-export async function dismissTemplateHint(templateId: string, hintId: string): Promise<void> {
+export async function dismissTemplateHint(templateId: string, hintId: string, tenantId?: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const { hints } = await loadDraftHint(tx, templateId, hintId);
-    await saveWithout(tx, templateId, hints, hintId);
+    const { hints } = await loadDraftHint(tx, templateId, hintId, tenantId);
+    await saveWithout(tx, templateId, hints, hintId, tenantId);
   });
 }
 
@@ -242,13 +266,15 @@ export async function resolveUnplacedHint(
   templateId: string,
   hintId: string,
   target: { kind: "meal"; mealId: string; weekday: Weekday | null } | { kind: "section"; sectionId: string | null },
+  tenantId?: string,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const { hints, hint } = await loadDraftHint(tx, templateId, hintId);
+    const { hints, hint } = await loadDraftHint(tx, templateId, hintId, tenantId);
     if (hint.kind !== "UNPLACED") throw new TemplateHintNotFoundError();
     if (target.kind === "meal") {
+      const parent = reviewMealFilter(templateId, tenantId);
       const meal = await tx.templateMeal.findFirst({
-        where: { id: target.mealId, templateId },
+        where: { id: target.mealId, ...parent },
         select: { id: true, mode: true },
       });
       if (!meal) throw new TemplateHintNotFoundError("La comida no es de esta plantilla.");
@@ -259,25 +285,24 @@ export async function resolveUnplacedHint(
         throw new MealWeekdayMismatchError("Una comida que cambia cada día necesita el día.");
       }
       const last = await tx.templateMealItem.findFirst({
-        where: { mealId: meal.id, weekday: target.weekday },
+        where: { mealId: meal.id, weekday: target.weekday, ...(tenantId === undefined ? {} : { meal: parent }) },
         orderBy: { order: "desc" },
         select: { order: true },
       });
       await tx.templateMealItem.create({
         data: {
-          mealId: meal.id,
+          ...(tenantId === undefined ? { mealId: meal.id, foodId: null } : { meal: { connect: { id: meal.id, ...parent } } }),
           customLabel: hint.text,
           weekday: target.weekday,
           order: last ? last.order + 1 : 0,
-          foodId: null,
           quantityGrams: null,
           notes: null,
         },
       });
     } else {
-      await appendToSection(tx, "template", templateId, target.sectionId, hint.text);
+      await appendToSection(tx, "template", templateId, target.sectionId, hint.text, tenantId);
     }
-    await saveWithout(tx, templateId, hints, hintId);
+    await saveWithout(tx, templateId, hints, hintId, tenantId);
   });
 }
 
@@ -285,26 +310,29 @@ export async function resolveUnplacedHint(
  * "Vincular": el ítem del aviso pasa a ser la receta con `portions` (misma comida, día y orden).
  * La receta tiene que seguir PUBLISHED. Verifica que el ítem sea de esta plantilla.
  */
-export async function linkHintRecipe(templateId: string, hintId: string, portions: number): Promise<void> {
+export async function linkHintRecipe(templateId: string, hintId: string, portions: number, tenantId?: string): Promise<void> {
   const value = normalizePortions(portions);
   if (value === null) throw new RangeError("Las porciones van de ½ en ½, entre ½ y 4.");
   await prisma.$transaction(async (tx) => {
-    const { hints, hint } = await loadDraftHint(tx, templateId, hintId);
+    const { hints, hint } = await loadDraftHint(tx, templateId, hintId, tenantId);
     if (hint.kind !== "RECIPE_SUGGESTION" || !hint.itemId) throw new TemplateHintNotFoundError();
+    const where = { id: hint.itemId, ...(tenantId === undefined ? {} : { meal: reviewMealFilter(templateId, tenantId) }) };
     const item = await tx.templateMealItem.findUnique({
-      where: { id: hint.itemId },
+      where,
       select: { id: true, meal: { select: { templateId: true } } },
     });
     if (!item || item.meal.templateId !== templateId) throw new TemplateHintNotFoundError();
-    const recipe = await tx.recipe.findUnique({ where: { id: hint.recipeId }, select: { status: true } });
+    const recipeWhere = { id: hint.recipeId, ...tenantFilter(tenantId) };
+    const recipe = await tx.recipe.findUnique({ where: recipeWhere, select: { status: true } });
     if (recipe?.status !== "PUBLISHED") throw new RecipeNotAvailableError();
     await tx.templateMealItem.update({
-      where: { id: item.id },
+      where,
       data: {
-        recipeId: hint.recipeId,
+        ...(tenantId === undefined
+          ? { recipeId: hint.recipeId, foodId: null }
+          : { recipe: { connect: { ...recipeWhere, status: "PUBLISHED" } }, food: { disconnect: true } }),
         portions: value,
         customLabel: null,
-        foodId: null,
         quantityGrams: null,
         measureQty: null,
         measureName: null,
@@ -312,6 +340,6 @@ export async function linkHintRecipe(templateId: string, hintId: string, portion
         measureGrams: null,
       },
     });
-    await saveWithout(tx, templateId, hints, hintId);
+    await saveWithout(tx, templateId, hints, hintId, tenantId);
   });
 }

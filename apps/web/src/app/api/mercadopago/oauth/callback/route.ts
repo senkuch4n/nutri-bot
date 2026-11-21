@@ -17,7 +17,12 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.redirect(new URL("/inicio", base), 303);
   }
 
-  const result = await completeMercadoPagoOAuth({ sessionEmail: email, query: new URL(req.url).searchParams });
+  const result = await completeMercadoPagoOAuth({ sessionEmail: email, query: new URL(req.url).searchParams })
+    .catch(() => {
+      // No registrar la excepción ni el query: pueden contener detalles sensibles.
+      console.error("[mercadopago] oauth_callback_failed");
+      return "rejected" as const;
+    });
   if (result === "connected") {
     revalidatePath("/ajustes");
     revalidatePath("/servicios");

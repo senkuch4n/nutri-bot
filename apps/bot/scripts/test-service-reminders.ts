@@ -9,27 +9,29 @@
  *    idempotencia que se prueba necesita que la fila exista mientras dura el escenario).
  *  - Fechas lejanas: T0 = 12:00 (zona de la profesional) del día hoy + 40. Todos los turnos caen
  *    entre T0 y T0 + 12 días, fuera del horizonte de 15 días del cron real.
- *  - Datos propios: jids 5490000014031/14032 (no compartidos con otros scripts), servicios
- *    "HU014 … (TEST)" con active: false (no aparecen en el menú y cubren D9), turnos creados con
- *    prisma.appointment.create con status, bookedAt y needsGoogleSync: false explícitos.
- *  - Limpieza solo por id (al terminar cada escenario, en finally y al principio para restos de
- *    una corrida anterior, buscados por nombre exacto de servicio y jid de prueba). No lee ni
- *    escribe la fila de Professional (solo getProfessional() para la zona) ni ningún dato real.
+ *  - Datos propios: JIDs sintéticos por corrida y servicios "HU014 … (TEST)" con active: false
+ *    (no aparecen en el menú y cubren D9), con propiedad verificada por la agenda legacy.
+ *    Los turnos tienen status, bookedAt y needsGoogleSync: false explícitos.
+ *  - Limpieza solo por claves de esta corrida, al terminar cada escenario y en finally.
+ *    No borra restos de corridas anteriores.
  *
  * Uso: npm run test:service-reminders --workspace apps/bot
  */
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@nutri-bot/db";
 import {
   enqueueReminderNow,
   enqueueServiceReminders,
   getAppointmentReminderStatus,
-  getProfessional,
 } from "@nutri-bot/db/domain";
+import { findLegacyConversationState } from "@nutri-bot/db/domain/conversationState";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { dayKeyInTz, reminderStatusText, wallTimeToUtc, type ServiceReminder } from "@nutri-bot/core";
 
-const JID_A = "5490000014031@s.whatsapp.net";
-const JID_B = "5490000014032@s.whatsapp.net";
+const runId = randomUUID();
+const JID_A = `reminder-fixture-${runId}-a@invalid`;
+const JID_B = `reminder-fixture-${runId}-b@invalid`;
 const TEST_JIDS = [JID_A, JID_B];
 const MIN = 60_000;
 const H = 3_600_000;
@@ -44,9 +46,7 @@ const S = {
   change: "HU014 Cambio de config (TEST)",
   changeSent: "HU014 Cambio sobre enviado (TEST)",
 } as const;
-const SERVICE_NAMES: string[] = Object.values(S);
-
-const patientIds: string[] = [];
+const patients: { id: string; whatsappJid: string; tenantId: string }[] = [];
 const serviceIds: string[] = [];
 const appointmentIds = new Set<string>();
 const outboundIds = new Set<string>();
@@ -59,35 +59,14 @@ function shiftKey(dayKey: string, n: number): string {
   return new Date(Date.UTC(y!, m! - 1, d! + n)).toISOString().slice(0, 10);
 }
 
-async function preCleanup(): Promise<void> {
-  const existing = await prisma.patient.findMany({ where: { whatsappJid: { in: TEST_JIDS } } });
-  for (const p of existing) {
-    if (!p.name?.endsWith("(TEST)")) {
-      throw new Error(`Existe un paciente real con el jid de prueba ${p.whatsappJid} (${p.name}). No borro nada.`);
+async function assertUnusedFixtureJids(): Promise<void> {
+  // A first-contact session can exist even when no Patient has this JID.
+  for (const jid of TEST_JIDS) {
+    if (await prisma.patient.findFirst({ where: { whatsappJid: jid }, select: { id: true } }) ||
+        await findLegacyConversationState(jid)) {
+      throw new Error("Un JID sintético ya existe. No se crearon datos de prueba.");
     }
   }
-  const oldPatientIds = existing.map((p) => p.id);
-  const oldServices = await prisma.service.findMany({ where: { name: { in: SERVICE_NAMES } }, select: { id: true } });
-  const oldServiceIds = oldServices.map((s) => s.id);
-  if (oldServiceIds.length > 0) {
-    const foreign = await prisma.appointment.count({
-      where: { serviceId: { in: oldServiceIds }, patientId: { notIn: oldPatientIds } },
-    });
-    if (foreign > 0) throw new Error("Un servicio de prueba HU014 tiene turnos de pacientes que no son (TEST). No borro nada.");
-  }
-  if (oldPatientIds.length === 0 && oldServiceIds.length === 0) return;
-  console.log(`Limpiando restos de una corrida anterior (${oldPatientIds.length} paciente(s), ${oldServiceIds.length} servicio(s))…`);
-  const oldAppts = await prisma.appointment.findMany({ where: { patientId: { in: oldPatientIds } }, select: { id: true } });
-  const oldApptIds = oldAppts.map((a) => a.id);
-  const oldOutbound = await prisma.outboundMessage.findMany({
-    where: { OR: [{ appointmentId: { in: oldApptIds } }, { toJid: { in: TEST_JIDS } }] },
-    select: { id: true },
-  });
-  await prisma.outboundMessage.deleteMany({ where: { id: { in: oldOutbound.map((o) => o.id) } } });
-  await prisma.appointment.deleteMany({ where: { id: { in: oldApptIds } } });
-  await prisma.conversationState.deleteMany({ where: { patientJid: { in: TEST_JIDS } } });
-  await prisma.service.deleteMany({ where: { id: { in: oldServiceIds } } });
-  await prisma.patient.deleteMany({ where: { id: { in: oldPatientIds } } });
 }
 
 /** Borra por id los mensajes y turnos de un escenario (los turnos son propios). */
@@ -102,6 +81,7 @@ async function dropScenario(apptIds: string[]): Promise<void> {
 }
 
 async function finalCleanup(): Promise<void> {
+  if (patients.length === 0) return; // No writes if startup failed before creating fixtures.
   const apptIds = [...appointmentIds];
   const safety = await prisma.outboundMessage.findMany({
     where: { appointmentId: { in: apptIds } },
@@ -109,12 +89,13 @@ async function finalCleanup(): Promise<void> {
   });
   await prisma.outboundMessage.deleteMany({ where: { id: { in: [...outboundIds, ...safety.map((r) => r.id)] } } });
   await prisma.appointment.deleteMany({ where: { id: { in: apptIds } } });
-  // Solo si este script creó los pacientes (si abortó por un jid real, no toca su estado).
-  if (patientIds.length > 0) {
-    await prisma.conversationState.deleteMany({ where: { patientJid: { in: TEST_JIDS } } });
+  if (patients.length) {
+    await prisma.conversationState.deleteMany({ where: {
+      OR: patients.map(({ tenantId, whatsappJid }) => ({ tenantId, patientJid: whatsappJid })),
+    } });
   }
   await prisma.service.deleteMany({ where: { id: { in: serviceIds } } });
-  await prisma.patient.deleteMany({ where: { id: { in: patientIds } } });
+  await prisma.patient.deleteMany({ where: { id: { in: patients.map((p) => p.id) } } });
 }
 
 async function main(): Promise<void> {
@@ -122,8 +103,8 @@ async function main(): Promise<void> {
   if (bot?.connected && process.env.ALLOW_BOT_RUNNING !== "1") {
     throw new Error("Pará el bot antes de correr esta prueba (o ALLOW_BOT_RUNNING=1 si BotStatus quedó colgado)");
   }
-  const tz = (await getProfessional()).timezone; // solo lectura
-  await preCleanup();
+  const { scope, professional: { timezone: tz } } = await resolveLegacySchedulingScope();
+  await assertUnusedFixtureJids();
 
   const day0 = dayKeyInTz(new Date(Date.now() + 40 * DAY), tz);
   const wall = (dayOffset: number, hhmm: string) => wallTimeToUtc(shiftKey(day0, dayOffset), hhmm, tz);
@@ -131,8 +112,8 @@ async function main(): Promise<void> {
   const at = (d: Date, delta: number) => new Date(d.getTime() + delta);
 
   const mkPatient = async (jid: string, name: string) => {
-    const p = await prisma.patient.create({ data: { whatsappJid: jid, phone: jid.split("@")[0]!, name } });
-    patientIds.push(p.id);
+    const p = await prisma.patient.create({ data: { tenantId: scope.tenantId, whatsappJid: jid, phone: jid.split("@")[0]!, name } });
+    patients.push({ ...p, tenantId: scope.tenantId });
     return p;
   };
   const A = await mkPatient(JID_A, "Ana HU014 (TEST)");
@@ -141,7 +122,7 @@ async function main(): Promise<void> {
   const services: Record<string, { id: string; price: unknown }> = {};
   const mkService = async (name: string, reminders: ServiceReminder[]) => {
     const s = await prisma.service.create({
-      data: { name, durationMin: 30, price: 10000, active: false, reminders: reminders.map((r) => ({ ...r })) },
+      data: { tenantId: scope.tenantId, name, durationMin: 30, price: 10000, active: false, reminders: reminders.map((r) => ({ ...r })) },
     });
     serviceIds.push(s.id);
     services[name] = s;
@@ -165,6 +146,7 @@ async function main(): Promise<void> {
     const svc = services[p.service]!;
     const a = await prisma.appointment.create({
       data: {
+        ...scope,
         patientId: p.patientId,
         serviceId: svc.id,
         startsAt: p.startsAt,
@@ -370,7 +352,8 @@ async function main(): Promise<void> {
       assert.ok(conf[0]!.body.startsWith("¿Vas a poder venir a tu turno?"), conf[0]!.body);
       const appt = await prisma.appointment.findUniqueOrThrow({ where: { id: a.id } });
       assert.equal(appt.confirmationRequestedAt?.getTime(), now.getTime());
-      const state = await prisma.conversationState.findUniqueOrThrow({ where: { patientJid: JID_B } });
+      const state = await findLegacyConversationState(B.whatsappJid);
+      assert.ok(state, "debería existir el estado de confirmación");
       assert.equal(state.step, "CONFIRM_ATTENDANCE");
       assert.equal((state.context as { apptId?: string }).apptId, a.id);
       assert.deepEqual(await runB(now), { reminders: 0, confirmations: 0 });
@@ -434,7 +417,7 @@ async function main(): Promise<void> {
       assert.ok(!text.includes("pendiente"), text);
     });
     await dropScenario([a.id]);
-    await prisma.conversationState.deleteMany({ where: { patientJid: JID_B } });
+    await prisma.conversationState.deleteMany({ where: { tenantId: scope.tenantId, patientJid: B.whatsappJid } });
     await setReminders([days(3, true), hours(24)]);
     const b = await mkAppt({ patientId: B.id, service: S.changeSent, startsAt, bookedAt: at(T0, -5 * DAY) });
     await step("14b. Pedido de confirmación enviado y se mueve 'pide confirmar' a 24 h: nada más", async () => {

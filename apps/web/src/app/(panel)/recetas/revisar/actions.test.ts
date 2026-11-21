@@ -11,11 +11,19 @@ const mocks = vi.hoisted(() => {
   class RecipeStatusError extends Error {}
   return {
     auth: vi.fn(),
+    access: vi.fn(),
+    recipesForTenant: vi.fn(),
+    recipeReviewForTenant: vi.fn(),
     revalidatePath: vi.fn(),
     updateRecipe: vi.fn(),
     publishRecipe: vi.fn(),
     deleteDraftRecipe: vi.fn(),
     listDraftQueue: vi.fn(),
+    listDraftFiles: vi.fn(),
+    getRecipe: vi.fn(),
+    listFoodsForRecipes: vi.fn(),
+    notFound: vi.fn(() => { throw new Error("notFound"); }),
+    redirect: vi.fn((url: string) => { throw new Error(url); }),
     chooseImportCandidateAsPhoto: vi.fn(),
     setRecipePhoto: vi.fn(),
     setRecipePhotoCredit: vi.fn(),
@@ -28,8 +36,14 @@ const mocks = vi.hoisted(() => {
   };
 });
 vi.mock("@/auth", () => ({ auth: mocks.auth }));
+vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
+vi.mock("@/components/ui", () => ({ ButtonLink: () => null, EmptyState: () => null, PageHeader: () => null }));
+vi.mock("./[id]/review-screen", () => ({ ReviewScreen: () => null }));
 vi.mock("@nutri-bot/db/domain", () => ({
+  recipesForTenant: mocks.recipesForTenant,
+  recipeReviewForTenant: mocks.recipeReviewForTenant,
   updateRecipe: mocks.updateRecipe,
   publishRecipe: mocks.publishRecipe,
   deleteDraftRecipe: mocks.deleteDraftRecipe,
@@ -45,6 +59,8 @@ vi.mock("@nutri-bot/db/domain", () => ({
 vi.mock("@nutri-bot/db/media", () => ({ processRecipePhoto: mocks.processRecipePhoto }));
 
 import { discardDraftAction, publishDraftAction, saveDraftAction } from "./actions";
+import ReviewQueuePage from "./page";
+import ReviewDraftPage from "./[id]/page";
 
 const payload = {
   id: "d2",
@@ -81,6 +97,17 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.calls = [];
   mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" } });
+  mocks.access.mockResolvedValue({ tenantId: "tenant-a" });
+  mocks.recipesForTenant.mockReturnValue({
+    updateDraft: mocks.updateRecipe, publishDraft: mocks.publishRecipe, discardDraft: mocks.deleteDraftRecipe,
+    setPhoto: mocks.setRecipePhoto, removePhoto: mocks.removeRecipePhoto, setPhotoCredit: mocks.setRecipePhotoCredit,
+    get: mocks.getRecipe, foods: mocks.listFoodsForRecipes,
+  });
+  mocks.recipeReviewForTenant.mockReturnValue({
+    queue: mocks.listDraftQueue, files: mocks.listDraftFiles, chooseCandidate: mocks.chooseImportCandidateAsPhoto,
+  });
+  mocks.notFound.mockImplementation(() => { throw new Error("notFound"); });
+  mocks.redirect.mockImplementation((url: string) => { throw new Error(url); });
   mocks.listDraftQueue.mockResolvedValue(QUEUE);
   mocks.updateRecipe.mockImplementation(async () => void mocks.calls.push("updateRecipe"));
   mocks.chooseImportCandidateAsPhoto.mockImplementation(async () => {
@@ -91,6 +118,35 @@ beforeEach(() => {
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => errorSpy.mockRestore());
+
+describe("páginas de revisión", () => {
+  const searchParams = Promise.resolve({ archivo: "X.pdf", tenantId: "tenant-b" });
+  const detail = (id: string) => ReviewDraftPage({ params: Promise.resolve({ id }), searchParams });
+
+  it("sin pertenencia oculta ambas páginas antes de consultar datos", async () => {
+    mocks.access.mockResolvedValue(null);
+    await expect(ReviewQueuePage({ searchParams })).rejects.toThrow("notFound");
+    await expect(detail("foreign")).rejects.toThrow("notFound");
+    expect(mocks.recipeReviewForTenant).not.toHaveBeenCalled();
+    expect(mocks.recipesForTenant).not.toHaveBeenCalled();
+    expect(mocks.listDraftQueue).not.toHaveBeenCalled();
+    expect(mocks.getRecipe).not.toHaveBeenCalled();
+  });
+
+  it("conserva el filtro y comprueba el dueño antes de abrir o redirigir un detalle", async () => {
+    await expect(ReviewQueuePage({ searchParams })).rejects.toThrow("/recetas/revisar/d1?archivo=X.pdf");
+    expect(mocks.recipeReviewForTenant).toHaveBeenCalledWith("tenant-a");
+    expect(mocks.listDraftQueue).toHaveBeenCalledWith({ file: "X.pdf" });
+    mocks.getRecipe.mockResolvedValueOnce(null).mockResolvedValueOnce({ status: "PUBLISHED" });
+    await expect(detail("foreign")).rejects.toThrow("notFound");
+    await expect(detail("own")).rejects.toThrow("/recetas/own");
+    expect(mocks.recipesForTenant).toHaveBeenCalledWith("tenant-a");
+    expect(mocks.getRecipe.mock.calls).toEqual([["foreign"], ["own"]]);
+    expect(mocks.listDraftQueue).toHaveBeenCalledTimes(1);
+    expect(mocks.listDraftFiles).not.toHaveBeenCalled();
+    expect(mocks.listFoodsForRecipes).not.toHaveBeenCalled();
+  });
+});
 
 describe("publishDraftAction", () => {
   it("con candidateId elige la foto ANTES de publicar y devuelve el siguiente de la cola", async () => {
@@ -117,6 +173,7 @@ describe("publishDraftAction", () => {
 
   it("sin sesión no guarda nada", async () => {
     mocks.auth.mockResolvedValue(null);
+    mocks.access.mockResolvedValue(null);
     expect(await publishDraftAction(form())).toEqual({ ok: false, error: "Tu sesión venció. Volvé a entrar." });
     expect(mocks.updateRecipe).not.toHaveBeenCalled();
   });
@@ -133,6 +190,41 @@ describe("publishDraftAction", () => {
     const res = await publishDraftAction(form());
     expect(res).toMatchObject({ ok: false, error: expect.any(String) });
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("TEXTO-DEL-PAYLOAD");
+  });
+});
+
+describe("autorización de revisión", () => {
+  it("sin pertenencia no usa el tenant del formulario ni lee o escribe borradores", async () => {
+    mocks.access.mockResolvedValue(null);
+    const fd = form({ tenantId: "tenant-b", candidateId: "c2", queueFile: "X.pdf" });
+    const error = "Tu sesión venció. Volvé a entrar.";
+    expect(await saveDraftAction(fd)).toEqual({ ok: false, error });
+    expect(await publishDraftAction(fd)).toEqual({ ok: false, error });
+    expect(await discardDraftAction("d2", "X.pdf")).toEqual({ ok: false, nextId: null, error });
+    for (const fn of [mocks.updateRecipe, mocks.publishRecipe, mocks.deleteDraftRecipe, mocks.listDraftQueue,
+      mocks.chooseImportCandidateAsPhoto, mocks.revalidatePath]) expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("usa el consultorio autenticado para edición, cola, candidata y crédito", async () => {
+    expect(await publishDraftAction(form({ tenantId: "tenant-b", candidateId: "c1" })))
+      .toEqual({ ok: true, id: "d2", nextId: "d3" });
+    expect(mocks.recipesForTenant).toHaveBeenCalledWith("tenant-a");
+    expect(mocks.recipeReviewForTenant).toHaveBeenCalledWith("tenant-a");
+    expect(await saveDraftAction(form({ photoCredit: " Foto: X " }))).toEqual({ ok: true, id: "d2" });
+    expect(mocks.setRecipePhotoCredit).toHaveBeenCalledWith("d2", "Foto: X");
+  });
+
+  it("un id ajeno o inexistente no devuelve siguiente id, ni toca fotos ni invalida caché", async () => {
+    mocks.updateRecipe.mockRejectedValue(new mocks.RecipeNotFoundError());
+    mocks.deleteDraftRecipe.mockRejectedValue(new mocks.RecipeNotFoundError());
+    const error = "La receta ya no existe.";
+    const fd = form({ candidateId: "c1" });
+    expect(await saveDraftAction(fd)).toEqual({ ok: false, error });
+    expect(await publishDraftAction(fd)).toEqual({ ok: false, error });
+    expect(await discardDraftAction("foreign")).toEqual({ ok: false, nextId: null, error });
+    for (const fn of [mocks.chooseImportCandidateAsPhoto, mocks.publishRecipe, mocks.revalidatePath]) {
+      expect(fn).not.toHaveBeenCalled();
+    }
   });
 });
 

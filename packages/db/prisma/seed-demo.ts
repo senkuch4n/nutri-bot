@@ -3,13 +3,17 @@
  * ficticios con historia clínica, evolución, turnos en distintos estados,
  * un plan y algún pago. No se ejecuta con `npm run db:seed` — es aparte
  * a propósito, para no mezclarlo con los datos base de una instalación
- * limpia. Se puede correr de nuevo sin duplicar (usa upsert por teléfono).
+ * limpia. Requiere la agenda, los servicios y los alimentos propios del
+ * consultorio original. Si algún JID de demo ya está ocupado, se aborta
+ * toda la carga sin modificar ni reutilizar ese paciente.
  *
  * Uso: npm run seed:demo --workspace packages/db
  */
-import { PrismaClient, Prisma } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
+import { Prisma } from "@prisma/client";
+import { prisma } from "../index";
+import { resolveLegacySchedulingScope } from "../domain/legacySchedulingScope";
 
 function jid(phoneDigits: string): string {
   return `${phoneDigits}@s.whatsapp.net`;
@@ -26,22 +30,28 @@ function daysFromNow(n: number, hour = 10, minute = 0): Date {
   return daysAgo(-n, hour, minute);
 }
 
-async function main() {
-  const services = await prisma.service.findMany();
+export async function seedDemo(db: Pick<typeof prisma, "$transaction">) {
+  await db.$transaction(writeDemo);
+}
+
+async function writeDemo(prisma: Prisma.TransactionClient) {
+  const { scope } = await resolveLegacySchedulingScope(prisma);
+  const { tenantId } = scope;
+  const services = await prisma.service.findMany({ where: { tenantId } });
   const byServiceName = new Map(services.map((s) => [s.name, s]));
   const primera = byServiceName.get("Primera consulta");
   const seguimiento = byServiceName.get("Consulta de seguimiento");
   const antropometria = byServiceName.get("Antropometría");
   if (!primera || !seguimiento || !antropometria) {
-    throw new Error("Corré primero `npm run db:seed` para tener los servicios base.");
+    throw new Error("Faltan los servicios base del consultorio original.");
   }
 
-  // Solo los propios del seed: SARA 2 repite nombres ("Palta", "Frutilla"…).
-  const foods = await prisma.food.findMany({ where: { source: "PROPIO" } });
+  // SARA2 repite nombres; no usar alimentos ajenos ni propios sin dueño.
+  const foods = await prisma.food.findMany({ where: { source: "PROPIO", tenantId } });
   const byFoodName = new Map(foods.map((f) => [f.name, f]));
   function food(name: string) {
     const f = byFoodName.get(name);
-    if (!f) throw new Error(`Falta el alimento "${name}" — corré \`npm run db:seed\` primero.`);
+    if (!f) throw new Error(`Falta el alimento "${name}" en el catálogo propio del consultorio original.`);
     return f;
   }
 
@@ -52,15 +62,18 @@ async function main() {
     goals: string;
   }) {
     const whatsappJid = jid(data.phoneDigits);
+    // A pre-existing match is a no-op, not permission to attach demo data.
+    const id = randomUUID();
     const patient = await prisma.patient.upsert({
-      where: { whatsappJid },
-      update: { name: data.name },
-      create: { whatsappJid, phone: data.phoneDigits, name: data.name },
+      where: { tenantId_whatsappJid: { tenantId, whatsappJid } },
+      update: {},
+      create: { id, tenantId, whatsappJid, phone: data.phoneDigits, name: data.name },
     });
-    await prisma.clinicalRecord.upsert({
-      where: { patientId: patient.id },
-      update: { background: data.background, goals: data.goals },
-      create: { patientId: patient.id, background: data.background, goals: data.goals },
+    if (patient.id !== id) {
+      throw new Error("El JID de demo ya existe en la instalación original; no se modificaron sus datos.");
+    }
+    await prisma.clinicalRecord.create({
+      data: { patientId: patient.id, background: data.background, goals: data.goals },
     });
     return patient;
   }
@@ -73,6 +86,7 @@ async function main() {
       await prisma.evolutionEntry.create({
         data: {
           patientId,
+          tenantId,
           recordedAt: daysAgo(e.daysAgo, 12),
           weightKg: new Prisma.Decimal(e.weightKg),
           heightCm: e.heightCm != null ? new Prisma.Decimal(e.heightCm) : null,
@@ -93,6 +107,7 @@ async function main() {
     const endsAt = new Date(params.startsAt.getTime() + params.service.durationMin * 60_000);
     return prisma.appointment.create({
       data: {
+        ...scope,
         patientId: params.patientId,
         serviceId: params.service.id,
         startsAt: params.startsAt,
@@ -113,7 +128,7 @@ async function main() {
     meals: { name: string; items: { food: string; grams: number; note?: string }[] }[],
   ) {
     const plan = await prisma.nutritionPlan.create({
-      data: { patientId, title, status: "ACTIVE" },
+      data: { patientId, tenantId, title, status: "ACTIVE" },
     });
     let mealOrder = 0;
     for (const meal of meals) {
@@ -405,14 +420,16 @@ async function main() {
     },
   ]);
   await addPayment(sofiaAppt1.id, seguimiento.price, 5);
-
-  console.log("Seed de demo completado: 5 pacientes con evolución, turnos, planes y pagos.");
 }
 
-main()
-  .then(() => prisma.$disconnect())
-  .catch(async (err) => {
-    console.error(err);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  seedDemo(prisma)
+    .then(() => {
+      console.log("Seed de demo completado: 5 pacientes con evolución, turnos, planes y pagos.");
+    })
+    .catch((err) => {
+      console.error(err);
+      process.exitCode = 1;
+    })
+    .finally(() => prisma.$disconnect());
+}

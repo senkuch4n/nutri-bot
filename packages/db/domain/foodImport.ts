@@ -87,6 +87,9 @@ function dataFor(food: Sara2Food) {
  * - Actualiza SOLO si cambió algo: name, group, kcal y los 9 nutrientes en columnas, nutrients.
  *   Nunca cambia active (respeta lo que ella desactivó), unitHint ni reference.
  * - SARA2 activos cuyo sourceKey no está en el dataset → active false (D14). Nunca borra.
+ * - catalogActive sigue la presencia en el dataset, sin leer ni escribir preferencias del tenant.
+ *   El freno protege tanto el catálogo compartido como el listado legacy. El contador
+ *   de bajas sigue contando solo las filas cuyo `active` cambió.
  * - Aborta (Sara2LoadAbortedError) si desactivaría > 10 % de los SARA2 existentes, salvo
  *   options.allowMassDeactivation.
  */
@@ -103,6 +106,7 @@ export async function loadSara2Dataset(
       name: true,
       group: true,
       active: true,
+      catalogActive: true,
       nutrients: true,
       kcalPer100: true,
       proteinPer100: true,
@@ -119,14 +123,16 @@ export async function loadSara2Dataset(
   const byKey = new Map(existing.map((f) => [f.sourceKey as string, f]));
   const datasetKeys = new Set(dataset.foods.map((f) => f.sourceKey));
 
-  const toDeactivate = existing.filter((f) => f.active && !datasetKeys.has(f.sourceKey as string));
+  const missing = existing.filter((f) => !datasetKeys.has(f.sourceKey as string));
+  const toDeactivate = missing.filter((f) => f.active);
+  const removalCount = Math.max(toDeactivate.length, missing.filter((f) => f.catalogActive).length);
   if (
     !options?.allowMassDeactivation &&
     existing.length > 0 &&
-    toDeactivate.length > existing.length * MAX_DEACTIVATION_RATIO
+    removalCount > existing.length * MAX_DEACTIVATION_RATIO
   ) {
     throw new Sara2LoadAbortedError(
-      `La carga desactivaría ${toDeactivate.length} de ${existing.length} alimentos SARA 2 (más del ${
+      `La carga desactivaría ${removalCount} de ${existing.length} alimentos SARA 2 (más del ${
         MAX_DEACTIVATION_RATIO * 100
       } %). Revisá el archivo o usá --allow-mass-deactivation.`,
     );
@@ -173,9 +179,20 @@ export async function loadSara2Dataset(
         sourceKey: { in: toDeactivate.map((f) => f.sourceKey as string) },
         active: true,
       },
-      data: { active: false },
+      data: { active: false, catalogActive: false },
     });
     deactivated = res.count;
+  }
+
+  // Una fila oculta en legacy también puede salir del catálogo; si vuelve, solo se
+  // recupera la disponibilidad oficial, no `active` ni la preferencia del tenant.
+  for (const catalogActive of [false, true]) {
+    const ids = existing.filter((f) =>
+      (catalogActive || !f.active) && f.catalogActive !== catalogActive && datasetKeys.has(f.sourceKey as string) === catalogActive,
+    ).map((f) => f.id);
+    for (let i = 0; i < ids.length; i += CREATE_BATCH) {
+      await db.food.updateMany({ where: { source: "SARA2", id: { in: ids.slice(i, i + CREATE_BATCH) } }, data: { catalogActive } });
+    }
   }
 
   return {

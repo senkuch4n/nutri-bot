@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getProfessional: vi.fn(),
   prisma: {
     $transaction: vi.fn(),
     $executeRaw: vi.fn(),
@@ -15,11 +14,10 @@ const mocks = vi.hoisted(() => ({
       count: vi.fn(),
     },
     outboundMessage: { create: vi.fn() },
-    professional: { findUnique: vi.fn() },
+    agenda: { findUnique: vi.fn() },
   },
 }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
-vi.mock("./availability", () => ({ getProfessional: mocks.getProfessional }));
 
 import {
   INQUIRY_MESSAGE_MAX,
@@ -47,7 +45,7 @@ function row(id: string, name: string | null, phone: string, receivedAt: Date) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.getProfessional.mockResolvedValue(PRO);
+  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: PRO });
   mocks.prisma.$transaction.mockImplementation((fn: (tx: typeof mocks.prisma) => unknown) => fn(mocks.prisma));
 });
 
@@ -69,18 +67,28 @@ describe("enqueueAfterHoursDigest", () => {
 
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledTimes(1);
     const data = mocks.prisma.outboundMessage.create.mock.calls[0]![0].data;
+    expect(data.tenantId).toBe("legacy-tenant");
     expect(data.kind).toBe("PROFESSIONAL_ALERT");
     expect(data.toJid).toBe(PRO.phoneJid);
     expect(data.body).toContain("• Ana (23:10)");
     expect(data.body).toContain("• Bruno (01:00)");
     expect(data.body).toContain("2 consultas");
     expect(mocks.prisma.patientInquiry.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["i1", "i2"] }, digestedAt: null },
+      where: { id: { in: ["i1", "i2"] }, digestedAt: null, patient: { tenantId: "legacy-tenant" } },
       data: { digestedAt: DAY_NOW },
     });
     const where = mocks.prisma.patientInquiry.findMany.mock.calls[0]![0].where;
     expect(where).toMatchObject({ status: "PENDING", receivedAfterHours: true, digestedAt: null, receivedAt: { lte: DAY_NOW } });
     expect(where.patientId).toBeUndefined();
+    expect(where.patient).toEqual({ tenantId: "legacy-tenant" });
+  });
+
+  it("sin agenda original no lee ni modifica consultas ni encola", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+    await expect(enqueueAfterHoursDigest({ now: DAY_NOW })).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    expect(mocks.prisma.patientInquiry.findMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.patientInquiry.updateMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
 
   it("sin consultas no crea ni marca nada", async () => {
@@ -91,7 +99,7 @@ describe("enqueueAfterHoursDigest", () => {
   });
 
   it("con phoneJid nulo no encola, pero las marca como resumidas", async () => {
-    mocks.getProfessional.mockResolvedValue({ ...PRO, phoneJid: null });
+    mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { ...PRO, phoneJid: null } });
     mocks.prisma.patientInquiry.findMany.mockResolvedValue([row("i1", "Ana", "549", NIGHT_NOW)]);
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 1 });
     await expect(enqueueAfterHoursDigest({ now: DAY_NOW })).resolves.toEqual({ digested: 1, outboundId: null });

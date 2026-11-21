@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@nutri-bot/db";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { appointmentEventTitle, isConsultationEmpty, patientDisplayName } from "@nutri-bot/core";
 import { auth } from "@/auth";
 
@@ -15,8 +16,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "rango inválido" }, { status: 400 });
   }
 
+  const binding = await resolveLegacySchedulingScope().catch(() => null);
+  if (!binding) return NextResponse.json({ error: "unconfigured" }, { status: 503 });
+
   const appts = await prisma.appointment.findMany({
     where: {
+      ...binding.scope,
       startsAt: { gte: from, lt: to },
       status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] },
     },

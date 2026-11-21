@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => {
     setMeasureItemQuantity: vi.fn(),
     revalidateMenuOwner: vi.fn(),
     hasPanelSession: vi.fn(),
+    access: vi.fn(),
+    touchTemplate: vi.fn(),
     revalidatePath: vi.fn(),
   };
 });
@@ -40,6 +42,8 @@ vi.mock("@nutri-bot/db/domain", () => ({
 }));
 vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.revalidateMenuOwner }));
 vi.mock("./recetas/recipe-save", () => ({ hasPanelSession: mocks.hasPanelSession }));
+vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+vi.mock("@/lib/touch-template", () => ({ touchTemplate: mocks.touchTemplate }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
 import * as actions from "./food-measure-actions";
@@ -57,6 +61,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
   mocks.hasPanelSession.mockResolvedValue(true);
+  mocks.access.mockResolvedValue({ tenantId: "tenant-a" });
 });
 
 describe("food-measure-actions", () => {
@@ -158,6 +163,19 @@ describe("food-measure-actions", () => {
       ok: false, error: "Tu sesión venció. Volvé a entrar.",
     });
     expect(mocks.setMeasureItemQuantity).not.toHaveBeenCalled();
+    expect(mocks.revalidateMenuOwner).not.toHaveBeenCalled();
+  });
+
+  it("stepper: plantilla requiere pertenencia y descarta tenant del cliente", async () => {
+    const input = { kind: "template" as const, ownerId: "t1", itemId: "it1", qty: 1.5, tenantId: "forged" };
+    mocks.setMeasureItemQuantity.mockResolvedValue({ quantityGrams: 270 });
+    mocks.access.mockResolvedValueOnce(null);
+    expect(await setMeasureItemQtyAction(input)).toEqual({ ok: false, error: "Tu sesión venció. Volvé a entrar." });
+    expect(mocks.setMeasureItemQuantity).not.toHaveBeenCalled();
+    expect(mocks.touchTemplate).not.toHaveBeenCalled();
+    expect(await setMeasureItemQtyAction(input)).toEqual({ ok: true });
+    expect(mocks.setMeasureItemQuantity.mock.calls).toEqual([["template", "t1", "it1", 1.5, "tenant-a"]]);
+    expect(mocks.touchTemplate.mock.calls).toEqual([["t1", "tenant-a"]]);
     expect(mocks.revalidateMenuOwner).not.toHaveBeenCalled();
   });
 

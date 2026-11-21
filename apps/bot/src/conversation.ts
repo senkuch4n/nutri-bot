@@ -1,4 +1,4 @@
-import { Prisma, prisma } from "@nutri-bot/db";
+import { prisma, type Prisma } from "@nutri-bot/db";
 import {
   MercadoPagoUnavailableError,
   SlotUnavailableError,
@@ -6,6 +6,7 @@ import {
   createAppointment,
   createDepositCheckout,
   createPatientToken,
+  findLegacyPatientByJidOrThrow,
   findOrCreatePatientByJid,
   countBotAiQuestionsToday,
   getProfessional,
@@ -14,8 +15,15 @@ import {
   notifyMercadoPagoMissingForBooking,
   recordBotAiQuestion,
   recordInquiryMessage,
+  respondToAppointmentAttendance,
   runBotAiTool,
 } from "@nutri-bot/db/domain";
+import {
+  findLegacyConversationState,
+  loadOrInitializeLegacyConversationState,
+  saveLegacyConversationState,
+} from "@nutri-bot/db/domain/conversationState";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import {
   afterHoursConfigFrom,
   formatClock,
@@ -125,21 +133,12 @@ type Ctx = {
 };
 
 async function loadState(jid: string): Promise<{ step: string; ctx: Ctx; updatedAt: Date }> {
-  const row = await prisma.conversationState.upsert({
-    where: { patientJid: jid },
-    create: { patientJid: jid, step: STEP.DORMANT, context: {} },
-    update: {},
-  });
+  const row = await loadOrInitializeLegacyConversationState(jid, STEP.DORMANT);
   return { step: row.step, ctx: (row.context ?? {}) as Ctx, updatedAt: row.updatedAt };
 }
 
 async function save(jid: string, step: string, ctx: Ctx = {}): Promise<void> {
-  const context = ctx as unknown as Prisma.InputJsonValue;
-  await prisma.conversationState.upsert({
-    where: { patientJid: jid },
-    create: { patientJid: jid, step, context },
-    update: { step, context },
-  });
+  await saveLegacyConversationState(jid, step, ctx as unknown as Prisma.InputJsonValue);
 }
 
 function parseChoice(text: string, max: number): number | null {
@@ -169,6 +168,18 @@ export async function handleIncoming(
 
   // Interruptor global: la nutricionista puede apagar el bot desde el panel.
   if (pro.botPaused) return;
+
+  // Attendance must never create a patient from a stale or foreign conversation hint.
+  const attendanceJid = jid.replace(/^(\d+):\d+(@(?:s\.whatsapp\.net|lid))$/, "$1$2");
+  const saved = await findLegacyConversationState(attendanceJid);
+  if (saved?.step === STEP.CONFIRM_ATTENDANCE && !isExitWord(text) &&
+      !(isWakeWord(text) && /\bmenu\b/.test(normalize(text)))) {
+    const late = now.getTime() - saved.updatedAt.getTime() > SESSION_TIMEOUT_MS;
+    if (!late || lateAttendanceAnswer(text) !== null) {
+      return handleConfirmAttendance(attendanceJid, text, (saved.context ?? {}) as Ctx, send, now, saved.updatedAt);
+    }
+    if (!isWakeWord(text)) return;
+  }
 
   const patient = await findOrCreatePatientByJid(jid);
   const state = await loadState(jid);
@@ -297,7 +308,7 @@ export async function handleIncoming(
     case STEP.CANCEL_CONFIRM:
       return handleCancelConfirm(jid, text, ctx, send, menuText);
     case STEP.CONFIRM_ATTENDANCE:
-      return handleConfirmAttendance(jid, text, ctx, send, menuText, now);
+      return handleConfirmAttendance(attendanceJid, text, ctx, send, now, state.updatedAt);
     default:
       await save(jid, STEP.MENU);
       await send(menuText);
@@ -334,7 +345,7 @@ async function handleMenu(
   }
 
   if (choice === "2") {
-    const patient = await prisma.patient.findUniqueOrThrow({ where: { whatsappJid: jid } });
+    const patient = await findLegacyPatientByJidOrThrow(jid);
     const appts = await cancelableAppointments(patient.id);
     if (appts.length === 0) {
       await send(messages.NO_APPTS_TO_CANCEL);
@@ -371,7 +382,7 @@ async function handleMenu(
   }
 
   if (choice === "4") {
-    const patient = await prisma.patient.findUniqueOrThrow({ where: { whatsappJid: jid } });
+    const patient = await findLegacyPatientByJidOrThrow(jid);
     const token = createPatientToken(patient.id, 15);
     const url = `${process.env.AUTH_URL}/portal/login?token=${token}`;
     await send(messages.portalLink(url));
@@ -380,7 +391,6 @@ async function handleMenu(
 
   if (choice === "0") {
     const config = afterHoursConfigFor(pro, opts);
-    const alertJid = alertJidFor(pro, opts);
     if (isWithinAfterHours(now, config, pro.timezone)) {
       // HU-011: fuera de horario no se alerta en el momento; se pide la consulta.
       await send(
@@ -389,13 +399,14 @@ async function handleMenu(
       await save(jid, STEP.AWAIT_INQUIRY, { alerted: false, confirmed: false });
       return;
     }
+    const target = await handoffAlertTarget(opts);
+    const patient = target ? await findLegacyPatientByJidOrThrow(jid) : null;
     await send(messages.HANDOFF);
-    if (alertJid) {
-      const patient = await prisma.patient.findUniqueOrThrow({ where: { whatsappJid: jid } });
-      await enqueueHandoffAlert(patient, alertJid);
+    if (target && patient) {
+      await enqueueHandoffAlert(patient, target);
     }
     // HU-011 (D4): de día también se captura lo que escriba después.
-    await save(jid, STEP.AWAIT_INQUIRY, { alerted: Boolean(alertJid), confirmed: false });
+    await save(jid, STEP.AWAIT_INQUIRY, { alerted: Boolean(target), confirmed: false });
     return;
   }
 
@@ -611,7 +622,8 @@ async function handleBookConfirm(
 async function depositUnavailable(patientId: string, serviceName: string, send: Send): Promise<void> {
   await send(messages.DEPOSIT_UNAVAILABLE);
   try {
-    const patient = await prisma.patient.findUnique({ where: { id: patientId }, select: { name: true, phone: true } });
+    const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+    const patient = await prisma.patient.findUnique({ where: { id: patientId, tenantId }, select: { name: true, phone: true } });
     if (patient) {
       await notifyMercadoPagoMissingForBooking({ patientName: patient.name, patientPhone: patient.phone, serviceName });
     }
@@ -696,42 +708,19 @@ async function handleConfirmAttendance(
   text: string,
   ctx: Ctx,
   send: Send,
-  menuText: string,
   now: Date,
+  promptUpdatedAt: Date,
 ): Promise<void> {
-  if (!ctx.apptId) {
-    await save(jid, STEP.MENU);
-    await send(menuText);
+  if (typeof ctx.apptId !== "string" || !ctx.apptId) return;
+  const attending = isYes(text) ? true : isNo(text) ? false : null;
+  const details = await respondToAppointmentAttendance({ id: ctx.apptId, whatsappJid: jid, attending, now, promptUpdatedAt });
+  if (!details) return;
+  if (attending === null) {
+    await send("Respondé *sí* si vas a poder venir, o *no* si no vas a poder.");
     return;
   }
-  const appt = await prisma.appointment.findUnique({ where: { id: ctx.apptId }, include: { service: true } });
-  // Turno cancelado, ya empezado o inexistente: la confirmación ya no aplica (silencio).
-  if (!appt || appt.status !== "CONFIRMED" || appt.startsAt.getTime() <= now.getTime()) {
-    await save(jid, STEP.DORMANT);
-    return;
-  }
-  const pro = await getProfessional();
-
-  if (isYes(text)) {
-    await prisma.appointment.update({
-      where: { id: appt.id },
-      data: { confirmationResponse: true, confirmationRespondedAt: new Date() },
-    });
-    await send(messages.attendanceConfirmedThanks({ serviceName: appt.service.name, startsAt: appt.startsAt, tz: pro.timezone }));
-    await save(jid, STEP.MENU);
-    return;
-  }
-  if (isNo(text)) {
-    await prisma.appointment.update({
-      where: { id: appt.id },
-      data: { confirmationResponse: false, confirmationRespondedAt: new Date() },
-    });
-    await cancelAppointment({ id: appt.id, by: "PATIENT", reason: "Avisó que no puede asistir", notifyPatient: false });
-    await send(messages.attendanceDeclinedNotice({ serviceName: appt.service.name, startsAt: appt.startsAt, tz: pro.timezone }));
-    await save(jid, STEP.MENU);
-    return;
-  }
-  await send("Respondé *sí* si vas a poder venir, o *no* si no vas a poder.");
+  await send(attending ? messages.attendanceConfirmedThanks(details) : messages.attendanceDeclinedNotice(details));
+  await save(jid, STEP.MENU);
 }
 
 // --- HU-011: consultas por la opción 0 ---
@@ -740,18 +729,20 @@ function afterHoursConfigFor(pro: Professional, opts: ConversationOptions): Afte
   return opts.afterHours ?? afterHoursConfigFrom(pro);
 }
 
-function alertJidFor(pro: Professional, opts: ConversationOptions): string | null {
-  return opts.alertJid !== undefined ? opts.alertJid : pro.phoneJid;
+async function handoffAlertTarget(opts: ConversationOptions) {
+  const { scope: { tenantId }, professional } = await resolveLegacySchedulingScope();
+  const toJid = opts.alertJid !== undefined ? opts.alertJid : professional.phoneJid;
+  return toJid ? { tenantId, toJid } : null;
 }
 
 /** Alerta inmediata "quiere hablar con vos" (la misma de antes de la HU-011). */
 async function enqueueHandoffAlert(
   patient: { name: string | null; phone: string },
-  alertJid: string,
+  target: { tenantId: string; toJid: string },
 ): Promise<void> {
   await prisma.outboundMessage.create({
     data: {
-      toJid: alertJid,
+      ...target,
       kind: "PROFESSIONAL_ALERT",
       body: messages.professionalHandoffAlert({ patientName: patient.name, patientPhone: patient.phone }),
     },
@@ -775,7 +766,6 @@ async function handleInquiryText(
   if (d !== null) return handleMenu(jid, d, send, pro, opts, now, menuText, ai);
 
   const config = afterHoursConfigFor(pro, opts);
-  const alertJid = alertJidFor(pro, opts);
   const afterHours = isWithinAfterHours(now, config, pro.timezone); // según la hora de ESTE mensaje
   const { inquiry } = await recordInquiryMessage({
     patientId: patient.id,
@@ -788,9 +778,12 @@ async function handleInquiryText(
   let alerted = ctx.alerted ?? false;
   // Cruce de franja (empezó de noche, escribe de día): alerta inmediata, salvo que la consulta
   // ya sea nocturna (entonces va en el resumen y no se notifica dos veces).
-  if (!afterHours && !alerted && !inquiry.receivedAfterHours && alertJid) {
-    await enqueueHandoffAlert(patient, alertJid);
-    alerted = true;
+  if (!afterHours && !alerted && !inquiry.receivedAfterHours) {
+    const target = await handoffAlertTarget(opts);
+    if (target) {
+      await enqueueHandoffAlert(patient, target);
+      alerted = true;
+    }
   }
   if (!ctx.confirmed) {
     await send(
@@ -812,8 +805,8 @@ export async function handleIncomingMedia(
   const now = opts.now ?? new Date();
   const pro = await getProfessional();
   if (pro.botPaused) return;
-  // findUnique (no loadState): no crea pacientes ni estado para contactos desconocidos.
-  const row = await prisma.conversationState.findUnique({ where: { patientJid: jid } });
+  // Una lectura sin inicialización no crea pacientes ni estado para contactos desconocidos.
+  const row = await findLegacyConversationState(jid);
   if (
     !row ||
     (row.step !== STEP.AWAIT_INQUIRY &&
@@ -848,7 +841,6 @@ async function handoffFromQuestion(
   now: Date,
 ): Promise<void> {
   const config = afterHoursConfigFor(pro, opts);
-  const alertJid = alertJidFor(pro, opts);
   const afterHours = isWithinAfterHours(now, config, pro.timezone);
   const { inquiry } = await recordInquiryMessage({
     patientId: patient.id,
@@ -863,9 +855,12 @@ async function handoffFromQuestion(
   }
   let alerted = false;
   // De día: alerta inmediata (HU-011). De noche: va en el resumen de la mañana.
-  if (!afterHours && !inquiry.receivedAfterHours && alertJid) {
-    await enqueueHandoffAlert(patient, alertJid);
-    alerted = true;
+  if (!afterHours && !inquiry.receivedAfterHours) {
+    const target = await handoffAlertTarget(opts);
+    if (target) {
+      await enqueueHandoffAlert(patient, target);
+      alerted = true;
+    }
   }
   // P6: solo la confirmación de la HU-011 (la consulta ya está cargada).
   await send(

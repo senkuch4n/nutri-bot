@@ -1,6 +1,8 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
 import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { outboxOwnershipWhere } from "@nutri-bot/db/domain/outbox";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
@@ -37,14 +39,21 @@ async function tick(): Promise<void> {
   if (outboxRunning) return;
   outboxRunning = true;
   try {
+    const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+    const pendingWhere = { ...outboxOwnershipWhere(tenantId), status: "PENDING" as const };
     const pending = await prisma.outboundMessage.findMany({
-      where: { status: "PENDING" },
+      where: pendingWhere,
       orderBy: { createdAt: "asc" },
       take: 5,
-      include: OUTBOX_INCLUDE,
+      select: { id: true },
     });
 
-    for (const msg of pending) {
+    for (const { id } of pending) {
+      // Earlier sends can delay this row. Fetch its current payload only if it is still eligible.
+      const where = { ...pendingWhere, id };
+      const msg = await prisma.outboundMessage.findFirst({ where, include: OUTBOX_INCLUDE });
+      if (!msg) continue;
+      const updateWhere = { ...where, attempts: msg.attempts };
       try {
         const payload = resolveOutboundPayload(msg);
         if (payload.type === "document") {
@@ -52,12 +61,6 @@ async function tick(): Promise<void> {
         } else {
           await sendText(msg.toJid, payload.body);
         }
-        await prisma.outboundMessage.update({
-          where: { id: msg.id },
-          data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 }, lastError: null },
-        });
-        logger.info({ id: msg.id, kind: msg.kind, to: msg.toJid }, "Mensaje enviado");
-        await new Promise((r) => setTimeout(r, 800));
       } catch (err) {
         const message = err instanceof Error ? err.message : "error desconocido";
         if (message.includes("no está conectado")) {
@@ -65,16 +68,24 @@ async function tick(): Promise<void> {
           break;
         }
         const attempts = msg.attempts + 1;
-        await prisma.outboundMessage.update({
-          where: { id: msg.id },
+        const { count } = await prisma.outboundMessage.updateMany({
+          where: updateWhere,
           data: {
             status: attempts >= MAX_ATTEMPTS ? "FAILED" : "PENDING",
             attempts,
             lastError: message.slice(0, 300),
           },
         });
-        logger.warn({ id: msg.id, attempts }, "Fallo al enviar mensaje");
+        if (count) logger.warn({ id: msg.id, attempts }, "Fallo al enviar mensaje");
+        continue;
       }
+      const { count } = await prisma.outboundMessage.updateMany({
+        where: updateWhere,
+        data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 }, lastError: null },
+      });
+      if (count) logger.info({ id: msg.id, kind: msg.kind, to: msg.toJid }, "Mensaje enviado");
+      else logger.warn({ id: msg.id }, "Mensaje enviado sin poder actualizar el outbox");
+      await new Promise((r) => setTimeout(r, 800));
     }
   } catch (err) {
     logger.error({ err }, "Error en el consumidor de outbox");

@@ -11,7 +11,10 @@ import {
 import { prisma, type Prisma } from "../index";
 import { PROFESSIONAL_SELECT } from "./professionalSelect";
 
-type AvailabilityClient = Pick<Prisma.TransactionClient, "professional" | "service" | "availabilityRule" | "availabilityException" | "appointment">;
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+
+type AvailabilityClient = Pick<Prisma.TransactionClient, "agenda" | "service" | "availabilityRule" | "availabilityException" | "appointment">;
+type LegacyScheduling = Awaited<ReturnType<typeof resolveLegacySchedulingScope>>;
 
 function minLeadMinutes(): number {
   return Number(process.env.MIN_LEAD_MINUTES ?? 120);
@@ -25,10 +28,11 @@ export async function getProfessional() {
   return pro;
 }
 
-async function loadRulesAndExceptions(tz: string, db: AvailabilityClient = prisma) {
+async function loadRulesAndExceptions({ tenantId, agendaId }: LegacyScheduling["scope"], db: AvailabilityClient = prisma) {
+  const where = { agendaId, agenda: { tenantId } };
   const [rules, exceptions] = await Promise.all([
-    db.availabilityRule.findMany({ where: { active: true } }),
-    db.availabilityException.findMany(),
+    db.availabilityRule.findMany({ where: { ...where, active: true } }),
+    db.availabilityException.findMany({ where }),
   ]);
 
   const coreRules: Rule[] = rules.map((r) => ({
@@ -49,6 +53,7 @@ async function loadRulesAndExceptions(tz: string, db: AvailabilityClient = prism
 }
 
 async function loadBusy(
+  scope: LegacyScheduling["scope"],
   from: Date,
   to: Date,
   excludeAppointmentId?: string,
@@ -56,6 +61,7 @@ async function loadBusy(
 ): Promise<BusyInterval[]> {
   const appts = await db.appointment.findMany({
     where: {
+      ...scope,
       status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] },
       startsAt: { lt: to },
       endsAt: { gt: from },
@@ -66,23 +72,26 @@ async function loadBusy(
   return appts.map((a) => ({ start: a.startsAt, end: a.endsAt }));
 }
 
-export async function getAvailableSlotsForService(params: {
+type AvailableSlotsParams = {
   serviceId: string;
   from: Date;
   to: Date;
   now?: Date;
   /** HU-022: turno que no cuenta como ocupado (el que se está reprogramando). */
   excludeAppointmentId?: string;
-}): Promise<Date[]> {
+};
+
+export async function getAvailableSlotsForService(params: AvailableSlotsParams): Promise<Date[]> {
+  return listSlots(params, await resolveLegacySchedulingScope());
+}
+
+async function listSlots(params: AvailableSlotsParams, { scope, professional: pro }: LegacyScheduling) {
   const now = params.now ?? new Date();
-  const [pro, service] = await Promise.all([
-    getProfessional(),
-    prisma.service.findUnique({ where: { id: params.serviceId } }),
-  ]);
+  const service = await prisma.service.findUnique({ where: { id: params.serviceId, tenantId: scope.tenantId } });
   if (!service || !service.active) return [];
 
-  const { coreRules, coreExceptions } = await loadRulesAndExceptions(pro.timezone);
-  const busy = await loadBusy(params.from, params.to, params.excludeAppointmentId);
+  const { coreRules, coreExceptions } = await loadRulesAndExceptions(scope);
+  const busy = await loadBusy(scope, params.from, params.to, params.excludeAppointmentId);
 
   return getAvailableSlots({
     service: { durationMin: service.durationMin },
@@ -122,21 +131,21 @@ export async function getRescheduleSlots(params: {
 }): Promise<Date[]> {
   if (!isValidDayKey(params.dayKey)) throw new Error("Fecha inválida");
   const now = params.now ?? new Date();
+  const binding = await resolveLegacySchedulingScope();
   const appt = await prisma.appointment.findUnique({
-    where: { id: params.appointmentId },
+    where: { id: params.appointmentId, ...binding.scope },
     select: { id: true, serviceId: true, status: true, startsAt: true },
   });
   if (!appt || !canRescheduleAppointment(appt, now)) return [];
 
-  const pro = await getProfessional();
-  const { start, end } = dayRangeUtc(params.dayKey, pro.timezone);
-  const slots = await getAvailableSlotsForService({
+  const { start, end } = dayRangeUtc(params.dayKey, binding.professional.timezone);
+  const slots = await listSlots({
     serviceId: appt.serviceId,
     from: start,
     to: end,
     now,
     excludeAppointmentId: appt.id,
-  });
+  }, binding);
   // getAvailableSlots incluye `to`: la medianoche siguiente es del otro día.
   return slots.filter((s) => s < end);
 }
@@ -148,15 +157,13 @@ export async function checkSlotAvailable(params: {
   excludeAppointmentId?: string;
 }, db: AvailabilityClient = prisma): Promise<boolean> {
   const now = params.now ?? new Date();
-  const [pro, service] = await Promise.all([
-    db.professional.findUniqueOrThrow({ where: { id: 1 }, select: PROFESSIONAL_SELECT }),
-    db.service.findUnique({ where: { id: params.serviceId } }),
-  ]);
+  const { scope, professional: pro } = await resolveLegacySchedulingScope(db);
+  const service = await db.service.findUnique({ where: { id: params.serviceId, tenantId: scope.tenantId } });
   if (!service || !service.active) return false;
 
-  const { coreRules, coreExceptions } = await loadRulesAndExceptions(pro.timezone, db);
+  const { coreRules, coreExceptions } = await loadRulesAndExceptions(scope, db);
   const end = new Date(params.startsAt.getTime() + service.durationMin * 60_000);
-  const busy = await loadBusy(params.startsAt, end, params.excludeAppointmentId, db);
+  const busy = await loadBusy(scope, params.startsAt, end, params.excludeAppointmentId, db);
 
   return isSlotAvailable({
     startsAt: params.startsAt,

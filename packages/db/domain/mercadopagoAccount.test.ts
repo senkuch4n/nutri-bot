@@ -23,7 +23,7 @@ const db = vi.hoisted(() => ({
 const mocks = vi.hoisted(() => {
   const sql = (strings: TemplateStringsArray) => strings.join("?").replace(/\s+/g, " ").trim();
   const emptyAccount = () => ({
-    id: 1, userId: null, nickname: null, email: null, liveMode: null, accessTokenEnc: null, refreshTokenEnc: null,
+    id: 1, tenantId: "legacy-tenant", userId: null, nickname: null, email: null, liveMode: null, accessTokenEnc: null, refreshTokenEnc: null,
     scope: null, expiresAt: null, connectedAt: null, refreshedAt: null, errorCode: null, errorAt: null,
     errorNotifiedAt: null, missingAlertAt: null,
   });
@@ -34,11 +34,11 @@ const mocks = vi.hoisted(() => {
   };
   const prisma: any = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-    $executeRaw: vi.fn(async (strings: TemplateStringsArray) => {
+    $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const q = sql(strings);
       if (q.startsWith('INSERT INTO "MercadoPagoAccount"')) {
         if (!db.account) {
-          db.account = emptyAccount();
+          db.account = { ...emptyAccount(), tenantId: values[2] ?? null };
           return 1;
         }
         return 0;
@@ -57,20 +57,25 @@ const mocks = vi.hoisted(() => {
         return [{ codeVerifierEnc: row!.codeVerifierEnc }];
       }
       if (q.includes('FROM "MercadoPagoAccount" WHERE id =') && q.endsWith("FOR UPDATE")) {
-        return db.account ? [{ ...db.account }] : [];
+        return db.account && (!q.includes('"tenantId" =') || db.account.tenantId === values[1])
+          ? [{ ...db.account }] : [];
       }
       if (q.startsWith('SELECT id FROM "Payment"')) return [];
       if (q.startsWith('UPDATE "MercadoPagoAccount" SET "missingAlertAt"')) {
-        const [now, , , cutoff] = values as [Date, Date, number, Date];
+        const [now, , , ownerOrCutoff, scopedCutoff] = values as [Date, Date, number, Date | string, Date?];
+        const cutoff = scopedCutoff ?? (ownerOrCutoff as Date);
         const last = db.account?.missingAlertAt as Date | null;
-        if (!db.account || (last && last.getTime() > cutoff.getTime())) return [];
+        if (!db.account || (scopedCutoff && db.account.tenantId !== ownerOrCutoff) || (last && last.getTime() > cutoff.getTime())) return [];
         db.account.missingAlertAt = now;
         return [{ id: 1 }];
       }
       throw new Error(`SQL inesperado: ${q}`);
     }),
     mercadoPagoAccount: {
-      findUnique: vi.fn(async ({ select }: { select?: Record<string, boolean> }) => project(db.account, select)),
+      findUnique: vi.fn(async ({ where, select }: { where: Row; select?: Record<string, boolean> }) => {
+        const row = db.account;
+        return project(row?.id === where.id && (where.tenantId === undefined || row?.tenantId === where.tenantId) ? row : null, select);
+      }),
       update: vi.fn(async ({ data }: { data: Row }) => {
         Object.assign(db.account!, data);
         return { ...db.account };
@@ -93,9 +98,13 @@ const mocks = vi.hoisted(() => {
     },
     service: { count: vi.fn(async () => db.depositServices) },
     appointment: {
-      findMany: vi.fn(async () => db.stalePendingAppointments),
+      findMany: vi.fn(async ({ where }: { where: Row }) => db.stalePendingAppointments.filter(
+        (appt) => (where.tenantId === undefined || appt.tenantId === where.tenantId)
+          && (where.agendaId === undefined || appt.agendaId === where.agendaId),
+      )),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
+    agenda: { findUnique: vi.fn(async () => ({ professional: db.pro })) },
     professional: { findUnique: vi.fn(async ({ select }: { select?: Record<string, boolean> }) => project(db.pro, select)) },
     outboundMessage: { create: vi.fn(async () => ({})), createMany: vi.fn(async () => ({ count: 1 })) },
   };
@@ -172,6 +181,8 @@ function connectedAccount(over: Row = {}): Row {
 function stalePending(id = "appt-1") {
   return {
     id,
+    tenantId: "legacy-tenant",
+    agendaId: "legacy-agenda",
     startsAt: new Date("2026-11-20T13:00:00.000Z"),
     patient: { whatsappJid: `${id}@s.whatsapp.net` },
     service: { name: "Primera consulta" },
@@ -224,6 +235,49 @@ describe("startMercadoPagoOAuth", () => {
 });
 
 describe("completeMercadoPagoOAuth", () => {
+  it.each([null, "foreign-tenant"])("rechaza dueño %s antes de consumir state o hacer HTTP", async (tenantId) => {
+    const fetch = makeFetch();
+    const params = await startAndGetState(fetch);
+    const account = connectedAccount({ tenantId });
+    db.account = { ...account };
+    const states = [...db.states];
+    for (const [name, value] of [["code", "c"], ["error", "access_denied"]]) {
+      const query = new URLSearchParams([[name!, value!], ["state", params.get("state")!]]);
+      await expect(completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).resolves.toBe("rejected");
+    }
+    expect(db.states).toEqual(states);
+    expect(db.account).toEqual(account);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("sin agenda verificada no consume state ni hace HTTP", async () => {
+    const fetch = makeFetch();
+    const params = await startAndGetState(fetch);
+    const states = [...db.states];
+    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
+    const query = new URLSearchParams({ code: "c", state: params.get("state")! });
+    await expect(completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    expect(db.states).toEqual(states);
+    expect(db.account).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("revalida el dueño en la transacción si aparece una cuenta ajena durante el canje", async () => {
+    const fetch = makeFetch();
+    const params = await startAndGetState(fetch);
+    const foreign = connectedAccount({ tenantId: "foreign-tenant" });
+    fetch.mockImplementationOnce(async () => {
+      db.account = { ...foreign };
+      return json(200, TOKEN_RESPONSE);
+    });
+    const query = new URLSearchParams({ code: "c", state: params.get("state")! });
+    await expect(completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    expect(db.states).toEqual([]);
+    expect(db.account).toEqual(foreign);
+    expect(mocks.prisma.mercadoPagoAccount.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.appointment.findMany).not.toHaveBeenCalled();
+  });
   it("OK: guarda los tokens cifrados, limpia el error y devuelve connected", async () => {
     const fetch = makeFetch();
     const params = await startAndGetState(fetch);
@@ -387,16 +441,17 @@ describe("completeMercadoPagoOAuth", () => {
         AND: [{ mercadopagoUserId: { not: null } }, { NOT: { mercadopagoUserId: "555" } }],
       });
       expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({
-        where: { id: "appt-1", status: "AWAITING_PAYMENT" },
+        where: { id: "appt-1", tenantId: "legacy-tenant", agendaId: "legacy-agenda", status: "AWAITING_PAYMENT" },
         data: { status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: MERCADOPAGO_ACCOUNT_CHANGED_CANCEL_REASON },
       });
       expect(mocks.prisma.payment.updateMany).toHaveBeenCalledWith({
-        where: { appointmentId: "appt-1", status: "PENDING" },
+        where: { appointmentId: "appt-1", status: "PENDING", appointment: { tenantId: "legacy-tenant", agendaId: "legacy-agenda" } },
         data: { status: "CANCELLED" },
       });
       expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledWith({
         skipDuplicates: true,
         data: [{
+          tenantId: "legacy-tenant",
           toJid: "appt-1@s.whatsapp.net",
           kind: "CANCELLATION",
           appointmentId: "appt-1",
@@ -446,7 +501,12 @@ describe("disconnectMercadoPagoAccount", () => {
   it("borra tokens y datos, conserva missingAlertAt, cancela D6 y devuelve el conteo", async () => {
     const lastAlert = new Date(NOW.getTime() - DAY);
     db.account = connectedAccount({ missingAlertAt: lastAlert, errorCode: "revoked" });
-    db.stalePendingAppointments = [stalePending("a1"), stalePending("a2")];
+    db.stalePendingAppointments = [
+      stalePending("a1"), stalePending("a2"),
+      { ...stalePending("foreign"), tenantId: "foreign-tenant", agendaId: "foreign-agenda" },
+      { ...stalePending("other-agenda"), agendaId: "other-agenda" },
+      { ...stalePending("unknown"), tenantId: null, agendaId: null },
+    ];
     expect(await disconnectMercadoPagoAccount()).toEqual({ cancelledDeposits: 2 });
     const acc = db.account!;
     for (const k of ["userId", "nickname", "email", "liveMode", "accessTokenEnc", "refreshTokenEnc", "scope", "expiresAt", "connectedAt", "refreshedAt", "errorCode", "errorAt", "errorNotifiedAt"]) {
@@ -455,7 +515,36 @@ describe("disconnectMercadoPagoAccount", () => {
     expect(acc.missingAlertAt).toEqual(lastAlert);
     const some = mocks.prisma.appointment.findMany.mock.calls[0]![0].where.payments.some;
     expect(some.AND).toEqual([{ mercadopagoUserId: { not: null } }]);
-    expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
+    expect(mocks.prisma.outboundMessage.createMany.mock.calls.map(([args]: Row[]) => (
+      args!.data.map(({ appointmentId, tenantId }: Row) => ({ appointmentId, tenantId }))
+    ))).toEqual([[{ appointmentId: "a1", tenantId: "legacy-tenant" }], [{ appointmentId: "a2", tenantId: "legacy-tenant" }]]);
+  });
+
+  it("provisiona la cuenta nueva con el dueño verificado", async () => {
+    expect(await disconnectMercadoPagoAccount()).toEqual({ cancelledDeposits: 0 });
+    expect(db.account?.tenantId).toBe("legacy-tenant");
+  });
+
+  it("sin agenda legacy verificada no provisiona ni cancela", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
+    await expect(disconnectMercadoPagoAccount()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    expect(db.account).toBeNull();
+    expect(mocks.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(mocks.prisma.appointment.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "foreign-tenant"])("no modifica una cuenta de dueño %s ni llama al proveedor", async (tenantId) => {
+    const account = connectedAccount({ tenantId, expiresAt: NOW });
+    db.account = { ...account };
+    const fetch = makeFetch();
+    await expect(refreshMercadoPagoAccountToken({}, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(disconnectMercadoPagoAccount()).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(markMercadoPagoAccountError("revoked")).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    expect(db.account).toEqual(account);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.prisma.mercadoPagoAccount.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.appointment.findMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
 });
 
@@ -464,6 +553,33 @@ describe("getMercadoPagoCredentials", () => {
     env: { ...ENV, ...over },
     now: () => NOW,
     fetch,
+  });
+
+  it.each([null, "foreign-tenant"])("no lee tokens de dueño %s ni usa respaldo, aun vencidos", async (tenantId) => {
+    const fetch = makeFetch();
+    const config = deps({ MERCADOPAGO_ALLOW_ENV_TOKEN: "true", MERCADOPAGO_ACCESS_TOKEN: "TEST-env", NODE_ENV: "development" }, fetch);
+    for (const expiresAt of [NOW, new Date(NOW.getTime() + DAY)]) {
+      const account = connectedAccount({ tenantId, expiresAt });
+      db.account = { ...account };
+      await expect(getMercadoPagoCredentials({ kind: "current" }, config)).resolves.toBeNull();
+      await expect(getMercadoPagoCredentials({ kind: "payment", sellerUserId: "555" }, config)).resolves.toBeNull();
+      await expect(getMercadoPagoCredentials({ kind: "payment", sellerUserId: null }, config)).resolves.toBeNull();
+      expect(db.account).toEqual(account);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.mercadoPagoAccount.findUnique.mock.calls.every(([{ where, select }]: [Row]) =>
+      !select.accessTokenEnc || (where.id === 1 && where.tenantId === "legacy-tenant"))).toBe(true);
+  });
+
+  it("sin agenda verificada no lee la cuenta ni usa respaldo", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
+    db.account = connectedAccount();
+    const fetch = makeFetch();
+    const config = deps({ MERCADOPAGO_ALLOW_ENV_TOKEN: "true", MERCADOPAGO_ACCESS_TOKEN: "TEST-env", NODE_ENV: "development" }, fetch);
+    await expect(getMercadoPagoCredentials({ kind: "current" }, config)).resolves.toBeNull();
+    expect(mocks.prisma.mercadoPagoAccount.findUnique).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("conectada → token descifrado y sellerUserId", async () => {
@@ -497,7 +613,7 @@ describe("getMercadoPagoCredentials", () => {
     expect(await getMercadoPagoCredentials({ kind: "current" }, deps())).toBeNull();
     expect(db.account!.errorCode).toBe("decrypt_failed");
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledWith({
-      data: { toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
+      data: { tenantId: "legacy-tenant", toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
     });
   });
 
@@ -507,6 +623,10 @@ describe("getMercadoPagoCredentials", () => {
     const creds = await getMercadoPagoCredentials({ kind: "current" }, deps({}, fetch));
     expect(creds).toEqual({ accessToken: "APP_USR-access-claro", sellerUserId: "555", source: "account" });
     expect(JSON.parse(String(fetch.mock.calls[0]![1]!.body)).grant_type).toBe("refresh_token");
+    const tokenReads = mocks.prisma.mercadoPagoAccount.findUnique.mock.calls.filter(([{ select }]: [Row]) => select.accessTokenEnc);
+    expect(tokenReads.map(([{ where }]: [Row]) => where)).toEqual([
+      { id: 1, tenantId: "legacy-tenant" }, { id: 1, tenantId: "legacy-tenant" },
+    ]);
   });
 
   it("vencido y la renovación falla por red → null sin marcar", async () => {
@@ -578,7 +698,7 @@ describe("refreshMercadoPagoAccountToken", () => {
     expect(db.account!.errorNotifiedAt).toEqual(NOW);
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledWith({
-      data: { toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
+      data: { tenantId: "legacy-tenant", toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
     });
     // Segundo intento con el error ya puesto: no hay cuenta usable y no se repite el aviso.
     expect(await refreshMercadoPagoAccountToken({}, deps(fetch))).toBe("not_connected");
@@ -630,15 +750,24 @@ describe("notifyMercadoPagoMissingForBooking", () => {
   it("primera vez → encola con el texto exacto; dentro de las 24 h → no", async () => {
     expect(await notifyMercadoPagoMissingForBooking(input)).toBe(true);
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledWith({
-      data: { toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.professionalDepositUnavailableAlert(input) },
+      data: { tenantId: "legacy-tenant", toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.professionalDepositUnavailableAlert(input) },
     });
     expect(await notifyMercadoPagoMissingForBooking(input)).toBe(false);
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledTimes(1);
   });
 
   it("pasadas 24 h → vuelve a avisar", async () => {
-    db.account = { ...mocks.emptyAccount(), missingAlertAt: new Date(Date.now() - 25 * 60 * 60_000) };
+    db.account = { ...mocks.emptyAccount(), tenantId: "legacy-tenant", missingAlertAt: new Date(Date.now() - 25 * 60 * 60_000) };
     expect(await notifyMercadoPagoMissingForBooking(input)).toBe(true);
+  });
+
+  it.each([null, "foreign-tenant"])("no modifica una cuenta sin dueño confiable (%s)", async (tenantId) => {
+    const account = { ...mocks.emptyAccount(), tenantId };
+    db.account = { ...account };
+    expect(await notifyMercadoPagoMissingForBooking(input)).toBe(false);
+    expect(db.account).toEqual(account);
+    expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.mercadoPagoAccount.findUnique).not.toHaveBeenCalled();
   });
 
   it("sin phoneJid → no encola", async () => {
@@ -649,6 +778,20 @@ describe("notifyMercadoPagoMissingForBooking", () => {
 });
 
 describe("getMercadoPagoConnectionView", () => {
+  it("no muestra metadatos de una cuenta ajena", async () => {
+    db.account = connectedAccount({ tenantId: "foreign-tenant" });
+    expect(await getMercadoPagoConnectionView()).toMatchObject({
+      userId: null, nickname: null, email: null, liveMode: null, connectedAt: null, errorCode: null,
+    });
+  });
+
+  it("sin agenda verificada no lee metadatos ni cuenta señas o servicios", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
+    await expect(getMercadoPagoConnectionView()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    expect(mocks.prisma.mercadoPagoAccount.findUnique).not.toHaveBeenCalled();
+    expect(mocks.prisma.payment.count).not.toHaveBeenCalled();
+    expect(mocks.prisma.service.count).not.toHaveBeenCalled();
+  });
   it("no expone tokens aunque prisma los trajera, y no los pide en el select", async () => {
     db.account = connectedAccount();
     db.pendingCount = 2;
@@ -676,7 +819,13 @@ describe("getMercadoPagoConnectionView", () => {
     expect(JSON.stringify(view)).not.toMatch(/v1\.|APP_USR|TG-refresh/);
     const select = mocks.prisma.mercadoPagoAccount.findUnique.mock.calls[0]![0].select;
     expect(Object.keys(select).some((k) => k.endsWith("Enc"))).toBe(false);
-    expect(mocks.prisma.service.count).toHaveBeenCalledWith({ where: { active: true, requiresDeposit: true } });
+    expect(mocks.prisma.service.count).toHaveBeenCalledWith({ where: { tenantId: "legacy-tenant", active: true, requiresDeposit: true } });
+    expect(mocks.prisma.payment.count).toHaveBeenCalledWith({ where: {
+      status: "PENDING",
+      provider: "mercadopago",
+      AND: [{ mercadopagoUserId: { not: null } }],
+      appointment: { status: "AWAITING_PAYMENT", tenantId: "legacy-tenant", agendaId: "legacy-agenda" },
+    } });
   });
 
   it("sin configuración → not_configured; con error → needs_reconnect", async () => {

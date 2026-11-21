@@ -6,8 +6,9 @@ import {
   reminderStatusItems,
   type ReminderStatusItem,
 } from "@nutri-bot/core";
-import { prisma } from "../index";
-import { getProfessional } from "./availability";
+import { prisma, type Prisma } from "../index";
+import { bindLegacyAppointmentConversationState } from "./conversationState";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 import { enqueueMessage } from "./outbox";
 
 /** Filtro opcional para pruebas: limita los crons a estos pacientes (nunca toca turnos ajenos). */
@@ -15,19 +16,51 @@ export interface EnqueueScope {
   patientIds?: string[];
 }
 
+type LegacyScope = Awaited<ReturnType<typeof resolveLegacySchedulingScope>>["scope"];
+
+function appointmentScope(scope: LegacyScope) {
+  return { ...scope, patient: { tenantId: scope.tenantId }, service: { tenantId: scope.tenantId } };
+}
+
+function hasOwnedRelations(
+  appt: { tenantId: string | null; agendaId: string | null; patient: { tenantId: string | null } | null; service: { tenantId: string | null } | null },
+  scope: LegacyScope,
+): boolean {
+  return appt.tenantId === scope.tenantId && appt.agendaId === scope.agendaId &&
+    appt.patient?.tenantId === scope.tenantId && appt.service?.tenantId === scope.tenantId;
+}
+
+function currentAppointmentWhere(
+  appt: { id: string; patientId: string; serviceId: string; startsAt: Date; updatedAt: Date; patient: { whatsappJid: string } },
+  scope: LegacyScope,
+) {
+  return {
+    ...appointmentScope(scope), id: appt.id, status: "CONFIRMED", startsAt: appt.startsAt,
+    updatedAt: appt.updatedAt, patientId: appt.patientId, serviceId: appt.serviceId,
+    patient: { tenantId: scope.tenantId, whatsappJid: appt.patient.whatsappJid },
+  } satisfies Prisma.AppointmentWhereUniqueInput;
+}
+
+function appointmentMessageScope({ tenantId }: LegacyScope) {
+  // Historical messages without an explicit owner inherit it from the verified appointment.
+  return { OR: [{ tenantId }, { tenantId: null }] };
+}
+
 /** Manda las recomendaciones previas a estudios que las tengan configuradas. */
 export async function enqueuePrepInstructions(windowMinutes = 20, scope: EnqueueScope = {}): Promise<number> {
-  const pro = await getProfessional();
+  const { scope: legacy, professional: pro } = await resolveLegacySchedulingScope();
   const now = Date.now();
   const due = await prisma.appointment.findMany({
     where: {
+      ...appointmentScope(legacy),
       status: "CONFIRMED",
       startsAt: { gte: new Date(now) },
       service: {
+        tenantId: legacy.tenantId,
         prepInstructions: { not: null },
         prepLeadHours: { not: null },
       },
-      messages: { none: { kind: "PREP_INSTRUCTIONS" } },
+      messages: { none: { ...appointmentMessageScope(legacy), kind: "PREP_INSTRUCTIONS" } },
       ...(scope.patientIds ? { patientId: { in: scope.patientIds } } : {}),
     },
     include: { patient: true, service: true },
@@ -35,12 +68,14 @@ export async function enqueuePrepInstructions(windowMinutes = 20, scope: Enqueue
 
   let count = 0;
   for (const appt of due) {
-    if (!appt.service.prepInstructions || appt.service.prepLeadHours === null) continue;
+    if (!hasOwnedRelations(appt, legacy) || !appt.service.prepInstructions || appt.service.prepLeadHours === null) continue;
     // Todo turno futuro que ya entró en las `prepLeadHours` previas y todavía no las recibió:
     // así también las reciben los turnos reservados con menos anticipación que el aviso.
     const horizon = new Date(now + appt.service.prepLeadHours * 3_600_000 + windowMinutes * 60_000);
     if (appt.startsAt >= horizon) continue;
-    await enqueueMessage({
+    const current = await prisma.appointment.findUnique({ where: currentAppointmentWhere(appt, legacy), select: { id: true } });
+    if (!current) continue;
+    const created = await enqueueMessage({
       toJid: appt.patient.whatsappJid,
       kind: "PREP_INSTRUCTIONS",
       appointmentId: appt.id,
@@ -51,7 +86,7 @@ export async function enqueuePrepInstructions(windowMinutes = 20, scope: Enqueue
         instructions: appt.service.prepInstructions,
       }),
     });
-    count++;
+    if (created) count++;
   }
   return count;
 }
@@ -68,6 +103,7 @@ function isCurrentScheduleMessage(m: { dedupeKey: string }): boolean {
 }
 /** Horizonte de búsqueda: 14 días de máximo + margen del corrimiento nocturno (D6). */
 const REMINDERS_HORIZON_MS = 15 * DAY_MS;
+const STALE_CONFIRMATION = Symbol("stale confirmation appointment");
 
 export interface ServiceRemindersResult {
   /** REMINDER automáticos encolados en esta corrida. */
@@ -89,11 +125,12 @@ export interface ServiceRemindersResult {
 export async function enqueueServiceReminders(
   opts: { now?: Date; scope?: EnqueueScope } = {},
 ): Promise<ServiceRemindersResult> {
-  const pro = await getProfessional();
+  const { scope: legacy, professional: pro } = await resolveLegacySchedulingScope();
   const now = opts.now ?? new Date();
   const scope = opts.scope ?? {};
   const appts = await prisma.appointment.findMany({
     where: {
+      ...appointmentScope(legacy),
       status: "CONFIRMED",
       startsAt: { gt: now, lte: new Date(now.getTime() + REMINDERS_HORIZON_MS) },
       ...(scope.patientIds ? { patientId: { in: scope.patientIds } } : {}),
@@ -102,7 +139,7 @@ export async function enqueueServiceReminders(
       patient: true,
       service: true,
       messages: {
-        where: { kind: { in: ["REMINDER", "CONFIRMATION_REQUEST"] } },
+        where: { ...appointmentMessageScope(legacy), kind: { in: ["REMINDER", "CONFIRMATION_REQUEST"] } },
         select: { kind: true, dedupeKey: true, createdAt: true },
       },
     },
@@ -112,6 +149,7 @@ export async function enqueueServiceReminders(
   let attempted = 0;
   const errors: unknown[] = [];
   for (const appt of appts) {
+    if (!hasOwnedRelations(appt, legacy)) continue;
     try {
       // HU-022 (S6): los del horario anterior (prev:) no cuentan para ningún chequeo.
       const msgs = appt.messages.filter(isCurrentScheduleMessage);
@@ -138,30 +176,41 @@ export async function enqueueServiceReminders(
       });
       if (!pick) continue;
       attempted++;
+      const where = currentAppointmentWhere(appt, legacy);
       const jid = appt.patient.whatsappJid;
       if (pick.reminder.asksConfirmation) {
-        const created = await enqueueMessage({
-          toJid: jid,
-          kind: "CONFIRMATION_REQUEST",
-          appointmentId: appt.id,
-          body: messages.confirmAttendanceRequest({
-            serviceName: appt.service.name,
-            startsAt: appt.startsAt,
-            tz: pro.timezone,
-          }),
+        const body = messages.confirmAttendanceRequest({
+          serviceName: appt.service.name,
+          startsAt: appt.startsAt,
+          tz: pro.timezone,
         });
-        if (!created) continue;
-        await prisma.appointment.update({
-          where: { id: appt.id },
-          data: { confirmationRequestedAt: now },
+        const claimed = await prisma.$transaction(async (tx) => {
+          // Same order as rescheduling: original Professional first, then outbox,
+          // appointment write and conversation. Recheck the schedule after any lock wait.
+          const locked = await tx.$queryRaw<{ id: number }[]>`SELECT id FROM "Professional"
+            WHERE id = 1 AND "tenantId" = ${legacy.tenantId} FOR UPDATE`;
+          if (locked.length !== 1) return false;
+          const state = await bindLegacyAppointmentConversationState(tx);
+          const pending = { ...where, confirmationRequestedAt: null };
+          const current = await tx.appointment.findUnique({ where: pending, select: { id: true } });
+          if (!current) return false;
+          const created = await enqueueMessage({
+            toJid: jid, kind: "CONFIRMATION_REQUEST", appointmentId: appt.id, body,
+          }, tx);
+          if (!created) return false;
+          const { count } = await tx.appointment.updateMany({
+            where: pending,
+            data: { confirmationRequestedAt: now },
+          });
+          // El turno cambió desde la lectura: revertir también el mensaje recién encolado.
+          if (count !== 1) throw STALE_CONFIRMATION;
+          await state.upsertAttendancePrompt(jid, appt.id);
+          return true;
         });
-        await prisma.conversationState.upsert({
-          where: { patientJid: jid },
-          create: { patientJid: jid, step: "CONFIRM_ATTENDANCE", context: { apptId: appt.id } },
-          update: { step: "CONFIRM_ATTENDANCE", context: { apptId: appt.id } },
-        });
-        result.confirmations++;
+        if (claimed) result.confirmations++;
       } else {
+        const current = await prisma.appointment.findUnique({ where, select: { id: true } });
+        if (!current) continue;
         const created = await enqueueMessage({
           toJid: jid,
           kind: "REMINDER",
@@ -178,7 +227,7 @@ export async function enqueueServiceReminders(
         if (created) result.reminders++;
       }
     } catch (err) {
-      errors.push(err);
+      if (err !== STALE_CONFIRMATION) errors.push(err);
     }
   }
   if (errors.length > 0 && errors.length === attempted) throw errors[0];
@@ -201,18 +250,21 @@ export async function enqueueReminderNow(
   appointmentId: string,
   opts: { now?: Date } = {},
 ): Promise<ReminderNowResult> {
-  const pro = await getProfessional();
   const now = opts.now ?? new Date();
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM "Appointment" WHERE id = ${appointmentId} FOR UPDATE`;
+    const { scope, professional: pro } = await resolveLegacySchedulingScope(tx);
+    const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Appointment"
+      WHERE id = ${appointmentId} AND "tenantId" = ${scope.tenantId} AND "agendaId" = ${scope.agendaId}
+      FOR UPDATE`;
+    if (locked.length !== 1) throw new Error(`Turno inexistente: ${appointmentId}`);
     const appt = await tx.appointment.findUnique({
-      where: { id: appointmentId },
+      where: { id: appointmentId, ...appointmentScope(scope) },
       include: { patient: true, service: true },
     });
-    if (!appt) throw new Error(`Turno inexistente: ${appointmentId}`);
+    if (!appt || !hasOwnedRelations(appt, scope)) throw new Error(`Turno inexistente: ${appointmentId}`);
     if (appt.status !== "CONFIRMED" || appt.startsAt.getTime() <= now.getTime()) return "not_applicable";
     const pending = await tx.outboundMessage.findFirst({
-      where: { appointmentId, kind: "REMINDER", status: "PENDING", dedupeKey: { startsWith: "manual:" } },
+      where: { ...appointmentMessageScope(scope), appointmentId, kind: "REMINDER", status: "PENDING", dedupeKey: { startsWith: "manual:" } },
       select: { id: true },
     });
     if (pending) return "already_pending";
@@ -221,6 +273,7 @@ export async function enqueueReminderNow(
         toJid: appt.patient.whatsappJid,
         kind: "REMINDER",
         appointmentId: appt.id,
+        tenantId: scope.tenantId,
         dedupeKey: `manual:${now.toISOString()}`,
         body: messages.reminderMessage({
           patientName: appt.patient.name,
@@ -243,18 +296,19 @@ export async function getAppointmentReminderStatus(
   appointmentId: string,
   opts: { now?: Date } = {},
 ): Promise<ReminderStatusItem[]> {
+  const { scope, professional: pro } = await resolveLegacySchedulingScope();
   const appt = await prisma.appointment.findUnique({
-    where: { id: appointmentId },
+    where: { id: appointmentId, ...appointmentScope(scope) },
     include: {
+      patient: { select: { tenantId: true } },
       service: true,
       messages: {
-        where: { kind: { in: ["REMINDER", "CONFIRMATION_REQUEST"] } },
+        where: { ...appointmentMessageScope(scope), kind: { in: ["REMINDER", "CONFIRMATION_REQUEST"] } },
         select: { kind: true, dedupeKey: true, status: true, createdAt: true },
       },
     },
   });
-  if (!appt) return [];
-  const pro = await getProfessional();
+  if (!appt || !hasOwnedRelations(appt, scope)) return [];
   return reminderStatusItems({
     startsAt: appt.startsAt,
     bookedAt: appt.bookedAt ?? appt.createdAt,
