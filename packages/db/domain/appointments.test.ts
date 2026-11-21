@@ -1,6 +1,7 @@
 // HU-013: motivo de consulta en createAppointment / updateAppointmentReason (prisma mockeado).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { messages } from "@nutri-bot/core";
+import { Prisma } from "../index";
 
 const mocks = vi.hoisted(() => ({
   getProfessional: vi.fn(),
@@ -9,12 +10,13 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
-    service: { findUniqueOrThrow: vi.fn() },
-    patient: { findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
+    agenda: { findUnique: vi.fn() },
+    service: { findUnique: vi.fn() },
+    patient: { findUnique: vi.fn(), updateMany: vi.fn() },
     appointment: { create: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn(), findUnique: vi.fn() },
     consultation: { create: vi.fn(), deleteMany: vi.fn() },
     outboundMessage: { deleteMany: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-    conversationState: { updateMany: vi.fn() },
+    conversationState: { updateMany: vi.fn(), deleteMany: vi.fn() },
   },
 }));
 
@@ -31,6 +33,7 @@ vi.mock("./availability", async (importOriginal) => ({
 vi.mock("./outbox", () => ({ enqueueMessage: mocks.enqueueMessage }));
 
 import {
+  cancelAppointment,
   createAppointment,
   InvalidBookingReasonError,
   RescheduleError,
@@ -50,6 +53,10 @@ const base = { patientId: "p1", serviceId: "s1", startsAt: STARTS };
 function createData() {
   return mocks.prisma.appointment.create.mock.calls[0]![0].data;
 }
+
+function mockLegacyAgenda() {
+  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { timezone: TZ, phoneJid: "pro@s.whatsapp.net" } });
+}
 function enqueued(kind: string) {
   return mocks.enqueueMessage.mock.calls.map((c) => c[0]).filter((m) => m.kind === kind);
 }
@@ -60,8 +67,9 @@ describe("createAppointment con motivo (HU-013)", () => {
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
     mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
-    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
-    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mockLegacyAgenda();
+    mocks.prisma.service.findUnique.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUnique.mockResolvedValue(PATIENT);
     mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
       id: "a1",
       startsAt: data.startsAt,
@@ -86,7 +94,7 @@ describe("createAppointment con motivo (HU-013)", () => {
       createAppointment({ ...base, createdBy: "PATIENT", reason: "a".repeat(501) }),
     ).rejects.toBeInstanceOf(InvalidBookingReasonError);
     expect(mocks.prisma.appointment.create).not.toHaveBeenCalled();
-    expect(mocks.prisma.service.findUniqueOrThrow).not.toHaveBeenCalled();
+    expect(mocks.prisma.service.findUnique).not.toHaveBeenCalled();
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
@@ -94,7 +102,8 @@ describe("createAppointment con motivo (HU-013)", () => {
     await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Bajar de peso" });
     const alerts = enqueued("PROFESSIONAL_ALERT");
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].toJid).toBe("pro@s.whatsapp.net");
+    expect(alerts[0]).toMatchObject({ toJid: "pro@s.whatsapp.net", verifiedTenantId: "legacy-tenant" });
+    expect(alerts[0]).not.toHaveProperty("appointmentId");
     expect(alerts[0].body).toContain("📝 Motivo: Bajar de peso");
   });
 
@@ -135,7 +144,7 @@ describe("createAppointment con motivo (HU-013)", () => {
   });
 
   it("con seña guarda el motivo y no avisa todavía", async () => {
-    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
     await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Control" });
     expect(createData().status).toBe("AWAITING_PAYMENT");
     expect(createData().reason).toBe("Control");
@@ -152,9 +161,96 @@ describe("createAppointment con motivo (HU-013)", () => {
   });
 });
 
-describe("updateAppointmentReason (HU-013, D5)", () => {
+describe("cancelAppointment en la agenda original", () => {
+  const scope = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
+  const appt = {
+    ...scope, id: "a1", patientId: PATIENT.id, serviceId: SERVICE.id, startsAt: STARTS,
+    status: "CONFIRMED", patient: { ...PATIENT, tenantId: scope.tenantId },
+    service: { ...SERVICE, tenantId: scope.tenantId },
+  };
+  const params = { id: appt.id, by: "PATIENT" as const, notifyPatient: false };
+  let row: typeof appt;
+
   beforeEach(() => {
     vi.resetAllMocks();
+    row = { ...appt };
+    mockLegacyAgenda();
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
+    mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+    mocks.prisma.appointment.findUniqueOrThrow.mockImplementation(async ({ where }: { where: Partial<typeof scope> }) => {
+      if ((where.tenantId && row.tenantId !== where.tenantId) || (where.agendaId && row.agendaId !== where.agendaId)) {
+        throw new Error("Turno inexistente");
+      }
+      return row;
+    });
+    mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: object }) => ({ ...row, ...data }));
+  });
+
+  it.each([{ tenantId: "otro", agendaId: "otra" }, { agendaId: "otra" }])("rechaza turno fuera de alcance (%j)", async (foreign) => {
+    row = { ...row, ...foreign };
+    await expect(cancelAppointment(params)).rejects.toThrow("Turno inexistente");
+    expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+
+  it("no usa una paciente ajena para avisos o estado aunque el turno parezca propio", async () => {
+    row = { ...row, patient: { ...row.patient, tenantId: "otro" } };
+    await expect(cancelAppointment(params)).rejects.toThrow();
+    expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+
+  it("cancela, conserva el motivo, limpia solo el estado del turno y encola el aviso profesional atribuido", async () => {
+    const reason = "Avisó que no puede asistir";
+    const data = { status: "CANCELLED", cancelledBy: "PATIENT", cancelReason: reason, needsGoogleSync: true };
+    await expect(cancelAppointment({ ...params, reason })).resolves.toMatchObject(data);
+    expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: appt.id, ...scope, status: "CONFIRMED", patientId: PATIENT.id, serviceId: SERVICE.id }), data,
+    });
+    expect(mocks.prisma.conversationState.deleteMany).toHaveBeenCalledWith({ where: {
+      patientJid: PATIENT.whatsappJid, tenantId: "legacy-tenant", step: { in: ["CANCEL_CONFIRM", "CONFIRM_ATTENDANCE"] },
+      context: { path: ["apptId"], equals: appt.id },
+    } });
+    expect(mocks.enqueueMessage.mock.calls).toEqual([[{
+      toJid: "pro@s.whatsapp.net", kind: "PROFESSIONAL_ALERT", verifiedTenantId: scope.tenantId,
+      body: messages.professionalCancelAlert({ patientName: PATIENT.name, patientPhone: PATIENT.phone, serviceName: SERVICE.name, startsAt: STARTS, tz: TZ }),
+    }]]);
+  });
+
+  it("conserva el aviso a la paciente para cancelaciones desde el panel", async () => {
+    await expect(cancelAppointment({ id: appt.id, by: "PROFESSIONAL" })).resolves.toMatchObject({
+      status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: null, needsGoogleSync: true,
+    });
+    expect(mocks.enqueueMessage.mock.calls).toEqual([[{
+      toJid: PATIENT.whatsappJid, kind: "CANCELLATION", appointmentId: appt.id,
+      body: messages.cancelDone({ serviceName: SERVICE.name, startsAt: STARTS, tz: TZ }),
+    }]]);
+  });
+
+  it("no muta ni avisa si ya no está confirmado", async () => {
+    row = { ...row, status: "AWAITING_PAYMENT" };
+    await expect(cancelAppointment(params)).resolves.toEqual(row);
+    expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+
+  it("no limpia estado ni avisa si falla la escritura condicional", async () => {
+    mocks.prisma.appointment.update.mockRejectedValue(new Error("Turno modificado"));
+    await expect(cancelAppointment(params)).rejects.toThrow("Turno modificado");
+    expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateAppointmentReason (HU-013, D5)", () => {
+  const scope = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockLegacyAgenda();
     mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: any }) => ({
       id: "a1",
       patientId: "p1",
@@ -165,7 +261,7 @@ describe("updateAppointmentReason (HU-013, D5)", () => {
   it("actualiza solo el motivo normalizado", async () => {
     const r = await updateAppointmentReason({ id: "a1", reason: "  Nuevo motivo " });
     expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
-      where: { id: "a1" },
+      where: { id: "a1", ...scope },
       data: { reason: "Nuevo motivo" },
       select: { id: true, patientId: true, reason: true },
     });
@@ -178,10 +274,36 @@ describe("updateAppointmentReason (HU-013, D5)", () => {
     expect(mocks.prisma.appointment.update.mock.calls[0]![0].data).toEqual({ reason: null });
   });
 
-  it("más de 500 → error sin escribir", async () => {
+  it.each([{ tenantId: "otro" }, { agendaId: "otra" }])("no cambia el motivo de un turno fuera de alcance (%j)", async (over) => {
+    const row = { id: "a1", ...scope, ...over, reason: "Anterior" };
+    mocks.prisma.appointment.update.mockImplementation(async ({ where, data }: {
+      where: Partial<typeof row>; data: { reason: string };
+    }) => {
+      if (Object.entries(where).some(([key, value]) => row[key as keyof typeof row] !== value)) {
+        throw new Error("Turno inexistente");
+      }
+      row.reason = data.reason;
+      return row;
+    });
+    await expect(updateAppointmentReason({ id: "a1", reason: "Nuevo" })).rejects.toThrow("Turno inexistente");
+    expect(row.reason).toBe("Anterior");
+    expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+    expect(mocks.prisma.consultation.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.consultation.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("no escribe sin verificar la agenda original", async () => {
+    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+    await expect(updateAppointmentReason({ id: "a1", reason: "Nuevo" }))
+      .rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
+  });
+
+  it("más de 500 → error sin leer ni escribir", async () => {
     await expect(updateAppointmentReason({ id: "a1", reason: "a".repeat(501) })).rejects.toBeInstanceOf(
       InvalidBookingReasonError,
     );
+    expect(mocks.prisma.agenda.findUnique).not.toHaveBeenCalled();
     expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
   });
 });
@@ -192,8 +314,9 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
     mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
-    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
-    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mockLegacyAgenda();
+    mocks.prisma.service.findUnique.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUnique.mockResolvedValue(PATIENT);
     mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
       id: "a1",
       startsAt: data.startsAt,
@@ -213,7 +336,7 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
   });
 
   it("con seña (paciente + requiresDeposit) → bookedAt null", async () => {
-    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
     await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
     const data = createData();
     expect(data.status).toBe("AWAITING_PAYMENT");
@@ -221,7 +344,7 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
   });
 
   it("desde el panel con un servicio con seña → confirmado y sellado", async () => {
-    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
     await createAppointment({ ...base, createdBy: "PROFESSIONAL", notifyPatient: false });
     expect(createData().bookedAt).toBeInstanceOf(Date);
   });
@@ -235,8 +358,9 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
     mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
-    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue(SERVICE);
-    mocks.prisma.patient.findUniqueOrThrow.mockResolvedValue(PATIENT);
+    mockLegacyAgenda();
+    mocks.prisma.service.findUnique.mockResolvedValue(SERVICE);
+    mocks.prisma.patient.findUnique.mockResolvedValue(PATIENT);
     mocks.prisma.patient.updateMany.mockResolvedValue({ count: 1 });
     mocks.prisma.appointment.create.mockImplementation(async ({ data }: { data: any }) => ({
       id: "a1",
@@ -256,7 +380,7 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
   });
 
   it("con seña (AWAITING_PAYMENT) también desarchiva", async () => {
-    mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
+    mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
     await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
     expect(createData().status).toBe("AWAITING_PAYMENT");
     expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
@@ -270,11 +394,107 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
 
   describe("setAppointmentStatus", () => {
     function prevAppt(startsAt: Date, status = "NO_SHOW") {
-      return { id: "a1", patientId: "p1", startsAt, status, consultation: null };
+      return { id: "a1", patientId: "p1", tenantId: "legacy-tenant", agendaId: "legacy-agenda", startsAt, status, consultation: null };
     }
     beforeEach(() => {
       mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: any }) => ({ id: "a1", status: data.status }));
       mocks.prisma.consultation.create.mockResolvedValue({ id: "c1" });
+      mocks.prisma.consultation.deleteMany.mockResolvedValue({ count: 1 });
+    });
+
+    const scopedAppointment = { id: "a1", tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
+    const attached = {
+      id: "c1", tenantId: "legacy-tenant", patientId: "p1", notes: null, planId: null,
+      prescription: null, _count: { evolutionEntries: 0 },
+    };
+
+    function expectNoWrites() {
+      expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
+      expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
+      expect(mocks.prisma.consultation.create).not.toHaveBeenCalled();
+      expect(mocks.prisma.consultation.deleteMany).not.toHaveBeenCalled();
+      expect(mocks.enqueueMessage).not.toHaveBeenCalled();
+    }
+
+    it("sin agenda original verificada → rechaza antes de leer el turno", async () => {
+      mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(STARTS));
+      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" }))
+        .rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+      expect(mocks.prisma.appointment.findUniqueOrThrow).not.toHaveBeenCalled();
+      expectNoWrites();
+    });
+
+    it.each([
+      { tenantId: "other-tenant", agendaId: "other-agenda" },
+      { tenantId: "legacy-tenant", agendaId: "other-agenda" },
+      { tenantId: null, agendaId: null },
+    ])("turno fuera del alcance %j → no escribe", async (ownership) => {
+      const row = { ...prevAppt(STARTS), ...ownership };
+      const notFound = new Error("Turno no encontrado");
+      mocks.prisma.appointment.findUniqueOrThrow.mockImplementation(async ({ where }) => {
+        if (!Object.entries(where).every(([key, value]) => row[key as keyof typeof row] === value)) throw notFound;
+        return row;
+      });
+      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" })).rejects.toBe(notFound);
+      expectNoWrites();
+    });
+
+    it.each([
+      ["COMPLETED", { tenantId: "other-tenant" }],
+      ["CONFIRMED", { tenantId: null }],
+      ["NO_SHOW", { patientId: "other-patient" }],
+    ] as const)("a %s con consulta ajena o sin dueño %j → no escribe", async (status, mismatch) => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue({
+        ...prevAppt(new Date(Date.now() + 86_400_000), "COMPLETED"), consultation: { ...attached, ...mismatch },
+      });
+      await expect(setAppointmentStatus({ id: "a1", status }))
+        .rejects.toThrow("La consulta no pertenece a la paciente y al consultorio del turno.");
+      expectNoWrites();
+    });
+
+    it("completa el turno en su agenda y crea la consulta con su tenant", async () => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(STARTS, "CONFIRMED"));
+      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" })).resolves.toEqual({
+        appointment: { id: "a1", status: "COMPLETED" }, consultation: { id: "c1", created: true },
+        removedEmptyConsultation: false,
+      });
+      expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
+        where: { ...scopedAppointment, patientId: "p1" }, data: { status: "COMPLETED" },
+      });
+      expect(mocks.prisma.consultation.create).toHaveBeenCalledWith({
+        data: { tenantId: "legacy-tenant", patientId: "p1", appointmentId: "a1", consultedAt: STARTS },
+      });
+    });
+
+    it.each([false, true])("al salir de COMPLETED conserva la consulta si tiene contenido (%s)", async (hasNotes) => {
+      mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue({
+        ...prevAppt(STARTS, "COMPLETED"), consultation: { ...attached, notes: hasNotes ? "Control" : null },
+      });
+      await expect(setAppointmentStatus({ id: "a1", status: "NO_SHOW" })).resolves.toEqual({
+        appointment: { id: "a1", status: "NO_SHOW" }, consultation: null, removedEmptyConsultation: !hasNotes,
+      });
+      if (hasNotes) expect(mocks.prisma.consultation.deleteMany).not.toHaveBeenCalled();
+      else expect(mocks.prisma.consultation.deleteMany).toHaveBeenCalledWith({ where: {
+        id: "c1", patientId: "p1", tenantId: "legacy-tenant", appointmentId: "a1",
+        notes: null, planId: null, evolutionEntries: { none: {} }, prescription: { is: null },
+      } });
+    });
+
+    it("P2002 → reintenta la transacción y reutiliza la consulta del mismo dueño", async () => {
+      mocks.prisma.appointment.findUniqueOrThrow
+        .mockResolvedValueOnce(prevAppt(STARTS, "CONFIRMED"))
+        .mockResolvedValueOnce({ ...prevAppt(STARTS, "CONFIRMED"), consultation: attached });
+      const conflict = Object.assign(new Prisma.PrismaClientKnownRequestError("conflict", {
+        code: "P2002", clientVersion: "test",
+      }), { code: "P2002" });
+      mocks.prisma.consultation.create.mockRejectedValueOnce(conflict);
+      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" })).resolves.toEqual({
+        appointment: { id: "a1", status: "COMPLETED" }, consultation: { id: "c1", created: false },
+        removedEmptyConsultation: false,
+      });
+      expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(mocks.prisma.consultation.create).toHaveBeenCalledTimes(1);
     });
 
     it("a CONFIRMED con turno futuro → desarchiva", async () => {
@@ -322,6 +542,7 @@ describe("rescheduleAppointment (HU-022)", () => {
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
     mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
+    mockLegacyAgenda();
     mocks.prisma.appointment.findUnique.mockResolvedValue(APPT);
     mocks.prisma.appointment.update.mockImplementation(async ({ data }: { data: any }) => ({ ...APPT, ...data }));
     mocks.prisma.outboundMessage.findMany.mockResolvedValue([]);
@@ -370,6 +591,10 @@ describe("rescheduleAppointment (HU-022)", () => {
     expect(mocks.prisma.$queryRaw.mock.invocationCallOrder[0]!).toBeLessThan(
       mocks.prisma.appointment.findUnique.mock.invocationCallOrder[0]!,
     );
+    expect(mocks.prisma.appointment.findUnique).toHaveBeenCalledWith({
+      where: { id: "a1", tenantId: "legacy-tenant", agendaId: "legacy-agenda" },
+      include: { patient: true, service: true },
+    });
     expectNothingChanged();
   });
 
@@ -430,7 +655,7 @@ describe("rescheduleAppointment (HU-022)", () => {
   it("S6: si la paciente quedó respondiendo la confirmación de ESTE turno, se reinicia esa conversación", async () => {
     await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
     expect(mocks.prisma.conversationState.updateMany).toHaveBeenCalledWith({
-      where: { patientJid: PATIENT.whatsappJid, step: "CONFIRM_ATTENDANCE", context: { path: ["apptId"], equals: "a1" } },
+      where: { patientJid: PATIENT.whatsappJid, tenantId: "legacy-tenant", step: "CONFIRM_ATTENDANCE", context: { path: ["apptId"], equals: "a1" } },
       data: { step: "DORMANT", context: {} },
     });
   });

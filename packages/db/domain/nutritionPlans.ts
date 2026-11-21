@@ -1,4 +1,5 @@
 import { RECIPE_ITEM_SELECT } from "./recipes";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 import { prisma, type MealMode, type PlanStatus, type Weekday } from "../index";
 import { assertWeekdayMatchesMeal, createDefaultWeeklyMeals, resolveNewMealMode } from "./weeklyMenu";
 
@@ -35,7 +36,13 @@ export function getPlan(planId: string) {
 /** HU-018b: crea el plan DRAFT con las comidas por defecto (DEFAULT_WEEKLY_MEALS), en una transacción. */
 export function createPlan(patientId: string, data: { title: string; notes?: string | null }) {
   return prisma.$transaction(async (tx) => {
-    const plan = await tx.nutritionPlan.create({ data: { patientId, ...data, status: "DRAFT" } });
+    const { scope: { tenantId } } = await resolveLegacySchedulingScope(tx);
+    const patient = await tx.patient.findUniqueOrThrow({
+      where: { id_tenantId: { id: patientId, tenantId } }, select: { id: true },
+    });
+    const plan = await tx.nutritionPlan.create({
+      data: { patientId: patient.id, tenantId, title: data.title, notes: data.notes, status: "DRAFT" },
+    });
     await createDefaultWeeklyMeals(tx, "plan", plan.id);
     return plan;
   });

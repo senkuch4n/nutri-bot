@@ -15,6 +15,8 @@ import {
 import type { PlanSectionActionResult } from "@/components/plan-sections/types";
 import { errorCode } from "@/lib/error-code";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { touchTemplate } from "@/lib/touch-template";
 import { hasPanelSession } from "./recetas/recipe-save";
 
 // HU-020 (D9, SDD 6.2): "Textos del plan" de un plan o una plantilla. Mismo patrón que
@@ -52,22 +54,27 @@ function toResult(err: unknown): PlanSectionActionResult {
   return GENERIC;
 }
 
-async function revalidate(kind: MealOwnerKind, ownerId: string): Promise<void> {
-  await revalidateMenuOwner(kind, ownerId);
-  if (kind === "plan") revalidatePath("/portal/plan");
-}
-
 async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>>(
   schema: S,
   input: unknown,
-  fn: (data: z.infer<S>) => Promise<{ id: string } | void>,
+  fn: (data: z.infer<S>, ...scope: [] | [tenantId: string]) => Promise<{ id: string } | void>,
 ): Promise<PlanSectionActionResult> {
   if (!(await hasPanelSession())) return SESSION_EXPIRED;
   const parsed = schema.safeParse(input);
   if (!parsed.success) return GENERIC;
   try {
-    const out = await fn(parsed.data);
-    await revalidate(parsed.data.kind, parsed.data.ownerId);
+    const { kind, ownerId } = parsed.data;
+    let out: { id: string } | void;
+    if (kind === "template") {
+      const access = await resolvePrivateContentAccess();
+      if (!access) return SESSION_EXPIRED;
+      out = await fn(parsed.data, access.tenantId);
+      await touchTemplate(ownerId, access.tenantId);
+    } else {
+      out = await fn(parsed.data);
+      await revalidateMenuOwner(kind, ownerId);
+      revalidatePath("/portal/plan");
+    }
     return out ? { ok: true, id: out.id } : { ok: true };
   } catch (err) {
     return toResult(err);
@@ -77,23 +84,23 @@ async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>
 export async function addPlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; title: string; body: string;
 }): Promise<PlanSectionActionResult> {
-  return run(addSchema, input, (d) => addSection(d.kind, d.ownerId, { title: d.title, body: d.body }));
+  return run(addSchema, input, (d, ...scope) => addSection(d.kind, d.ownerId, { title: d.title, body: d.body }, ...scope));
 }
 
 export async function updatePlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; sectionId: string; title: string; body: string;
 }): Promise<PlanSectionActionResult> {
-  return run(updateSchema, input, (d) => updateSection(d.kind, d.ownerId, d.sectionId, { title: d.title, body: d.body }));
+  return run(updateSchema, input, (d, ...scope) => updateSection(d.kind, d.ownerId, d.sectionId, { title: d.title, body: d.body }, ...scope));
 }
 
 export async function deletePlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; sectionId: string;
 }): Promise<PlanSectionActionResult> {
-  return run(deleteSchema, input, (d) => deleteSection(d.kind, d.ownerId, d.sectionId));
+  return run(deleteSchema, input, (d, ...scope) => deleteSection(d.kind, d.ownerId, d.sectionId, ...scope));
 }
 
 export async function movePlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; sectionId: string; direction: -1 | 1;
 }): Promise<PlanSectionActionResult> {
-  return run(moveSchema, input, (d) => moveSection(d.kind, d.ownerId, d.sectionId, d.direction));
+  return run(moveSchema, input, (d, ...scope) => moveSection(d.kind, d.ownerId, d.sectionId, d.direction, ...scope));
 }

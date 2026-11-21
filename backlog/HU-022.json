@@ -4,7 +4,7 @@
   "slug": "reprogramar-turno",
   "titulo": "Reprogramar un turno desde el detalle",
   "origen": "Pedido del usuario (2026-10-31): cambiar la hora de un turno desde su detalle con un selector tipo reloj, respetando la disponibilidad y los otros turnos.",
-  "estado": "implementando",
+  "estado": "bloqueada",
   "intentos_revision": 0,
   "hu": null,
   "sdd": null,

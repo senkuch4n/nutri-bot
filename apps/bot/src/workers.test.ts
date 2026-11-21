@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
-vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
+const outbox = vi.hoisted(() => ({ findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), resolveScope: vi.fn() }));
+vi.mock("@nutri-bot/db", () => ({ prisma: { outboundMessage: outbox } }));
+vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: outbox.resolveScope }));
 vi.mock("@nutri-bot/db/domain", () => ({
   reconcilePendingPayments: mocks.reconcile, expireStalePendingPayments: mocks.expire,
   enqueueServiceReminders: mocks.serviceReminders,
@@ -14,10 +16,99 @@ vi.mock("@nutri-bot/db/domain", () => ({
 }));
 vi.mock("./ai/runtime", () => ({ getBotAiConfig: () => ({ limits: { retentionDays: 90 } }) }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
-vi.mock("./outbound-payload", () => ({ OUTBOX_INCLUDE: {}, resolveOutboundPayload: vi.fn() }));
+
 vi.mock("./env", () => ({ env: { pollIntervalMs: 4000 } }));
 vi.mock("./logger", () => ({ logger: { info: mocks.info, warn: vi.fn(), error: mocks.error } }));
-import { runServiceReminders, runStartupJobs, startCron } from "./workers";
+import { runServiceReminders, runStartupJobs, startCron, startOutboxConsumer } from "./workers";
+import { sendDocument, sendText } from "./whatsapp";
+import { OUTBOX_INCLUDE } from "./outbound-payload";
+
+describe("single legacy outbox consumer", () => {
+  const tenantId = "legacy-tenant";
+  const appointment = { appointment: { tenantId } };
+  const plan = { plan: { tenantId } };
+  const report = { anthropometricReport: { tenantId } };
+  const scope = { status: "PENDING", OR: [{ tenantId }, { tenantId: null, AND: [
+    { OR: [appointment, plan, report] },
+    { OR: [{ appointmentId: null }, appointment] },
+    { OR: [{ planId: null }, plan] },
+    { OR: [{ anthropometricReportId: null }, report] },
+  ] }] };
+  const row = { id: "msg", attempts: 0, kind: "MANUAL", body: "fresh text", toJid: "synthetic-jid" };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId } });
+    outbox.findMany.mockResolvedValue([row]);
+    outbox.findFirst.mockResolvedValue(row);
+    outbox.updateMany.mockResolvedValue({ count: 1 });
+    startOutboxConsumer();
+  });
+  afterEach(() => vi.useRealTimers());
+  const poll = () => vi.advanceTimersByTimeAsync(4800);
+
+  it("fails closed without a verified original installation", async () => {
+    outbox.resolveScope.mockRejectedValue(new Error("original agenda missing"));
+    await poll();
+    expect(outbox.findMany).not.toHaveBeenCalled();
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sendDocument).not.toHaveBeenCalled();
+    expect(outbox.update).not.toHaveBeenCalled();
+    expect(outbox.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("filters before taking the ordered batch; skips rows that no longer match without sending or writing", async () => {
+    outbox.findFirst.mockResolvedValue(null);
+    await poll();
+    expect(outbox.findMany.mock.calls).toEqual([[{ where: scope, orderBy: { createdAt: "asc" }, take: 5, select: { id: true } }]]);
+    expect(outbox.findFirst.mock.calls).toEqual([[{ where: { ...scope, id: row.id }, include: OUTBOX_INCLUDE }]]);
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sendDocument).not.toHaveBeenCalled();
+    expect(outbox.update).not.toHaveBeenCalled();
+    expect(outbox.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each(["text", "document"])("dispatches current %s payload and scopes the success write", async (type) => {
+    const pdfData = Buffer.from("pdf");
+    if (type === "document") outbox.findFirst.mockResolvedValue({ ...row, kind: "PLAN_PDF", plan: { pdfData, pdfFileName: "plan.pdf" } });
+    await poll();
+    if (type === "document") {
+      expect(vi.mocked(sendDocument).mock.calls).toEqual([[row.toJid, pdfData, "plan.pdf"]]);
+      expect(sendText).not.toHaveBeenCalled();
+    } else {
+      expect(vi.mocked(sendText).mock.calls).toEqual([[row.toJid, row.body]]);
+      expect(sendDocument).not.toHaveBeenCalled();
+    }
+    expect(outbox.update).not.toHaveBeenCalled();
+    expect(outbox.updateMany.mock.calls).toEqual([[{ where: { ...scope, id: row.id, attempts: 0 }, data: {
+      status: "SENT", sentAt: expect.any(Date), attempts: { increment: 1 }, lastError: null,
+    } }]]);
+  });
+
+  it.each([[0, "PENDING"], [4, "FAILED"]])("scopes provider failures and preserves retries from attempt %d", async (attempts, status) => {
+    outbox.findFirst.mockResolvedValue({ ...row, attempts });
+    vi.mocked(sendText).mockRejectedValue(new Error("provider error"));
+    await poll();
+    expect(vi.mocked(sendText).mock.calls).toEqual([[row.toJid, row.body]]);
+    expect(sendDocument).not.toHaveBeenCalled();
+    expect(outbox.update).not.toHaveBeenCalled();
+    expect(outbox.updateMany.mock.calls).toEqual([[{ where: { ...scope, id: row.id, attempts }, data: {
+      status, attempts: attempts + 1, lastError: "provider error",
+    } }]]);
+  });
+
+  it("pauses on a disconnected provider without writing attempts or dispatching the next row", async () => {
+    outbox.findMany.mockResolvedValue([row, { id: "next" }]);
+    vi.mocked(sendText).mockRejectedValue(new Error("WhatsApp no está conectado"));
+    await poll();
+    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendDocument).not.toHaveBeenCalled();
+    expect(outbox.findFirst).toHaveBeenCalledTimes(1);
+    expect(outbox.updateMany).not.toHaveBeenCalled();
+    expect(outbox.update).not.toHaveBeenCalled();
+  });
+});
 
 describe("payment cron without Baileys or database", () => {
   beforeEach(() => {

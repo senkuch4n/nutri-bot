@@ -13,7 +13,10 @@
  * Uso: npm run test:after-hours --workspace apps/bot
  */
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@nutri-bot/db";
+import { findLegacyConversationState } from "@nutri-bot/db/domain/conversationState";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import {
   countPendingInquiries,
   enqueueAfterHoursDigest,
@@ -24,14 +27,16 @@ import {
 import { formatClock, formatInTimeZone, messages, type AfterHoursConfig } from "@nutri-bot/core";
 import { handleIncoming, handleIncomingMedia, type ConversationOptions } from "../src/conversation";
 
-const ALERT_JID = "5490000000099@s.whatsapp.net";
-const JID_ANA = "5490000000011@s.whatsapp.net";
-const JID_BRUNO = "5490000000012@s.whatsapp.net";
+const runId = randomUUID();
+const ALERT_JID = `inquiry-alert-${runId}@invalid`;
+const JID_ANA = `inquiry-ana-${runId}@invalid`;
+const JID_BRUNO = `inquiry-bruno-${runId}@invalid`;
 const TEST_JIDS = [JID_ANA, JID_BRUNO];
 const MIN = 60_000;
 
 const patientIds: string[] = [];
-const inquiryIds = new Set<string>();
+const ownedPatientJids: string[] = [];
+let fixtureTenantId: string | undefined;
 const outboundIds = new Set<string>();
 const startedAt = new Date();
 
@@ -50,37 +55,31 @@ async function takeNewAlerts(): Promise<{ id: string; body: string }[]> {
 }
 
 async function stepOf(jid: string): Promise<string | undefined> {
-  const row = await prisma.conversationState.findUnique({ where: { patientJid: jid } });
+  const row = await findLegacyConversationState(jid);
   return row?.step;
 }
 
-async function preCleanup(): Promise<void> {
-  const existing = await prisma.patient.findMany({ where: { whatsappJid: { in: TEST_JIDS } } });
-  for (const p of existing) {
-    if (!p.name?.endsWith("(TEST)")) {
-      throw new Error(`Existe un paciente real con el jid de prueba ${p.whatsappJid} (${p.name}). No borro nada.`);
-    }
-  }
-  if (existing.length > 0) {
-    console.log(`Limpiando ${existing.length} paciente(s) (TEST) de una corrida anterior…`);
-    // PatientInquiry cae por onDelete: Cascade.
-    await prisma.patient.deleteMany({ where: { id: { in: existing.map((p) => p.id) } } });
-  }
-  await prisma.conversationState.deleteMany({ where: { patientJid: { in: TEST_JIDS } } });
+async function assertFixtureJidsUnused(): Promise<void> {
+  const [patients, states, messages] = await Promise.all([
+    prisma.patient.count({ where: { whatsappJid: { in: TEST_JIDS } } }),
+    Promise.all(TEST_JIDS.map(findLegacyConversationState)),
+    prisma.outboundMessage.count({ where: { toJid: ALERT_JID } }),
+  ]);
+  if (patients || states.some(Boolean) || messages) throw new Error("Los JID de prueba ya están en uso. No borro nada.");
 }
 
 async function finalCleanup(): Promise<void> {
+  if (patientIds.length === 0) return;
   const safety = await prisma.outboundMessage.findMany({
     where: { toJid: ALERT_JID, createdAt: { gte: startedAt } },
     select: { id: true },
   });
   const ids = [...outboundIds, ...safety.map((r) => r.id)];
   await prisma.outboundMessage.deleteMany({ where: { id: { in: ids } } });
-  await prisma.patientInquiry.deleteMany({ where: { id: { in: [...inquiryIds] } } });
-  // Solo si este script creó los pacientes (si abortó por un jid real, no toca su estado).
-  if (patientIds.length > 0) {
-    await prisma.conversationState.deleteMany({ where: { patientJid: { in: TEST_JIDS } } });
+  if (fixtureTenantId && ownedPatientJids.length) {
+    await prisma.conversationState.deleteMany({ where: { tenantId: fixtureTenantId, patientJid: { in: ownedPatientJids } } });
   }
+  // PatientInquiry cae por onDelete: Cascade, incluso si falló el escenario antes de leerla.
   await prisma.patient.deleteMany({ where: { id: { in: patientIds } } });
 }
 
@@ -93,16 +92,20 @@ async function main(): Promise<void> {
   if (pro.botPaused) throw new Error("El bot está pausado en /ajustes: la prueba necesita que responda.");
   const tz = pro.timezone;
 
-  await preCleanup();
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  fixtureTenantId = tenantId;
+  await assertFixtureJidsUnused();
 
   const ana = await prisma.patient.create({
-    data: { whatsappJid: JID_ANA, phone: "5490000000011", name: "Ana (TEST)" },
+    data: { tenantId, whatsappJid: JID_ANA, phone: JID_ANA.split("@")[0]!, name: "Ana (TEST)" },
   });
   patientIds.push(ana.id);
+  ownedPatientJids.push(ana.whatsappJid);
   const bruno = await prisma.patient.create({
-    data: { whatsappJid: JID_BRUNO, phone: "5490000000012", name: "Bruno (TEST)" },
+    data: { tenantId, whatsappJid: JID_BRUNO, phone: JID_BRUNO.split("@")[0]!, name: "Bruno (TEST)" },
   });
   patientIds.push(bruno.id);
+  ownedPatientJids.push(bruno.whatsappJid);
   const scope = { patientIds: [ana.id, bruno.id] };
 
   const base = new Date();
@@ -118,19 +121,16 @@ async function main(): Promise<void> {
   };
   const say = async (jid: string, text: string, opts: ConversationOptions) => {
     replies = [];
-    await handleIncoming(jid, text, send, { alertJid: ALERT_JID, ...opts });
+    await handleIncoming(jid, text, send, { alertJid: ALERT_JID, ...opts, aiProvider: null });
     return replies;
   };
   const media = async (jid: string, opts: ConversationOptions) => {
     replies = [];
-    await handleIncomingMedia(jid, send, { alertJid: ALERT_JID, ...opts });
+    await handleIncomingMedia(jid, send, { alertJid: ALERT_JID, ...opts, aiProvider: null });
     return replies;
   };
-  const inquiriesOf = async (patientId: string) => {
-    const rows = await prisma.patientInquiry.findMany({ where: { patientId }, orderBy: { createdAt: "asc" } });
-    for (const r of rows) inquiryIds.add(r.id);
-    return rows;
-  };
+  const inquiriesOf = (patientId: string) =>
+    prisma.patientInquiry.findMany({ where: { patientId }, orderBy: { createdAt: "asc" } });
   const nightHandoff = (c: AfterHoursConfig) =>
     messages.afterHoursHandoff({ attendFrom: formatClock(c.end), attendTo: formatClock(c.start) });
 
@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     assert.deepEqual(r, [messages.HANDOFF]);
     const alerts = await takeNewAlerts();
     assert.equal(alerts.length, 1);
-    assert.equal(alerts[0]!.body, messages.professionalHandoffAlert({ patientName: "Ana (TEST)", patientPhone: "5490000000011" }));
+    assert.equal(alerts[0]!.body, messages.professionalHandoffAlert({ patientName: "Ana (TEST)", patientPhone: ana.phone }));
     assert.equal(await stepOf(JID_ANA), "AWAIT_INQUIRY");
 
     const r2 = await say(JID_ANA, "¿Puedo cambiar la merienda?", { now: base, afterHours: DAY });
@@ -268,7 +268,6 @@ async function main(): Promise<void> {
 
   await scenario("11. Sin WhatsApp de alertas: se marca resumida sin encolar", async () => {
     const { inquiry, created } = await recordInquiryMessage({ patientId: bruno.id, text: "Consulta nocturna", at: base, afterHours: true });
-    inquiryIds.add(inquiry.id);
     assert.equal(created, true);
     const r = await enqueueAfterHoursDigest({ now: at(5), config: DAY, scope: { patientIds: [bruno.id] }, alertJid: null });
     assert.deepEqual(r, { digested: 1, outboundId: null });

@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => {
     deleteSection: vi.fn(),
     moveSection: vi.fn(),
     hasPanelSession: vi.fn(),
+    access: vi.fn(),
+    touchTemplate: vi.fn(),
     revalidateMenuOwner: vi.fn(),
     revalidatePath: vi.fn(),
   };
@@ -36,6 +38,8 @@ vi.mock("@nutri-bot/db/domain", () => ({
 }));
 vi.mock("./recetas/recipe-save", () => ({ hasPanelSession: mocks.hasPanelSession }));
 vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.revalidateMenuOwner }));
+vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+vi.mock("@/lib/touch-template", () => ({ touchTemplate: mocks.touchTemplate }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
 import {
@@ -49,9 +53,32 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
   mocks.hasPanelSession.mockResolvedValue(true);
+  mocks.access.mockResolvedValue({ tenantId: "tenant-a" });
 });
 
 describe("plan-section-actions", () => {
+  const value = { title: "T", body: "b" };
+  const template = { kind: "template" as const, ownerId: "t1", sectionId: "s1", direction: -1 as const, ...value, tenantId: "forged" };
+  it.each([
+    { action: addPlanSectionAction, write: mocks.addSection, args: [value], result: { id: "new" } },
+    { action: updatePlanSectionAction, write: mocks.updateSection, args: ["s1", value], result: undefined },
+    { action: deletePlanSectionAction, write: mocks.deleteSection, args: ["s1"], result: undefined },
+    { action: movePlanSectionAction, write: mocks.moveSection, args: ["s1", -1], result: undefined },
+  ])("template: $action rejects absent membership and uses only the trusted tenant", async ({ action, write, args, result }) => {
+    write.mockResolvedValue(result);
+    mocks.access.mockResolvedValueOnce(null);
+    expect(await action(template)).toEqual({ ok: false, error: "Tu sesión venció. Volvé a entrar." });
+    expect(write).not.toHaveBeenCalled();
+    expect(mocks.touchTemplate).not.toHaveBeenCalled();
+    expect(mocks.revalidateMenuOwner).not.toHaveBeenCalled();
+    write.mockRejectedValueOnce(new mocks.PlanSectionNotFoundError());
+    expect(await action(template)).toEqual({ ok: false, error: "No se pudo guardar. Probá de nuevo." });
+    expect(mocks.touchTemplate).not.toHaveBeenCalled();
+    expect(await action(template)).toEqual({ ok: true, ...result });
+    expect(write.mock.calls).toEqual(Array.from({ length: 2 }, () => ["template", "t1", ...args, "tenant-a"]));
+    expect(mocks.touchTemplate.mock.calls).toEqual([["t1", "tenant-a"]]);
+  });
+
   it("sin sesión → error de sesión sin llamar al dominio", async () => {
     mocks.hasPanelSession.mockResolvedValue(false);
     const r = await addPlanSectionAction({ kind: "plan", ownerId: "p1", title: "T", body: "b" });
@@ -97,7 +124,8 @@ describe("plan-section-actions", () => {
   it("plantilla: revalida el dueño (que la marca revisada) y no el portal", async () => {
     mocks.deleteSection.mockResolvedValue(undefined);
     expect(await deletePlanSectionAction({ kind: "template", ownerId: "t1", sectionId: "s1" })).toEqual({ ok: true });
-    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("template", "t1");
+    expect(mocks.touchTemplate).toHaveBeenCalledWith("t1", "tenant-a");
+    expect(mocks.revalidateMenuOwner).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 

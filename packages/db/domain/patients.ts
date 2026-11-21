@@ -1,5 +1,11 @@
 import type { ActivityLevel, BiologicalSex, BodyFrame, NutritionGoal } from "@prisma/client";
 import { prisma } from "../index";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+
+/** Tenant of the verified original agenda; not inferred from the patient or input. */
+export async function getLegacySchedulingTenantId() {
+  return (await resolveLegacySchedulingScope()).scope.tenantId;
+}
 
 /** Normaliza un teléfono a JID de WhatsApp: solo dígitos + sufijo. */
 export function phoneToJid(phone: string): string {
@@ -14,19 +20,25 @@ export function jidToPhone(jid: string): string {
 export async function findOrCreatePatient(params: { phone: string; name?: string }) {
   const whatsappJid = phoneToJid(params.phone);
   const digits = whatsappJid.split("@")[0]!;
-  return prisma.patient.upsert({
-    where: { whatsappJid },
-    update: params.name ? { name: params.name } : {},
-    create: { whatsappJid, phone: digits, name: params.name ?? null },
-  });
+  return upsertLegacyPatient(whatsappJid, digits, params.name ?? null);
 }
 
 export async function findOrCreatePatientByJid(jid: string) {
-  const digits = jidToPhone(jid);
+  return upsertLegacyPatient(jid, jidToPhone(jid));
+}
+
+export async function findLegacyPatientByJidOrThrow(whatsappJid: string) {
+  const tenantId = await getLegacySchedulingTenantId();
+  return prisma.patient.findUniqueOrThrow({ where: { tenantId_whatsappJid: { tenantId, whatsappJid } } });
+}
+
+async function upsertLegacyPatient(whatsappJid: string, phone: string, name?: string | null) {
+  const tenantId = await getLegacySchedulingTenantId();
+  // A JID outside this tenant cannot match the update, and global uniqueness rejects the insert.
   return prisma.patient.upsert({
-    where: { whatsappJid: jid },
-    update: {},
-    create: { whatsappJid: jid, phone: digits },
+    where: { tenantId_whatsappJid: { tenantId, whatsappJid } },
+    update: name ? { name } : {},
+    create: { whatsappJid, tenantId, phone, ...(name === undefined ? {} : { name }) },
   });
 }
 

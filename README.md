@@ -106,6 +106,10 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 | `npm run test:bot-ai --workspace apps/bot` | Simula sin WhatsApp real ni API de IA (proveedor falso) la opción 5 del bot (preguntas con IA): tools, límites, errores, derivación con 0 y retención; crea y borra sus propios datos de prueba |
 | `npm run test:booking-reason --workspace apps/bot` | Simula sin WhatsApp real el paso del motivo de consulta al reservar (HU-013): salteo, muy corto/largo, comandos, audio, alerta con el motivo recortado, seña, edición y privacidad frente a la IA; crea y borra sus propios datos de prueba |
 
+### Membresías del consultorio original (HU-024)
+
+Antes de activar la autorización por tenant en el panel: **migrá el esquema → aplicá el padrón revisado → desplegá la web con la nueva autorización**. El esquema solo agrega el identificador de Google; no otorga accesos. Ver [procedimiento y formato del padrón](Refactorizaciones/modelo-multi-tenant.md#membresías-del-consultorio-original-t2e1a).
+
 ## Despliegue (VPS con Docker)
 
 ```bash
@@ -180,8 +184,10 @@ Con esto se completó el backlog de `docs/historias-usuario-nutridesk.md`.
 `npm run seed:demo --workspace packages/db` agrega 5 pacientes ficticios con ficha clínica,
 evolución (para que los gráficos tengan datos), turnos en distintos estados (confirmado,
 completado, cancelado, ausente), un plan activo cada uno y algún pago — para tener algo real que
-mostrar sin usar los datos de pacientes de verdad. Se puede correr de nuevo sin duplicar pacientes
-(hace upsert por teléfono), pero si se corre de nuevo sí duplica turnos/evolución/planes.
+mostrar sin usar los datos de pacientes de verdad. Usalo solo en una instalación de prueba, con
+la agenda, los servicios y los alimentos de ejemplo del consultorio original ya provisionados.
+Si alguno de los identificadores de WhatsApp de ejemplo ya está ocupado, el seed aborta sin
+modificar pacientes existentes ni duplicar turnos, evoluciones o planes.
 
 ### Asistente con IA (DeepSeek)
 

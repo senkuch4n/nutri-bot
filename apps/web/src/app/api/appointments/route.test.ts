@@ -1,21 +1,27 @@
-// HU-017b-1 (SDD 4.7, 9-1): los turnos del calendario se titulan con el nombre, el teléfono con formato
-// o "Sin nombre", y traen lo que necesita el panel del turno.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), findMany: vi.fn() }));
-vi.mock("@/auth", () => ({ auth: mocks.auth }));
-vi.mock("@nutri-bot/db", () => ({ prisma: { appointment: { findMany: mocks.findMany } } }));
-
 import { GET } from "./route";
 
-const URL_OK = "http://x/api/appointments?start=2026-10-05T00:00:00Z&end=2026-10-12T00:00:00Z";
+const { auth, resolveScope, findMany } = vi.hoisted(() => ({
+  auth: vi.fn(),
+  resolveScope: vi.fn(),
+  findMany: vi.fn(),
+}));
+vi.mock("@/auth", () => ({ auth }));
+vi.mock("@nutri-bot/db", () => ({ prisma: { appointment: { findMany } } }));
+vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: resolveScope }));
+
+const scope = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
+const start = "2026-11-20T00:00:00Z";
+const end = "2026-11-21T00:00:00Z";
+const range = `start=${start}&end=${end}`;
+const request = (query: string) => new Request(`http://localhost/api/appointments?${query}`);
 
 function appt(id: string, patient: { name: string | null; phone: string; whatsappJid: string }, payments: { id: string }[] = []) {
   return {
     id,
     patientId: `p-${id}`,
-    startsAt: new Date("2026-10-08T13:00:00Z"),
-    endsAt: new Date("2026-10-08T13:45:00Z"),
+    startsAt: new Date("2026-11-20T13:00:00Z"),
+    endsAt: new Date("2026-11-20T13:45:00Z"),
     status: "CONFIRMED",
     priceSnapshot: { toString: () => "15000" },
     googleEventId: null,
@@ -28,22 +34,41 @@ function appt(id: string, patient: { name: string | null; phone: string; whatsap
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.auth.mockResolvedValue({ user: { email: "a@b.c" } });
+  vi.resetAllMocks();
+  auth.mockResolvedValue({ user: {} });
+  resolveScope.mockResolvedValue({ scope });
+  findMany.mockResolvedValue([]);
 });
 
 describe("GET /api/appointments", () => {
-  it("sin sesión → 401", async () => {
-    mocks.auth.mockResolvedValue(null);
-    const res = await GET(new Request(URL_OK));
-    expect(res.status).toBe(401);
-    expect(mocks.findMany).not.toHaveBeenCalled();
+  it("reads only the verified legacy tenant and agenda, preserving range, status, and order", async () => {
+    const response = await GET(request(range));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+    expect(resolveScope).toHaveBeenCalledTimes(1);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        ...scope,
+        startsAt: { gte: new Date(start), lt: new Date(end) },
+        status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] },
+      },
+      orderBy: { startsAt: "asc" },
+    }));
   });
 
+  it("fails closed if the legacy agenda cannot be verified", async () => {
+    resolveScope.mockRejectedValue(new Error("No se pudo verificar la agenda de la instalación original."));
+    const response = await GET(request(range));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "unconfigured" });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  // HU-017b-1: preservar los datos que necesita el panel del turno.
   it("el color del servicio viaja como dato (la pastilla se pinta por estado, no por servicio)", async () => {
     const noShow = { ...appt("n", { name: "Eva", phone: "2", whatsappJid: "2@s" }), status: "NO_SHOW" };
-    mocks.findMany.mockResolvedValue([appt("a", { name: "Brenda", phone: "3", whatsappJid: "3@s" }), noShow]);
-    const events = (await (await GET(new Request(URL_OK))).json()) as Array<Record<string, unknown>>;
+    findMany.mockResolvedValue([appt("a", { name: "Brenda", phone: "3", whatsappJid: "3@s" }), noShow]);
+    const events = (await (await GET(request(range))).json()) as Array<Record<string, unknown>>;
     for (const e of events) {
       expect(e).not.toHaveProperty("backgroundColor");
       expect(e).not.toHaveProperty("textColor");
@@ -51,18 +76,13 @@ describe("GET /api/appointments", () => {
     }
   });
 
-  it("rango inválido → 400", async () => {
-    const res = await GET(new Request("http://x/api/appointments?start=nada&end=2026-10-12"));
-    expect(res.status).toBe(400);
-  });
-
   it("título con nombre, teléfono o Sin nombre; pago total y datos de la paciente", async () => {
-    mocks.findMany.mockResolvedValue([
+    findMany.mockResolvedValue([
       appt("a", { name: "Brenda Yebara", phone: "5493515552345", whatsappJid: "5493515552345@s.whatsapp.net" }, [{ id: "pay" }]),
       appt("b", { name: null, phone: "5493510017104", whatsappJid: "5493510017104@s.whatsapp.net" }),
       appt("c", { name: null, phone: "900000017102", whatsappJid: "900000017102@lid" }),
     ]);
-    const res = await GET(new Request(URL_OK));
+    const res = await GET(request(range));
     expect(res.status).toBe(200);
     const events = (await res.json()) as Array<{ title: string; extendedProps: Record<string, unknown> }>;
     expect(events.map((e) => e.title)).toEqual([
@@ -78,12 +98,31 @@ describe("GET /api/appointments", () => {
     });
     expect(events[1]!.extendedProps).toMatchObject({ hasFullPayment: false, patientLabel: "+54 9 351 001-7104" });
     expect(events[2]!.extendedProps).toMatchObject({ patientJid: "900000017102@lid", patientLabel: "Sin nombre" });
-    expect(mocks.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        include: expect.objectContaining({
-          payments: { where: { kind: "FULL", status: "APPROVED" }, select: { id: true }, take: 1 },
-        }),
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({
+        payments: { where: { kind: "FULL", status: "APPROVED" }, select: { id: true }, take: 1 },
       }),
-    );
+    }));
+  });
+
+  it("still accepts from/to aliases", async () => {
+    const response = await GET(request(`from=${start}&to=${end}`));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ startsAt: { gte: new Date(start), lt: new Date(end) } }),
+    }));
+  });
+
+  it("preserves unauthenticated and invalid-range responses without querying appointments", async () => {
+    auth.mockResolvedValueOnce(null);
+    const unauthorized = await GET(request(range));
+    expect(unauthorized.status).toBe(401);
+    expect(await unauthorized.json()).toEqual({ error: "unauthorized" });
+    const invalid = await GET(request("start=invalid"));
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ error: "rango inválido" });
+    expect(resolveScope).not.toHaveBeenCalled();
+    expect(findMany).not.toHaveBeenCalled();
   });
 });

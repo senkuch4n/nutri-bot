@@ -1,6 +1,6 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -12,6 +12,7 @@ import {
   addTemplateMealItem,
   deleteTemplateMealItem,
   getTemplate,
+  getTemplateMeal,
   getFood,
   nextItemOrder,
 } from "@nutri-bot/db/domain";
@@ -19,6 +20,7 @@ import { MEASURE_TEXT, isWeekday } from "@nutri-bot/core";
 import { readMeasureFields, resolveFormMeasure } from "@/lib/measure-form";
 import type { AddMealItemResult } from "@/components/food-measures/types";
 import { touchTemplate } from "@/lib/touch-template";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 
 export type TemplateState = { ok: boolean; error?: string };
 
@@ -33,7 +35,9 @@ export async function createTemplateAction(
 ): Promise<TemplateState> {
   const parsed = templateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  const template = await createTemplate({ title: parsed.data.title, notes: parsed.data.notes || null });
+  const access = await resolvePrivateContentAccess();
+  if (!access) return { ok: false, error: "Acceso no autorizado" };
+  const template = await createTemplate({ title: parsed.data.title, notes: parsed.data.notes || null }, access.tenantId);
   revalidatePath("/plantillas");
   redirect(`/plantillas/${template.id}`);
 }
@@ -45,13 +49,21 @@ export async function updateTemplateAction(
 ): Promise<TemplateState> {
   const parsed = templateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  await updateTemplate(id, { title: parsed.data.title, notes: parsed.data.notes || null });
-  await touchTemplate(id);
+  const access = await resolvePrivateContentAccess();
+  if (!access) return { ok: false, error: "Acceso no autorizado" };
+  await updateTemplate(id, { title: parsed.data.title, notes: parsed.data.notes || null }, access.tenantId);
+  await touchTemplate(id, access.tenantId);
   return { ok: true };
 }
 
+async function requireTemplateTenant() {
+  const access = await resolvePrivateContentAccess();
+  if (!access) notFound();
+  return access.tenantId;
+}
+
 export async function deleteTemplateAction(id: string): Promise<void> {
-  await deleteTemplate(id);
+  await deleteTemplate(id, await requireTemplateTenant());
   revalidatePath("/plantillas");
   redirect("/plantillas");
 }
@@ -60,24 +72,28 @@ export async function addTemplateMealAction(formData: FormData): Promise<void> {
   const templateId = String(formData.get("templateId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   if (!templateId || !name) return;
-  const template = await getTemplate(templateId);
-  const order = template?.meals.length ?? 0;
-  await addTemplateMeal(templateId, { name, order });
-  await touchTemplate(templateId);
+  const tenantId = await requireTemplateTenant();
+  const template = await getTemplate(templateId, tenantId);
+  if (!template) notFound();
+  await addTemplateMeal(templateId, { name, order: template.meals.length }, tenantId);
+  await touchTemplate(templateId, tenantId);
 }
 
 export async function deleteTemplateMealAction(formData: FormData): Promise<void> {
   const templateId = String(formData.get("templateId") ?? "");
   const mealId = String(formData.get("mealId") ?? "");
-  if (!mealId) return;
-  await deleteTemplateMeal(mealId);
-  await touchTemplate(templateId);
+  if (!templateId || !mealId) return;
+  const tenantId = await requireTemplateTenant();
+  await deleteTemplateMeal(mealId, { templateId, tenantId });
+  await touchTemplate(templateId, tenantId);
 }
 
 export async function addTemplateMealItemAction(formData: FormData): Promise<AddMealItemResult | void> {
   const templateId = String(formData.get("templateId") ?? "");
   const mealId = String(formData.get("mealId") ?? "");
-  if (!mealId) return;
+  if (!templateId || !mealId) return;
+  const tenantId = await requireTemplateTenant();
+  const scope = { templateId, tenantId };
   const foodId = String(formData.get("foodId") ?? "").trim();
   const customLabel = String(formData.get("customLabel") ?? "").trim();
   const quantityRaw = String(formData.get("quantityGrams") ?? "").trim();
@@ -87,6 +103,7 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<Add
   if (weekdayRaw && !isWeekday(weekdayRaw)) return;
   const weekday = isWeekday(weekdayRaw) ? weekdayRaw : null;
   if (!foodId && !customLabel) return;
+  if (!(await getTemplateMeal(mealId, scope))) notFound();
   if (foodId) {
     const food = await getFood(foodId);
     if (!food || !food.active || food.source !== "SARA2") {
@@ -102,11 +119,11 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<Add
   if (measure === "gone") {
     // 018d-1b (R4): la medida se borró con el editor abierto. Se revalida para que el editor traiga
     // las medidas actuales y se avisa, sin pasar por el error boundary.
-    await touchTemplate(templateId);
+    await touchTemplate(templateId, tenantId);
     return { ok: false, error: MEASURE_TEXT.measureGone };
   }
 
-  const order = await nextItemOrder("template", mealId, weekday);
+  const order = await nextItemOrder("template", mealId, weekday, scope);
 
   await addTemplateMealItem(mealId, measure
     ? { foodId, customLabel: null, notes: notes || null, order, weekday, ...measure }
@@ -117,14 +134,15 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<Add
         notes: notes || null,
         order,
         weekday,
-      });
-  await touchTemplate(templateId);
+      }, scope);
+  await touchTemplate(templateId, tenantId);
 }
 
 export async function deleteTemplateMealItemAction(formData: FormData): Promise<void> {
   const templateId = String(formData.get("templateId") ?? "");
   const itemId = String(formData.get("itemId") ?? "");
-  if (!itemId) return;
-  await deleteTemplateMealItem(itemId);
-  await touchTemplate(templateId);
+  if (!templateId || !itemId) return;
+  const tenantId = await requireTemplateTenant();
+  await deleteTemplateMealItem(itemId, { templateId, tenantId });
+  await touchTemplate(templateId, tenantId);
 }

@@ -13,8 +13,8 @@ import {
   type RequirementContext,
 } from "@nutri-bot/core";
 import { prisma, type NutritionPrescription, type Patient } from "../index";
-import { getProfessional } from "./availability";
 import { getFormulaMeasurementsAsOf } from "./clinical";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 
 // Prescripción energética de una consulta (HU-004). La usa solo web. El servidor recalcula todo
 // con packages/core: del cliente solo se toman las elecciones (`choices`).
@@ -48,26 +48,30 @@ function measurementsUntil(consultedAt: Date, tz: string): Date {
 export async function getRequirementContextForConsultation(
   consultationId: string,
 ): Promise<RequirementContextForConsultation> {
-  const [pro, consultation] = await Promise.all([
-    getProfessional(),
-    prisma.consultation.findUniqueOrThrow({
-      where: { id: consultationId },
-      select: {
-        id: true,
-        consultedAt: true,
-        patient: {
-          select: { id: true, sex: true, birthDate: true, activityLevel: true, nutritionGoal: true, bodyFrame: true },
-        },
+  return loadRequirementContext(consultationId, await resolveLegacySchedulingScope());
+}
+
+async function loadRequirementContext(
+  consultationId: string,
+  { scope: { tenantId }, professional: { timezone } }: Awaited<ReturnType<typeof resolveLegacySchedulingScope>>,
+): Promise<RequirementContextForConsultation> {
+  const consultation = await prisma.consultation.findUniqueOrThrow({
+    where: { id: consultationId, tenantId, patient: { tenantId } },
+    select: {
+      id: true,
+      consultedAt: true,
+      patient: {
+        select: { id: true, sex: true, birthDate: true, activityLevel: true, nutritionGoal: true, bodyFrame: true },
       },
-    }),
-  ]);
+    },
+  });
   const { patient, consultedAt } = consultation;
   const measurements = await getFormulaMeasurementsAsOf({
     patientId: patient.id,
     consultationId: consultation.id,
-    until: measurementsUntil(consultedAt, pro.timezone),
+    until: measurementsUntil(consultedAt, timezone),
   });
-  const ageYears = patient.birthDate ? computeAgeYears(patient.birthDate, consultedAt, pro.timezone) : null;
+  const ageYears = patient.birthDate ? computeAgeYears(patient.birthDate, consultedAt, timezone) : null;
   const weight = measurements.weightKg;
   const height = measurements.heightCm;
   const ageGroup = ageGroupOf(ageYears);
@@ -91,14 +95,22 @@ export async function getRequirementContextForConsultation(
 export async function getReferencePrescription(params: {
   patientId: string;
   consultationId: string;
+  /** Retained for existing callers; the cutoff uses the persisted consultation date. */
   consultedAt: Date;
 }): Promise<ReferencePrescription | null> {
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const patientScope = { patientId: params.patientId, tenantId, patient: { tenantId } };
+  const anchor = await prisma.consultation.findUnique({
+    where: { id: params.consultationId, ...patientScope },
+    select: { consultedAt: true },
+  });
+  if (!anchor) return null;
   const p = await prisma.nutritionPrescription.findFirst({
     where: {
       consultation: {
-        patientId: params.patientId,
+        ...patientScope,
         id: { not: params.consultationId },
-        consultedAt: { lte: params.consultedAt },
+        consultedAt: { lte: anchor.consultedAt },
       },
     },
     orderBy: [{ consultation: { consultedAt: "desc" } }, { consultation: { createdAt: "desc" } }],
@@ -137,7 +149,9 @@ export async function saveConsultationPrescription(params: {
   consultationId: string;
   choices: PrescriptionChoices;
 }): Promise<NutritionPrescription> {
-  const { ctx, measurements } = await getRequirementContextForConsultation(params.consultationId);
+  const context = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = context;
+  const { ctx, measurements, patient } = await loadRequirementContext(params.consultationId, context);
   if (ctx === null) throw new InvalidPrescriptionError(["Faltan datos para los cálculos"]);
   const result = buildPrescriptionSnapshot(ctx, params.choices);
   if (!result.ok) throw new InvalidPrescriptionError(result.errors);
@@ -147,26 +161,35 @@ export async function saveConsultationPrescription(params: {
     bodyFatRecordedAt:
       snapshot.bodyFatSource === "MEASURED" ? (measurements.bodyFatPercent?.recordedAt ?? null) : null,
   };
+  const { consultationId } = params;
+  const patientScope = { patientId: patient.id, patient: { tenantId } };
   return prisma.nutritionPrescription.upsert({
-    where: { consultationId: params.consultationId },
-    create: { ...data, consultationId: params.consultationId },
+    where: { consultationId, consultation: { tenantId, ...patientScope } },
+    create: {
+      ...data,
+      consultation: { connect: { id_tenantId: { id: consultationId, tenantId }, ...patientScope } },
+    },
     update: data,
   });
 }
 
-/** Borra la prescripción de la consulta (deleteMany por consultationId). Idempotente. */
+/** Borra la prescripción de una consulta propia. Idempotente. */
 export async function deleteConsultationPrescription(consultationId: string): Promise<void> {
-  await prisma.nutritionPrescription.deleteMany({ where: { consultationId } });
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  await prisma.nutritionPrescription.deleteMany({
+    where: { consultationId, consultation: { tenantId, patient: { tenantId } } },
+  });
 }
 
 /** Las `take` prescripciones más recientes del paciente, por consultation.consultedAt desc y
  *  consultation.createdAt desc, con { consultation: { id, consultedAt } }. */
-export function listLatestPrescriptions(
+export async function listLatestPrescriptions(
   patientId: string,
   take: number,
 ): Promise<Array<NutritionPrescription & { consultation: { id: string; consultedAt: Date } }>> {
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
   return prisma.nutritionPrescription.findMany({
-    where: { consultation: { patientId } },
+    where: { consultation: { patientId, tenantId, patient: { tenantId } } },
     include: { consultation: { select: { id: true, consultedAt: true } } },
     orderBy: [{ consultation: { consultedAt: "desc" } }, { consultation: { createdAt: "desc" } }],
     take,

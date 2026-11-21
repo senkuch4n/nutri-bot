@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getProfessional: vi.fn(),
   getAvailableSlotsForService: vi.fn(),
   prisma: {
+    agenda: { findUnique: vi.fn() },
     appointment: { findMany: vi.fn(), update: vi.fn() },
     professional: { update: vi.fn() },
   },
@@ -35,6 +36,12 @@ import { syncGoogleCalendar } from "./gcal";
 const SECRET = "Tengo diabetes y estoy embarazada (MOTIVO-PRIVADO)";
 const TZ = "America/Argentina/Buenos_Aires";
 const NOW = new Date("2026-10-03T02:10:00Z");
+const APPT_WHERE = {
+  id: "a1",
+  tenantId: "legacy-tenant",
+  agendaId: "legacy-agenda",
+  agenda: { isPrimary: true, professionalId: 1 },
+};
 
 function appt(googleEventId: string | null) {
   return {
@@ -52,13 +59,13 @@ function appt(googleEventId: string | null) {
 describe("privacidad del motivo (HU-013, D9)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getProfessional.mockResolvedValue({
+    mocks.getProfessional.mockResolvedValue({ timezone: TZ, currency: "ARS" });
+    mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: {
       timezone: TZ,
-      currency: "ARS",
       googleRefreshToken: "rt",
       googleCalendarId: null,
       googleSyncError: null,
-    });
+    } });
     mocks.insert.mockResolvedValue({ data: { id: "evt" } });
     mocks.patch.mockResolvedValue({ data: {} });
     mocks.prisma.appointment.update.mockResolvedValue({});
@@ -69,17 +76,25 @@ describe("privacidad del motivo (HU-013, D9)", () => {
     const r = await syncGoogleCalendar();
     expect(r).toEqual({ processed: 1 });
     expect(mocks.insert).toHaveBeenCalledTimes(1);
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "primary" }));
     const sent = JSON.stringify(mocks.insert.mock.calls);
     expect(sent).toContain("Primera consulta");
     expect(sent).not.toContain("MOTIVO-PRIVADO");
     expect(sent).not.toContain(SECRET);
+    expect(mocks.prisma.appointment.update.mock.calls).toEqual([[{
+      where: APPT_WHERE, data: { googleEventId: "evt", needsGoogleSync: false },
+    }]]);
   });
 
   it("Google, cambio: el patch no lleva el motivo", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt("evt")]);
-    await syncGoogleCalendar();
+    await expect(syncGoogleCalendar()).resolves.toEqual({ processed: 1 });
     expect(mocks.patch).toHaveBeenCalledTimes(1);
+    expect(mocks.patch).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "primary", eventId: "evt" }));
     expect(JSON.stringify(mocks.patch.mock.calls)).not.toContain("MOTIVO-PRIVADO");
+    expect(mocks.prisma.appointment.update.mock.calls).toEqual([[{
+      where: APPT_WHERE, data: { needsGoogleSync: false },
+    }]]);
   });
 
   it("IA, mis_turnos: la respuesta no lleva el motivo", async () => {

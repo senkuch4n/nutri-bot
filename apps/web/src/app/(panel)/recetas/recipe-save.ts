@@ -7,7 +7,7 @@ import {
   recipePhotoSizeError,
   validateRecipePhoto,
 } from "@nutri-bot/core";
-import { removeRecipePhoto, setRecipePhoto, setRecipePhotoCredit, type RecipeInput } from "@nutri-bot/db/domain";
+import type { RecipeInput, recipesForTenant } from "@nutri-bot/db/domain";
 import { processRecipePhoto } from "@nutri-bot/db/media";
 import { auth } from "@/auth";
 
@@ -118,19 +118,21 @@ export async function readPhotoIntent(formData: FormData): Promise<{ ok: true; p
   };
 }
 
-/** Aplica la foto pedida a una receta ya guardada: subir (sharp), quitar o solo el crédito. */
-export async function applyPhotoIntent(id: string, photo: PhotoIntent): Promise<void> {
+type PhotoWriter = Pick<ReturnType<typeof recipesForTenant>, "setPhoto" | "removePhoto" | "setPhotoCredit">;
+
+/** Ambas acciones del panel deben pasar el escritor del consultorio autorizado. */
+export async function applyPhotoIntent(id: string, photo: PhotoIntent, writer: PhotoWriter): Promise<void> {
   if (photo.bytes) {
     const processed = await processRecipePhoto(photo.bytes);
-    await setRecipePhoto(id, {
+    await writer.setPhoto(id, {
       data: processed.data,
       thumbData: processed.thumbData,
       byteSize: processed.byteSize,
       credit: photo.credit ?? null,
     });
   } else if (photo.remove) {
-    await removeRecipePhoto(id);
+    await writer.removePhoto(id);
   } else if (photo.credit !== undefined) {
-    await setRecipePhotoCredit(id, photo.credit);
+    await writer.setPhotoCredit(id, photo.credit);
   }
 }

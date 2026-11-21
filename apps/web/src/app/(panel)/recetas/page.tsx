@@ -1,7 +1,9 @@
 import { Plus } from "lucide-react";
 import type { RecipeStatusKey } from "@nutri-bot/core";
 import { recipeFileTitle } from "@nutri-bot/core/recipe-import";
-import { countRecipesByStatus, listRecipeCards } from "@nutri-bot/db/domain";
+import { notFound } from "next/navigation";
+import { recipesForTenant } from "@nutri-bot/db/domain";
+import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { ButtonLink, PageHeader } from "@/components/ui";
 import { toRecipeCardView } from "@/lib/recipe-view";
 import { RecipesBrowser, type RecipeTab } from "./recipes-browser";
@@ -23,8 +25,11 @@ export default async function RecetasPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const access = await resolvePrivateContentAccess();
+  if (!access) notFound();
+  const recipes = recipesForTenant(access.tenantId);
   const tab = parseTab((await searchParams).estado);
-  const [cards, counts] = await Promise.all([listRecipeCards({ status: TAB_STATUS[tab] }), countRecipesByStatus()]);
+  const [cards, counts] = await Promise.all([recipes.list(TAB_STATUS[tab]), recipes.counts()]);
 
   return (
     <div>

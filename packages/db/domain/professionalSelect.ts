@@ -1,10 +1,10 @@
 import type { Prisma } from "../index";
 
 /**
- * HU-016 (D10): columnas de Professional que lee getProfessional(). Todas las escalares MENOS los
- * bytes de imágenes (signatureData, logoData): no viajan al bot, al portal ni a la IA. Las imágenes
- * se leen solo con las funciones de professionalAssets.ts. Si se agrega una columna a Professional,
- * sumarla acá (el test lo exige).
+ * HU-016 (D10): columnas de Professional que lee getProfessional(). Los bytes de imágenes
+ * (signatureData, logoData) se leen solo con professionalAssets.ts; no viajan al bot, al portal
+ * ni a la IA. El tenantId es metadata de ownership y no forma parte de esta proyección de
+ * compatibilidad. El test exige una decisión explícita para cada columna nueva.
  */
 export const PROFESSIONAL_SELECT = {
   id: true, name: true, email: true, phoneJid: true, timezone: true, currency: true,

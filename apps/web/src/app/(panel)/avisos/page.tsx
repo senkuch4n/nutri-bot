@@ -1,4 +1,5 @@
 import { prisma, type MessageKind } from "@nutri-bot/db";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import {
   MESSAGE_KIND_TEXT,
   OUTBOX_TEXT,
@@ -9,9 +10,9 @@ import {
   outboxRecipientLabel,
 } from "@nutri-bot/core";
 import { PageHeader } from "@/components/ui";
-import { getProfessional } from "@/lib/professional";
 import { AvisosView, type MessageRow } from "./avisos-view";
 import { BroadcastForm } from "./broadcast-form";
+import { avisosOutboxWhere } from "./outbox-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -29,12 +30,13 @@ function whenText(at: Date, now: Date, tz: string): string {
 }
 
 export default async function AvisosPage() {
-  const [pro, messages, grouped, patients] = await Promise.all([
-    getProfessional(),
-    prisma.outboundMessage.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
-    prisma.outboundMessage.groupBy({ by: ["status"], _count: { _all: true } }),
+  const { scope: { tenantId }, professional: pro } = await resolveLegacySchedulingScope();
+  const where = avisosOutboxWhere(tenantId);
+  const [messages, grouped, patients] = await Promise.all([
+    prisma.outboundMessage.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 }),
+    prisma.outboundMessage.groupBy({ where, by: ["status"], _count: { _all: true } }),
     // HU-019 (D5): sin archivadas, igual que la action que encola.
-    prisma.patient.findMany({ where: { archivedAt: null }, select: { whatsappJid: true, archivedAt: true } }),
+    prisma.patient.findMany({ where: { tenantId, archivedAt: null }, select: { whatsappJid: true, archivedAt: true } }),
   ]);
 
   // D13: el mismo número que encola el comunicado (solo personas, sin repetidos ni archivadas).
@@ -47,8 +49,8 @@ export default async function AvisosPage() {
   const jids = [...new Set(messages.map((m) => m.toJid))];
   const named = jids.length
     ? await prisma.patient.findMany({
-        where: { whatsappJid: { in: jids } },
-        select: { whatsappJid: true, name: true, phone: true },
+        where: { tenantId, whatsappJid: { in: jids } },
+        select: { whatsappJid: true, name: true },
       })
     : [];
   const nameByJid = new Map(named.map((p) => [p.whatsappJid, p.name]));

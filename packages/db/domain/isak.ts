@@ -1,6 +1,6 @@
 import { ISAK_MEASURE_KEYS, ISAK_TEXT, dayKeyInTz, dayKeyToNoonUtc, type IsakMeasures } from "@nutri-bot/core";
 import { Prisma, prisma, type EvolutionEntry } from "../index";
-import { getProfessional } from "./availability";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 
 /**
  * HU-006: el estudio antropométrico ISAK de una consulta. Es una fila de EvolutionEntry con
@@ -50,18 +50,21 @@ export async function createIsakStudy(params: {
   consultationId: string;
   measures: IsakMeasures;
 }): Promise<EvolutionEntry> {
-  const pro = await getProfessional();
-  const consultation = await prisma.consultation.findUniqueOrThrow({
-    where: { id: params.consultationId },
-    select: { id: true, patientId: true, consultedAt: true },
+  const { scope: { tenantId }, professional: { timezone } } = await resolveLegacySchedulingScope();
+  const where = { id_tenantId: { id: params.consultationId, tenantId } };
+  const { patientId, consultedAt } = await prisma.consultation.findUniqueOrThrow({
+    where,
+    select: { patientId: true, consultedAt: true },
   });
   try {
     return await prisma.evolutionEntry.create({
       data: {
         ...measuresData(params.measures),
-        patientId: consultation.patientId,
-        recordedAt: dayKeyToNoonUtc(dayKeyInTz(consultation.consultedAt, pro.timezone), pro.timezone),
-        consultationId: consultation.id,
+        patient: { connect: { id: patientId } },
+        // Set both ownership columns through the composite patient FK.
+        tenantPatient: { connect: { id_tenantId: { id: patientId, tenantId } } },
+        recordedAt: dayKeyToNoonUtc(dayKeyInTz(consultedAt, timezone), timezone),
+        consultation: { connect: { ...where, patientId } },
         study: "ISAK",
         note: null,
       },
