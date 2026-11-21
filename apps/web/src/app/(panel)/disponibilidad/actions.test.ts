@@ -5,6 +5,7 @@ import { AVAILABILITY_TEXT } from "@nutri-bot/core";
 
 const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
+  agendaFindUnique: vi.fn(),
   ruleFindMany: vi.fn(),
   ruleFindFirst: vi.fn(),
   ruleCreate: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
   prisma: {
+    agenda: { findUnique: mocks.agendaFindUnique },
     availabilityRule: {
       findMany: mocks.ruleFindMany,
       findFirst: mocks.ruleFindFirst,
@@ -43,13 +45,15 @@ function form(fields: Record<string, string>): FormData {
 }
 
 const prev = { ok: false };
+const agendaWhere = { agendaId: "legacy-agenda", agenda: { tenantId: "legacy-tenant" } };
 const MONDAY = [
   { id: "am", startTime: "09:00", endTime: "13:00" },
   { id: "pm", startTime: "15:00", endTime: "19:00" },
 ];
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
+  mocks.agendaFindUnique.mockResolvedValue({ professional: { timezone: "UTC", phoneJid: null } });
   mocks.ruleFindMany.mockResolvedValue(MONDAY);
   mocks.ruleFindFirst.mockResolvedValue({ id: "pm" });
 });
@@ -58,7 +62,7 @@ describe("addRuleAction", () => {
   it("guarda si no choca con nada", async () => {
     const r = await addRuleAction(prev, form({ weekday: "1", startTime: "13:00", endTime: "15:00" }));
     expect(r).toEqual({ ok: true });
-    expect(mocks.ruleCreate).toHaveBeenCalledWith({ data: { weekday: 1, startTime: "13:00", endTime: "15:00" } });
+    expect(mocks.ruleCreate).toHaveBeenCalledWith({ data: { agendaId: agendaWhere.agendaId, weekday: 1, startTime: "13:00", endTime: "15:00" } });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/disponibilidad");
   });
 
@@ -72,7 +76,7 @@ describe("addRuleAction", () => {
   it("valida solo contra las reglas activas del mismo día", async () => {
     await addRuleAction(prev, form({ weekday: "1", startTime: "13:00", endTime: "15:00" }));
     expect(mocks.ruleFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { weekday: 1, active: true } }),
+      expect.objectContaining({ where: { ...agendaWhere, weekday: 1, active: true } }),
     );
   });
 
@@ -106,14 +110,14 @@ describe("updateRuleAction", () => {
     const r = await updateRuleAction(prev, form({ id: "pm", weekday: "1", startTime: "15:00", endTime: "20:00", active: "1" }));
     expect(r).toEqual({ ok: true });
     expect(mocks.ruleUpdate).toHaveBeenCalledWith({
-      where: { id: "pm" },
+      where: { id: "pm", ...agendaWhere, active: true },
       data: { weekday: 1, startTime: "15:00", endTime: "20:00" },
     });
   });
 
   it("solo edita reglas activas", async () => {
     await updateRuleAction(prev, form({ id: "pm", weekday: "1", startTime: "15:00", endTime: "20:00" }));
-    expect(mocks.ruleFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "pm", active: true } }));
+    expect(mocks.ruleFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "pm", ...agendaWhere, active: true } }));
   });
 
   it("superposición con otro horario del día → no guarda", async () => {
@@ -140,7 +144,7 @@ describe("deleteRuleAction", () => {
   it("devuelve ok y borra por id solo si está activa", async () => {
     mocks.ruleDeleteMany.mockResolvedValue({ count: 1 });
     await expect(deleteRuleAction("pm")).resolves.toEqual({ ok: true });
-    expect(mocks.ruleDeleteMany).toHaveBeenCalledWith({ where: { id: "pm", active: true } });
+    expect(mocks.ruleDeleteMany).toHaveBeenCalledWith({ where: { id: "pm", ...agendaWhere, active: true } });
   });
 
   it("ya borrada → ok (commit diferido tardío inofensivo)", async () => {
@@ -164,21 +168,21 @@ describe("addExceptionAction", () => {
     );
     expect(r).toEqual({ ok: true });
     expect(mocks.excCreate).toHaveBeenCalledWith({
-      data: { date: new Date("2026-10-12T00:00:00Z"), type: "BLOCKED", startTime: null, endTime: null, reason: "Feriado" },
+      data: { agendaId: agendaWhere.agendaId, date: new Date("2026-10-12T00:00:00Z"), type: "BLOCKED", startTime: null, endTime: null, reason: "Feriado" },
     });
   });
 
   it("No atiendo un rato → BLOCKED con horas", async () => {
     await addExceptionAction(prev, form({ date: "2026-10-12", kind: "closed_range", startTime: "14:00", endTime: "16:00" }));
     expect(mocks.excCreate).toHaveBeenCalledWith({
-      data: { date: new Date("2026-10-12T00:00:00Z"), type: "BLOCKED", startTime: "14:00", endTime: "16:00", reason: null },
+      data: { agendaId: agendaWhere.agendaId, date: new Date("2026-10-12T00:00:00Z"), type: "BLOCKED", startTime: "14:00", endTime: "16:00", reason: null },
     });
   });
 
   it("Atiendo en otro horario → CUSTOM_HOURS con horas", async () => {
     await addExceptionAction(prev, form({ date: "2026-10-16", kind: "custom_hours", startTime: "14:00", endTime: "18:00", reason: "" }));
     expect(mocks.excCreate).toHaveBeenCalledWith({
-      data: { date: new Date("2026-10-16T00:00:00Z"), type: "CUSTOM_HOURS", startTime: "14:00", endTime: "18:00", reason: null },
+      data: { agendaId: agendaWhere.agendaId, date: new Date("2026-10-16T00:00:00Z"), type: "CUSTOM_HOURS", startTime: "14:00", endTime: "18:00", reason: null },
     });
   });
 
@@ -204,11 +208,37 @@ describe("deleteExceptionAction", () => {
   it("devuelve ok y borra por id", async () => {
     mocks.excDeleteMany.mockResolvedValue({ count: 1 });
     await expect(deleteExceptionAction("e1")).resolves.toEqual({ ok: true });
-    expect(mocks.excDeleteMany).toHaveBeenCalledWith({ where: { id: "e1" } });
+    expect(mocks.excDeleteMany).toHaveBeenCalledWith({ where: { id: "e1", ...agendaWhere } });
   });
 
   it("si la base falla devuelve el error", async () => {
     mocks.excDeleteMany.mockRejectedValue(new Error("db down"));
     await expect(deleteExceptionAction("e1")).resolves.toMatchObject({ ok: false });
+  });
+});
+
+const rule = (id = "pm") => form({ id, weekday: "1", startTime: "13:00", endTime: "15:00", agendaId: "other", tenantId: "other" });
+const exception = () => form({ date: "2030-05-01", kind: "closed_day" });
+
+describe("aislamiento de la agenda original", () => {
+  it("un horario ajeno devuelve el error de inexistencia sin escribir ni actualizar la vista", async () => {
+    mocks.ruleFindFirst.mockImplementation(({ where }) => where.agendaId === agendaWhere.agendaId ? null : { id: "other" });
+    await expect(updateRuleAction(prev, rule("other"))).resolves.toEqual({ ok: false, error: "Ese horario ya no está. Recargá la página." });
+    expect(mocks.ruleUpdate).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["alta de horario", () => addRuleAction(prev, rule()), "guardar"],
+    ["edición de horario", () => updateRuleAction(prev, rule()), "guardar"],
+    ["borrado de horario", () => deleteRuleAction("pm"), "borrar"],
+    ["alta de excepción", () => addExceptionAction(prev, exception()), "guardar"],
+    ["borrado de excepción", () => deleteExceptionAction("e1"), "borrar"],
+  ] as const)("rechaza %s sin una agenda original verificada", async (_label, call, verb) => {
+    mocks.agendaFindUnique.mockResolvedValue(null);
+    await expect(call()).resolves.toEqual({ ok: false, error: `No se pudo ${verb}. Probá de nuevo.` });
+    for (const mock of [mocks.ruleFindMany, mocks.ruleFindFirst, mocks.ruleCreate, mocks.ruleUpdate, mocks.ruleDeleteMany, mocks.excCreate, mocks.excDeleteMany, mocks.revalidatePath]) {
+      expect(mock).not.toHaveBeenCalled();
+    }
   });
 });

@@ -1,10 +1,12 @@
 import "server-only";
 import { prisma, Prisma } from "@nutri-bot/db";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import type { ServiceReminder } from "@nutri-bot/core";
 
-export function listServices(opts?: { activeOnly?: boolean }) {
+export async function listServices(opts?: { activeOnly?: boolean }) {
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
   return prisma.service.findMany({
-    where: opts?.activeOnly ? { active: true } : undefined,
+    where: { tenantId, ...(opts?.activeOnly ? { active: true } : {}) },
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });
 }
@@ -35,56 +37,43 @@ function remindersJson(list: ServiceReminder[] | undefined) {
   return list?.map((r) => ({ amount: r.amount, unit: r.unit, asksConfirmation: r.asksConfirmation }));
 }
 
-export function createService(
-  data: {
-    name: string;
-    description?: string | null;
-    price: number;
-    durationMin: number;
-    color: string;
-  } & DepositFields &
-    PrepFields &
-    ReasonFields &
-    RemindersFields,
-) {
-  const { depositValue, reminders, ...rest } = data;
-  return prisma.service.create({
-    data: {
-      ...rest,
-      price: new Prisma.Decimal(data.price),
-      depositValue: depositValue != null ? new Prisma.Decimal(depositValue) : null,
-      reminders: remindersJson(reminders),
-    },
-  });
+type ServiceFields = {
+  name: string;
+  description?: string | null;
+  price: number;
+  durationMin: number;
+  color: string;
+} & DepositFields & PrepFields & ReasonFields & RemindersFields;
+
+function serviceData(data: ServiceFields) {
+  return {
+    name: data.name,
+    description: data.description,
+    price: new Prisma.Decimal(data.price),
+    durationMin: data.durationMin,
+    color: data.color,
+    requiresDeposit: data.requiresDeposit,
+    depositKind: data.depositKind,
+    depositValue: data.depositValue != null ? new Prisma.Decimal(data.depositValue) : null,
+    prepInstructions: data.prepInstructions,
+    prepLeadHours: data.prepLeadHours,
+    asksReason: data.asksReason,
+    reminders: remindersJson(data.reminders),
+  };
 }
 
-export function updateService(
-  id: string,
-  data: {
-    name: string;
-    description?: string | null;
-    price: number;
-    durationMin: number;
-    color: string;
-    /** HU-017b-2 (Q17): opcional; si no viene, no se toca. El form de edición no lo manda. */
-    active?: boolean;
-  } & DepositFields &
-    PrepFields &
-    ReasonFields &
-    RemindersFields,
-) {
-  const { depositValue, reminders, ...rest } = data;
-  return prisma.service.update({
-    where: { id },
-    data: {
-      ...rest,
-      price: new Prisma.Decimal(data.price),
-      depositValue: depositValue != null ? new Prisma.Decimal(depositValue) : null,
-      reminders: remindersJson(reminders),
-    },
-  });
+export async function createService(data: ServiceFields) {
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  return prisma.service.create({ data: { ...serviceData(data), tenantId } });
 }
 
-export function setServiceActive(id: string, active: boolean) {
-  return prisma.service.update({ where: { id }, data: { active } });
+/** HU-017b-2 (Q17): si no viene active, no se toca. El form de edición no lo manda. */
+export async function updateService(id: string, data: ServiceFields & { active?: boolean }) {
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  return prisma.service.update({ where: { id, tenantId }, data: { ...serviceData(data), active: data.active } });
+}
+
+export async function setServiceActive(id: string, active: boolean) {
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  return prisma.service.update({ where: { id, tenantId }, data: { active } });
 }

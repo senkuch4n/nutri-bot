@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { AVAILABILITY_TEXT, exceptionFields, findOverlap } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 
 // HU-017b-2 (SDD 4.3 de 017b-2). Solo se leen, validan y tocan las reglas ACTIVAS (Q16): las inactivas
 // que vienen de cargas viejas no se muestran, no se borran ni se reactivan, igual que las ignora el bot.
@@ -49,10 +50,15 @@ function parseRule(fd: FormData): { ok: true; data: RuleInput } | { ok: false; s
   return { ok: true, data: parsed.data };
 }
 
+async function originalAgendaWhere() {
+  const { scope: { agendaId, tenantId } } = await resolveLegacySchedulingScope();
+  return { agendaId, agenda: { tenantId } };
+}
+
 /** Superposición contra las reglas ACTIVAS del mismo día (sin la propia al editar). */
-async function overlapState(rule: RuleInput, excludeId?: string): Promise<FormState | null> {
+async function overlapState(agenda: Awaited<ReturnType<typeof originalAgendaWhere>>, rule: RuleInput, excludeId?: string): Promise<FormState | null> {
   const sameDay = await prisma.availabilityRule.findMany({
-    where: { weekday: rule.weekday, active: true },
+    where: { ...agenda, weekday: rule.weekday, active: true },
     select: { id: true, startTime: true, endTime: true },
   });
   const hit = findOverlap(rule, sameDay, excludeId);
@@ -66,11 +72,12 @@ function isNotFound(error: unknown): boolean {
 export async function addRuleAction(_prev: FormState, fd: FormData): Promise<FormState> {
   const parsed = parseRule(fd);
   if (!parsed.ok) return parsed.state;
-  const overlap = await overlapState(parsed.data);
-  if (overlap) return overlap;
   // HU-017b-3 (R4): un error de base queda inline en el panel, no en el error boundary.
   try {
-    await prisma.availabilityRule.create({ data: parsed.data });
+    const agenda = await originalAgendaWhere();
+    const overlap = await overlapState(agenda, parsed.data);
+    if (overlap) return overlap;
+    await prisma.availabilityRule.create({ data: { ...parsed.data, agendaId: agenda.agendaId } });
   } catch {
     return { ok: false, error: SAVE_ERROR };
   }
@@ -86,16 +93,18 @@ export async function updateRuleAction(_prev: FormState, fd: FormData): Promise<
   const parsed = parseRule(fd);
   if (!parsed.ok) return parsed.state;
 
-  const current = await prisma.availabilityRule.findFirst({ where: { id, active: true }, select: { id: true } });
-  if (!current) return { ok: false, error: RULE_GONE };
-
-  const overlap = await overlapState(parsed.data, id);
-  if (overlap) return overlap;
-
   try {
+    const agenda = await originalAgendaWhere();
+    const where = { id, ...agenda, active: true };
+    const current = await prisma.availabilityRule.findFirst({ where, select: { id: true } });
+    if (!current) return { ok: false, error: RULE_GONE };
+
+    const overlap = await overlapState(agenda, parsed.data, id);
+    if (overlap) return overlap;
+
     await prisma.availabilityRule.update({
-      where: { id },
-      data: { weekday: parsed.data.weekday, startTime: parsed.data.startTime, endTime: parsed.data.endTime },
+      where,
+      data: parsed.data,
     });
   } catch (error) {
     if (isNotFound(error)) return { ok: false, error: RULE_GONE };
@@ -109,7 +118,7 @@ export async function updateRuleAction(_prev: FormState, fd: FormData): Promise<
  *  inactiva (que no se muestra) nunca se borra desde acá. */
 export async function deleteRuleAction(id: string): Promise<FormState> {
   try {
-    await prisma.availabilityRule.deleteMany({ where: { id, active: true } });
+    await prisma.availabilityRule.deleteMany({ where: { id, ...await originalAgendaWhere(), active: true } });
   } catch {
     return { ok: false, error: DELETE_ERROR };
   }
@@ -154,8 +163,10 @@ export async function addExceptionAction(_prev: FormState, fd: FormData): Promis
   }
   const fields = exceptionFields(kind, startTime, endTime);
   try {
+    const { agendaId } = await originalAgendaWhere();
     await prisma.availabilityException.create({
       data: {
+        agendaId,
         date: new Date(`${date}T00:00:00Z`),
         type: fields.type,
         startTime: fields.startTime,
@@ -173,7 +184,7 @@ export async function addExceptionAction(_prev: FormState, fd: FormData): Promis
 /** Commit del borrado diferido. Ya borrada → { ok: true }. */
 export async function deleteExceptionAction(id: string): Promise<FormState> {
   try {
-    await prisma.availabilityException.deleteMany({ where: { id } });
+    await prisma.availabilityException.deleteMany({ where: { id, ...await originalAgendaWhere() } });
   } catch {
     return { ok: false, error: DELETE_ERROR };
   }
