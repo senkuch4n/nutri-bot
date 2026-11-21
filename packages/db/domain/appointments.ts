@@ -1,6 +1,8 @@
 import { computeDepositAmount, isConsultationEmpty, messages, validateBookingReasonInput } from "@nutri-bot/core";
 import { Prisma, prisma, type Actor, type Appointment, type AppointmentStatus } from "../index";
-import { getProfessional, checkSlotAvailable, canRescheduleAppointment } from "./availability";
+import { checkSlotAvailable, canRescheduleAppointment } from "./availability";
+import { bindLegacyAppointmentConversationState } from "./conversationState";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 import { enqueueMessage } from "./outbox";
 import { PREVIOUS_SCHEDULE_KEY_PREFIX } from "./reminders";
 
@@ -59,27 +61,29 @@ export async function createAppointment(params: {
   const r = validateBookingReasonInput(params.reason);
   if (!r.ok) throw new InvalidBookingReasonError(r.error);
 
-  const [pro, service, patient] = await Promise.all([
-    getProfessional(),
-    prisma.service.findUniqueOrThrow({ where: { id: params.serviceId } }),
-    prisma.patient.findUniqueOrThrow({ where: { id: params.patientId } }),
-  ]);
-
-  const endsAt = new Date(params.startsAt.getTime() + service.durationMin * 60_000);
-  const awaitingPayment = params.createdBy === "PATIENT" && service.requiresDeposit;
-  if (awaitingPayment && (!service.depositKind || service.depositValue == null ||
-    computeDepositAmount(Number(service.price), service.depositKind, Number(service.depositValue)) <= 0)) {
-    throw new Error("El servicio no tiene una seña válida configurada.");
-  }
-
-  const appointment = await prisma.$transaction(async (tx) => {
-    // All booking writers share this lock: overlapping services use the same calendar.
+  const { appointment, pro, service, patient, awaitingPayment, scope } = await prisma.$transaction(async (tx) => {
+    // Keep the legacy Professional(1) lock shared with rescheduling and patient archival.
     await tx.$queryRaw`SELECT id FROM "Professional" WHERE id = 1 FOR UPDATE`;
+    const { scope, professional: pro } = await resolveLegacySchedulingScope(tx);
+    const [service, patient] = await Promise.all([
+      tx.service.findUnique({ where: { id: params.serviceId, tenantId: scope.tenantId } }),
+      tx.patient.findUnique({ where: { id: params.patientId, tenantId: scope.tenantId } }),
+    ]);
+    if (!patient) throw new Error("La paciente no pertenece a la instalación original.");
+    if (!service) throw new Error("El servicio no pertenece a la instalación original.");
+
+    const endsAt = new Date(params.startsAt.getTime() + service.durationMin * 60_000);
+    const awaitingPayment = params.createdBy === "PATIENT" && service.requiresDeposit;
+    if (awaitingPayment && (!service.depositKind || service.depositValue == null ||
+      computeDepositAmount(Number(service.price), service.depositKind, Number(service.depositValue)) <= 0)) {
+      throw new Error("El servicio no tiene una seña válida configurada.");
+    }
     const ok = await checkSlotAvailable({ serviceId: params.serviceId, startsAt: params.startsAt }, tx);
     if (!ok) throw new SlotUnavailableError();
 
     const created = await tx.appointment.create({
       data: {
+        ...scope,
         patientId: params.patientId,
         serviceId: params.serviceId,
         startsAt: params.startsAt,
@@ -95,7 +99,7 @@ export async function createAppointment(params: {
     });
     // HU-019 (T4, D7): reservar desarchiva a la paciente (panel y bot, con o sin seña).
     await unarchiveInTx(tx, params.patientId);
-    return created;
+    return { appointment: created, pro, service, patient, awaitingPayment, scope };
   });
 
   if (!awaitingPayment && params.notifyPatient !== false) {
@@ -119,6 +123,7 @@ export async function createAppointment(params: {
       toJid: alertJid,
       kind: "PROFESSIONAL_ALERT",
       // Sin appointmentId: puede haber varias alertas para un mismo turno.
+      verifiedTenantId: scope.tenantId,
       body: messages.professionalNewBookingAlert({
         patientName: patient.name,
         patientPhone: patient.phone,
@@ -145,8 +150,9 @@ export async function updateAppointmentReason(params: {
 }): Promise<{ id: string; patientId: string; reason: string | null }> {
   const r = validateBookingReasonInput(params.reason);
   if (!r.ok) throw new InvalidBookingReasonError(r.error);
+  const { scope } = await resolveLegacySchedulingScope();
   return prisma.appointment.update({
-    where: { id: params.id },
+    where: { id: params.id, ...scope },
     data: { reason: r.reason },
     select: { id: true, patientId: true, reason: true },
   });
@@ -175,13 +181,14 @@ export async function rescheduleAppointment(params: {
   now?: Date;
 }): Promise<Appointment> {
   const now = params.now ?? new Date();
-  const pro = await getProfessional();
 
-  const { appointment, patientJid, serviceName } = await prisma.$transaction(async (tx) => {
+  const { appointment, patientJid, serviceName, pro } = await prisma.$transaction(async (tx) => {
     // Mismo lock que createAppointment: dos escrituras de agenda no se cruzan.
     await tx.$queryRaw`SELECT id FROM "Professional" WHERE id = 1 FOR UPDATE`;
+    const state = await bindLegacyAppointmentConversationState(tx);
+    const { scope, professional: pro } = state;
     const prev = await tx.appointment.findUnique({
-      where: { id: params.id },
+      where: { id: params.id, ...scope },
       include: { patient: true, service: true },
     });
     if (!prev || !canRescheduleAppointment(prev, now)) throw new RescheduleError("NOT_RESCHEDULABLE");
@@ -230,16 +237,9 @@ export async function rescheduleAppointment(params: {
     });
 
     // Un "sí"/"no" atrasado no tiene que responder por el horario nuevo.
-    await tx.conversationState.updateMany({
-      where: {
-        patientJid: prev.patient.whatsappJid,
-        step: "CONFIRM_ATTENDANCE",
-        context: { path: ["apptId"], equals: prev.id },
-      },
-      data: { step: "DORMANT", context: {} },
-    });
+    await state.resetRescheduledAttendance(prev.patient.whatsappJid, prev.id);
 
-    return { appointment, patientJid: prev.patient.whatsappJid, serviceName: prev.service.name };
+    return { appointment, patientJid: prev.patient.whatsappJid, serviceName: prev.service.name, pro };
   });
 
   await enqueueMessage({
@@ -261,22 +261,27 @@ export async function cancelAppointment(params: {
   /** false cuando el bot ya respondió la cancelación en vivo. */
   notifyPatient?: boolean;
 }) {
-  const pro = await getProfessional();
-  const appt = await prisma.appointment.findUniqueOrThrow({
-    where: { id: params.id },
-    include: { patient: true, service: true },
-  });
-  if (appt.status !== "CONFIRMED") return appt;
+  const { appt, updated, pro, scope } = await prisma.$transaction(async (tx) => {
+    const state = await bindLegacyAppointmentConversationState(tx);
+    const { scope, professional: pro } = state;
+    const where = { id: params.id, ...scope };
+    const appt = await tx.appointment.findUniqueOrThrow({
+      where,
+      include: { patient: true, service: true },
+    });
+    if (appt.patient.tenantId !== scope.tenantId || appt.service.tenantId !== scope.tenantId) {
+      throw new Error("La paciente o el servicio no pertenece al consultorio del turno.");
+    }
+    if (appt.status !== "CONFIRMED") return { appt, updated: null, pro, scope };
 
-  const updated = await prisma.appointment.update({
-    where: { id: params.id },
-    data: {
-      status: "CANCELLED",
-      cancelledBy: params.by,
-      cancelReason: params.reason ?? null,
-      needsGoogleSync: true,
-    },
+    const updated = await tx.appointment.update({
+      where: { ...where, status: "CONFIRMED", patientId: appt.patientId, serviceId: appt.serviceId },
+      data: cancellationData(params.by, params.reason),
+    });
+    await state.deleteCancelledAppointmentState(appt.patient.whatsappJid, appt.id);
+    return { appt, updated, pro, scope };
   });
+  if (!updated) return appt;
 
   if (params.by === "PROFESSIONAL" && params.notifyPatient !== false) {
     await enqueueMessage({
@@ -289,21 +294,92 @@ export async function cancelAppointment(params: {
         tz: pro.timezone,
       }),
     });
-  } else if (pro.phoneJid) {
-    await enqueueMessage({
-      toJid: pro.phoneJid,
-      kind: "PROFESSIONAL_ALERT",
-      body: messages.professionalCancelAlert({
-        patientName: appt.patient.name,
-        patientPhone: appt.patient.phone,
-        serviceName: appt.service.name,
-        startsAt: appt.startsAt,
-        tz: pro.timezone,
-      }),
-    });
+  } else {
+    await notifyProfessionalOfCancellation(appt, pro, scope.tenantId);
   }
 
   return updated;
+}
+
+function cancellationData(by: Actor, reason?: string) {
+  return { status: "CANCELLED" as const, cancelledBy: by, cancelReason: reason ?? null, needsGoogleSync: true };
+}
+
+async function notifyProfessionalOfCancellation(
+  appt: { patient: { name: string | null; phone: string }; service: { name: string }; startsAt: Date },
+  pro: { phoneJid: string | null; timezone: string },
+  tenantId: string,
+) {
+  if (!pro.phoneJid) return;
+  await enqueueMessage({
+    toJid: pro.phoneJid,
+    kind: "PROFESSIONAL_ALERT",
+    verifiedTenantId: tenantId,
+    body: messages.professionalCancelAlert({
+      patientName: appt.patient.name,
+      patientPhone: appt.patient.phone,
+      serviceName: appt.service.name,
+      startsAt: appt.startsAt,
+      tz: pro.timezone,
+    }),
+  });
+}
+
+/** The conversation supplies a candidate ID only; the sender and live request authorize the write. */
+export async function respondToAppointmentAttendance(params: {
+  id: string;
+  whatsappJid: string;
+  attending: boolean | null;
+  now: Date;
+  promptUpdatedAt: Date;
+}) {
+  const { id, whatsappJid, attending, now, promptUpdatedAt } = params;
+  const result = await prisma.$transaction(async (tx) => {
+    const state = await bindLegacyAppointmentConversationState(tx);
+    const { scope, professional } = state;
+    const { tenantId } = scope;
+    const patient = await tx.patient.findUnique({
+      where: { tenantId_whatsappJid: { tenantId, whatsappJid } },
+      select: { id: true },
+    });
+    if (!patient) return null;
+
+    const owned = {
+      id, ...scope, patientId: patient.id,
+      patient: { tenantId, whatsappJid }, service: { tenantId },
+    };
+    const where = {
+      ...owned, status: "CONFIRMED" as const, startsAt: { gt: now },
+      confirmationRequestedAt: { not: null }, confirmationRespondedAt: null,
+    };
+    const appt = await tx.appointment.findFirst({ where, include: { service: true, patient: true } });
+    if (!appt) {
+      const stale = await tx.appointment.findFirst({
+        where: { ...owned, OR: [{ status: "CANCELLED" }, { startsAt: { lte: now } }] },
+        select: { id: true, patient: { select: { whatsappJid: true } } },
+      });
+      if (stale) await state.deleteCancelledAppointmentState(stale.patient.whatsappJid, stale.id, promptUpdatedAt);
+      return null;
+    }
+    if (!appt.confirmationRequestedAt) return null;
+    if (attending !== null) {
+      const { count } = await tx.appointment.updateMany({
+        where: { ...where, serviceId: appt.serviceId, confirmationRequestedAt: appt.confirmationRequestedAt },
+        data: {
+          confirmationResponse: attending,
+          confirmationRespondedAt: now,
+          ...(attending ? {} : cancellationData("PATIENT", "Avisó que no puede asistir")),
+        },
+      });
+      if (count !== 1) return null;
+      if (!attending) await state.deleteCancelledAppointmentState(appt.patient.whatsappJid, appt.id);
+    }
+    return { appt, professional, tenantId };
+  });
+  if (!result) return null;
+  const { appt, professional, tenantId } = result;
+  if (attending === false) await notifyProfessionalOfCancellation(appt, professional, tenantId);
+  return { serviceName: appt.service.name, startsAt: appt.startsAt, tz: professional.timezone };
 }
 
 export type SetAppointmentStatusResult = {
@@ -326,8 +402,10 @@ export async function setAppointmentStatus(params: {
 }): Promise<SetAppointmentStatusResult> {
   const run = () =>
     prisma.$transaction(async (tx): Promise<SetAppointmentStatusResult> => {
+      const { scope } = await resolveLegacySchedulingScope(tx);
+      const where = { id: params.id, ...scope };
       const prev = await tx.appointment.findUniqueOrThrow({
-        where: { id: params.id },
+        where,
         include: {
           consultation: {
             include: {
@@ -337,8 +415,12 @@ export async function setAppointmentStatus(params: {
           },
         },
       });
+      const attached = prev.consultation;
+      if (attached && (attached.patientId !== prev.patientId || attached.tenantId !== scope.tenantId)) {
+        throw new Error("La consulta no pertenece a la paciente y al consultorio del turno.");
+      }
       const appointment = await tx.appointment.update({
-        where: { id: params.id },
+        where: { ...where, patientId: prev.patientId },
         data: { status: params.status },
       });
       // HU-019 (T5): volver un turno futuro a CONFIRMED mantiene el invariante "una archivada no
@@ -351,16 +433,21 @@ export async function setAppointmentStatus(params: {
       let removedEmptyConsultation = false;
 
       if (params.status === "COMPLETED") {
-        if (prev.consultation) {
-          consultation = { id: prev.consultation.id, created: false };
+        if (attached) {
+          consultation = { id: attached.id, created: false };
         } else {
           const created = await tx.consultation.create({
-            data: { patientId: prev.patientId, appointmentId: prev.id, consultedAt: prev.startsAt },
+            data: {
+              tenantId: scope.tenantId,
+              patientId: prev.patientId,
+              appointmentId: prev.id,
+              consultedAt: prev.startsAt,
+            },
           });
           consultation = { id: created.id, created: true };
         }
-      } else if (prev.status === "COMPLETED" && prev.consultation) {
-        const c = prev.consultation;
+      } else if (prev.status === "COMPLETED" && attached) {
+        const c = attached;
         if (
           isConsultationEmpty({
             measurementCount: c._count.evolutionEntries,
@@ -373,6 +460,9 @@ export async function setAppointmentStatus(params: {
           const { count } = await tx.consultation.deleteMany({
             where: {
               id: c.id,
+              tenantId: scope.tenantId,
+              patientId: prev.patientId,
+              appointmentId: prev.id,
               notes: null,
               planId: null,
               evolutionEntries: { none: {} },

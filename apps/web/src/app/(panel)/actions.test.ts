@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
   return {
     revalidatePath: vi.fn(),
     findUnique: vi.fn(),
+    findService: vi.fn(),
     findMany: vi.fn(),
     groupBy: vi.fn(),
     update: vi.fn(),
@@ -36,12 +37,14 @@ vi.mock("@nutri-bot/db", () => ({
   prisma: {
     patient: { findUnique: mocks.findUnique, findMany: mocks.findMany, update: mocks.update, upsert: mocks.upsert },
     appointment: { groupBy: mocks.groupBy },
+    service: { findUnique: mocks.findService },
   },
 }));
 vi.mock("@nutri-bot/db/domain", () => ({
   enqueueReminderNow: vi.fn(),
   getAppointmentReminderStatus: vi.fn(),
   getProfessional: mocks.getProfessional,
+  getLegacySchedulingTenantId: vi.fn(async () => "legacy-tenant"),
   getRescheduleSlots: mocks.getRescheduleSlots,
   rescheduleAppointment: mocks.rescheduleAppointment,
   RescheduleError: mocks.RescheduleError,
@@ -81,6 +84,7 @@ function form(fields: Record<string, string>): FormData {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.groupBy.mockResolvedValue([]);
+  mocks.findService.mockResolvedValue({ id: "svc-1" });
   mocks.createAppointment.mockResolvedValue({ id: "appt-1" });
   mocks.findOrCreatePatient.mockResolvedValue({ id: "pat-new" });
 });
@@ -128,14 +132,39 @@ describe("createAppointmentAction, paciente nueva", () => {
     mocks.findUnique.mockResolvedValue(null);
     const res = await createAppointmentAction(
       { ok: false },
-      form({ patientName: " Lucía Pérez ", patientPhone: "351 555 2345", serviceId: "svc-1", startsAt: STARTS }),
+      form({ patientName: " Lucía Pérez ", patientPhone: "351 555 2345", serviceId: "svc-1", startsAt: STARTS, tenantId: "foreign" }),
     );
     expect(res).toEqual({ ok: true });
     expect(mocks.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { whatsappJid: "5493515552345@s.whatsapp.net" } }),
+      expect.objectContaining({ where: { tenantId_whatsappJid: { whatsappJid: "5493515552345@s.whatsapp.net", tenantId: "legacy-tenant" } } }),
     );
     expect(mocks.findOrCreatePatient).toHaveBeenCalledWith({ phone: "5493515552345", name: "Lucía Pérez" });
     expect(mocks.createAppointment).toHaveBeenCalledWith(expect.objectContaining({ patientId: "pat-new" }));
+  });
+
+  it("no revela datos de la paciente cuando la escritura choca con la unicidad global", async () => {
+    mocks.findUnique.mockResolvedValueOnce(null);
+    mocks.findOrCreatePatient.mockRejectedValueOnce(Object.assign(new Error("private details"), { code: "P2002" }));
+    const result = await createAppointmentAction({ ok: false }, form({
+      patientName: "Lucía", patientPhone: "351 555 2345", serviceId: "svc-1", startsAt: STARTS,
+    }));
+    expect(result).toEqual({ ok: false, error: "Ese número ya está registrado" });
+    expect(mocks.findUnique).toHaveBeenCalledTimes(1);
+    expect(mocks.createAppointment).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("no crea una paciente si el servicio no pertenece al consultorio original", async () => {
+    mocks.findUnique.mockResolvedValue(null);
+    mocks.findService.mockResolvedValueOnce(null);
+    const result = await createAppointmentAction({ ok: false }, form({
+      patientName: "Lucía Pérez", patientPhone: "351 555 2345", serviceId: "foreign", startsAt: STARTS,
+    }));
+    expect(result).toEqual({ ok: false, error: T.genericError });
+    expect(mocks.findService).toHaveBeenCalledWith({ where: { id: "foreign", tenantId: "legacy-tenant" }, select: { id: true } });
+    expect(mocks.findOrCreatePatient).not.toHaveBeenCalled();
+    expect(mocks.createAppointment).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("número que ya es de otra paciente → existingPatient, sin escribir nada", async () => {
