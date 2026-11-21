@@ -8,7 +8,7 @@
  *    nuevo van a un JID falso (ALERT_JID) vía `opts.alertJid` → `professionalAlertJid`. Nunca usa
  *    `Professional.phoneJid`. Cada fila de `OutboundMessage` se borra por id apenas se verifica.
  *  - Sin IA (claves borradas, `aiProvider: null`) y sin Mercado Pago (no llama al checkout: el
- *    servicio con seña está inactivo y se usa solo desde el dominio).
+ *    servicio con seña se crea recién en el escenario que llama al dominio).
  *  - No modifica `Professional` ni ningún servicio, paciente o turno existente: crea sus propios
  *    pacientes y servicios "(TEST)" y borra SOLO por los ids que insertó. Sus turnos quedan con
  *    `needsGoogleSync: false` apenas se crean (por id), así nunca llegan a Google Calendar.
@@ -20,7 +20,10 @@ delete process.env.API_KEY_IA_ANTHROPIC;
 delete process.env.API_KEY_IA_DEEPSEEK;
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@nutri-bot/db";
+import { findLegacyConversationState } from "@nutri-bot/db/domain/conversationState";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import {
   InvalidBookingReasonError,
   createAppointment,
@@ -34,18 +37,20 @@ import { messages, reasonForAlert } from "@nutri-bot/core";
 import { handleIncoming, handleIncomingMedia, type ConversationOptions } from "../src/conversation";
 import { listActiveServices } from "../src/booking";
 
-const ALERT_JID = "5490000013099@s.whatsapp.net"; // jids propios: no se comparten con otros scripts
-const JID_ANA = "5490000013031@s.whatsapp.net";
-const JID_BRUNO = "5490000013032@s.whatsapp.net";
+const runId = randomUUID();
+const ALERT_JID = `booking-alert-${runId}@invalid`;
+const JID_ANA = `booking-ana-${runId}@invalid`;
+const JID_BRUNO = `booking-bruno-${runId}@invalid`;
 const TEST_JIDS = [JID_ANA, JID_BRUNO];
 const S_CON_NAME = "HU013 Con motivo (TEST)";
 const S_SIN_NAME = "HU013 Sin motivo (TEST)";
 const S_SENA_NAME = "HU013 Con seña (TEST)";
-const SERVICE_NAMES = [S_CON_NAME, S_SIN_NAME, S_SENA_NAME];
 const MIN = 60_000;
 const NO_BOOKING = "Sin problema, no reservé nada. Escribí *menú* si querés hacer otra cosa.";
 
 const patientIds: string[] = [];
+const ownedPatientJids: string[] = [];
+let fixtureTenantId: string | undefined;
 const serviceIds: string[] = [];
 const appointmentIds = new Set<string>();
 const consultationIds = new Set<string>();
@@ -94,60 +99,28 @@ async function trackAppointments(): Promise<void> {
 }
 
 async function stateOf(jid: string): Promise<{ step: string; ctx: Record<string, unknown> }> {
-  const row = await prisma.conversationState.findUniqueOrThrow({ where: { patientJid: jid } });
+  const row = await findLegacyConversationState(jid);
+  assert.ok(row, "falta el estado de conversación de prueba");
   return { step: row.step, ctx: (row.context ?? {}) as Record<string, unknown> };
 }
 
-async function preCleanup(): Promise<void> {
-  const existing = await prisma.patient.findMany({ where: { whatsappJid: { in: TEST_JIDS } } });
-  for (const p of existing) {
-    if (!p.name?.endsWith("(TEST)")) {
-      throw new Error(`Existe un paciente real con el jid de prueba ${p.whatsappJid} (${p.name}). No borro nada.`);
-    }
-  }
-  const oldPatientIds = existing.map((p) => p.id);
-  const oldServices = await prisma.service.findMany({ where: { name: { in: SERVICE_NAMES } }, select: { id: true } });
-  const oldServiceIds = oldServices.map((s) => s.id);
-  if (oldServiceIds.length > 0) {
-    const foreign = await prisma.appointment.count({
-      where: { serviceId: { in: oldServiceIds }, patientId: { notIn: oldPatientIds } },
-    });
-    if (foreign > 0) {
-      throw new Error("Un servicio de prueba HU013 tiene turnos de pacientes que no son (TEST). No borro nada.");
-    }
-  }
-  if (oldPatientIds.length === 0 && oldServiceIds.length === 0) {
-    await prisma.conversationState.deleteMany({ where: { patientJid: { in: TEST_JIDS } } });
-    return;
-  }
-  console.log(`Limpiando restos de una corrida anterior (${oldPatientIds.length} paciente(s), ${oldServiceIds.length} servicio(s))…`);
-  const oldAppts = await prisma.appointment.findMany({
-    where: { patientId: { in: oldPatientIds } },
-    select: { id: true },
-  });
-  const oldApptIds = oldAppts.map((a) => a.id);
-  const oldOutbound = await prisma.outboundMessage.findMany({
-    where: { OR: [{ appointmentId: { in: oldApptIds } }, { toJid: { in: [...TEST_JIDS, ALERT_JID] } }] },
-    select: { id: true },
-  });
-  await prisma.outboundMessage.deleteMany({ where: { id: { in: oldOutbound.map((o) => o.id) } } });
-  const oldCons = await prisma.consultation.findMany({ where: { appointmentId: { in: oldApptIds } }, select: { id: true } });
-  await prisma.consultation.deleteMany({ where: { id: { in: oldCons.map((c) => c.id) } } });
-  const oldPays = await prisma.payment.findMany({ where: { appointmentId: { in: oldApptIds } }, select: { id: true } });
-  await prisma.payment.deleteMany({ where: { id: { in: oldPays.map((p) => p.id) } } });
-  await prisma.appointment.deleteMany({ where: { id: { in: oldApptIds } } });
-  await prisma.conversationState.deleteMany({ where: { patientJid: { in: TEST_JIDS } } });
-  await prisma.service.deleteMany({ where: { id: { in: oldServiceIds } } });
-  await prisma.patient.deleteMany({ where: { id: { in: oldPatientIds } } });
+async function assertFixtureJidsUnused(): Promise<void> {
+  const [patients, states, messages] = await Promise.all([
+    prisma.patient.count({ where: { whatsappJid: { in: [...TEST_JIDS, ALERT_JID] } } }),
+    Promise.all(TEST_JIDS.map(findLegacyConversationState)),
+    prisma.outboundMessage.count({ where: { toJid: { in: [...TEST_JIDS, ALERT_JID] } } }),
+  ]);
+  if (patients || states.some(Boolean) || messages) throw new Error("Los JID de prueba ya están en uso. No borro nada.");
 }
 
 async function finalCleanup(): Promise<void> {
-  if (patientIds.length > 0) await trackAppointments();
+  if (patientIds.length === 0) return;
+  await trackAppointments();
   const apptIds = [...appointmentIds];
   const safety = await prisma.outboundMessage.findMany({
     where: {
       OR: [
-        { toJid: { in: [ALERT_JID, ...TEST_JIDS] }, createdAt: { gte: startedAt } },
+        { toJid: { in: [ALERT_JID, ...ownedPatientJids] }, createdAt: { gte: startedAt } },
         { appointmentId: { in: apptIds } },
       ],
     },
@@ -162,9 +135,8 @@ async function finalCleanup(): Promise<void> {
   await prisma.payment.deleteMany({ where: { id: { in: pays.map((p) => p.id) } } });
   await prisma.appointment.deleteMany({ where: { id: { in: apptIds } } });
   await prisma.service.deleteMany({ where: { id: { in: serviceIds } } });
-  // Solo si este script creó los pacientes (si abortó por un jid real, no toca su estado).
-  if (patientIds.length > 0) {
-    await prisma.conversationState.deleteMany({ where: { patientJid: { in: TEST_JIDS } } });
+  if (fixtureTenantId && ownedPatientJids.length) {
+    await prisma.conversationState.deleteMany({ where: { tenantId: fixtureTenantId, patientJid: { in: ownedPatientJids } } });
   }
   await prisma.patient.deleteMany({ where: { id: { in: patientIds } } });
 }
@@ -178,52 +150,42 @@ async function main(): Promise<void> {
   if (pro.botPaused) throw new Error("El bot está pausado en /ajustes: la prueba necesita que responda.");
   const tz = pro.timezone;
 
-  await preCleanup();
+  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  fixtureTenantId = tenantId;
+  await assertFixtureJidsUnused();
 
   const ana = await prisma.patient.create({
-    data: { whatsappJid: JID_ANA, phone: "5490000013031", name: "Ana (TEST)" },
+    data: { tenantId, whatsappJid: JID_ANA, phone: JID_ANA.split("@")[0]!, name: "Ana (TEST)" },
   });
   patientIds.push(ana.id);
+  ownedPatientJids.push(ana.whatsappJid);
   const bruno = await prisma.patient.create({
-    data: { whatsappJid: JID_BRUNO, phone: "5490000013032", name: "Bruno (TEST)" },
+    data: { tenantId, whatsappJid: JID_BRUNO, phone: JID_BRUNO.split("@")[0]!, name: "Bruno (TEST)" },
   });
   patientIds.push(bruno.id);
+  ownedPatientJids.push(bruno.whatsappJid);
 
   const sCon = await prisma.service.create({
-    data: { name: S_CON_NAME, durationMin: 30, price: 25000, active: true, asksReason: true },
+    data: { tenantId, name: S_CON_NAME, durationMin: 30, price: 25000, active: true, asksReason: true },
   });
   serviceIds.push(sCon.id);
   const sSin = await prisma.service.create({
-    data: { name: S_SIN_NAME, durationMin: 30, price: 20000, active: true, asksReason: false },
+    data: { tenantId, name: S_SIN_NAME, durationMin: 30, price: 20000, active: true, asksReason: false },
   });
   serviceIds.push(sSin.id);
-  const sSena = await prisma.service.create({
-    data: {
-      name: S_SENA_NAME,
-      durationMin: 30,
-      price: 25000,
-      active: false,
-      requiresDeposit: true,
-      depositKind: "FIXED",
-      depositValue: 5000,
-      asksReason: true,
-    },
-  });
-  serviceIds.push(sSena.id);
-
   let replies: string[] = [];
   const send = async (t: string) => {
     replies.push(t);
   };
   const say = async (jid: string, text: string, opts: ConversationOptions = {}) => {
     replies = [];
-    await handleIncoming(jid, text, send, { alertJid: ALERT_JID, aiProvider: null, ...opts });
+    await handleIncoming(jid, text, send, { ...opts, alertJid: ALERT_JID, aiProvider: null });
     await trackAppointments();
     return replies;
   };
   const media = async (jid: string, opts: ConversationOptions = {}) => {
     replies = [];
-    await handleIncomingMedia(jid, send, { alertJid: ALERT_JID, aiProvider: null, ...opts });
+    await handleIncomingMedia(jid, send, { ...opts, alertJid: ALERT_JID, aiProvider: null });
     return replies;
   };
   const apptsOf = (patientId: string) =>
@@ -487,6 +449,21 @@ async function main(): Promise<void> {
     });
     assert.ok(slots.length > 0, "sin horarios libres");
     const startsAt = slots[slots.length - 1]!;
+    // La disponibilidad exige que el servicio esté activo. Ya no habrá mensajes entrantes.
+    const sSena = await prisma.service.create({
+      data: {
+        tenantId,
+        name: S_SENA_NAME,
+        durationMin: 30,
+        price: 25000,
+        active: true,
+        requiresDeposit: true,
+        depositKind: "FIXED",
+        depositValue: 5000,
+        asksReason: true,
+      },
+    });
+    serviceIds.push(sSena.id);
     const appt = await createAppointment({
       patientId: ana.id,
       serviceId: sSena.id,

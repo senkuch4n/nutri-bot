@@ -17,24 +17,33 @@
  * Uso: npm run test:confirm-flow --workspace apps/bot
  */
 import assert from "node:assert/strict";
-import { prisma } from "@nutri-bot/db";
+import { randomUUID } from "node:crypto";
+import { prisma, type Prisma } from "@nutri-bot/db";
 import { enqueuePrepInstructions, enqueueServiceReminders } from "@nutri-bot/db/domain";
+import { findLegacyConversationState } from "@nutri-bot/db/domain/conversationState";
+import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { handleIncoming } from "../src/conversation";
 
-const TEST_JID = "5490000000001@s.whatsapp.net";
+const TEST_JID = `confirm-fixture-${randomUUID()}@invalid`;
 const HOUR = 3_600_000;
+const appointmentIds: string[] = [];
+let patientFixture: { id: string; whatsappJid: string; tenantId: string } | undefined;
+let serviceId: string | undefined;
 
 async function cleanup(): Promise<void> {
-  const patient = await prisma.patient.findUnique({ where: { whatsappJid: TEST_JID } });
-  if (patient) {
-    await prisma.outboundMessage.deleteMany({
-      where: { appointment: { patientId: patient.id } },
+  if (appointmentIds.length > 0) {
+    const messages = await prisma.outboundMessage.findMany({
+      where: { appointmentId: { in: appointmentIds } },
+      select: { id: true },
     });
-    await prisma.appointment.deleteMany({ where: { patientId: patient.id } });
-    await prisma.conversationState.deleteMany({ where: { patientJid: TEST_JID } });
-    await prisma.patient.delete({ where: { id: patient.id } });
+    await prisma.outboundMessage.deleteMany({ where: { id: { in: messages.map(({ id }) => id) } } });
+    await prisma.appointment.deleteMany({ where: { id: { in: appointmentIds } } });
   }
-  await prisma.service.deleteMany({ where: { name: "Antropometría (TEST)" } });
+  if (patientFixture) {
+    await prisma.conversationState.deleteMany({ where: { tenantId: patientFixture.tenantId, patientJid: patientFixture.whatsappJid } });
+    await prisma.patient.delete({ where: { id: patientFixture.id } });
+  }
+  if (serviceId) await prisma.service.delete({ where: { id: serviceId } });
 }
 
 async function main() {
@@ -42,11 +51,20 @@ async function main() {
   if (bot?.connected && process.env.ALLOW_BOT_RUNNING !== "1") {
     throw new Error("Pará el bot antes de correr esta prueba (o ALLOW_BOT_RUNNING=1 si BotStatus quedó colgado)");
   }
-  console.log("Limpiando datos de prueba de una corrida anterior (si quedaron)…");
-  await cleanup();
+  const { scope } = await resolveLegacySchedulingScope();
+  // The current state key is global and first-contact state can exist without a patient.
+  if (await prisma.patient.findFirst({ where: { whatsappJid: TEST_JID }, select: { id: true } }) ||
+      await findLegacyConversationState(TEST_JID)) {
+    throw new Error("El JID sintético ya existe. No se crearon datos de prueba.");
+  }
+  const patient = await prisma.patient.create({
+    data: { tenantId: scope.tenantId, whatsappJid: TEST_JID, phone: TEST_JID.split("@")[0]!, name: "Paciente de Prueba" },
+  });
+  patientFixture = { ...patient, tenantId: scope.tenantId };
 
   const service = await prisma.service.create({
     data: {
+      tenantId: scope.tenantId,
       name: "Antropometría (TEST)",
       durationMin: 30,
       price: 10000,
@@ -56,9 +74,13 @@ async function main() {
       reminders: [{ amount: 72, unit: "HOURS", asksConfirmation: true }],
     },
   });
-  const patient = await prisma.patient.create({
-    data: { whatsappJid: TEST_JID, phone: "5490000000001", name: "Paciente de Prueba" },
-  });
+  serviceId = service.id;
+
+  const createAppointment = async (data: Omit<Prisma.AppointmentUncheckedCreateInput, keyof typeof scope>) => {
+    const appointment = await prisma.appointment.create({ data: { ...data, ...scope } });
+    appointmentIds.push(appointment.id);
+    return appointment;
+  };
 
   let ok = 0;
   const step = async (label: string, fn: () => Promise<void>) => {
@@ -74,23 +96,21 @@ async function main() {
 
   // --- Escenario A: pide confirmación y el paciente dice que SÍ va a venir ---
   const startsAtA = new Date(Date.now() + 72 * HOUR - 2 * 60_000);
-  const apptA = await prisma.appointment.create({
-    data: {
-      patientId: patient.id,
-      serviceId: service.id,
-      startsAt: startsAtA,
-      endsAt: new Date(startsAtA.getTime() + 30 * 60_000),
-      status: "CONFIRMED",
-      bookedAt: new Date(Date.now() - 24 * HOUR),
-      createdBy: "PATIENT",
-      priceSnapshot: service.price,
-    },
+  const apptA = await createAppointment({
+    patientId: patient.id,
+    serviceId: service.id,
+    startsAt: startsAtA,
+    endsAt: new Date(startsAtA.getTime() + 30 * 60_000),
+    status: "CONFIRMED",
+    bookedAt: new Date(Date.now() - 24 * HOUR),
+    createdBy: "PATIENT",
+    priceSnapshot: service.price,
   });
 
   await step("cron enqueueServiceReminders encola el pedido de confirmación", async () => {
     const res = await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
     assert.ok(res.confirmations >= 1, "esperaba al menos 1 turno encolado");
-    const state = await prisma.conversationState.findUnique({ where: { patientJid: TEST_JID } });
+    const state = await findLegacyConversationState(TEST_JID);
     assert.equal(state?.step, "CONFIRM_ATTENDANCE");
     assert.equal((state?.context as { apptId?: string } | null)?.apptId, apptA.id);
     const outbound = await prisma.outboundMessage.findFirst({
@@ -104,7 +124,7 @@ async function main() {
     const replies: string[] = [];
     await handleIncoming(TEST_JID, "sí", async (text) => void replies.push(text));
     assert.ok(replies.length >= 1, "el bot debería responder algo");
-    console.log(`   respuesta del bot: "${replies[0].replace(/\n/g, " ")}"`);
+    console.log(`   respuesta del bot: "${replies[0]!.replace(/\n/g, " ")}"`);
     const updated = await prisma.appointment.findUniqueOrThrow({ where: { id: apptA.id } });
     assert.equal(updated.confirmationResponse, true);
     assert.equal(updated.status, "CONFIRMED");
@@ -112,23 +132,21 @@ async function main() {
 
   // --- Escenario B: pide confirmación y el paciente dice que NO va a poder ---
   const startsAtB = new Date(Date.now() + 72 * HOUR - 1.5 * 60_000);
-  const apptB = await prisma.appointment.create({
-    data: {
-      patientId: patient.id,
-      serviceId: service.id,
-      startsAt: startsAtB,
-      endsAt: new Date(startsAtB.getTime() + 30 * 60_000),
-      status: "CONFIRMED",
-      bookedAt: new Date(Date.now() - 24 * HOUR),
-      createdBy: "PATIENT",
-      priceSnapshot: service.price,
-    },
+  const apptB = await createAppointment({
+    patientId: patient.id,
+    serviceId: service.id,
+    startsAt: startsAtB,
+    endsAt: new Date(startsAtB.getTime() + 30 * 60_000),
+    status: "CONFIRMED",
+    bookedAt: new Date(Date.now() - 24 * HOUR),
+    createdBy: "PATIENT",
+    priceSnapshot: service.price,
   });
 
   await step("cron enqueueServiceReminders encola el segundo turno (no duplica el primero)", async () => {
     const res = await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
     assert.equal(res.confirmations, 1, "no debería re-encolar el turno A, que ya tiene su mensaje");
-    const state = await prisma.conversationState.findUnique({ where: { patientJid: TEST_JID } });
+    const state = await findLegacyConversationState(TEST_JID);
     assert.equal((state?.context as { apptId?: string } | null)?.apptId, apptB.id);
   });
 
@@ -144,17 +162,15 @@ async function main() {
 
   // --- Escenario D: el paciente responde horas después (la sesión de 20 min ya venció) ---
   const startsAtD = new Date(Date.now() + 72 * HOUR - 1 * 60_000);
-  const apptD = await prisma.appointment.create({
-    data: {
-      patientId: patient.id,
-      serviceId: service.id,
-      startsAt: startsAtD,
-      endsAt: new Date(startsAtD.getTime() + 30 * 60_000),
-      status: "CONFIRMED",
-      bookedAt: new Date(Date.now() - 24 * HOUR),
-      createdBy: "PATIENT",
-      priceSnapshot: service.price,
-    },
+  const apptD = await createAppointment({
+    patientId: patient.id,
+    serviceId: service.id,
+    startsAt: startsAtD,
+    endsAt: new Date(startsAtD.getTime() + 30 * 60_000),
+    status: "CONFIRMED",
+    bookedAt: new Date(Date.now() - 24 * HOUR),
+    createdBy: "PATIENT",
+    priceSnapshot: service.price,
   });
   await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
   const later = new Date(Date.now() + 2 * HOUR);
@@ -188,16 +204,14 @@ async function main() {
 
   // --- Escenario C: recomendaciones automáticas antes del estudio ---
   const startsAtC = new Date(Date.now() + service.prepLeadHours! * HOUR + 5 * 60_000);
-  const apptC = await prisma.appointment.create({
-    data: {
-      patientId: patient.id,
-      serviceId: service.id,
-      startsAt: startsAtC,
-      endsAt: new Date(startsAtC.getTime() + 30 * 60_000),
-      status: "CONFIRMED",
-      createdBy: "PATIENT",
-      priceSnapshot: service.price,
-    },
+  const apptC = await createAppointment({
+    patientId: patient.id,
+    serviceId: service.id,
+    startsAt: startsAtC,
+    endsAt: new Date(startsAtC.getTime() + 30 * 60_000),
+    status: "CONFIRMED",
+    createdBy: "PATIENT",
+    priceSnapshot: service.price,
   });
 
   await step("cron enqueuePrepInstructions manda las recomendaciones previas al estudio", async () => {

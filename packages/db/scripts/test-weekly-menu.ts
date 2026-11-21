@@ -108,7 +108,7 @@ async function addItem(mealId: string, weekday: Weekday | null, foodId: string, 
 }
 
 async function main() {
-  const existing = await prisma.patient.findUnique({ where: { whatsappJid: TEST_JID } });
+  const existing = await prisma.patient.findFirst({ where: { whatsappJid: TEST_JID } });
   if (existing) {
     throw new Error(
       `Ya existe un paciente con el jid de prueba (${existing.id}), quizás de una corrida anterior. ` +

@@ -100,7 +100,7 @@ async function main() {
 
   // Fuera de la transacción: no quedó nada.
   assert.equal(await prisma.outboundMessage.count({ where: { toJid } }), 0);
-  assert.equal(await prisma.patient.findUnique({ where: { whatsappJid: toJid } }), null);
+  assert.equal(await prisma.patient.findFirst({ where: { whatsappJid: toJid } }), null);
   if (patientId) assert.equal(await prisma.patient.findUnique({ where: { id: patientId } }), null);
   console.log("ok  transacción revertida: sin filas");
   console.log("OK");

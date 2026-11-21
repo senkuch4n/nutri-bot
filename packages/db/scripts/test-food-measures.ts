@@ -100,7 +100,7 @@ async function testFood(name: string, unitHint: string) {
 }
 
 async function main() {
-  const existing = await prisma.patient.findUnique({ where: { whatsappJid: TEST_JID }, select: { id: true } });
+  const existing = await prisma.patient.findFirst({ where: { whatsappJid: TEST_JID }, select: { id: true } });
   assert.equal(existing, null, "Ya existe un paciente con el teléfono de prueba: no se toca. Revisalo a mano.");
 
   const arroz = await testFood("Prueba HU-018d arroz", "1 taza ≈ 180 g");
