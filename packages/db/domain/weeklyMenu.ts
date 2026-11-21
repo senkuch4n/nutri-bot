@@ -215,12 +215,21 @@ function itemMutationWhere(mealId: string, scope?: TemplateMealScope) {
   return { mealId, ...(scope && { meal: templateMealScope(scope) }) };
 }
 
-async function assertOwnedRecipes(tx: Prisma.TransactionClient, scope: TemplateMealScope | undefined, items: readonly { recipeId?: string | null }[]) {
-  if (!scope) return;
+async function assertOwnedRecipes(
+  tx: Prisma.TransactionClient, kind: MealOwnerKind, ownerId: string, tenantId: string | undefined,
+  items: readonly { recipeId?: string | null }[],
+) {
   const ids = [...new Set(items.flatMap(({ recipeId }) => recipeId == null ? [] : [recipeId]))];
   if (ids.length === 0) return;
-  // Existing links can refer to archived recipes. Ownership, not publication, is required here.
-  const count = await tx.recipe.count({ where: { id: { in: ids }, tenantId: scope.tenantId } });
+  // For unscoped writers, derive the known owner from persistence; legacy NULL is not membership.
+  const query = { where: { id: ownerId }, select: { tenantId: true } } as const;
+  const known = tenantId ?? (kind === "plan"
+    ? await tx.nutritionPlan.findUnique(query)
+    : await tx.planTemplate.findUnique(query))?.tenantId;
+  if (known == null) return;
+  // Copies can refer to archived recipes. A trusted scope requires exact ownership.
+  const ownership = tenantId === undefined ? { OR: [{ tenantId: known }, { tenantId: null }] } : { tenantId };
+  const count = await tx.recipe.count({ where: { id: { in: ids }, ...ownership } });
   if (count !== ids.length) throw new RecipeNotAvailableError("La receta no pertenece a este consultorio.");
 }
 
@@ -277,7 +286,9 @@ export function setMealMode(
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
   return weeklyTransaction(scope, async (tx) => {
     const current = await loadOwnedMeal(kind, tx, ownerId, mealId, scope?.tenantId);
-    await assertOwnedRecipes(tx, scope, current.items);
+    if (scope || (current.mode !== params.mode && params.mode === "PER_DAY")) {
+      await assertOwnedRecipes(tx, kind, ownerId, scope?.tenantId, current.items);
+    }
     const before = toSnapshot(current);
     if (current.mode === params.mode) return before;
     const { meal, item } = delegates(kind, tx);
@@ -338,7 +349,8 @@ export async function copyDay(
       orderBy: { order: "asc" },
       include: { items: { orderBy: itemsOrder } },
     })) as MealWithItems[];
-    if (scope) await assertOwnedRecipes(tx, scope, meals.flatMap((m) => m.items));
+    await assertOwnedRecipes(tx, kind, ownerId, scope?.tenantId,
+      meals.flatMap((m) => scope ? m.items : m.items.filter((i) => i.weekday === params.from)));
     for (const m of meals) {
       await item.deleteMany({ where: { ...itemMutationWhere(m.id, scope), weekday: { in: params.to } } });
       const source = m.items.filter((i) => i.weekday === params.from);
@@ -361,11 +373,12 @@ export async function repeatMealInAllDays(
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
   return weeklyTransaction(scope, async (tx) => {
     const current = await loadOwnedMeal(kind, tx, ownerId, mealId, scope?.tenantId);
-    await assertOwnedRecipes(tx, scope, current.items);
+    const source = current.items.filter((i) => i.weekday === from);
+    if (scope) await assertOwnedRecipes(tx, kind, ownerId, scope.tenantId, current.items);
     if (current.mode !== "PER_DAY") throw new MealModeError("Solo se repiten comidas que cambian cada día.");
+    if (!scope) await assertOwnedRecipes(tx, kind, ownerId, undefined, source);
     const { item } = delegates(kind, tx);
     await item.deleteMany({ where: { ...itemMutationWhere(mealId, scope), weekday: { in: to } } });
-    const source = current.items.filter((i) => i.weekday === from);
     await createWeeklyItems(item, copiesTo(mealId, source, to), scope);
     return toSnapshot(current);
   });
@@ -435,7 +448,7 @@ export async function restoreMealSnapshots(
     if (ids.length === 0) return;
     const owned = await meal.count({ where: { id: { in: ids }, ...ownedMealWhere(kind, ownerId, scope?.tenantId) } });
     if (owned !== ids.length) throw new MealOwnershipError();
-    if (scope) await assertOwnedRecipes(tx, scope, snapshots.flatMap((s) => s.items));
+    await assertOwnedRecipes(tx, kind, ownerId, scope?.tenantId, snapshots.flatMap((s) => s.items));
     for (const s of snapshots) {
       await item.deleteMany({ where: itemMutationWhere(s.mealId, scope) });
       await meal.update({ where: mealMutationWhere(s.mealId, scope), data: { mode: s.mode, isOptions: s.isOptions } });
@@ -574,6 +587,7 @@ export async function addRecipeItems(
       | { status: string }
       | null;
     if (recipe?.status !== "PUBLISHED") throw new RecipeNotAvailableError();
+    if (tenantId === undefined) await assertOwnedRecipes(tx, kind, ownerId, undefined, [params]);
 
     const { item } = delegates(kind, tx);
     const itemIds: string[] = [];

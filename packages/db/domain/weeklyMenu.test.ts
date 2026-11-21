@@ -57,6 +57,43 @@ beforeEach(() => {
   mocks.prisma.$transaction = vi.fn((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
 });
 
+describe("recipe references from an owned plan", () => {
+  it.each(["copy", "repeat", "restore", "mode", "add"] as const)("%s rejects a known foreign recipe before writes", async (operation) => {
+    const perDay = meal("PER_DAY", [tenantRecipeItem]);
+    p().planMeal.findMany.mockResolvedValue([perDay]);
+    p().planMeal.findFirst.mockResolvedValue(operation === "mode" ? meal("EVERY_DAY", [tenantRecipeItem]) : perDay);
+    p().planMeal.count.mockResolvedValue(1);
+    p().nutritionPlan.findUnique.mockResolvedValue({ tenantId: "tenant-a" });
+    p().recipe.count.mockResolvedValue(0);
+    p().recipe.findUnique.mockResolvedValue({ status: "PUBLISHED", tenantId: "tenant-b" });
+    p().planMealItem.create.mockResolvedValue({ id: "inserted" });
+    const run = {
+      copy: () => copyDay("plan", "p1", { from: "MON", to: ["TUE"] }),
+      repeat: () => repeatMealInAllDays("plan", "p1", "meal1", "MON"),
+      restore: () => restoreMealSnapshots("plan", "p1", [{ mealId: "meal1", mode: "PER_DAY", isOptions: false,
+        items: [{ ...tenantRecipeItem, weekday: "MON", quantityGrams: null, foodId: null, recipeId: "recipe-b", portions: 1,
+          customLabel: null, notes: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null }],
+      }]),
+      mode: () => setMealMode("plan", "p1", "meal1", { mode: "PER_DAY" }),
+      add: () => addRecipeItems("plan", "p1", { mealId: "meal1", recipeId: "recipe-b", weekdays: ["MON"] }),
+    };
+    await expect(run[operation]()).rejects.toThrow("La receta no pertenece a este consultorio.");
+    for (const method of ["deleteMany", "createMany", "create", "updateMany"]) {
+      expect(p().planMealItem[method]).not.toHaveBeenCalled();
+    }
+    expect(p().planMeal.update).not.toHaveBeenCalled();
+  });
+
+  it.each(["tenant-a", null])("preserves copying a recipe with owner %s from an owned plan", async (recipeOwner) => {
+    p().planMeal.findMany.mockResolvedValue([meal("PER_DAY", [tenantRecipeItem])]);
+    p().nutritionPlan.findUnique.mockResolvedValue({ tenantId: "tenant-a" });
+    p().recipe.count.mockImplementation(({ where }: { where: { OR: { tenantId: string | null }[] } }) =>
+      where.OR.some(({ tenantId }) => tenantId === recipeOwner) ? 1 : 0);
+    await copyDay("plan", "p1", { from: "MON", to: ["TUE"] });
+    expect(createdRows(p().planMealItem)).toMatchObject([{ weekday: "TUE", recipeId: "recipe-b" }]);
+  });
+});
+
 describe("tenant-scoped weekly template operations", () => {
   it("rejects copying an unknown or foreign template, even if it has no weekly meals", async () => {
     p().planTemplate.findUnique.mockResolvedValue(null);
@@ -441,11 +478,13 @@ const defaultsOf = (d: ReturnType<typeof delegate>, ownerKey: string, ownerId: s
 
 describe("comidas por defecto (018b-2)", () => {
   it("createPlan crea el plan DRAFT y las 5 comidas en la misma transacción", async () => {
+    p().agenda = { findUnique: vi.fn().mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
+    p().patient = { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "pat1" }) };
     p().nutritionPlan.create.mockResolvedValue({ id: "plan9" });
     const plan = await createPlan("pat1", { title: "Plan de octubre" });
     expect(plan).toEqual({ id: "plan9" });
     expect(p().$transaction).toHaveBeenCalledTimes(1);
-    expect(p().nutritionPlan.create).toHaveBeenCalledWith({ data: { patientId: "pat1", title: "Plan de octubre", status: "DRAFT" } });
+    expect(p().nutritionPlan.create).toHaveBeenCalledWith({ data: { patientId: "pat1", tenantId: "legacy-tenant", title: "Plan de octubre", status: "DRAFT" } });
     expect(defaultsOf(p().planMeal, "planId", "plan9")).toEqual(DEFAULTS);
   });
 
@@ -459,14 +498,15 @@ describe("comidas por defecto (018b-2)", () => {
   });
 
   it("createPlanForConsultation crea las 5 comidas y vincula el plan a la consulta", async () => {
-    mocks.prisma.professional = { findUnique: vi.fn().mockResolvedValue({ id: 1, timezone: "America/Argentina/Buenos_Aires" }) };
+    const tenantId = "legacy-tenant";
+    mocks.prisma.agenda = { findUnique: vi.fn().mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
     p().consultation.findUniqueOrThrow = vi.fn().mockResolvedValue({ id: "c1", patientId: "pat1", consultedAt: new Date("2026-09-12T15:00:00Z") });
     p().nutritionPlan.create.mockResolvedValue({ id: "plan10" });
     const plan = await createPlanForConsultation({ consultationId: "c1" });
     expect(plan).toEqual({ id: "plan10" });
-    expect(p().nutritionPlan.create.mock.calls[0][0].data).toMatchObject({ patientId: "pat1", title: "Plan del 12/09/2026", status: "DRAFT" });
+    expect(p().nutritionPlan.create.mock.calls[0][0].data).toMatchObject({ patientId: "pat1", tenantId, title: "Plan del 12/09/2026", status: "DRAFT" });
     expect(defaultsOf(p().planMeal, "planId", "plan10")).toEqual(DEFAULTS);
-    expect(p().consultation.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { planId: "plan10" } });
+    expect(p().consultation.update).toHaveBeenCalledWith({ where: { id_tenantId: { id: "c1", tenantId }, patientId: "pat1" }, data: { planId: "plan10" } });
   });
 });
 
