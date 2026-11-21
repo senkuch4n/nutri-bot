@@ -26,6 +26,7 @@ import {
   setAppointmentStatus,
   toPrescriptionSnapshot,
 } from "../domain";
+import { resolveLegacySchedulingScope } from "../domain/legacySchedulingScope";
 
 const baseChoices: PrescriptionChoices = {
   bmrFormula: "MIFFLIN_ST_JEOR",
@@ -64,9 +65,11 @@ async function main() {
 
   try {
     // 1) Datos propios.
+    const { scope: { tenantId, agendaId } } = await resolveLegacySchedulingScope();
     const stamp = Date.now();
     const patient = await prisma.patient.create({
       data: {
+        tenantId,
         whatsappJid: `test-hu004-${stamp}@test.invalid`,
         phone: "000",
         name: "Prueba HU-004 (TEST)",
@@ -79,6 +82,7 @@ async function main() {
     patientIds.push(patient.id);
     const minor = await prisma.patient.create({
       data: {
+        tenantId,
         whatsappJid: `test-hu004-minor-${stamp}@test.invalid`,
         phone: "000",
         name: "Prueba HU-004 menor (TEST)",
@@ -88,7 +92,7 @@ async function main() {
     });
     patientIds.push(minor.id);
     const service = await prisma.service.create({
-      data: { name: "HU-004 (TEST)", price: 0, durationMin: 30, active: false },
+      data: { tenantId, name: "HU-004 (TEST)", price: 0, durationMin: 30, active: false },
     });
     serviceId = service.id;
 
@@ -233,6 +237,8 @@ async function main() {
         data: {
           patientId: patient.id,
           serviceId: service.id,
+          tenantId,
+          agendaId,
           startsAt,
           endsAt: new Date(startsAt.getTime() + 30 * 60_000),
           status: "CONFIRMED",
@@ -307,6 +313,7 @@ async function main() {
     await step("menor de 5: ctx null y ageGroup UNDER_5", async () => {
       const small = await prisma.patient.create({
         data: {
+          tenantId,
           whatsappJid: `test-hu008-under5-${stamp}@test.invalid`,
           phone: "000",
           name: "Prueba HU-008 menor de 5 (TEST)",
