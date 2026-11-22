@@ -119,27 +119,27 @@ async function main() {
   assert.equal(lunch.mode, "PER_DAY");
 
   // 1. Alta, duplicado sin mayúsculas ni tildes, segunda medida.
-  const taza = await createFoodMeasure(arroz.id, { name: "taza", plural: null, grams: 180 });
+  const taza = await createFoodMeasure(T, arroz.id, { name: "taza", plural: null, grams: 180 });
   assert.equal(taza.order, 0);
   await assert.rejects(
-    createFoodMeasure(arroz.id, { name: "Tazá", plural: null, grams: 160 }),
+    createFoodMeasure(T, arroz.id, { name: "Tazá", plural: null, grams: 160 }),
     (err) => err instanceof DuplicateFoodMeasureError && err.existingName === "taza",
   );
-  const cda = await createFoodMeasure(arroz.id, { name: "cda", plural: null, grams: 15 });
+  const cda = await createFoodMeasure(T, arroz.id, { name: "cda", plural: null, grams: 15 });
   assert.equal(cda.order, 1);
   step(1, "createFoodMeasure taza (order 0) y cda (order 1); «Tazá» → DuplicateFoodMeasureError(«taza»)");
 
   // 2. Reordenar.
-  await moveFoodMeasure(cda.id, "up");
-  assert.deepEqual((await listFoodMeasures(arroz.id)).map((m) => m.name), ["cda", "taza"]);
-  await moveFoodMeasure(taza.id, "up");
-  assert.deepEqual((await listFoodMeasures(arroz.id)).map((m) => m.name), ["taza", "cda"]);
+  await moveFoodMeasure(T, cda.id, "up");
+  assert.deepEqual((await listFoodMeasures(T, arroz.id)).map((m) => m.name), ["cda", "taza"]);
+  await moveFoodMeasure(T, taza.id, "up");
+  assert.deepEqual((await listFoodMeasures(T, arroz.id)).map((m) => m.name), ["taza", "cda"]);
   step(2, "moveFoodMeasure: cda sube y taza vuelve a subir");
 
   // 3. Resolver la medida para el ítem.
-  const fields = await resolveMeasureItem(arroz.id, taza.id, 1.5);
+  const fields = await resolveMeasureItem(T, arroz.id, taza.id, 1.5);
   assert.deepEqual(fields, { measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270 });
-  await assert.rejects(resolveMeasureItem("otro-alimento", cda.id, 1), (err) => err instanceof FoodMeasureNotFoundError);
+  await assert.rejects(resolveMeasureItem(T, "otro-alimento", cda.id, 1), (err) => err instanceof FoodMeasureNotFoundError);
   step(3, "resolveMeasureItem 1½ taza → 270 g, plural «tazas»; con otro alimento → not found");
 
   // 4. Ítem en medida casera en el Almuerzo del lunes.
@@ -173,7 +173,7 @@ async function main() {
   created.templateId = template.id;
   const tpl = await getTemplate(template.id);
   const tplSnacks = tpl!.meals.find((m) => m.mode === "EVERY_DAY")!;
-  const cdaFields = await resolveMeasureItem(arroz.id, cda.id, 1);
+  const cdaFields = await resolveMeasureItem(T, arroz.id, cda.id, 1);
   await addTemplateMealItem(tplSnacks.id, { foodId: arroz.id, order: 0, weekday: null, ...cdaFields });
   const applied = await getPlan(T, (await applyTemplateToPatient(template.id, patient.id, T.tenantId)).id);
   assert.ok(applied);
@@ -183,17 +183,17 @@ async function main() {
   step(7, "plantilla con «1 cda» → el plan aplicado trae la medida (1 cda · 15 g)");
 
   // 8. Cambiar la medida no toca el ítem (D4).
-  await updateFoodMeasure(taza.id, { name: "taza", plural: null, grams: 160 });
+  await updateFoodMeasure(T, taza.id, { name: "taza", plural: null, grams: 160 });
   const afterUpdate = await prisma.planMealItem.findUniqueOrThrow({ where: { id: lunchItemId } });
   assert.deepEqual(measureOf(afterUpdate), [1.5, "taza", "tazas", 180, 270]);
-  assert.equal((await resolveMeasureItem(arroz.id, taza.id, 1)).quantityGrams, 160, "los nuevos usan 160 g");
+  assert.equal((await resolveMeasureItem(T, arroz.id, taza.id, 1)).quantityGrams, 160, "los nuevos usan 160 g");
   step(8, "updateFoodMeasure taza = 160 g → el ítem sigue en 270 g / 180 por taza");
 
   // 9. Borrar la medida no toca el ítem (D4).
-  await deleteFoodMeasure(taza.id);
+  await deleteFoodMeasure(T, taza.id);
   const afterDelete = await prisma.planMealItem.findUniqueOrThrow({ where: { id: lunchItemId } });
   assert.deepEqual(measureOf(afterDelete), [1.5, "taza", "tazas", 180, 270]);
-  assert.deepEqual((await listFoodMeasures(arroz.id)).map((m) => m.name), ["cda"]);
+  assert.deepEqual((await listFoodMeasures(T, arroz.id)).map((m) => m.name), ["cda"]);
   step(9, "deleteFoodMeasure taza → el ítem sigue igual; al alimento le queda «cda»");
 
   // 10. (1b) Stepper: usa los gramos COPIADOS en el ítem (180), no los de la medida (160, ya borrada).
@@ -222,7 +222,7 @@ async function main() {
   assert.deepEqual(byId(applyRows, ilegible.id), { kind: "UNREADABLE" });
   assert.equal(await prisma.foodMeasure.count(), measuresBefore + 1);
   // La nueva va al final (order = máx + 1; a «cda» le quedó el order 1 después de borrar «taza»).
-  assert.deepEqual((await listFoodMeasures(arroz.id)).map((m) => [m.name, m.grams, m.order]), [["cda", 15, 1], ["taza", 180, 2]]);
+  assert.deepEqual((await listFoodMeasures(T, arroz.id)).map((m) => [m.name, m.grams, m.order]), [["cda", 15, 1], ["taza", 180, 2]]);
   const again = await convertUnitHints({ apply: true, foodIds: ids });
   assert.deepEqual(byId(again, arroz.id), { kind: "ALREADY_HAD", name: "taza" });
   assert.equal(await prisma.foodMeasure.count(), measuresBefore + 1, "la segunda corrida no crea nada");

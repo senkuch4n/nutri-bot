@@ -17,6 +17,7 @@ import {
   updateFoodMeasure,
 } from "./foodMeasures";
 
+const T = { tenantId: "legacy-tenant" };
 const p = () => mocks.prisma;
 const dec = (v: number) => ({ toString: () => String(v) });
 const row = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -37,8 +38,8 @@ beforeEach(() => {
 
 describe("createFoodMeasure", () => {
   it("con datos inválidos no toca la base", async () => {
-    await expect(createFoodMeasure("food1", { name: "", plural: null, grams: 0 })).rejects.toBeInstanceOf(InvalidFoodMeasureError);
-    const err = await createFoodMeasure("food1", { name: "", plural: null, grams: 0 }).catch((e) => e);
+    await expect(createFoodMeasure(T, "food1", { name: "", plural: null, grams: 0 })).rejects.toBeInstanceOf(InvalidFoodMeasureError);
+    const err = await createFoodMeasure(T, "food1", { name: "", plural: null, grams: 0 }).catch((e) => e);
     expect(err.issues.map((i: any) => i.field)).toEqual(["name", "grams"]);
     expect(p().$transaction).not.toHaveBeenCalled();
   });
@@ -48,10 +49,10 @@ describe("createFoodMeasure", () => {
     p().foodMeasure.findFirst.mockResolvedValue(null);
     p().foodMeasure.aggregate.mockResolvedValue({ _max: { order: 2 } });
     p().foodMeasure.create.mockResolvedValue(row("m1", { name: "unidad mediana", grams: dec(120), order: 3 }));
-    const created = await createFoodMeasure("food1", { name: "  unidad   mediana ", plural: "unidades medianas", grams: 120.04 });
-    expect(p().foodMeasure.findFirst.mock.calls[0][0].where).toEqual({ foodId: "food1", nameKey: "unidad mediana" });
+    const created = await createFoodMeasure(T, "food1", { name: "  unidad   mediana ", plural: "unidades medianas", grams: 120.04 });
+    expect(p().foodMeasure.findFirst.mock.calls[0][0].where).toEqual({ tenantId: "legacy-tenant", foodId: "food1", nameKey: "unidad mediana" });
     expect(p().foodMeasure.create.mock.calls[0][0].data).toEqual({
-      foodId: "food1", name: "unidad mediana", nameKey: "unidad mediana", plural: null, grams: 120, order: 3,
+      tenantId: "legacy-tenant", foodId: "food1", name: "unidad mediana", nameKey: "unidad mediana", plural: null, grams: 120, order: 3,
     });
     expect(created).toEqual({ id: "m1", foodId: "food1", name: "unidad mediana", plural: null, grams: 120, order: 3 });
   });
@@ -61,14 +62,14 @@ describe("createFoodMeasure", () => {
     p().foodMeasure.findFirst.mockResolvedValue(null);
     p().foodMeasure.aggregate.mockResolvedValue({ _max: { order: null } });
     p().foodMeasure.create.mockResolvedValue(row("m1"));
-    await createFoodMeasure("food1", { name: "taza", plural: null, grams: 180 });
+    await createFoodMeasure(T, "food1", { name: "taza", plural: null, grams: 180 });
     expect(p().foodMeasure.create.mock.calls[0][0].data.order).toBe(0);
   });
 
   it("duplicado por nameKey → DuplicateFoodMeasureError con el nombre guardado", async () => {
     p().food.findUnique.mockResolvedValue({ id: "food1" });
     p().foodMeasure.findFirst.mockResolvedValue({ name: "taza" });
-    const err = await createFoodMeasure("food1", { name: "Tazá", plural: null, grams: 160 }).catch((e) => e);
+    const err = await createFoodMeasure(T, "food1", { name: "Tazá", plural: null, grams: 160 }).catch((e) => e);
     expect(err).toBeInstanceOf(DuplicateFoodMeasureError);
     expect(err.existingName).toBe("taza");
     expect(p().foodMeasure.findFirst.mock.calls[0][0].where.nameKey).toBe("taza");
@@ -80,14 +81,14 @@ describe("createFoodMeasure", () => {
     p().foodMeasure.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ name: "Taza" });
     p().foodMeasure.aggregate.mockResolvedValue({ _max: { order: 0 } });
     p().foodMeasure.create.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
-    const err = await createFoodMeasure("food1", { name: "taza", plural: null, grams: 180 }).catch((e) => e);
+    const err = await createFoodMeasure(T, "food1", { name: "taza", plural: null, grams: 180 }).catch((e) => e);
     expect(err).toBeInstanceOf(DuplicateFoodMeasureError);
     expect(err.existingName).toBe("Taza");
   });
 
   it("alimento inexistente → FoodMeasureNotFoundError", async () => {
     p().food.findUnique.mockResolvedValue(null);
-    await expect(createFoodMeasure("nope", { name: "taza", plural: null, grams: 180 })).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(createFoodMeasure(T, "nope", { name: "taza", plural: null, grams: 180 })).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
   });
 });
 
@@ -96,8 +97,8 @@ describe("updateFoodMeasure", () => {
     p().foodMeasure.findUnique.mockResolvedValue({ foodId: "food1" });
     p().foodMeasure.findFirst.mockResolvedValue(null);
     p().foodMeasure.update.mockResolvedValue(row("m1", { grams: dec(160) }));
-    const updated = await updateFoodMeasure("m1", { name: "taza", plural: null, grams: 160 });
-    expect(p().foodMeasure.findFirst.mock.calls[0][0].where).toEqual({ foodId: "food1", nameKey: "taza", NOT: { id: "m1" } });
+    const updated = await updateFoodMeasure(T, "m1", { name: "taza", plural: null, grams: 160 });
+    expect(p().foodMeasure.findFirst.mock.calls[0][0].where).toEqual({ tenantId: "legacy-tenant", foodId: "food1", nameKey: "taza", NOT: { id: "m1" } });
     expect(p().foodMeasure.update.mock.calls[0][0].data).toEqual({ name: "taza", nameKey: "taza", plural: null, grams: 160 });
     expect(updated.grams).toBe(160);
     expect(p().planMealItem.update).not.toHaveBeenCalled();
@@ -107,42 +108,42 @@ describe("updateFoodMeasure", () => {
 
   it("inexistente → not found; duplicada con otra → DuplicateFoodMeasureError", async () => {
     p().foodMeasure.findUnique.mockResolvedValueOnce(null);
-    await expect(updateFoodMeasure("x", { name: "taza", plural: null, grams: 1 })).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(updateFoodMeasure(T, "x", { name: "taza", plural: null, grams: 1 })).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
     p().foodMeasure.findUnique.mockResolvedValueOnce({ foodId: "food1" });
     p().foodMeasure.findFirst.mockResolvedValueOnce({ name: "cda" });
-    await expect(updateFoodMeasure("m1", { name: "CDA", plural: null, grams: 1 })).rejects.toBeInstanceOf(DuplicateFoodMeasureError);
+    await expect(updateFoodMeasure(T, "m1", { name: "CDA", plural: null, grams: 1 })).rejects.toBeInstanceOf(DuplicateFoodMeasureError);
   });
 });
 
 describe("deleteFoodMeasure / moveFoodMeasure", () => {
   it("borra solo esa medida, no toca ítems y devuelve el foodId", async () => {
     p().foodMeasure.findUnique.mockResolvedValue({ foodId: "food1" });
-    expect(await deleteFoodMeasure("m1")).toEqual({ foodId: "food1" });
-    expect(p().foodMeasure.delete).toHaveBeenCalledWith({ where: { id: "m1" } });
+    expect(await deleteFoodMeasure(T, "m1")).toEqual({ foodId: "food1" });
+    expect(p().foodMeasure.delete).toHaveBeenCalledWith({ where: { id: "m1", tenantId: "legacy-tenant" } });
     expect(p().planMealItem.deleteMany).not.toHaveBeenCalled();
     expect(p().templateMealItem.deleteMany).not.toHaveBeenCalled();
   });
 
   it("deleteFoodMeasure inexistente → not found", async () => {
     p().foodMeasure.findUnique.mockResolvedValue(null);
-    await expect(deleteFoodMeasure("x")).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(deleteFoodMeasure(T, "x")).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
   });
 
   it("moveFoodMeasure intercambia el order con la vecina", async () => {
     p().foodMeasure.findUnique.mockResolvedValue({ foodId: "food1" });
     p().foodMeasure.findMany.mockResolvedValue([{ id: "a", order: 0 }, { id: "b", order: 1 }, { id: "c", order: 2 }]);
-    expect(await moveFoodMeasure("b", "up")).toEqual({ foodId: "food1" });
+    expect(await moveFoodMeasure(T, "b", "up")).toEqual({ foodId: "food1" });
     expect(p().foodMeasure.update.mock.calls.map((c: any) => c[0])).toEqual([
-      { where: { id: "b" }, data: { order: 0 } },
-      { where: { id: "a" }, data: { order: 1 } },
+      { where: { id: "b", tenantId: "legacy-tenant" }, data: { order: 0 } },
+      { where: { id: "a", tenantId: "legacy-tenant" }, data: { order: 1 } },
     ]);
   });
 
   it("en el borde no escribe", async () => {
     p().foodMeasure.findUnique.mockResolvedValue({ foodId: "food1" });
     p().foodMeasure.findMany.mockResolvedValue([{ id: "a", order: 0 }, { id: "b", order: 1 }]);
-    await moveFoodMeasure("a", "up");
-    await moveFoodMeasure("b", "down");
+    await moveFoodMeasure(T, "a", "up");
+    await moveFoodMeasure(T, "b", "down");
     expect(p().foodMeasure.update).not.toHaveBeenCalled();
   });
 });
@@ -150,20 +151,26 @@ describe("deleteFoodMeasure / moveFoodMeasure", () => {
 describe("listados", () => {
   it("listFoodMeasures ordena por order y pasa grams a number", async () => {
     p().foodMeasure.findMany.mockResolvedValue([row("a"), row("b", { name: "cda", grams: dec(15), order: 1 })]);
-    const list = await listFoodMeasures("food1");
-    expect(p().foodMeasure.findMany.mock.calls[0][0].where).toEqual({ foodId: "food1" });
+    const list = await listFoodMeasures(T, "food1");
+    expect(p().foodMeasure.findMany.mock.calls[0][0].where).toEqual({ foodId: "food1", tenantId: "legacy-tenant" });
     expect(p().foodMeasure.findMany.mock.calls[0][0].orderBy[0]).toEqual({ order: "asc" });
     expect(list.map((m) => [m.name, m.grams])).toEqual([["taza", 180], ["cda", 15]]);
   });
 
-  it("listMeasuresForPicker filtra SARA 2 activos y agrupa en orden", async () => {
+  it("listMeasuresForPicker filtra medidas del consultorio de SARA 2 visibles para él y agrupa en orden", async () => {
     p().foodMeasure.findMany.mockResolvedValue([
       row("a", { foodId: "f1", order: 0 }),
       row("b", { foodId: "f1", name: "cda", order: 1 }),
       row("c", { foodId: "f2", name: "vaso", order: 0 }),
     ]);
-    const grouped = await listMeasuresForPicker();
-    expect(p().foodMeasure.findMany.mock.calls[0][0].where).toEqual({ food: { source: "SARA2", active: true } });
+    const grouped = await listMeasuresForPicker(T);
+    expect(p().foodMeasure.findMany.mock.calls[0][0].where).toEqual({
+      tenantId: "legacy-tenant",
+      food: { AND: [{ source: "SARA2" }, { OR: [
+        { source: "SARA2", catalogActive: true, visibility: { none: { tenantId: "legacy-tenant", visible: false } } },
+        { source: "PROPIO", tenantId: "legacy-tenant", active: true },
+      ] }] },
+    });
     expect(Object.keys(grouped)).toEqual(["f1", "f2"]);
     expect(grouped.f1!.map((m) => m.id)).toEqual(["a", "b"]);
     expect(grouped.f2!.map((m) => m.name)).toEqual(["vaso"]);
@@ -173,22 +180,43 @@ describe("listados", () => {
 describe("resolveMeasureItem", () => {
   it("arma la copia con plural resuelto y gramos", async () => {
     p().foodMeasure.findUnique.mockResolvedValue(row("m1"));
-    expect(await resolveMeasureItem("food1", "m1", 1.5)).toEqual({
+    expect(await resolveMeasureItem(T, "food1", "m1", 1.5)).toEqual({
       measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270,
     });
   });
 
   it("usa el plural escrito a mano si lo hay", async () => {
     p().foodMeasure.findUnique.mockResolvedValue(row("m1", { name: "pan", plural: "panes chicos", grams: dec(30) }));
-    expect((await resolveMeasureItem("food1", "m1", 2)).measurePlural).toBe("panes chicos");
+    expect((await resolveMeasureItem(T, "food1", "m1", 2)).measurePlural).toBe("panes chicos");
   });
 
   it("medida de otro alimento o inexistente → not found; qty fuera de la grilla → RangeError", async () => {
     p().foodMeasure.findUnique.mockResolvedValueOnce(row("m1", { foodId: "otro" }));
-    await expect(resolveMeasureItem("food1", "m1", 1)).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(resolveMeasureItem(T, "food1", "m1", 1)).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
     p().foodMeasure.findUnique.mockResolvedValueOnce(null);
-    await expect(resolveMeasureItem("food1", "m1", 1)).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(resolveMeasureItem(T, "food1", "m1", 1)).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
     p().foodMeasure.findUnique.mockResolvedValueOnce(row("m1"));
-    await expect(resolveMeasureItem("food1", "m1", 1.3)).rejects.toBeInstanceOf(RangeError);
+    await expect(resolveMeasureItem(T, "food1", "m1", 1.3)).rejects.toBeInstanceOf(RangeError);
+  });
+});
+
+describe("HU-025: medidas del consultorio", () => {
+  const B = { tenantId: "tenant-b" };
+  it("una medida de otro consultorio es inexistente para editar, borrar, mover y copiar", async () => {
+    p().foodMeasure.findUnique.mockImplementation(async ({ where }: any) => (where.tenantId === "legacy-tenant" ? row("m-a") : null));
+    await expect(updateFoodMeasure(B, "m-a", { name: "taza", plural: null, grams: 100 })).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(deleteFoodMeasure(B, "m-a")).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(moveFoodMeasure(B, "m-a", "up")).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    await expect(resolveMeasureItem(B, "food1", "m-a", 1)).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    expect(p().foodMeasure.update).not.toHaveBeenCalled();
+    expect(p().foodMeasure.delete).not.toHaveBeenCalled();
+  });
+  it("no carga medidas en un alimento propio de otro consultorio", async () => {
+    p().food.findUnique.mockResolvedValue(null);
+    await expect(createFoodMeasure(B, "propio-de-a", { name: "taza", plural: null, grams: 100 })).rejects.toBeInstanceOf(FoodMeasureNotFoundError);
+    expect(p().food.findUnique.mock.calls[0][0].where).toEqual({
+      id: "propio-de-a", OR: [{ source: "SARA2" }, { source: "PROPIO", tenantId: "tenant-b" }],
+    });
+    expect(p().foodMeasure.create).not.toHaveBeenCalled();
   });
 });

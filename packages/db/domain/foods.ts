@@ -7,9 +7,49 @@ import {
   type OwnFoodIssue,
 } from "@nutri-bot/core";
 import { prisma, type Food, type FoodGroup, type FoodSource, type Prisma } from "../index";
+import type { TenantRef } from "./tenantScope";
 
 // Base de alimentos (HU-005): SARA 2 (dato oficial, no se edita) + alimentos propios.
 // Las kcal de los propios se calculan por Atwater; nunca vienen del formulario.
+//
+// HU-025 (4.4): todo recibe el consultorio `t`. Un consultorio ve SARA 2 (catálogo común) y SUS propios;
+// un propio de otro consultorio es inexistente. "Activo" para el consultorio es la misma regla que la
+// función SQL tenant_visible_foods de HU-024: SARA 2 con catalogActive y sin preferencia `visible=false`
+// del tenant; propio con `active`. Activar o desactivar un SARA 2 escribe la preferencia del tenant
+// (FoodVisibilityPreference), nunca la columna global `active`.
+
+/** Alimentos que el consultorio puede leer (activos o no). */
+export function tenantFoodWhere(t: TenantRef): { OR: Prisma.FoodWhereInput[] } {
+  return { OR: [{ source: "SARA2" }, { source: "PROPIO", tenantId: t.tenantId }] };
+}
+
+/** Alimentos visibles (activos) para el consultorio: misma regla que tenant_visible_foods. */
+export function tenantVisibleFoodWhere(t: TenantRef): { OR: Prisma.FoodWhereInput[] } {
+  return {
+    OR: [
+      { source: "SARA2", catalogActive: true, visibility: { none: { tenantId: t.tenantId, visible: false } } },
+      { source: "PROPIO", tenantId: t.tenantId, active: true },
+    ],
+  };
+}
+
+/** Un alimento que no es del consultorio (o no existe). Mismo error en los dos casos. */
+export class FoodNotFoundError extends Error {
+  constructor() {
+    super("El alimento no existe.");
+    this.name = "FoodNotFoundError";
+  }
+}
+
+type VisibilityRow = { source: FoodSource; active: boolean; catalogActive: boolean; visibility: { visible: boolean }[] };
+
+/** `active` tal como lo ve el consultorio (la preferencia del tenant manda sobre SARA 2). */
+function activeForTenant(f: VisibilityRow): boolean {
+  if (f.source !== "SARA2") return f.active;
+  return f.catalogActive && (f.visibility[0]?.visible ?? true);
+}
+
+const visibilityFor = (t: TenantRef) => ({ where: { tenantId: t.tenantId }, select: { visible: true }, take: 1 }) as const;
 
 export const FOOD_SUMMARY_SELECT = {
   id: true,
@@ -25,30 +65,44 @@ export const FOOD_SUMMARY_SELECT = {
 
 export type FoodSummary = Prisma.FoodGetPayload<{ select: typeof FOOD_SUMMARY_SELECT }>;
 
-/** Sin el JSON de nutrientes (liviano para ~1000 filas). Orden por nombre. */
-export function listFoods(
+/** Sin el JSON de nutrientes (liviano para ~1000 filas). Orden por nombre. `active` = visible para `t`. */
+export async function listFoods(
+  t: TenantRef,
   params: { group?: FoodGroup; source?: FoodSource; activeOnly?: boolean } = {},
 ): Promise<FoodSummary[]> {
-  return prisma.food.findMany({
+  const rows = await prisma.food.findMany({
     where: {
+      AND: [params.activeOnly !== false ? tenantVisibleFoodWhere(t) : tenantFoodWhere(t)],
       ...(params.group ? { group: params.group } : {}),
       ...(params.source ? { source: params.source } : {}),
-      ...(params.activeOnly !== false ? { active: true } : {}),
     },
-    select: FOOD_SUMMARY_SELECT,
+    select: { ...FOOD_SUMMARY_SELECT, catalogActive: true, visibility: visibilityFor(t) },
     orderBy: { name: "asc" },
   });
+  return rows.map(({ catalogActive, visibility, ...food }) => ({
+    ...food,
+    active: activeForTenant({ ...food, catalogActive, visibility }),
+  }));
 }
 
-export function getFood(id: string): Promise<Food | null> {
-  return prisma.food.findUnique({ where: { id } });
+/** El alimento si el consultorio lo puede leer (SARA 2 o propio suyo); si no, null. `active` = visible para `t`. */
+export async function getFood(t: TenantRef, id: string): Promise<Food | null> {
+  const row = await prisma.food.findFirst({
+    where: { AND: [{ id }, tenantFoodWhere(t)] },
+    include: { visibility: visibilityFor(t) },
+  });
+  if (!row) return null;
+  const { visibility, ...food } = row;
+  return { ...food, active: activeForTenant({ ...food, visibility }) };
 }
 
-/** Planes y plantillas DISTINTOS que tienen al menos un ítem con este alimento. */
-export async function getFoodUsage(foodId: string): Promise<{ plans: number; templates: number }> {
+/** Planes y plantillas DISTINTOS del consultorio que tienen al menos un ítem con este alimento. */
+export async function getFoodUsage(t: TenantRef, foodId: string): Promise<{ plans: number; templates: number }> {
+  const { tenantId } = t;
+  const withFood = { meals: { some: { items: { some: { foodId } } } } };
   const [plans, templates] = await Promise.all([
-    prisma.nutritionPlan.count({ where: { meals: { some: { items: { some: { foodId } } } } } }),
-    prisma.planTemplate.count({ where: { meals: { some: { items: { some: { foodId } } } } } }),
+    prisma.nutritionPlan.count({ where: { tenantId, ...withFood } }),
+    prisma.planTemplate.count({ where: { tenantId, ...withFood } }),
   ]);
   return { plans, templates };
 }
@@ -97,12 +151,14 @@ export class FoodNotEditableError extends Error {
 
 /** Conflictos de nombre por foodNameCompareKey (D12). excludeId = el propio que se edita. */
 export async function findFoodNameConflicts(
+  t: TenantRef,
   name: string,
   excludeId?: string,
 ): Promise<{ own: { id: string; name: string } | null; sara: { id: string; name: string } | null }> {
   const key = foodNameCompareKey(name);
+  // Propios de OTRO consultorio no cuentan (ni se nombran).
   const all = await prisma.food.findMany({
-    where: excludeId ? { id: { not: excludeId } } : {},
+    where: { AND: [tenantFoodWhere(t), ...(excludeId ? [{ id: { not: excludeId } }] : [])] },
     select: { id: true, name: true, source: true },
     orderBy: { name: "asc" },
   });
@@ -155,32 +211,52 @@ function ownFoodData(input: OwnFoodInput) {
  * source PROPIO, kcal = atwaterKcal (nunca del input), sourceKey null, nutrients null,
  * groupAutoAssigned false. Valida validateOwnFoodMacros y el nombre contra otros propios.
  */
-export async function createOwnFood(input: OwnFoodInput): Promise<Food> {
+export async function createOwnFood(t: TenantRef, input: OwnFoodInput): Promise<Food> {
   assertValidOwnFood(input);
-  const { own } = await findFoodNameConflicts(input.name);
+  const { own } = await findFoodNameConflicts(t, input.name);
   if (own) throw new DuplicateOwnFoodNameError(own.id);
   return prisma.food.create({
-    data: { ...ownFoodData(input), source: "PROPIO", sourceKey: null },
+    data: { ...ownFoodData(input), source: "PROPIO", sourceKey: null, tenantId: t.tenantId },
   });
 }
 
-/** Solo PROPIO (si no, FoodNotEditableError). Recalcula kcal por Atwater (D1) y apaga groupAutoAssigned. */
-export async function updateOwnFood(id: string, input: OwnFoodInput): Promise<Food> {
-  const current = await prisma.food.findUniqueOrThrow({ where: { id }, select: { source: true } });
-  if (current.source !== "PROPIO") throw new FoodNotEditableError();
+/** Fuente del alimento si el consultorio lo puede leer; si no, FoodNotFoundError. */
+async function readableSource(t: TenantRef, id: string): Promise<FoodSource> {
+  const current = await prisma.food.findFirst({ where: { AND: [{ id }, tenantFoodWhere(t)] }, select: { source: true } });
+  if (!current) throw new FoodNotFoundError();
+  return current.source;
+}
+
+/** Solo PROPIO del consultorio (SARA 2 → FoodNotEditableError; ajeno o inexistente → FoodNotFoundError).
+ *  Recalcula kcal por Atwater (D1) y apaga groupAutoAssigned. */
+export async function updateOwnFood(t: TenantRef, id: string, input: OwnFoodInput): Promise<Food> {
+  if ((await readableSource(t, id)) !== "PROPIO") throw new FoodNotEditableError();
   assertValidOwnFood(input);
-  const { own } = await findFoodNameConflicts(input.name, id);
+  const { own } = await findFoodNameConflicts(t, input.name, id);
   if (own) throw new DuplicateOwnFoodNameError(own.id);
-  return prisma.food.update({ where: { id }, data: ownFoodData(input) });
+  return prisma.food.update({ where: { id, source: "PROPIO", tenantId: t.tenantId }, data: ownFoodData(input) });
 }
 
-export async function setFoodActive(id: string, active: boolean): Promise<void> {
-  await prisma.food.update({ where: { id }, data: { active } });
+/** Activa o desactiva para el consultorio: SARA 2 → preferencia del tenant; propio suyo → `active`.
+ *  Ajeno o inexistente → FoodNotFoundError (sin escribir nada). */
+export async function setFoodActive(t: TenantRef, id: string, active: boolean): Promise<void> {
+  const { tenantId } = t;
+  if ((await readableSource(t, id)) === "SARA2") {
+    await prisma.foodVisibilityPreference.upsert({
+      where: { tenantId_foodId: { tenantId, foodId: id } },
+      create: { tenantId, foodId: id, visible: active },
+      update: { visible: active },
+    });
+    return;
+  }
+  const { count } = await prisma.food.updateMany({ where: { id, source: "PROPIO", tenantId }, data: { active } });
+  if (count !== 1) throw new FoodNotFoundError();
 }
 
-/** Solo PROPIO: kcalPer100 = atwaterKcal de sus macros guardados ("Usar X kcal", D1). */
-export async function applyAtwaterKcal(id: string): Promise<Food> {
-  const food = await prisma.food.findUniqueOrThrow({ where: { id } });
+/** Solo PROPIO del consultorio: kcalPer100 = atwaterKcal de sus macros guardados ("Usar X kcal", D1). */
+export async function applyAtwaterKcal(t: TenantRef, id: string): Promise<Food> {
+  const food = await prisma.food.findFirst({ where: { AND: [{ id }, tenantFoodWhere(t)] } });
+  if (!food) throw new FoodNotFoundError();
   if (food.source !== "PROPIO") throw new FoodNotEditableError();
   const kcal = atwaterKcal({
     protein: Number(food.proteinPer100),
@@ -188,7 +264,7 @@ export async function applyAtwaterKcal(id: string): Promise<Food> {
     fat: Number(food.fatPer100),
     alcohol: food.alcoholPer100 === null ? null : Number(food.alcoholPer100),
   });
-  return prisma.food.update({ where: { id }, data: { kcalPer100: kcal } });
+  return prisma.food.update({ where: { id, source: "PROPIO", tenantId: t.tenantId }, data: { kcalPer100: kcal } });
 }
 
 // El enum de Prisma y las claves de packages/core tienen que ser iguales.

@@ -34,8 +34,8 @@ export default async function TemplateDetailPage({
   if (!template) notFound();
   const query = (await searchParams) ?? {};
   const [foods, measures] = await Promise.all([
-    listFoods({ activeOnly: true, source: "SARA2" }),
-    listMeasuresForPicker(),
+    listFoods(access, { activeOnly: true, source: "SARA2" }),
+    listMeasuresForPicker(access),
   ]);
 
   const meals = toMealView(template.meals);

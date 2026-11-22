@@ -23,22 +23,19 @@ const mocks = vi.hoisted(() => {
     moveFoodMeasure: vi.fn(),
     setMeasureItemQuantity: vi.fn(),
     revalidateMenuOwner: vi.fn(),
-    hasPanelSession: vi.fn(),
-    access: vi.fn(),
+    ctx: vi.fn(),
     touchTemplate: vi.fn(),
     revalidatePath: vi.fn(),
   };
 });
 
-// HU-025b-1: el consultorio sale del contexto de la sesión.
+// HU-025: el consultorio sale del contexto de la sesión (requireTenantContext mockeado directo).
 const TENANT_CTX = vi.hoisted(() => ({
   userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
   access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
 }));
 vi.mock("@/lib/tenant-context", () => ({
-  requireTenantContext: async () => TENANT_CTX,
-  requirePageContext: async () => TENANT_CTX,
-  getTenantContext: async () => TENANT_CTX,
+  requireTenantContext: mocks.ctx,
   TenantAccessError: class TenantAccessError extends Error {},
 }));
 vi.mock("@nutri-bot/db/domain", () => ({
@@ -52,8 +49,6 @@ vi.mock("@nutri-bot/db/domain", () => ({
   setMeasureItemQuantity: mocks.setMeasureItemQuantity,
 }));
 vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.revalidateMenuOwner }));
-vi.mock("./recetas/recipe-save", () => ({ hasPanelSession: mocks.hasPanelSession }));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
 vi.mock("@/lib/touch-template", () => ({ touchTemplate: mocks.touchTemplate }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
@@ -71,8 +66,7 @@ const row = { id: "m1", foodId: "food1", name: "taza", plural: null, grams: 180,
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
-  mocks.hasPanelSession.mockResolvedValue(true);
-  mocks.access.mockResolvedValue({ tenantId: "tenant-a" });
+  mocks.ctx.mockResolvedValue(TENANT_CTX);
 });
 
 describe("food-measure-actions", () => {
@@ -84,7 +78,7 @@ describe("food-measure-actions", () => {
   });
 
   it("sin sesión → sessionExpired y no llama al dominio", async () => {
-    mocks.hasPanelSession.mockResolvedValue(false);
+    mocks.ctx.mockRejectedValue(new Error("tenant_access:no_context"));
     const expected = { ok: false, error: "Tu sesión venció. Volvé a entrar." };
     expect(await createFoodMeasureAction({ foodId: "food1", name: "taza", plural: null, grams: 180 })).toEqual(expected);
     expect(await deleteFoodMeasureAction({ measureId: "m1" })).toEqual(expected);
@@ -95,7 +89,8 @@ describe("food-measure-actions", () => {
   it("create ok devuelve la medida y revalida la ficha del alimento", async () => {
     mocks.createFoodMeasure.mockResolvedValue(row);
     expect(await createFoodMeasureAction({ foodId: "food1", name: "taza", plural: null, grams: 180 })).toEqual({ ok: true, measure: row });
-    expect(mocks.createFoodMeasure).toHaveBeenCalledWith("food1", { name: "taza", plural: null, grams: 180 });
+    expect(mocks.ctx).toHaveBeenCalledWith("write");
+    expect(mocks.createFoodMeasure).toHaveBeenCalledWith(TENANT_CTX, "food1", { name: "taza", plural: null, grams: 180 });
     expect(mocks.revalidatePath.mock.calls).toEqual([["/alimentos/food1"]]);
   });
 
@@ -151,7 +146,8 @@ describe("food-measure-actions", () => {
     mocks.moveFoodMeasure.mockResolvedValue({ foodId: "food1" });
     expect(await deleteFoodMeasureAction({ measureId: "m1" })).toEqual({ ok: true });
     expect(await moveFoodMeasureAction({ measureId: "m1", direction: "down" })).toEqual({ ok: true });
-    expect(mocks.moveFoodMeasure).toHaveBeenCalledWith("m1", "down");
+    expect(mocks.moveFoodMeasure).toHaveBeenCalledWith(TENANT_CTX, "m1", "down");
+    expect(mocks.deleteFoodMeasure).toHaveBeenCalledWith(TENANT_CTX, "m1");
     expect(mocks.revalidatePath.mock.calls).toEqual([["/alimentos/food1"], ["/alimentos/food1"]]);
   });
 
@@ -169,7 +165,7 @@ describe("food-measure-actions", () => {
       expect(await setMeasureItemQtyAction({ kind: "plan", ownerId: "plan1", itemId: "it1", qty })).toEqual(qtyError);
     }
     expect(await setMeasureItemQtyAction({ kind: "otro" as never, ownerId: "plan1", itemId: "it1", qty: 1 })).toEqual(qtyError);
-    mocks.hasPanelSession.mockResolvedValue(false);
+    mocks.ctx.mockRejectedValue(new Error("tenant_access:no_context"));
     expect(await setMeasureItemQtyAction({ kind: "template", ownerId: "t1", itemId: "it1", qty: 1 })).toEqual({
       ok: false, error: "Tu sesión venció. Volvé a entrar.",
     });
@@ -180,7 +176,8 @@ describe("food-measure-actions", () => {
   it("stepper: plantilla requiere pertenencia y descarta tenant del cliente", async () => {
     const input = { kind: "template" as const, ownerId: "t1", itemId: "it1", qty: 1.5, tenantId: "forged" };
     mocks.setMeasureItemQuantity.mockResolvedValue({ quantityGrams: 270 });
-    mocks.access.mockResolvedValueOnce(null);
+    mocks.ctx.mockRejectedValueOnce(new Error("tenant_access:no_context"));
+    mocks.ctx.mockResolvedValueOnce({ ...TENANT_CTX, tenantId: "tenant-a" });
     expect(await setMeasureItemQtyAction(input)).toEqual({ ok: false, error: "Tu sesión venció. Volvé a entrar." });
     expect(mocks.setMeasureItemQuantity).not.toHaveBeenCalled();
     expect(mocks.touchTemplate).not.toHaveBeenCalled();

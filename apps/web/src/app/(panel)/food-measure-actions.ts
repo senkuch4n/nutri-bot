@@ -23,15 +23,15 @@ import type {
 } from "@/components/food-measures/types";
 import { errorCode } from "@/lib/error-code";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { requireTenantContext } from "@/lib/tenant-context";
 import { touchTemplate } from "@/lib/touch-template";
-import { hasPanelSession } from "./recetas/recipe-save";
 
 // HU-018d (SDD 6.1): actions de las medidas caseras de un alimento (ficha y editor del plan). Este
 // archivo es "use server": exporta SOLO funciones async (Turbopack rechaza tipos o constantes). Los
 // tipos viven en components/food-measures/types.ts. El log lleva solo el código del error.
 // No revalidan planes: los ítems guardan una copia de la medida (D4).
+// HU-025: todas leen el contexto del consultorio; sin contexto → "sesión vencida". Las medidas, el
+// alimento y el ítem se acotan al tenant del contexto (una medida ajena = inexistente).
 
 const SESSION_EXPIRED = { ok: false as const, error: MEASURE_TEXT.sessionExpired };
 
@@ -90,11 +90,12 @@ export async function createFoodMeasureAction(input: {
   plural: string | null;
   grams: number | null;
 }): Promise<FoodMeasureResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return SESSION_EXPIRED;
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: MEASURE_TEXT.saveError };
   try {
-    const measure = await createFoodMeasure(parsed.data.foodId, measureInput(parsed.data));
+    const measure = await createFoodMeasure(ctx, parsed.data.foodId, measureInput(parsed.data));
     revalidatePath(`/alimentos/${measure.foodId}`);
     return { ok: true, measure: toView(measure) };
   } catch (err) {
@@ -109,11 +110,12 @@ export async function updateFoodMeasureAction(input: {
   plural: string | null;
   grams: number | null;
 }): Promise<FoodMeasureResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return SESSION_EXPIRED;
   const parsed = updateSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: MEASURE_TEXT.saveError };
   try {
-    const measure = await updateFoodMeasure(parsed.data.measureId, measureInput(parsed.data));
+    const measure = await updateFoodMeasure(ctx, parsed.data.measureId, measureInput(parsed.data));
     revalidatePath(`/alimentos/${measure.foodId}`);
     return { ok: true, measure: toView(measure) };
   } catch (err) {
@@ -123,11 +125,12 @@ export async function updateFoodMeasureAction(input: {
 
 /** Quitar una medida. Los planes que ya la usan no cambian (D4). */
 export async function deleteFoodMeasureAction(input: { measureId: string }): Promise<MeasureMutationResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return SESSION_EXPIRED;
   const parsed = deleteSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: MEASURE_TEXT.saveError };
   try {
-    const { foodId } = await deleteFoodMeasure(parsed.data.measureId);
+    const { foodId } = await deleteFoodMeasure(ctx, parsed.data.measureId);
     revalidatePath(`/alimentos/${foodId}`);
     return { ok: true };
   } catch (err) {
@@ -140,11 +143,12 @@ export async function moveFoodMeasureAction(input: {
   measureId: string;
   direction: "up" | "down";
 }): Promise<MeasureMutationResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return SESSION_EXPIRED;
   const parsed = moveSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: MEASURE_TEXT.saveError };
   try {
-    const { foodId } = await moveFoodMeasure(parsed.data.measureId, parsed.data.direction);
+    const { foodId } = await moveFoodMeasure(ctx, parsed.data.measureId, parsed.data.direction);
     revalidatePath(`/alimentos/${foodId}`);
     return { ok: true };
   } catch (err) {
@@ -162,19 +166,17 @@ export async function setMeasureItemQtyAction(input: {
   itemId: string;
   qty: number;
 }): Promise<MeasureMutationResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return SESSION_EXPIRED;
   const parsed = itemQtySchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: MEASURE_TEXT.qtyError };
   const d = parsed.data;
   try {
+    // El ítem (de plan o de plantilla) siempre se acota al consultorio de la sesión.
     if (d.kind === "template") {
-      const access = await resolvePrivateContentAccess();
-      if (!access) return SESSION_EXPIRED;
-      await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty, access.tenantId);
-      await touchTemplate(d.ownerId, access.tenantId);
+      await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty, ctx.tenantId);
+      await touchTemplate(d.ownerId, ctx.tenantId);
     } else {
-      // HU-025b-1: el ítem de un plan siempre se acota al consultorio de la sesión.
-      const ctx = await requireTenantContext("write");
       await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty, ctx.tenantId);
       await revalidateMenuOwner(d.kind, d.ownerId, ctx.tenantId);
     }

@@ -82,7 +82,7 @@ export async function generateAiPlanAction(
     }),
     prisma.clinicalRecord.findUnique({ where: { patientId, patient: { tenantId: ctx.tenantId } } }),
     getLatestFormulaMeasurements(ctx, patientId),
-    listFoods({ activeOnly: true, source: "SARA2" }),
+    listFoods(ctx, { activeOnly: true, source: "SARA2" }),
   ]);
 
   if (foods.length === 0) {
