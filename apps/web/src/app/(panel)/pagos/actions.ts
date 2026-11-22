@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { registerManualPayment } from "@nutri-bot/db/domain";
+import { withReauth } from "@/lib/reauth";
 import { requireTenantContext } from "@/lib/tenant-context";
 
-export type PaymentFormState = { ok: boolean; error?: string; kind?: "DEPOSIT" | "FULL"; amount?: number };
+export type PaymentFormState = { ok: boolean; error?: string; kind?: "DEPOSIT" | "FULL"; amount?: number; reauth?: true };
 
 const manualPaymentSchema = z.object({
   appointmentId: z.string().min(1),
@@ -28,8 +29,8 @@ export async function registerManualPaymentAction(
       kind: parsed.data.kind,
       amount: parsed.data.amount,
     });
-  } catch {
-    return { ok: false, error: "No se pudo registrar el pago. Probá de nuevo." };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: "No se pudo registrar el pago. Probá de nuevo." });
   }
   revalidatePath("/pagos");
   revalidatePath("/");

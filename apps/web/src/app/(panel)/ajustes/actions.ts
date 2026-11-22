@@ -23,10 +23,11 @@ import {
 } from "@nutri-bot/db/domain";
 import { auth } from "@/auth";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
+import { withReauth } from "@/lib/reauth";
 import { tenantProfessionalWhere } from "@/lib/tenant-professional";
 import { TenantAccessError, requireTenantContext } from "@/lib/tenant-context";
 
-export type SettingsState = { ok: boolean; error?: string };
+export type SettingsState = { ok: boolean; error?: string; reauth?: true };
 
 // HU-025: cada acción escribe la profesional de la agenda principal del consultorio del contexto
 // (clave compuesta id + tenantId), nunca Professional(1) ni un id que mande el cliente.
@@ -73,8 +74,8 @@ export async function saveGeneralSettingsAction(_prev: SettingsState, formData: 
       data: { timezone, currency, phoneJid, acceptedInsurances: acceptedInsurances || null },
       select: { id: true },
     });
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   revalidatePath("/ajustes");
   return { ok: true };
@@ -104,8 +105,8 @@ export async function savePdfStyleAction(_prev: SettingsState, formData: FormDat
       },
       select: { id: true },
     });
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   revalidatePath("/ajustes");
   return { ok: true };
@@ -128,8 +129,8 @@ export async function saveSignatureIdentityAction(_prev: SettingsState, formData
       data: { title: parsed.data.title || null, licenseNumber: parsed.data.licenseNumber || null },
       select: { id: true },
     });
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   revalidatePath("/ajustes");
   return { ok: true };
@@ -150,8 +151,8 @@ export async function saveGoogleCalendarIdAction(
       data: { googleCalendarId: parsed.data.calendarId || null },
       select: { id: true },
     });
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   revalidatePath("/ajustes");
   return { ok: true };
@@ -182,8 +183,8 @@ export async function uploadLogoAction(
   let ctx: Awaited<ReturnType<typeof requireTenantContext>>;
   try {
     ctx = await requireTenantContext("write");
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   const file = formData.get("logo");
   if (!(file instanceof File)) {
@@ -196,8 +197,8 @@ export async function uploadLogoAction(
   if (!check.ok) return { ok: false, error: check.error };
   try {
     await updateProfessionalLogo(ctx, { logoData: buffer, logoMimeType: check.mimeType });
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   revalidatePath("/ajustes");
   return { ok: true };
@@ -238,8 +239,8 @@ export async function saveAfterHoursAction(
       },
       select: { id: true },
     });
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   revalidatePath("/ajustes");
   return { ok: true };
@@ -263,8 +264,8 @@ export async function saveBotAiAction(_prev: SettingsState, formData: FormData):
   let ctx: Awaited<ReturnType<typeof requireTenantContext>>;
   try {
     ctx = await requireTenantContext("write");
-  } catch {
-    return { ok: false, error: SETTINGS_TEXT.saveError };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
   const where = tenantProfessionalWhere(ctx);
   const current = await prisma.professional.findUnique({ where, select: { botAiEnabled: true } });

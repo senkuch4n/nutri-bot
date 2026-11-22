@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ACCESS_TEXT } from "@nutri-bot/core";
+import { Alert } from "@/components/ui";
 import { signIn } from "@/auth";
 import { GoogleG, Wordmark } from "@/components/brand";
 import { PublicFooterLinks } from "@/components/public-page";
@@ -31,11 +32,17 @@ export function AuthCard({ children, footnote }: { children: ReactNode; footnote
  * Pantalla de login sobria, compartida por /login e /inicio (D10). Es pública: no muestra el
  * nombre de la profesional para no depender de la base.
  */
-export function LoginScreen() {
+export function LoginScreen({ signInFailed = false }: { signInFailed?: boolean } = {}) {
   return (
     <AuthCard footnote={ACCESS_TEXT.loginFootnote}>
       <h1 className="text-balance text-title-1">{ACCESS_TEXT.loginTitle}</h1>
       <p className="mt-2 text-body text-muted-foreground">{ACCESS_TEXT.loginSubtitle}</p>
+      {/* HU-025 (6.1 paso 1): aviso genérico, sin decir por qué se rechazó ni si la cuenta existe. */}
+      {signInFailed ? (
+        <div className="mt-4">
+          <Alert tone="warning">{ACCESS_TEXT.signInFailed}</Alert>
+        </div>
+      ) : null}
       <form
         action={async () => {
           "use server";

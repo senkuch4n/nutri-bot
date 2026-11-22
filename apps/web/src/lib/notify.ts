@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 // Se usa desde componentes cliente. El <Toaster /> está montado en los layouts del panel y del portal.
@@ -42,18 +43,23 @@ export const notify = {
 
 /**
  * Encaja con el patrón `useActionState` + `{ ok, error }`: al cambiar la identidad de `state`,
- * si `ok` → toast de guardado; si `error` y `errorAsToast` → toast de error (por defecto el
- * error va inline con <FormError />).
+ * si `ok` → toast de guardado; si `reauth` (HU-025) → toast de error y /inicio; si `error` y
+ * `errorAsToast` → toast de error (por defecto el error va inline con <FormError />).
  */
 export function useActionToast(
-  state: { ok: boolean; error?: string },
+  state: { ok: boolean; error?: string; reauth?: boolean },
   options?: { success?: string; errorAsToast?: boolean },
 ): void {
   const success = options?.success;
   const errorAsToast = options?.errorAsToast ?? false;
+  const router = useRouter();
   useEffect(() => {
     if (state.ok) notify.saved(success);
-    else if (state.error && errorAsToast) notify.error(state.error);
+    else if (state.reauth) {
+      // HU-025 (9.4): sin contexto de consultorio (membresía revocada): error genérico y a /inicio.
+      notify.error(state.error);
+      router.replace("/inicio");
+    } else if (state.error && errorAsToast) notify.error(state.error);
     // Solo la identidad de `state`: cada action devuelve un objeto nuevo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);

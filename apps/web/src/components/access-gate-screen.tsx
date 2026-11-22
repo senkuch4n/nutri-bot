@@ -9,9 +9,10 @@ import { getTenantAccess } from "@/lib/tenant-context";
  * - Con sesión de Google y sin acceso → aviso con la razón y el email de la sesión.
  * - Sin sesión → login.
  */
-export async function AccessGateScreen() {
+export async function AccessGateScreen({ signInError }: { signInError?: string | string[] } = {}) {
   const access = await getTenantAccess();
   if (access.ok) redirect("/");
-  if (access.reason === "unauthenticated") return <LoginScreen />;
+  // Auth.js manda a /inicio?error=AccessDenied (u otro código) si rechazó el login: aviso genérico.
+  if (access.reason === "unauthenticated") return <LoginScreen signInFailed={Boolean(signInError)} />;
   return <NoAccessScreen reason={access.reason} email={access.email} />;
 }

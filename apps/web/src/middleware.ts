@@ -19,9 +19,12 @@ function isServerAction(req: NextRequest) {
 export async function panelGate(req: NextRequest & { auth: Session | null }): Promise<Response> {
   const { pathname } = req.nextUrl;
   const isApi = pathname === "/api" || pathname.startsWith("/api/");
-  // 025a: una server action sin acceso recibe 401 (025b la deja pasar al handler para el error genérico).
+  // 025b-2 (6.3): una server action sin acceso pasa al handler. Todas empiezan con requireTenantContext /
+  // requireOwnerContext (lo verifica guard-coverage.test.ts), que falla cerrado: devuelve el error genérico
+  // con `reauth` y la UI manda a /inicio (HU 4.2), en lugar de un 401 que el cliente de React no muestra.
+  // Las rutas /api/* siguen con 401 y las páginas con redirect.
   const deny = () =>
-    isApi || isServerAction(req) ? unauthorized() : NextResponse.redirect(new URL("/inicio", req.nextUrl));
+    isApi ? unauthorized() : isServerAction(req) ? NextResponse.next() : NextResponse.redirect(new URL("/inicio", req.nextUrl));
 
   const userId = req.auth?.userId;
   if (!userId) return deny();

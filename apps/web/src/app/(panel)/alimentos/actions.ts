@@ -23,6 +23,7 @@ export type OwnFoodState = {
   /** Advertencia no bloqueante (nombre igual a un SARA 2, D12): el form muestra "Guardar igual". */
   saraDuplicate?: { id: string; name: string };
   foodId?: string;
+  reauth?: true;
 };
 
 /** Vacío → null; si no, número en [0, max]. */
@@ -126,7 +127,7 @@ export async function updateOwnFoodAction(
   try {
     ctx = await requireTenantContext("write");
   } catch {
-    return { ok: false, error: SAVE_ERROR };
+    return { ok: false, error: SAVE_ERROR, reauth: true };
   }
   if (!parsed.confirmSaraDuplicate) {
     const [{ own, sara }, current] = await Promise.all([findFoodNameConflicts(ctx, parsed.input.name, id), getFood(ctx, id)]);

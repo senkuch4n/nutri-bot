@@ -17,6 +17,8 @@ export const ACCESS_TEXT = {
   useOtherAccount: "Usar otra cuenta",
   useOtherAccountPending: "Abriendo Google…",
   retry: "Reintentar",
+  /** 6.1 paso 1: Auth.js vuelve a /inicio?error=… si rechazó el login (p. ej. email no verificado). Genérico. */
+  signInFailed: "No pudimos iniciar sesión con esa cuenta de Google. Probá de nuevo o usá otra cuenta.",
 } as const;
 
 export type NoAccessCopy = { title: string; body: string; pendingNote: string | null };

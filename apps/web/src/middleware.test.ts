@@ -53,10 +53,10 @@ describe("middleware (opción A, runtime Node)", () => {
   it.each([
     ["sin sesión", null],
     ["sesión sin userId (conflicto o JWT viejo)", { user: { email: "ana@example.test" } }],
-  ])("%s → página: redirect a /inicio; API y server action: 401; sin tocar la base", async (_name, auth) => {
+  ])("%s → página: redirect a /inicio; API: 401; server action: pasa al handler (falla cerrado); sin tocar la base", async (_name, auth) => {
     expectRedirectToInicio(await panelGate(page(auth)));
     await expectUnauthorized(await panelGate(api(auth)));
-    await expectUnauthorized(await panelGate(action(auth)));
+    passes(await panelGate(action(auth)));
     expect(mocks.loadAccessFacts).not.toHaveBeenCalled();
   });
 
@@ -65,13 +65,13 @@ describe("middleware (opción A, runtime Node)", () => {
     ["User inexistente", null, "unlinked"],
     ["dos membresías", facts([{ tenantId: "legacy-tenant", role: "OWNER" }, { tenantId: "b", role: "STAFF" }]), "multiple_memberships"],
     ["membresía en otro tenant (fuera del candado)", facts([{ tenantId: "tenant-b", role: "OWNER" }]), "tenant_not_enabled"],
-  ])("%s → rechazo en página, API y server action, log solo con código", async (_name, f, reason) => {
+  ])("%s → rechazo en página y API; la server action pasa al handler; log solo con código", async (_name, f, reason) => {
     mocks.loadAccessFacts.mockResolvedValue(f);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       expectRedirectToInicio(await panelGate(page()));
       await expectUnauthorized(await panelGate(api()));
-      await expectUnauthorized(await panelGate(action()));
+      passes(await panelGate(action()));
       expect(warn.mock.calls).toEqual(Array(3).fill([`[auth] access_denied reason=${reason}`]));
       expect(JSON.stringify(warn.mock.calls)).not.toMatch(/ana@example|user-a/);
     } finally {
@@ -93,14 +93,14 @@ describe("middleware (opción A, runtime Node)", () => {
     passes(await panelGate(page()));
   });
 
-  it("membresía revocada con la sesión abierta: la siguiente página, API y server action se rechazan", async () => {
+  it("membresía revocada con la sesión abierta: la siguiente página y API se rechazan; la action la rechaza su handler", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       passes(await panelGate(page()));
       mocks.loadAccessFacts.mockResolvedValue(facts([]));
       expectRedirectToInicio(await panelGate(page()));
       await expectUnauthorized(await panelGate(api()));
-      await expectUnauthorized(await panelGate(action()));
+      passes(await panelGate(action()));
       expect(mocks.loadAccessFacts).toHaveBeenCalledTimes(4); // se lee en cada request
     } finally {
       warn.mockRestore();

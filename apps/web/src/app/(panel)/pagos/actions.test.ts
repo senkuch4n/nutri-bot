@@ -59,10 +59,10 @@ describe("registerManualPaymentAction", () => {
     expect(mocks.registerManualPayment).toHaveBeenCalledWith(CTX, "appt-b", { kind: "FULL", amount: 100 });
   });
 
-  it("HU-025: sin contexto (membresía revocada) → error genérico, sin llamar al dominio", async () => {
+  it("HU-025: sin contexto (membresía revocada) → error genérico con reauth, sin llamar al dominio", async () => {
     mocks.requireTenantContext.mockRejectedValue(Object.assign(new Error("tenant_access:no_context"), { name: "TenantAccessError" }));
     const res = await registerManualPaymentAction({ ok: false }, form({ appointmentId: "appt-1", kind: "FULL", amount: "1" }));
-    expect(res).toEqual({ ok: false, error: "No se pudo registrar el pago. Probá de nuevo." });
+    expect(res).toEqual({ ok: false, error: "No se pudo registrar el pago. Probá de nuevo.", reauth: true });
     expect(mocks.registerManualPayment).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@ import { OUTBOX_TEXT, broadcastRecipients } from "@nutri-bot/core";
 import { requireTenantContext } from "@/lib/tenant-context";
 import { avisosOutboxWhere } from "./outbox-scope";
 
-export type BroadcastState = { ok: boolean; error?: string; sent?: number };
+export type BroadcastState = { ok: boolean; error?: string; sent?: number; reauth?: true };
 
 const broadcastSchema = z.object({ body: z.string().trim().min(3, "Escribí un mensaje").max(1000) });
 
@@ -24,7 +24,7 @@ export async function broadcastMessageAction(
   try {
     ({ tenantId } = await requireTenantContext("write"));
   } catch {
-    return { ok: false, error: OUTBOX_TEXT.error };
+    return { ok: false, error: OUTBOX_TEXT.error, reauth: true };
   }
   const patients = await prisma.patient.findMany({
     // HU-019 (D5): sin archivadas (core también las descarta).
