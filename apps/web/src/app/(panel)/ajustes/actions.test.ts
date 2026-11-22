@@ -13,6 +13,8 @@ vi.mock("@/lib/bot-ai", () => ({ getBotAiKeyStatus: vi.fn() }));
 // HU-023: actions.ts también tiene las acciones de Mercado Pago (sesión + dominio).
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
 vi.mock("@nutri-bot/db/domain", () => ({}));
+// HU-025a2: la acción que inicia el OAuth de Mercado Pago exige el contexto de consultorio.
+vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: vi.fn(), TenantAccessError: class extends Error {} }));
 
 import { saveGeneralSettingsAction, savePdfStyleAction, saveSignatureIdentityAction } from "./actions";
 

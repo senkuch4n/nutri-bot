@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ConfirmProvider } from "@/components/confirm";
 import { PendingUnloadGuard } from "@/components/pending-unload-guard";
@@ -10,10 +9,12 @@ import { MobileTopbar } from "@/components/shell/mobile-topbar";
 import { SIDEBAR_COOKIE } from "@/components/shell/nav-config";
 import { SignOutButton } from "@/components/shell/sign-out-button";
 import { getBotShellStatus, getPendingInquiryCount, getProfessionalDisplayName } from "@/lib/shell";
+import { requirePageContext } from "@/lib/tenant-context";
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
+  // HU-025: sin contexto de consultorio (sin sesión, sin membresía, revocada) → /inicio.
+  await requirePageContext();
   const session = await auth();
-  if (!session?.user) redirect("/inicio");
 
   // El estado del bot se calcula en cada render del layout: en navegación cliente puede quedar
   // desactualizado hasta recargar (aceptado, ver SDD O3).
@@ -25,7 +26,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   ]);
   const badges = { pendingInquiries };
   const collapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === "collapsed";
-  const email = session.user.email;
+  const email = session?.user?.email;
   const account = <SignOutButton />;
 
   return (

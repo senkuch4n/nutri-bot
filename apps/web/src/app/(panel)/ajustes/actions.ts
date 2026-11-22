@@ -21,6 +21,7 @@ import {
 } from "@nutri-bot/db/domain";
 import { auth } from "@/auth";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
+import { TenantAccessError, requireTenantContext } from "@/lib/tenant-context";
 
 export type SettingsState = { ok: boolean; error?: string };
 
@@ -253,6 +254,12 @@ export async function saveBotAiAction(_prev: SettingsState, formData: FormData):
 /** Botón "Conectar Mercado Pago" / "Reconectar": crea el estado del OAuth y manda a Mercado Pago.
  *  `redirect` tira NEXT_REDIRECT: se llama fuera del try/catch. */
 export async function connectMercadoPagoAction(): Promise<void> {
+  // HU-025: hace falta un contexto de consultorio con escritura; el email de la sesión sigue atando el state.
+  const ctx = await requireTenantContext("write").catch((error: unknown) => {
+    if (error instanceof TenantAccessError) return null;
+    throw error;
+  });
+  if (!ctx) redirect("/inicio");
   const session = await auth();
   const email = session?.user?.email;
   if (!email) redirect("/inicio");

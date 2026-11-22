@@ -5,10 +5,16 @@ const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   complete: vi.fn(),
   revalidatePath: vi.fn(),
-  allowedEmails: ["pro@example.test"],
+  requireTenantContext: vi.fn(),
+  TenantAccessError: class TenantAccessError extends Error {
+    constructor(readonly code: string) { super(code); }
+  },
 }));
 vi.mock("@/auth", () => ({ auth: mocks.auth }));
-vi.mock("@/auth.config", () => ({ allowedEmails: mocks.allowedEmails }));
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: mocks.requireTenantContext,
+  TenantAccessError: mocks.TenantAccessError,
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db/domain", () => ({ completeMercadoPagoOAuth: mocks.complete }));
 
@@ -21,21 +27,29 @@ describe("GET /api/mercadopago/oauth/callback", () => {
     vi.resetAllMocks();
     vi.stubEnv("AUTH_URL", "https://panel.example.test");
     mocks.auth.mockResolvedValue({ user: { email: "Pro@Example.test" } });
+    mocks.requireTenantContext.mockResolvedValue({ userId: "u", tenantId: "legacy-tenant" });
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("sin sesión → /inicio sin completar el OAuth", async () => {
-    mocks.auth.mockResolvedValue(null);
+  it("sin contexto de consultorio (sin sesión, sin membresía, revocada) → /inicio sin completar el OAuth", async () => {
+    mocks.requireTenantContext.mockRejectedValue(new mocks.TenantAccessError("no_context"));
     const res = await GET(new Request(CALLBACK));
     expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("https://panel.example.test/inicio");
+    expect(mocks.requireTenantContext).toHaveBeenCalledWith("write");
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("con contexto pero sin email en la sesión → /inicio sin completar el OAuth", async () => {
+    mocks.auth.mockResolvedValue({ user: {} });
+    const res = await GET(new Request(CALLBACK));
     expect(res.headers.get("location")).toBe("https://panel.example.test/inicio");
     expect(mocks.complete).not.toHaveBeenCalled();
   });
 
-  it("email fuera de ALLOWED_EMAILS → /inicio sin completar el OAuth", async () => {
-    mocks.auth.mockResolvedValue({ user: { email: "otra@example.test" } });
-    const res = await GET(new Request(CALLBACK));
-    expect(res.headers.get("location")).toBe("https://panel.example.test/inicio");
+  it("un error que no es de acceso no se disfraza de redirect", async () => {
+    mocks.requireTenantContext.mockRejectedValue(new Error("db down"));
+    await expect(GET(new Request(CALLBACK))).rejects.toThrow("db down");
     expect(mocks.complete).not.toHaveBeenCalled();
   });
 

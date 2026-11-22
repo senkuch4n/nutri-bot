@@ -50,6 +50,27 @@ rm deploy_key deploy_key.pub
 
 Restaurar un respaldo: `docker compose exec -T db pg_restore -U nutri -d nutribot --clean < /root/backups/<archivo>.dump`.
 
+## Acceso al panel por membresía (HU-025)
+
+Desde 025a-2 el panel no usa una lista de emails: entra quien tiene una membresía vigente (se lee en
+cada request). Procedimiento completo de la migración (fases 0 a 4, y la 5 de soporte con 025d) en
+[`Refactorizaciones/autenticacion-permisos-tenant.md`, sección 6.4](../Refactorizaciones/autenticacion-permisos-tenant.md#64-procedimiento-de-producción-daiana-owner-joel-solo-soporte).
+Resumen de lo que se corre en el VPS:
+
+```bash
+cd /opt/nutribot/deploy
+ta() { docker compose run --rm migrate npx --no-install tsx packages/db/scripts/tenant-access.ts "$@"; }
+ta pending                                                   # identidades pendientes (sub enmascarado)
+ta grant --email <email> --tenant legacy-tenant --role OWNER # dry-run; repetir con --apply
+ta members --tenant legacy-tenant                            # verificar
+ta forget-pending --email <cuenta de prueba> --apply         # borrar una identidad pendiente sin membresía
+```
+
+- **Orden:** deploy de 025a-1 → Daiana vuelve a entrar (queda pendiente) → `grant` OWNER → recién
+  después el deploy de 025a-2. Si se publica 025a-2 sin la membresía cargada, nadie entra al panel.
+- **Rollback:** `deploy.sh <sha de 025a-1>` (vuelve a entrar por la lista). Por eso la línea
+  `ALLOWED_EMAILS` se deja en `deploy/.env` hasta que 025b-1 esté en producción y estable.
+
 ## Útiles
 
 ```bash

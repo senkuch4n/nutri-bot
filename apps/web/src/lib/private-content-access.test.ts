@@ -1,63 +1,63 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { auth, findUser } = vi.hoisted(() => ({ auth: vi.fn(), findUser: vi.fn() }));
+const { getTenantContext } = vi.hoisted(() => ({ getTenantContext: vi.fn() }));
 vi.mock("server-only", () => ({}));
-vi.mock("../auth", () => ({ auth }));
-vi.mock("@nutri-bot/db", () => ({ prisma: { user: { findFirst: findUser } } }));
+vi.mock("./tenant-context", () => ({ getTenantContext }));
 
 import { resolvePrivateContentAccess } from "./private-content-access";
 
-const membership = { tenantId: "tenant-a", role: "OWNER" };
+const member = (userId: string, tenantId: string, role: "OWNER" | "STAFF") => ({
+  userId,
+  tenantId,
+  agendaId: "agenda",
+  professionalId: 1,
+  access: { kind: "member", tenantId, role },
+});
+const support = (mode: "READ_ONLY" | "READ_WRITE") => ({
+  userId: "operator",
+  tenantId: "legacy-tenant",
+  agendaId: "agenda",
+  professionalId: 1,
+  access: { kind: "support", tenantId: "legacy-tenant", grantId: "g", mode, expiresAt: new Date("2030-01-01") },
+});
 
-describe("resolvePrivateContentAccess", () => {
+describe("resolvePrivateContentAccess (wrapper de getTenantContext)", () => {
   beforeEach(() => {
-    auth.mockReset().mockResolvedValue({ userId: "user-a" });
-    findUser.mockReset();
+    getTenantContext.mockReset();
   });
 
-  it.each([
-    null,
-    { user: { email: "legacy@example.invalid", id: "user-a" }, tenantId: "tenant-a" },
-    // JWT anterior a HU-025: solo trae el claim viejo, hay que volver a entrar.
-    { user: { email: "legacy@example.invalid" }, privateContentUserId: "user-a" },
-  ])(
-    "denies a missing or unbound session (%j)", async (session) => {
-      auth.mockResolvedValue(session);
-      expect(await resolvePrivateContentAccess()).toBeNull();
-      expect(findUser).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each([
-    null,
-    { memberships: [] },
-    { memberships: [membership, { ...membership, tenantId: "tenant-b" }] },
-    { memberships: [{ ...membership, role: "UNSUPPORTED" }] },
-  ])("denies a missing user, missing or ambiguous membership, or unauthorized role (%j)", async (user) => {
-    findUser.mockResolvedValue(user);
+  it("sin contexto (sin sesión, sin userId, pendiente, ambigua, fuera del candado) → null", async () => {
+    getTenantContext.mockResolvedValue(null);
     expect(await resolvePrivateContentAccess()).toBeNull();
+    expect(await resolvePrivateContentAccess("read")).toBeNull();
   });
 
   it.each([
-    ["user-a", "tenant-a", "OWNER"],
-    ["user-b", "tenant-b", "STAFF"],
-  ])("resolves %s from persisted membership in %s (%s)", async (userId, tenantId, role) => {
-    auth.mockResolvedValue({ userId, tenantId: "forged", role: "forged" });
-    findUser.mockResolvedValue({ memberships: [{ tenantId, role }] });
+    ["user-a", "legacy-tenant", "OWNER"],
+    ["user-b", "legacy-tenant", "STAFF"],
+  ] as const)("resuelve %s desde la membresía del contexto en %s (%s)", async (userId, tenantId, role) => {
+    getTenantContext.mockResolvedValue(member(userId, tenantId, role));
     expect(await resolvePrivateContentAccess()).toEqual({ userId, tenantId, role });
-    expect(auth).toHaveBeenCalledTimes(1);
-    expect(auth).toHaveBeenCalledWith();
-    expect(findUser).toHaveBeenCalledTimes(1);
-    expect(findUser).toHaveBeenCalledWith({
-      where: { id: userId, googleSubject: { not: null } },
-      select: { memberships: { take: 2, select: { tenantId: true, role: true } } },
-    });
+    expect(getTenantContext).toHaveBeenCalledTimes(1);
+    expect(getTenantContext).toHaveBeenCalledWith();
   });
 
-  it("rechecks revoked membership on the next operation without a new session", async () => {
-    findUser.mockResolvedValueOnce({ memberships: [membership] }).mockResolvedValueOnce({ memberships: [] });
-    expect(await resolvePrivateContentAccess()).toEqual({ ...membership, userId: "user-a" });
+  it("revalida en cada operación: membresía revocada sin sesión nueva → null", async () => {
+    getTenantContext.mockResolvedValueOnce(member("user-a", "legacy-tenant", "OWNER")).mockResolvedValueOnce(null);
+    expect(await resolvePrivateContentAccess()).toEqual({ userId: "user-a", tenantId: "legacy-tenant", role: "OWNER" });
     expect(await resolvePrivateContentAccess()).toBeNull();
-    expect(findUser).toHaveBeenCalledTimes(2);
+    expect(getTenantContext).toHaveBeenCalledTimes(2);
+  });
+
+  it("soporte de solo lectura (025d): lee como STAFF, no escribe", async () => {
+    getTenantContext.mockResolvedValue(support("READ_ONLY"));
+    expect(await resolvePrivateContentAccess("read")).toEqual({ userId: "operator", tenantId: "legacy-tenant", role: "STAFF" });
+    expect(await resolvePrivateContentAccess("write")).toBeNull();
+    expect(await resolvePrivateContentAccess()).toBeNull(); // default "write"
+  });
+
+  it("soporte con permiso para editar (025d): STAFF en los dos modos", async () => {
+    getTenantContext.mockResolvedValue(support("READ_WRITE"));
+    expect(await resolvePrivateContentAccess("write")).toEqual({ userId: "operator", tenantId: "legacy-tenant", role: "STAFF" });
   });
 });

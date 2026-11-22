@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
-import { seedBase, seedScheduling } from "./seed";
+import { seedBase, seedProfessionalEmail, seedScheduling } from "./seed";
 
 const settings = { timezone: "UTC", currency: "ARS", reminderLeadHours: 24 };
 const profile = { name: "Nutricionista", email: "test@example.invalid", phoneJid: null };
@@ -94,4 +94,10 @@ it("preserves the global empty-food-table guard and never adopts existing rows",
   await expect(runBase()).resolves.toBeUndefined();
   expect(db.food.count.mock.calls).toEqual([[]]);
   expect(db.food.createMany).not.toHaveBeenCalled();
+});
+
+it("el email de la profesional sale de SEED_PROFESSIONAL_EMAIL o del default, no de la lista de acceso", () => {
+  expect(seedProfessionalEmail({})).toBe("nutricionista@example.com");
+  expect(seedProfessionalEmail({ SEED_PROFESSIONAL_EMAIL: "  " })).toBe("nutricionista@example.com");
+  expect(seedProfessionalEmail({ SEED_PROFESSIONAL_EMAIL: " dai@example.test " })).toBe("dai@example.test");
 });
