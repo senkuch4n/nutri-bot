@@ -210,6 +210,12 @@ hace rebase y la vuelve a generar.
 ## Git / flujo de trabajo
 
 - Nunca commitear directo a `main` ni a `develop`: rama `feat/*` → PR → merge.
+- **Máximo de 400 líneas cambiadas por PR para todos los agentes.** Antes de
+  abrir o actualizar un PR, contar las líneas agregadas más las eliminadas en
+  el diff contra su rama base. Si el total supera 400, dividir el trabajo en
+  PRs revisables por separado, con sus pruebas y documentación. Varios commits
+  dentro del mismo PR no reducen su tamaño. La regla rige para trabajo nuevo:
+  no se aplica retroactivamente a la HU-024 (#67), ya en revisión al adoptarla.
 - Un commit no mezcla trabajo de tareas distintas: si el working tree tiene
   cambios ajenos, `git add` solo los archivos de la tarea actual.
 - Cada agente se identifica en el trailer del commit
