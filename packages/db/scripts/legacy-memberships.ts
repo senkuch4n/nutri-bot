@@ -44,7 +44,7 @@ function readRoster(path: string): Entry[] {
 
 async function main(args: string[]) {
   if (args.length === 1 && args[0] === "--help") {
-    console.log(`${usage}\nDry run by default; --apply writes reviewed memberships for legacy-tenant only.`);
+    console.log(`${usage}\nDry run by default; --apply writes reviewed memberships for legacy-tenant only.\nTo grant access to a pending identity, use tenant-access.`);
     return;
   }
   const [path, flag] = args;
