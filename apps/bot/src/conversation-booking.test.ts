@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   createAppointment: vi.fn(), checkout: vi.fn(), professional: vi.fn(), patient: vi.fn(), error: vi.fn(),
   available: vi.fn(), notifyMissing: vi.fn(), scopedPatient: vi.fn(), token: vi.fn(), cancelable: vi.fn(),
   MercadoPagoUnavailableError: class MercadoPagoUnavailableError extends Error {},
-  prisma: { agenda: { findUnique: vi.fn() }, service: { findUniqueOrThrow: vi.fn() }, conversationState: { findUnique: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() }, patient: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() }, outboundMessage: { create: vi.fn() } },
+  prisma: { agenda: { findUnique: vi.fn(), findFirst: vi.fn() }, service: { findUniqueOrThrow: vi.fn() }, conversationState: { findUnique: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() }, patient: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() }, outboundMessage: { create: vi.fn() } },
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: mocks.prisma }));
 vi.mock("../../../packages/db/index", () => ({ prisma: mocks.prisma }));
@@ -34,6 +34,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { phoneJid: "bound-alert" } });
+    mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { phoneJid: "bound-alert" } });
     mocks.professional.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires", currency: "ARS", botPaused: false, botAiEnabled: false });
     mocks.patient.mockResolvedValue({ id: "patient", name: "Test" });
     mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ name: "Consulta nutricional" });

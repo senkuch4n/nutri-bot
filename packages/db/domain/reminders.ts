@@ -74,7 +74,7 @@ export async function enqueuePrepInstructions(t: TenantRef, windowMinutes = 20, 
     if (appt.startsAt >= horizon) continue;
     const current = await prisma.appointment.findUnique({ where: currentAppointmentWhere(appt, legacy), select: { id: true } });
     if (!current) continue;
-    const created = await enqueueMessage({
+    const created = await enqueueMessage(t, {
       toJid: appt.patient.whatsappJid,
       kind: "PREP_INSTRUCTIONS",
       appointmentId: appt.id,
@@ -192,7 +192,7 @@ export async function enqueueServiceReminders(
           const pending = { ...where, confirmationRequestedAt: null };
           const current = await tx.appointment.findUnique({ where: pending, select: { id: true } });
           if (!current) return false;
-          const created = await enqueueMessage({
+          const created = await enqueueMessage(t, {
             toJid: jid, kind: "CONFIRMATION_REQUEST", appointmentId: appt.id, body,
           }, tx);
           if (!created) return false;
@@ -209,7 +209,7 @@ export async function enqueueServiceReminders(
       } else {
         const current = await prisma.appointment.findUnique({ where, select: { id: true } });
         if (!current) continue;
-        const created = await enqueueMessage({
+        const created = await enqueueMessage(t, {
           toJid: jid,
           kind: "REMINDER",
           appointmentId: appt.id,

@@ -72,9 +72,9 @@ export async function getBotShellStatus(): Promise<BotShellStatus> {
 }
 
 /** HU-011: consultas pendientes para el badge de "Mensajes" en la sidebar. Nunca tira: ante error, 0. */
-export async function getPendingInquiryCount(): Promise<number> {
+export async function getPendingInquiryCount(tenantId: string): Promise<number> {
   try {
-    return await countPendingInquiries();
+    return await countPendingInquiries({ tenantId });
   } catch {
     return 0;
   }

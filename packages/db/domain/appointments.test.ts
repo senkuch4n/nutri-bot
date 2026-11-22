@@ -60,7 +60,7 @@ function mockLegacyAgenda() {
   mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { timezone: TZ, phoneJid: "pro@s.whatsapp.net" } });
 }
 function enqueued(kind: string) {
-  return mocks.enqueueMessage.mock.calls.map((c) => c[0]).filter((m) => m.kind === kind);
+  return mocks.enqueueMessage.mock.calls.map((c) => c[1]).filter((m) => m.kind === kind);
 }
 
 describe("createAppointment con motivo (HU-013)", () => {
@@ -104,7 +104,8 @@ describe("createAppointment con motivo (HU-013)", () => {
     await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Bajar de peso" });
     const alerts = enqueued("PROFESSIONAL_ALERT");
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]).toMatchObject({ toJid: "pro@s.whatsapp.net", verifiedTenantId: "legacy-tenant" });
+    expect(alerts[0]).toMatchObject({ toJid: "pro@s.whatsapp.net" });
+    expect(mocks.enqueueMessage.mock.calls.find((c) => c[1].kind === "PROFESSIONAL_ALERT")![0]).toEqual({ tenantId: "legacy-tenant" });
     expect(alerts[0]).not.toHaveProperty("appointmentId");
     expect(alerts[0].body).toContain("📝 Motivo: Bajar de peso");
   });
@@ -157,7 +158,7 @@ describe("createAppointment con motivo (HU-013)", () => {
     await createAppointment(T, { ...base, createdBy: "PROFESSIONAL", reason: "Control mensual" });
     expect(createData().reason).toBe("Control mensual");
     expect(mocks.enqueueMessage).toHaveBeenCalledTimes(1);
-    const msg = mocks.enqueueMessage.mock.calls[0]![0];
+    const msg = mocks.enqueueMessage.mock.calls[0]![1];
     expect(msg.kind).toBe("CONFIRMATION");
     expect(msg.body).not.toContain("Motivo");
   });
@@ -215,8 +216,8 @@ describe("cancelAppointment en la agenda original", () => {
       patientJid: PATIENT.whatsappJid, tenantId: "legacy-tenant", step: { in: ["CANCEL_CONFIRM", "CONFIRM_ATTENDANCE"] },
       context: { path: ["apptId"], equals: appt.id },
     } });
-    expect(mocks.enqueueMessage.mock.calls).toEqual([[{
-      toJid: "pro@s.whatsapp.net", kind: "PROFESSIONAL_ALERT", verifiedTenantId: scope.tenantId,
+    expect(mocks.enqueueMessage.mock.calls).toEqual([[{ tenantId: "legacy-tenant" }, {
+      toJid: "pro@s.whatsapp.net", kind: "PROFESSIONAL_ALERT",
       body: messages.professionalCancelAlert({ patientName: PATIENT.name, patientPhone: PATIENT.phone, serviceName: SERVICE.name, startsAt: STARTS, tz: TZ }),
     }]]);
   });
@@ -225,7 +226,7 @@ describe("cancelAppointment en la agenda original", () => {
     await expect(cancelAppointment(T, { id: appt.id, by: "PROFESSIONAL" })).resolves.toMatchObject({
       status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: null, needsGoogleSync: true,
     });
-    expect(mocks.enqueueMessage.mock.calls).toEqual([[{
+    expect(mocks.enqueueMessage.mock.calls).toEqual([[{ tenantId: "legacy-tenant" }, {
       toJid: PATIENT.whatsappJid, kind: "CANCELLATION", appointmentId: appt.id,
       body: messages.cancelDone({ serviceName: SERVICE.name, startsAt: STARTS, tz: TZ }),
     }]]);
@@ -666,7 +667,7 @@ describe("rescheduleAppointment (HU-022)", () => {
   it("S7: encola un AD_HOC a la paciente con el día y la hora nuevos, después de la transacción", async () => {
     await rescheduleAppointment(T, { id: "a1", startsAt: NEW_START, now: NOW });
     expect(mocks.enqueueMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.enqueueMessage).toHaveBeenCalledWith({
+    expect(mocks.enqueueMessage).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, {
       toJid: PATIENT.whatsappJid,
       kind: "AD_HOC",
       appointmentId: "a1",

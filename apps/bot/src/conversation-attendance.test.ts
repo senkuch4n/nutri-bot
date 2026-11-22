@@ -123,8 +123,8 @@ it.each([true, false])("preserves the legacy attendance reply (%s) using an atom
   expect(db.appointment.update).not.toHaveBeenCalled();
   const message = attending ? messages.attendanceConfirmedThanks : messages.attendanceDeclinedNotice;
   expect(send.mock.calls).toEqual([[message({ serviceName: "Consulta", startsAt, tz: "America/Argentina/Buenos_Aires" })]]);
-  expect(mocks.enqueue.mock.calls).toEqual(attending ? [] : [[{
-    toJid: "alert", kind: "PROFESSIONAL_ALERT", verifiedTenantId: tenantId,
+  expect(mocks.enqueue.mock.calls).toEqual(attending ? [] : [[{ tenantId: "legacy-tenant" }, {
+    toJid: "alert", kind: "PROFESSIONAL_ALERT",
     body: messages.professionalCancelAlert({ patientName: "Ana", patientPhone: "123", serviceName: "Consulta", startsAt, tz: "America/Argentina/Buenos_Aires" }),
   }]]);
   expect(db.conversationState.deleteMany.mock.calls).toEqual(attending ? [] : [[{ where: {

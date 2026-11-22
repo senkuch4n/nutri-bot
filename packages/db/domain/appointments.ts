@@ -104,7 +104,7 @@ export async function createAppointment(t: TenantRef, params: {
   });
 
   if (!awaitingPayment && params.notifyPatient !== false) {
-    await enqueueMessage({
+    await enqueueMessage(t, {
       toJid: patient.whatsappJid,
       kind: "CONFIRMATION",
       appointmentId: appointment.id,
@@ -120,11 +120,10 @@ export async function createAppointment(t: TenantRef, params: {
   const alertJid =
     params.professionalAlertJid !== undefined ? params.professionalAlertJid : pro.phoneJid;
   if (!awaitingPayment && params.createdBy === "PATIENT" && alertJid) {
-    await enqueueMessage({
+    await enqueueMessage(t, {
       toJid: alertJid,
       kind: "PROFESSIONAL_ALERT",
       // Sin appointmentId: puede haber varias alertas para un mismo turno.
-      verifiedTenantId: scope.tenantId,
       body: messages.professionalNewBookingAlert({
         patientName: patient.name,
         patientPhone: patient.phone,
@@ -244,7 +243,7 @@ export async function rescheduleAppointment(t: TenantRef, params: {
     return { appointment, patientJid: prev.patient.whatsappJid, serviceName: prev.service.name, pro };
   });
 
-  await enqueueMessage({
+  await enqueueMessage(t, {
     toJid: patientJid,
     kind: "AD_HOC",
     appointmentId: appointment.id,
@@ -286,7 +285,7 @@ export async function cancelAppointment(t: TenantRef, params: {
   if (!updated) return appt;
 
   if (params.by === "PROFESSIONAL" && params.notifyPatient !== false) {
-    await enqueueMessage({
+    await enqueueMessage(t, {
       toJid: appt.patient.whatsappJid,
       kind: "CANCELLATION",
       appointmentId: appt.id,
@@ -313,10 +312,9 @@ async function notifyProfessionalOfCancellation(
   tenantId: string,
 ) {
   if (!pro.phoneJid) return;
-  await enqueueMessage({
+  await enqueueMessage({ tenantId }, {
     toJid: pro.phoneJid,
     kind: "PROFESSIONAL_ALERT",
-    verifiedTenantId: tenantId,
     body: messages.professionalCancelAlert({
       patientName: appt.patient.name,
       patientPhone: appt.patient.phone,

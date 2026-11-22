@@ -16,7 +16,7 @@ vi.mock("@nutri-bot/db", () => ({
   },
 }));
 
-vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: mocks.resolveScope }));
+vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: mocks.resolveScope }));
 
 import { broadcastMessageAction, retryAllFailedAction, retryMessageAction } from "./actions";
 
@@ -49,7 +49,7 @@ const PEOPLE = [
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.createMany.mockResolvedValue({ count: 0 });
-  mocks.resolveScope.mockResolvedValue({ scope: { tenantId } });
+  mocks.resolveScope.mockResolvedValue({ userId: "u", tenantId, agendaId: "legacy-agenda", professionalId: 1 });
 });
 
 describe("broadcastMessageAction", () => {
@@ -153,8 +153,16 @@ it("reintenta en lote solo los FAILED visibles y mantiene la revalidación", asy
   expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
 });
 
+it("sin contexto de consultorio el comunicado devuelve el error genérico sin leer ni escribir", async () => {
+  mocks.resolveScope.mockRejectedValue(new Error("tenant_access:no_context"));
+  const res = await broadcastMessageAction({ ok: false }, form("Hola a todas"));
+  expect(res).toMatchObject({ ok: false, error: expect.any(String) });
+  expect(mocks.findMany).not.toHaveBeenCalled();
+  expect(mocks.createMany).not.toHaveBeenCalled();
+  expect(mocks.revalidatePath).not.toHaveBeenCalled();
+});
+
 it.each([
-  ["comunicado", () => broadcastMessageAction({ ok: false }, form("Hola a todas"))],
   ["reintento individual", () => retryMessageAction("m1")],
   ["reintento en lote", () => retryAllFailedAction()],
 ] as const)("no consulta ni escribe sin alcance: %s", async (_name, act) => {

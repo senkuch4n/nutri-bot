@@ -1,7 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
 import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken, syncGoogleCalendar } from "@nutri-bot/db/domain";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { outboxOwnershipWhere } from "@nutri-bot/db/domain/outbox";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
@@ -41,7 +40,8 @@ async function tick(): Promise<void> {
   if (outboxRunning) return;
   outboxRunning = true;
   try {
-    const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+    // HU-025: el consultorio de la instalación de WhatsApp (único punto, getConversationTenant).
+    const { tenantId } = await getConversationTenant();
     const pendingWhere = { ...outboxOwnershipWhere(tenantId), status: "PENDING" as const };
     const pending = await prisma.outboundMessage.findMany({
       where: pendingWhere,
@@ -189,7 +189,7 @@ export async function runAfterHoursDigest(): Promise<void> {
   if (digestRunning) return;
   digestRunning = true;
   try {
-    const { digested, outboundId } = await enqueueAfterHoursDigest();
+    const { digested, outboundId } = await enqueueAfterHoursDigest(await getConversationTenant());
     if (digested > 0) logger.info({ digested, outboundId }, "Resumen de consultas fuera de horario");
   } catch (err) {
     logger.error({ err }, "Error en el resumen de consultas fuera de horario");

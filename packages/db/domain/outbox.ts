@@ -1,4 +1,5 @@
 import { prisma, Prisma, type MessageKind } from "../index";
+import type { TenantRef } from "./tenantScope";
 
 export function outboxOwnershipWhere(tenantId: string): Prisma.OutboundMessageWhereInput {
   const appointment = { appointment: { tenantId } };
@@ -24,25 +25,26 @@ export function outboxOwnershipWhere(tenantId: string): Prisma.OutboundMessageWh
 
 /**
  * Encola un mensaje saliente para que el proceso del bot lo envíe.
+ * HU-025: siempre escribe el `tenantId` del consultorio recibido; las FK compuestas
+ * (appointmentId, tenantId) rechazan un turno de otro consultorio.
  * La restricción única (appointmentId, kind, dedupeKey) evita duplicados cuando
  * el mensaje está ligado a un turno. Devuelve true si creó la fila; false si ya
  * existía. En una transacción se omite el duplicado sin abortar la transacción.
  */
-export async function enqueueMessage(params: {
+export async function enqueueMessage(t: TenantRef, params: {
   toJid: string;
   body: string;
+  kind: MessageKind;
+  appointmentId?: string | null;
   /** HU-014. Default "" (lo de siempre para todo lo que no es un recordatorio). */
   dedupeKey?: string;
-} & (
-  | { kind: MessageKind; appointmentId?: string | null; verifiedTenantId?: never }
-  // Solo para alertas internas sin turno: el productor debe haber verificado el dueño.
-  | { kind: "PROFESSIONAL_ALERT"; appointmentId?: null; verifiedTenantId: string }
-), tx?: Prisma.TransactionClient): Promise<boolean> {
+}, tx?: Prisma.TransactionClient): Promise<boolean> {
+  if (!t.tenantId) throw new Error("enqueueMessage: falta el consultorio");
   const data = {
+    tenantId: t.tenantId,
     toJid: params.toJid,
     body: params.body,
     kind: params.kind,
-    ...(params.verifiedTenantId !== undefined ? { tenantId: params.verifiedTenantId } : {}),
     appointmentId: params.appointmentId ?? null,
     dedupeKey: params.dedupeKey ?? "",
   };

@@ -119,7 +119,7 @@ describe("verified legacy reminder scope", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     };
-    mocks.enqueueMessage.mockImplementation(async (message, client) => {
+    mocks.enqueueMessage.mockImplementation(async (_t, message, client) => {
       (client === tx ? staged : committed).queue.push(message);
       return true;
     });
@@ -209,7 +209,7 @@ describe("enqueuePrepInstructions", () => {
       messages: { none: { kind: "PREP_INSTRUCTIONS", OR: [{ tenantId }, { tenantId: null }] } },
       patientId: { in: ["p1", "foreign"] },
     });
-    expect(mocks.enqueueMessage.mock.calls).toEqual([[{
+    expect(mocks.enqueueMessage.mock.calls).toEqual([[{ tenantId: "legacy-tenant" }, {
       toJid: JID, kind: "PREP_INSTRUCTIONS", appointmentId: "a1",
       body: messages.prepInstructionsMessage({ serviceName: "Control", startsAt: STARTS, tz: TZ, instructions: "Ayuno" }),
     }]]);
@@ -246,7 +246,7 @@ describe("enqueueServiceReminders", () => {
     ]);
     const res = await enqueueServiceReminders(T, { now: NOW_24H });
     expect(res).toEqual({ reminders: 1, confirmations: 0 });
-    const call = mocks.enqueueMessage.mock.calls[0]![0];
+    const call = mocks.enqueueMessage.mock.calls[0]![1];
     expect(call).toMatchObject({ toJid: JID, kind: "REMINDER", appointmentId: "a1", dedupeKey: "auto:24h" });
     expect(call.body).toContain("tenés turno mañana");
     expect(mocks.prisma.$queryRaw).not.toHaveBeenCalled();
@@ -257,11 +257,11 @@ describe("enqueueServiceReminders", () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt()]);
     const res = await enqueueServiceReminders(T, { now: NOW_72H });
     expect(res).toEqual({ reminders: 0, confirmations: 1 });
-    const call = mocks.enqueueMessage.mock.calls[0]![0];
+    const call = mocks.enqueueMessage.mock.calls[0]![1];
     expect(call.kind).toBe("CONFIRMATION_REQUEST");
     expect(mocks.prisma.appointment.findUnique.mock.invocationCallOrder[0]!)
       .toBeLessThan(mocks.enqueueMessage.mock.invocationCallOrder[0]!);
-    expect(mocks.enqueueMessage.mock.calls[0]![1]).toBe(mocks.prisma);
+    expect(mocks.enqueueMessage.mock.calls[0]![2]).toBe(mocks.prisma);
     expect(call.dedupeKey).toBeUndefined();
     expect(call.body).toBe(messages.confirmAttendanceRequest({ serviceName: "Control", startsAt: STARTS, tz: TZ }));
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({
@@ -390,7 +390,7 @@ describe("enqueueServiceReminders", () => {
     ]);
     mocks.enqueueMessage.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce(true);
     await expect(enqueueServiceReminders(T, { now: NOW_24H })).resolves.toEqual({ reminders: 1, confirmations: 0 });
-    expect(mocks.enqueueMessage.mock.calls[1]![0].appointmentId).toBe("a2");
+    expect(mocks.enqueueMessage.mock.calls[1]![1].appointmentId).toBe("a2");
   });
 
   it("si fallan todos los que tenían algo para encolar, tira", async () => {
@@ -478,7 +478,7 @@ describe("enqueueServiceReminders con mensajes del horario viejo (prev:)", () =>
     ]);
     const res = await enqueueServiceReminders(T, { now: NOW_72H });
     expect(res).toEqual({ reminders: 0, confirmations: 1 });
-    expect(mocks.enqueueMessage.mock.calls[0]![0].kind).toBe("CONFIRMATION_REQUEST");
+    expect(mocks.enqueueMessage.mock.calls[0]![1].kind).toBe("CONFIRMATION_REQUEST");
   });
 
   it("un mensaje prev: posterior al momento no cubre al recordatorio nuevo", async () => {
@@ -494,7 +494,7 @@ describe("enqueueServiceReminders con mensajes del horario viejo (prev:)", () =>
     ]);
     const res = await enqueueServiceReminders(T, { now: NOW_24H });
     expect(res).toEqual({ reminders: 1, confirmations: 0 });
-    expect(mocks.enqueueMessage.mock.calls[0]![0]).toMatchObject({ kind: "REMINDER", dedupeKey: "auto:24h" });
+    expect(mocks.enqueueMessage.mock.calls[0]![1]).toMatchObject({ kind: "REMINDER", dedupeKey: "auto:24h" });
   });
 
   it("regresión sin prev:: un CONFIRMATION_REQUEST del horario actual sigue frenando la confirmación", async () => {

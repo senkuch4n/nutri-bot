@@ -23,7 +23,7 @@ import {
   loadOrInitializeLegacyConversationState,
   saveLegacyConversationState,
 } from "@nutri-bot/db/domain/conversationState";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { resolveTenantSchedulingContext } from "@nutri-bot/db/domain/tenantScope";
 import {
   afterHoursConfigFrom,
   formatClock,
@@ -734,7 +734,8 @@ function afterHoursConfigFor(pro: Professional, opts: ConversationOptions): Afte
 }
 
 async function handoffAlertTarget(opts: ConversationOptions) {
-  const { scope: { tenantId }, professional } = await resolveLegacySchedulingScope();
+  const { tenantId } = await getConversationTenant();
+  const { professional } = await resolveTenantSchedulingContext(prisma, tenantId);
   const toJid = opts.alertJid !== undefined ? opts.alertJid : professional.phoneJid;
   return toJid ? { tenantId, toJid } : null;
 }
@@ -771,7 +772,7 @@ async function handleInquiryText(
 
   const config = afterHoursConfigFor(pro, opts);
   const afterHours = isWithinAfterHours(now, config, pro.timezone); // según la hora de ESTE mensaje
-  const { inquiry } = await recordInquiryMessage({
+  const { inquiry } = await recordInquiryMessage(await getConversationTenant(), {
     patientId: patient.id,
     text,
     at: now,
@@ -846,7 +847,7 @@ async function handoffFromQuestion(
 ): Promise<void> {
   const config = afterHoursConfigFor(pro, opts);
   const afterHours = isWithinAfterHours(now, config, pro.timezone);
-  const { inquiry } = await recordInquiryMessage({
+  const { inquiry } = await recordInquiryMessage(await getConversationTenant(), {
     patientId: patient.id,
     // Sección 15 (P6): con prefijo, para que ella sepa que la IA ya respondió algo.
     text: inquiryBodyFromAiQuestion(ctx.lastQuestion ?? ""),

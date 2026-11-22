@@ -166,6 +166,7 @@ describe("payment cron without Baileys or database", () => {
 describe("after-hours digest cron (HU-011)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
   });
   it("is the last schedule, runs every minute and calls enqueueAfterHoursDigest once per tick", async () => {
     mocks.digest.mockResolvedValue({ digested: 2, outboundId: "out1" });
@@ -174,6 +175,7 @@ describe("after-hours digest cron (HU-011)", () => {
     expect(last[0]).toBe("* * * * *");
     await last[1]();
     expect(mocks.digest).toHaveBeenCalledTimes(1);
+    expect(mocks.digest).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
     // La conciliación de pagos sigue siendo la primera.
     expect(mocks.schedule.mock.calls.length).toBeGreaterThan(1);
   });
@@ -193,7 +195,7 @@ describe("after-hours digest cron (HU-011)", () => {
     const tick = mocks.schedule.mock.calls.at(-1)![1];
     const first = tick();
     await tick();
-    expect(mocks.digest).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(mocks.digest).toHaveBeenCalledTimes(1));
     finish({ digested: 0, outboundId: null });
     await first;
   });
