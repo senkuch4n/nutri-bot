@@ -20,19 +20,35 @@ const silentLogger = pino({ level: "silent" });
 let sock: WASocket | null = null;
 
 /** HU-025: la fila de estado (y el QR) es la del consultorio de esta instalación de WhatsApp. Se busca
- *  por tenantId (único); una fila de otro consultorio o sin dueño nunca se adopta: el alta choca y se
- *  loguea. Panel y sidebar leen la fila por el tenant de la sesión. */
+ *  por tenantId (único); una fila de otro consultorio o sin dueño nunca se adopta: el alta choca.
+ *  Panel y sidebar leen la fila por el tenant de la sesión. Registrar el estado nunca corta la conexión
+ *  ni la reconexión: una falla (tenant no resoluble, fila ajena, base caída) se loguea solo con el código
+ *  del error (sin datos personales ni el QR) y el flujo sigue. */
 async function setBotStatus(data: {
   connected: boolean;
   qr?: string | null;
   lastConnectedAt?: Date;
-}) {
-  const { tenantId } = await getConversationTenant();
-  await prisma.botStatus.upsert({
-    where: { tenantId },
-    create: { tenantId, ...data },
-    update: data,
-  });
+}): Promise<void> {
+  try {
+    const { tenantId } = await getConversationTenant();
+    await prisma.botStatus.upsert({
+      where: { tenantId },
+      create: { tenantId, ...data },
+      update: data,
+    });
+  } catch (err) {
+    logger.warn({ code: statusErrorCode(err), connected: data.connected }, "No se pudo registrar el estado del bot");
+  }
+}
+
+/** Código del error sin el mensaje (puede traer datos de la fila o de la conexión). */
+function statusErrorCode(err: unknown): string {
+  if (err && typeof err === "object") {
+    const { code, name } = err as { code?: unknown; name?: unknown };
+    if (typeof code === "string" && code) return code;
+    if (typeof name === "string" && name) return name;
+  }
+  return "unknown";
 }
 
 function extractText(m: WAMessage): string | null {
