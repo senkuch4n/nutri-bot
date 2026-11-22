@@ -11,6 +11,7 @@ import {
   updateIsakStudy,
 } from "@nutri-bot/db/domain";
 import { belongsToPatient } from "@/lib/consultation-guard";
+import { requireTenantContext } from "@/lib/tenant-context";
 import type { ActionState } from "./clinical-actions";
 
 // Estudio antropométrico ISAK de la consulta (HU-006). La validación de las medidas vive en
@@ -42,7 +43,8 @@ export async function saveIsakStudyAction(_prev: IsakFormState, formData: FormDa
   if (!parsed.success) return INVALID;
   const { patientId, consultationId } = parsed.data;
   const entryId = parsed.data.entryId?.trim() || null;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
 
   const raw: Partial<Record<IsakMeasureKey, string>> = {};
   for (const key of ISAK_MEASURE_KEYS) {
@@ -53,8 +55,8 @@ export async function saveIsakStudyAction(_prev: IsakFormState, formData: FormDa
   if (!validation.ok) return { ok: false, fieldErrors: validation.errors };
 
   try {
-    if (entryId) await updateIsakStudy({ consultationId, entryId, measures: validation.measures });
-    else await createIsakStudy({ consultationId, measures: validation.measures });
+    if (entryId) await updateIsakStudy(ctx, { consultationId, entryId, measures: validation.measures });
+    else await createIsakStudy(ctx, { consultationId, measures: validation.measures });
   } catch (error) {
     if (error instanceof IsakStudyExistsError) return { ok: false, error: ISAK_TEXT.alreadyExists };
     if (error instanceof IsakStudyNotFoundError) return INVALID;
@@ -72,9 +74,10 @@ export async function deleteIsakStudyAction(
 ): Promise<ActionState> {
   const ids = z.tuple([idSchema, idSchema, idSchema]).safeParse([patientId, consultationId, entryId]);
   if (!ids.success) return INVALID;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
   try {
-    await deleteIsakStudy({ consultationId, entryId });
+    await deleteIsakStudy(ctx, { consultationId, entryId });
   } catch (error) {
     if (!(error instanceof IsakStudyNotFoundError)) console.error("deleteIsakStudyAction", error);
     return { ok: false, error: ISAK_TEXT.deleteError };

@@ -145,7 +145,7 @@ describe("createAppointmentAction, paciente nueva", () => {
     expect(mocks.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { tenantId_whatsappJid: { whatsappJid: "5493515552345@s.whatsapp.net", tenantId: "legacy-tenant" } } }),
     );
-    expect(mocks.findOrCreatePatient).toHaveBeenCalledWith({ phone: "5493515552345", name: "Lucía Pérez" });
+    expect(mocks.findOrCreatePatient).toHaveBeenCalledWith(CTX, { phone: "5493515552345", name: "Lucía Pérez" });
     expect(mocks.createAppointment).toHaveBeenCalledWith(CTX, expect.objectContaining({ patientId: "pat-new" }));
   });
 

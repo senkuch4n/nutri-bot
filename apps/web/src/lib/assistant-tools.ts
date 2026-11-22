@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@nutri-bot/db";
-import { getLatestFormulaMeasurements, listApprovedPaymentsInRange } from "@nutri-bot/db/domain";
+import { getLatestFormulaMeasurements, LEGACY_TENANT_ID, listApprovedPaymentsInRange } from "@nutri-bot/db/domain";
 import {
   activityLevelOption,
   computeAgeYears,
@@ -34,7 +34,9 @@ export async function resumenPaciente(patientId: string) {
     prisma.patient.findUnique({ where: { id: patientId } }),
     prisma.clinicalRecord.findUnique({ where: { patientId } }),
     prisma.evolutionEntry.findFirst({ where: { patientId }, orderBy: { recordedAt: "desc" } }),
-    getLatestFormulaMeasurements(patientId),
+    // HU-025b-1: el asistente pasa a recibir el contexto en 025b-2 (M8). Mientras, el candado
+    // ENABLED_TENANT_IDS hace que el único contexto posible sea el consultorio original.
+    getLatestFormulaMeasurements({ tenantId: LEGACY_TENANT_ID }, patientId),
     prisma.nutritionPlan.count({ where: { patientId } }),
     prisma.nutritionPlan.findFirst({ where: { patientId, status: "ACTIVE" } }),
     prisma.appointment.findFirst({

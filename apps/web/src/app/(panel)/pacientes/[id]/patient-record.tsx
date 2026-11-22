@@ -36,9 +36,9 @@ import {
   listPatientPlans,
   listTemplates,
   listDiaryEntries,
+  getTenantProfessional,
   type LatestMeasurement,
 } from "@nutri-bot/db/domain";
-import { getProfessional } from "@/lib/professional";
 import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { listServices } from "@/lib/services";
@@ -64,17 +64,20 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
   const ctx = await requirePageContext();
   const [pro, patient, plans, access, diaryEntries, measurements, consultations, prescriptions, services] =
     await Promise.all([
-      getProfessional(),
+      getTenantProfessional(ctx.tenantId),
+      // HU-025: paciente del consultorio de la sesión; uno de otro consultorio → notFound().
       prisma.patient.findUnique({
-        where: { id },
+        where: { id_tenantId: { id, tenantId: ctx.tenantId } },
         include: {
           appointments: {
+            where: { tenantId: ctx.tenantId },
             include: { service: true, consultation: { select: { id: true } } },
             orderBy: { startsAt: "desc" },
           },
           clinicalRecord: true,
           // R7 (017c-4): Historial necesita saber si el estudio ISAK tiene informe ("y su informe").
           evolutionEntries: {
+            where: { tenantId: ctx.tenantId },
             orderBy: { recordedAt: "desc" },
             include: { anthropometricReport: { select: { id: true } } },
           },
@@ -82,10 +85,10 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
       }),
       listPatientPlans(id),
       resolvePrivateContentAccess(),
-      listDiaryEntries(id),
-      getLatestFormulaMeasurements(id),
-      listPatientConsultations(id),
-      listLatestPrescriptions(id, 1),
+      listDiaryEntries(ctx, id),
+      getLatestFormulaMeasurements(ctx, id),
+      listPatientConsultations(ctx, id),
+      listLatestPrescriptions(ctx, id, 1),
       listServices(ctx, { activeOnly: true }),
     ]);
   if (!patient) notFound();

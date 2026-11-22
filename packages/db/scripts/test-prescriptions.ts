@@ -99,9 +99,9 @@ async function main() {
     serviceId = service.id;
 
     // 2–3) Consultas y mediciones.
-    const c12 = await createManualConsultation({ patientId: patient.id, dayKey: "2026-09-12" });
+    const c12 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-09-12" });
     consultationIds.push(c12.id);
-    const e12 = await addEvolutionEntryToConsultation(c12.id, {
+    const e12 = await addEvolutionEntryToConsultation(T, c12.id, {
       weightKg: 66.5,
       heightCm: 162,
       waistCm: 82,
@@ -109,23 +109,23 @@ async function main() {
       bodyFatPercent: 29.4,
     });
     entryIds.push(e12.id);
-    const c20 = await createManualConsultation({ patientId: patient.id, dayKey: "2026-09-20" });
+    const c20 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-09-20" });
     consultationIds.push(c20.id);
-    const e20 = await addEvolutionEntryToConsultation(c20.id, { weightKg: 60 });
+    const e20 = await addEvolutionEntryToConsultation(T, c20.id, { weightKg: 60 });
     entryIds.push(e20.id);
-    const c22 = await createManualConsultation({ patientId: patient.id, dayKey: "2026-09-22" });
+    const c22 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-09-22" });
     consultationIds.push(c22.id);
 
     // 4) D4: nunca una medición posterior; cada dato por separado.
     await step("mediciones D4 de la consulta del 12/09 y del 22/09", async () => {
-      const m12 = await getFormulaMeasurementsAsOf({
+      const m12 = await getFormulaMeasurementsAsOf(T, {
         patientId: patient.id,
         consultationId: c12.id,
         until: await until(c12.consultedAt),
       });
       assert.equal(m12.weightKg?.value, 66.5);
       assert.equal(m12.heightCm?.value, 162);
-      const m22 = await getFormulaMeasurementsAsOf({
+      const m22 = await getFormulaMeasurementsAsOf(T, {
         patientId: patient.id,
         consultationId: c22.id,
         until: await until(c22.consultedAt),
@@ -134,7 +134,7 @@ async function main() {
       assert.equal(m22.weightKg?.consultationId, c20.id);
       assert.equal(m22.heightCm?.value, 162);
       assert.equal(m22.heightCm?.consultationId, c12.id);
-      const ctx = await getRequirementContextForConsultation(c12.id);
+      const ctx = await getRequirementContextForConsultation(T, c12.id);
       assert.equal(ctx.ageYears, 34);
       assert.deepEqual(ctx.ctx, {
         population: "ADULT",
@@ -148,7 +148,7 @@ async function main() {
 
     // 5) Guardar.
     await step("guardar la prescripción del 12/09 (1481 kcal)", async () => {
-      const p = await saveConsultationPrescription({ consultationId: c12.id, choices: baseChoices });
+      const p = await saveConsultationPrescription(T, { consultationId: c12.id, choices: baseChoices });
       prescriptionIds.push(p.id);
       assert.equal(p.prescribedVctKcal, 1481);
       assert.equal(p.calculatedVctKcal, 1481);
@@ -176,7 +176,7 @@ async function main() {
 
     // 7) Editar reemplaza.
     await step("guardar de nuevo con −15 % reemplaza (una sola fila, 1574)", async () => {
-      const p = await saveConsultationPrescription({
+      const p = await saveConsultationPrescription(T, {
         consultationId: c12.id,
         choices: { ...baseChoices, adjustmentPercent: -15, prescribedVctKcal: 1574 },
       });
@@ -190,22 +190,22 @@ async function main() {
     // 8) Inválidos: no se guarda nada.
     await step("valores inválidos tiran InvalidPrescriptionError y no cambian la fila", async () => {
       await assert.rejects(
-        saveConsultationPrescription({ consultationId: c12.id, choices: { ...baseChoices, adjustmentPercent: -35 } }),
+        saveConsultationPrescription(T, { consultationId: c12.id, choices: { ...baseChoices, adjustmentPercent: -35 } }),
         InvalidPrescriptionError,
       );
       await assert.rejects(
-        saveConsultationPrescription({ consultationId: c12.id, choices: { ...baseChoices, prescribedVctKcal: 7000 } }),
+        saveConsultationPrescription(T, { consultationId: c12.id, choices: { ...baseChoices, prescribedVctKcal: 7000 } }),
         InvalidPrescriptionError,
       );
       await assert.rejects(
-        saveConsultationPrescription({
+        saveConsultationPrescription(T, {
           consultationId: c12.id,
           choices: { ...baseChoices, bmrFormula: "KATCH_MCARDLE", bodyFatSource: null },
         }),
         InvalidPrescriptionError,
       );
       await assert.rejects(
-        saveConsultationPrescription({
+        saveConsultationPrescription(T, {
           consultationId: c12.id,
           choices: { ...baseChoices, macros: { mode: "PERCENT_OF_VCT", proteinPercent: 20, fatPercent: 30, carbPercent: 45 } },
         }),
@@ -217,14 +217,14 @@ async function main() {
 
     // 9) La prescripción impide borrar la consulta.
     await step("deleteConsultation con prescripción → ConsultationNotDeletableError", async () => {
-      await assert.rejects(deleteConsultation(c12.id), ConsultationNotDeletableError);
-      const c15 = await createManualConsultation({ patientId: patient.id, dayKey: "2026-09-15" });
+      await assert.rejects(deleteConsultation(T, c12.id), ConsultationNotDeletableError);
+      const c15 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-09-15" });
       consultationIds.push(c15.id);
-      const p = await saveConsultationPrescription({ consultationId: c15.id, choices: baseChoices });
+      const p = await saveConsultationPrescription(T, { consultationId: c15.id, choices: baseChoices });
       prescriptionIds.push(p.id);
-      await assert.rejects(deleteConsultation(c15.id), ConsultationNotDeletableError);
+      await assert.rejects(deleteConsultation(T, c15.id), ConsultationNotDeletableError);
       assert.ok(await prisma.consultation.findUnique({ where: { id: c15.id } }));
-      const ref = await getReferencePrescription({
+      const ref = await getReferencePrescription(T, {
         patientId: patient.id,
         consultationId: c22.id,
         consultedAt: c22.consultedAt,
@@ -253,10 +253,10 @@ async function main() {
       const done = await setAppointmentStatus(T, { id: a.id, status: "COMPLETED" });
       assert.ok(done.consultation);
       consultationIds.push(done.consultation.id);
-      const ctx = await getRequirementContextForConsultation(done.consultation.id);
+      const ctx = await getRequirementContextForConsultation(T, done.consultation.id);
       assert.equal(ctx.ctx?.actualWeightKg, 60); // la del 20/09
       assert.equal(ctx.ctx?.heightCm, 162); // la del 12/09
-      const p = await saveConsultationPrescription({ consultationId: done.consultation.id, choices: baseChoices });
+      const p = await saveConsultationPrescription(T, { consultationId: done.consultation.id, choices: baseChoices });
       prescriptionIds.push(p.id);
       const back = await setAppointmentStatus(T, { id: a.id, status: "CONFIRMED" });
       assert.equal(back.removedEmptyConsultation, false);
@@ -265,11 +265,11 @@ async function main() {
 
     // 11) HU-008: menor de 5 a 17: ctx pediátrico y se guarda con Schofield.
     await step("menor de 5 a 17: ctx pediátrico y se guarda con Schofield", async () => {
-      const cm = await createManualConsultation({ patientId: minor.id, dayKey: "2026-09-12" });
+      const cm = await createManualConsultation(T, { patientId: minor.id, dayKey: "2026-09-12" });
       consultationIds.push(cm.id);
-      const em = await addEvolutionEntryToConsultation(cm.id, { weightKg: 40, heightCm: 150 });
+      const em = await addEvolutionEntryToConsultation(T, cm.id, { weightKg: 40, heightCm: 150 });
       entryIds.push(em.id);
-      const r = await getRequirementContextForConsultation(cm.id);
+      const r = await getRequirementContextForConsultation(T, cm.id);
       assert.equal(r.ageYears, 12);
       assert.equal(r.ageGroup, "PEDIATRIC");
       assert.deepEqual(r.ctx, {
@@ -282,11 +282,11 @@ async function main() {
       });
       // Mifflin (de adultos) + déficit moderado → no se guarda.
       await assert.rejects(
-        saveConsultationPrescription({ consultationId: cm.id, choices: baseChoices }),
+        saveConsultationPrescription(T, { consultationId: cm.id, choices: baseChoices }),
         InvalidPrescriptionError,
       );
       assert.equal(await prisma.nutritionPrescription.count({ where: { consultationId: cm.id } }), 0);
-      const p = await saveConsultationPrescription({
+      const p = await saveConsultationPrescription(T, {
         consultationId: cm.id,
         choices: {
           ...baseChoices,
@@ -324,11 +324,11 @@ async function main() {
         },
       });
       patientIds.push(small.id);
-      const cs = await createManualConsultation({ patientId: small.id, dayKey: "2026-09-12" });
+      const cs = await createManualConsultation(T, { patientId: small.id, dayKey: "2026-09-12" });
       consultationIds.push(cs.id);
-      const es = await addEvolutionEntryToConsultation(cs.id, { weightKg: 16, heightCm: 102 });
+      const es = await addEvolutionEntryToConsultation(T, cs.id, { weightKg: 16, heightCm: 102 });
       entryIds.push(es.id);
-      const r = await getRequirementContextForConsultation(cs.id);
+      const r = await getRequirementContextForConsultation(T, cs.id);
       assert.equal(r.ctx, null);
       assert.equal(r.ageYears, 4);
       assert.equal(r.ageGroup, "UNDER_5");
@@ -336,15 +336,15 @@ async function main() {
 
     // 12) Borrar la prescripción.
     await step("deleteConsultationPrescription (idempotente)", async () => {
-      await deleteConsultationPrescription(c12.id);
-      await deleteConsultationPrescription(c12.id);
+      await deleteConsultationPrescription(T, c12.id);
+      await deleteConsultationPrescription(T, c12.id);
       assert.equal(await prisma.nutritionPrescription.count({ where: { consultationId: c12.id } }), 0);
       assert.ok(await prisma.consultation.findUnique({ where: { id: c12.id } }));
     });
 
     // 13) Orden del Resumen.
     await step("listLatestPrescriptions ordena por fecha de consulta desc", async () => {
-      const list = await listLatestPrescriptions(patient.id, 2);
+      const list = await listLatestPrescriptions(T, patient.id, 2);
       assert.equal(list.length, 2);
       assert.ok(list[0]!.consultation.consultedAt.getTime() > list[1]!.consultation.consultedAt.getTime());
       assert.equal(dayKeyInTz(list[1]!.consultation.consultedAt, (await getProfessional()).timezone), "2026-09-15");

@@ -1,10 +1,10 @@
 import type { ActivityLevel, BiologicalSex, BodyFrame, NutritionGoal } from "@prisma/client";
 import { prisma } from "../index";
-import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { lockTenantScheduling, resolveTenantSchedulingContext, type TenantRef } from "./tenantScope";
 
-/** Tenant of the verified original agenda; not inferred from the patient or input. */
-export async function getLegacySchedulingTenantId() {
-  return (await resolveLegacySchedulingScope()).scope.tenantId;
+/** HU-025: tenant verified against its primary agenda; never inferred from the patient or input. */
+async function verifiedTenantId(t: TenantRef): Promise<string> {
+  return (await resolveTenantSchedulingContext(prisma, t.tenantId)).scope.tenantId;
 }
 
 /** Normaliza un teléfono a JID de WhatsApp: solo dígitos + sufijo. */
@@ -17,23 +17,23 @@ export function jidToPhone(jid: string): string {
   return jid.split("@")[0] ?? jid;
 }
 
-export async function findOrCreatePatient(params: { phone: string; name?: string }) {
+export async function findOrCreatePatient(t: TenantRef, params: { phone: string; name?: string }) {
   const whatsappJid = phoneToJid(params.phone);
   const digits = whatsappJid.split("@")[0]!;
-  return upsertLegacyPatient(whatsappJid, digits, params.name ?? null);
+  return upsertTenantPatient(t, whatsappJid, digits, params.name ?? null);
 }
 
-export async function findOrCreatePatientByJid(jid: string) {
-  return upsertLegacyPatient(jid, jidToPhone(jid));
+export async function findOrCreatePatientByJid(t: TenantRef, jid: string) {
+  return upsertTenantPatient(t, jid, jidToPhone(jid));
 }
 
-export async function findLegacyPatientByJidOrThrow(whatsappJid: string) {
-  const tenantId = await getLegacySchedulingTenantId();
+export async function findPatientByJidOrThrow(t: TenantRef, whatsappJid: string) {
+  const tenantId = await verifiedTenantId(t);
   return prisma.patient.findUniqueOrThrow({ where: { tenantId_whatsappJid: { tenantId, whatsappJid } } });
 }
 
-async function upsertLegacyPatient(whatsappJid: string, phone: string, name?: string | null) {
-  const tenantId = await getLegacySchedulingTenantId();
+async function upsertTenantPatient(t: TenantRef, whatsappJid: string, phone: string, name?: string | null) {
+  const tenantId = await verifiedTenantId(t);
   // A JID outside this tenant cannot match the update, and global uniqueness rejects the insert.
   return prisma.patient.upsert({
     where: { tenantId_whatsappJid: { tenantId, whatsappJid } },
@@ -49,10 +49,11 @@ export interface PatientFormulaDataInput {
   bodyFrame: BodyFrame | null;
 }
 
-/** Sobrescribe los 4 datos para cálculos (null borra). Solo toca esos 4 campos del paciente. */
-export function updatePatientFormulaData(patientId: string, data: PatientFormulaDataInput) {
+/** Sobrescribe los 4 datos para cálculos (null borra). Solo toca esos 4 campos del paciente.
+ *  Un paciente de otro consultorio no se encuentra (P2025), igual que uno inexistente. */
+export function updatePatientFormulaData(t: TenantRef, patientId: string, data: PatientFormulaDataInput) {
   return prisma.patient.update({
-    where: { id: patientId },
+    where: { id_tenantId: { id: patientId, tenantId: t.tenantId } },
     data: {
       sex: data.sex,
       activityLevel: data.activityLevel,
@@ -86,21 +87,23 @@ export type ArchivePatientResult =
  *  paciente, busca turnos CONFIRMED/AWAITING_PAYMENT con startsAt >= now; si hay → pending_appointments
  *  sin escribir; si ya estaba archivada → ok con su archivedAt original; si no → archivedAt = now. */
 export async function archivePatient(
+  t: TenantRef,
   patientId: string,
   now: Date = new Date(),
 ): Promise<ArchivePatientResult> {
+  const { tenantId } = t;
   return prisma.$transaction(async (tx): Promise<ArchivePatientResult> => {
     // Mismo lock que createAppointment: archivar y reservar quedan serializados (carrera D3).
-    await tx.$queryRaw`SELECT id FROM "Professional" WHERE id = 1 FOR UPDATE`;
+    await lockTenantScheduling(tx, tenantId);
 
     const patient = await tx.patient.findUnique({
-      where: { id: patientId },
+      where: { id_tenantId: { id: patientId, tenantId } },
       select: { id: true, archivedAt: true },
     });
     if (!patient) return { ok: false, reason: "not_found" };
 
     const pending = await tx.appointment.findMany({
-      where: { patientId, status: { in: PENDING_STATUSES }, startsAt: { gte: now } },
+      where: { patientId, tenantId, status: { in: PENDING_STATUSES }, startsAt: { gte: now } },
       orderBy: { startsAt: "asc" },
       select: { startsAt: true, status: true },
     });
@@ -117,17 +120,18 @@ export async function archivePatient(
     // Idempotente: no pisa la fecha original.
     if (patient.archivedAt) return { ok: true, archivedAt: patient.archivedAt };
 
-    await tx.patient.update({ where: { id: patientId }, data: { archivedAt: now } });
+    await tx.patient.update({ where: { id_tenantId: { id: patientId, tenantId } }, data: { archivedAt: now } });
     return { ok: true, archivedAt: now };
   });
 }
 
 /** HU-019. archivedAt = null (idempotente). count 0 → not_found. */
 export async function unarchivePatient(
+  t: TenantRef,
   patientId: string,
 ): Promise<{ ok: true } | { ok: false; reason: "not_found" }> {
   const { count } = await prisma.patient.updateMany({
-    where: { id: patientId },
+    where: { id: patientId, tenantId: t.tenantId },
     data: { archivedAt: null },
   });
   return count === 0 ? { ok: false, reason: "not_found" } : { ok: true };

@@ -12,6 +12,17 @@ const mocks = vi.hoisted(() => ({
   loadCtx: vi.fn(),
   belongs: vi.fn(),
 }));
+// HU-025b-1: el consultorio sale del contexto de la sesión.
+const TENANT_CTX = vi.hoisted(() => ({
+  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
+}));
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: async () => TENANT_CTX,
+  requirePageContext: async () => TENANT_CTX,
+  getTenantContext: async () => TENANT_CTX,
+  TenantAccessError: class TenantAccessError extends Error {},
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db/domain", () => ({
   saveAnthropometricReportTexts: mocks.saveTexts,
@@ -115,5 +126,36 @@ describe("report-actions: logs sin datos de la firma (HU-016, D10)", () => {
     expect(r.ok).toBe(false);
     expect(spy.mock.calls[0]).toEqual(["sendIsakReportWhatsAppAction", "TypeError"]);
     expect(mocks.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("HU-025: informe de otro consultorio", () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it("consulta de B (belongsToPatient false con el contexto de A) → Datos inválidos sin cargar ni escribir", async () => {
+    mocks.belongs.mockResolvedValue(false);
+    await expect(generateIsakReportPdfAction(INPUT)).resolves.toEqual({ ok: false, error: "Datos inválidos" });
+    expect(mocks.belongs).toHaveBeenCalledWith(TENANT_CTX, "p1", "c1");
+    expect(mocks.loadCtx).not.toHaveBeenCalled();
+    expect(mocks.saveTexts).not.toHaveBeenCalled();
+    expect(mocks.savePdf).not.toHaveBeenCalled();
+  });
+
+  it("propio: el contexto llega al cargado y a las escrituras del dominio", async () => {
+    mocks.belongs.mockResolvedValue(true);
+    mocks.loadCtx.mockResolvedValue({
+      status: "ok",
+      ctx: { entry: { id: "e1" }, model: {}, fileName: "f.pdf", sourceKey: "k", patient: { whatsappJid: "j" }, currentDateLabel: "x" },
+    });
+    mocks.saveTexts.mockResolvedValue({ texts: TEXTS });
+    mocks.branding.mockResolvedValue({ displayName: "", footerSignature: "", logo: null, accentColor: null, signature: null });
+    mocks.render.mockResolvedValue(Buffer.from("%PDF"));
+    mocks.savePdf.mockResolvedValue({ id: "r1" });
+    mocks.enqueue.mockResolvedValue({});
+    await expect(sendIsakReportWhatsAppAction(INPUT)).resolves.toEqual({ ok: true });
+    expect(mocks.loadCtx).toHaveBeenCalledWith(TENANT_CTX, "p1", "c1");
+    expect(mocks.saveTexts.mock.calls[0]![0]).toBe(TENANT_CTX);
+    expect(mocks.savePdf.mock.calls[0]![0]).toBe(TENANT_CTX);
+    expect(mocks.enqueue.mock.calls[0]![0]).toBe(TENANT_CTX);
   });
 });

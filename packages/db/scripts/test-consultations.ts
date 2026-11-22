@@ -122,7 +122,7 @@ async function main() {
       assert.ok(r1.consultation?.created);
       consultationIds.push(r1.consultation.id);
       consultationA = r1.consultation.id;
-      const entry = await addEvolutionEntryToConsultation(consultationA, { weightKg: 66.5, bodyFatPercent: 29.4 });
+      const entry = await addEvolutionEntryToConsultation(T, consultationA, { weightKg: 66.5, bodyFatPercent: 29.4 });
       entryIds.push(entry.id);
       assert.equal(entry.consultationId, consultationA);
       assert.equal(entry.patientId, patient.id);
@@ -147,22 +147,22 @@ async function main() {
     await step("createManualConsultation / updateManualConsultationDate", async () => {
       const tomorrow = dayKeyInTz(addDays(new Date(), 1), tz);
       await assert.rejects(
-        createManualConsultation({ patientId: patient.id, dayKey: tomorrow }),
+        createManualConsultation(T, { patientId: patient.id, dayKey: tomorrow }),
         FutureConsultationDateError,
       );
-      const manual = await createManualConsultation({ patientId: patient.id, dayKey: "2026-09-15" });
+      const manual = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-09-15" });
       consultationIds.push(manual.id);
       manualId = manual.id;
       assert.equal(manual.appointmentId, null);
       assert.equal(manual.consultedAt.toISOString(), "2026-09-15T15:00:00.000Z");
-      const entry = await addEvolutionEntryToConsultation(manual.id, { weightKg: 70 });
+      const entry = await addEvolutionEntryToConsultation(T, manual.id, { weightKg: 70 });
       entryIds.push(entry.id);
-      const moved = await updateManualConsultationDate({ consultationId: manual.id, dayKey: "2026-09-14" });
+      const moved = await updateManualConsultationDate(T, { consultationId: manual.id, dayKey: "2026-09-14" });
       assert.equal(moved.consultedAt.toISOString(), "2026-09-14T15:00:00.000Z");
       const movedEntry = await prisma.evolutionEntry.findUniqueOrThrow({ where: { id: entry.id } });
       assert.equal(movedEntry.recordedAt.toISOString(), "2026-09-14T15:00:00.000Z");
       await assert.rejects(
-        updateManualConsultationDate({ consultationId: consultationA, dayKey: "2026-09-14" }),
+        updateManualConsultationDate(T, { consultationId: consultationA, dayKey: "2026-09-14" }),
         AppointmentConsultationDateError,
       );
     });
@@ -170,13 +170,13 @@ async function main() {
     // 8) Alta desde Evolución: cae en la consulta del día o crea una sin turno.
     let day20Id = "";
     await step("addEvolutionEntryOnDay", async () => {
-      const r1 = await addEvolutionEntryOnDay(patient.id, "2026-09-14", { heightCm: 150, waistCm: 60 });
+      const r1 = await addEvolutionEntryOnDay(T, patient.id, "2026-09-14", { heightCm: 150, waistCm: 60 });
       entryIds.push(r1.entry.id);
       assert.equal(r1.consultationCreated, false);
       assert.equal(r1.consultation.id, manualId);
       assert.equal(r1.entry.consultationId, manualId);
       assert.equal(r1.entry.recordedAt.toISOString(), "2026-09-14T15:00:00.000Z");
-      const r2 = await addEvolutionEntryOnDay(patient.id, "2026-09-20", { weightKg: 45 });
+      const r2 = await addEvolutionEntryOnDay(T, patient.id, "2026-09-20", { weightKg: 45 });
       entryIds.push(r2.entry.id);
       consultationIds.push(r2.consultation.id);
       assert.equal(r2.consultationCreated, true);
@@ -184,7 +184,7 @@ async function main() {
       assert.equal(r2.entry.consultationId, r2.consultation.id);
       day20Id = r2.consultation.id;
       const tomorrow = dayKeyInTz(addDays(new Date(), 1), tz);
-      await assert.rejects(addEvolutionEntryOnDay(patient.id, tomorrow, { weightKg: 45 }), (err: unknown) => {
+      await assert.rejects(addEvolutionEntryOnDay(T, patient.id, tomorrow, { weightKg: 45 }), (err: unknown) => {
         assert.ok(err instanceof FutureConsultationDateError);
         assert.equal(err.message, "La fecha de la medición no puede ser futura");
         return true;
@@ -193,7 +193,7 @@ async function main() {
 
     // 9) Plan: crear, quitar (no toca el plan), indicar en otra consulta.
     await step("createPlanForConsultation / setConsultationPlan", async () => {
-      const plan = await createPlanForConsultation({ consultationId: day20Id });
+      const plan = await createPlanForConsultation(T, { consultationId: day20Id });
       planIds.push(plan.id);
       assert.equal(plan.status, "DRAFT");
       assert.equal(plan.patientId, patient.id);
@@ -201,27 +201,27 @@ async function main() {
       const linked = await prisma.consultation.findUniqueOrThrow({ where: { id: day20Id } });
       assert.equal(linked.planId, plan.id);
       const before = await prisma.nutritionPlan.findUniqueOrThrow({ where: { id: plan.id } });
-      const cleared = await setConsultationPlan({ consultationId: day20Id, planId: null });
+      const cleared = await setConsultationPlan(T, { consultationId: day20Id, planId: null });
       assert.equal(cleared.planId, null);
       const after = await prisma.nutritionPlan.findUniqueOrThrow({ where: { id: plan.id } });
       assert.equal(after.updatedAt.getTime(), before.updatedAt.getTime());
-      await setConsultationPlan({ consultationId: day20Id, planId: plan.id });
-      const other = await setConsultationPlan({ consultationId: manualId, planId: plan.id });
+      await setConsultationPlan(T, { consultationId: day20Id, planId: plan.id });
+      const other = await setConsultationPlan(T, { consultationId: manualId, planId: plan.id });
       assert.equal(other.planId, plan.id);
       assert.equal(await prisma.consultation.count({ where: { planId: plan.id, id: { in: consultationIds } } }), 2);
     });
 
     // 10) Borrado a mano.
     await step("deleteConsultation", async () => {
-      await assert.rejects(deleteConsultation(consultationA), ConsultationNotDeletableError);
-      const empty = await createManualConsultation({ patientId: patient.id, dayKey: "2026-09-10" });
+      await assert.rejects(deleteConsultation(T, consultationA), ConsultationNotDeletableError);
+      const empty = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-09-10" });
       consultationIds.push(empty.id);
-      const withNotes = await saveConsultationNotes({ consultationId: empty.id, notes: "  x  " });
+      const withNotes = await saveConsultationNotes(T, { consultationId: empty.id, notes: "  x  " });
       assert.equal(withNotes.notes, "x");
-      const blank = await saveConsultationNotes({ consultationId: empty.id, notes: "   " });
+      const blank = await saveConsultationNotes(T, { consultationId: empty.id, notes: "   " });
       assert.equal(blank.notes, null);
-      await saveConsultationNotes({ consultationId: empty.id, notes: "x" });
-      await deleteConsultation(empty.id);
+      await saveConsultationNotes(T, { consultationId: empty.id, notes: "x" });
+      await deleteConsultation(T, empty.id);
       assert.equal(await prisma.consultation.findUnique({ where: { id: empty.id } }), null);
     });
 

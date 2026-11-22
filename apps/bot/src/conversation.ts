@@ -6,7 +6,7 @@ import {
   createAppointment,
   createDepositCheckout,
   createPatientToken,
-  findLegacyPatientByJidOrThrow,
+  findPatientByJidOrThrow,
   findOrCreatePatientByJid,
   countBotAiQuestionsToday,
   getProfessional,
@@ -182,7 +182,7 @@ export async function handleIncoming(
     if (!isWakeWord(text)) return;
   }
 
-  const patient = await findOrCreatePatientByJid(jid);
+  const patient = await findOrCreatePatientByJid(await getConversationTenant(), jid);
   const state = await loadState(jid);
   const ctx = state.ctx;
   let step = state.step;
@@ -346,7 +346,7 @@ async function handleMenu(
   }
 
   if (choice === "2") {
-    const patient = await findLegacyPatientByJidOrThrow(jid);
+    const patient = await findPatientByJidOrThrow(await getConversationTenant(), jid);
     const appts = await cancelableAppointments(patient.id);
     if (appts.length === 0) {
       await send(messages.NO_APPTS_TO_CANCEL);
@@ -383,7 +383,7 @@ async function handleMenu(
   }
 
   if (choice === "4") {
-    const patient = await findLegacyPatientByJidOrThrow(jid);
+    const patient = await findPatientByJidOrThrow(await getConversationTenant(), jid);
     const token = createPatientToken(patient.id, 15);
     const url = `${process.env.AUTH_URL}/portal/login?token=${token}`;
     await send(messages.portalLink(url));
@@ -401,7 +401,7 @@ async function handleMenu(
       return;
     }
     const target = await handoffAlertTarget(opts);
-    const patient = target ? await findLegacyPatientByJidOrThrow(jid) : null;
+    const patient = target ? await findPatientByJidOrThrow(await getConversationTenant(), jid) : null;
     await send(messages.HANDOFF);
     if (target && patient) {
       await enqueueHandoffAlert(patient, target);

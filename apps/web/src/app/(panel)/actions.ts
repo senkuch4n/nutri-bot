@@ -111,7 +111,7 @@ export async function createAppointmentAction(
       });
       if (!service) return { ok: false, error: T.genericError };
       try {
-        const created = await findOrCreatePatient({ phone: phone.digits, name });
+        const created = await findOrCreatePatient(ctx, { phone: phone.digits, name });
         patientId = created.id;
       } catch (err) {
         if ((err as { code?: string } | null)?.code === "P2002") {

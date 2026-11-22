@@ -21,6 +21,7 @@ import {
 } from "@nutri-bot/core";
 import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
 import { getProfessional } from "@/lib/professional";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 export type AiPlanState = { ok: boolean; error?: string };
 
@@ -58,6 +59,8 @@ export async function generateAiPlanAction(
   const parsed = requestSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
   const { planId, patientId, instructions } = parsed.data;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return { ok: false, error: "Plan no encontrado" };
 
   const plan = await getPlan(planId);
   if (!plan) return { ok: false, error: "Plan no encontrado" };
@@ -76,7 +79,7 @@ export async function generateAiPlanAction(
       select: { birthDate: true, sex: true, activityLevel: true, nutritionGoal: true },
     }),
     prisma.clinicalRecord.findUnique({ where: { patientId } }),
-    getLatestFormulaMeasurements(patientId),
+    getLatestFormulaMeasurements(ctx, patientId),
     listFoods({ activeOnly: true, source: "SARA2" }),
   ]);
 

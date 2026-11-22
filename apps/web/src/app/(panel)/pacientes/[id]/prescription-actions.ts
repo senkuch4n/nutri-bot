@@ -15,6 +15,7 @@ import {
   saveConsultationPrescription,
 } from "@nutri-bot/db/domain";
 import { belongsToPatient } from "@/lib/consultation-guard";
+import { requireTenantContext } from "@/lib/tenant-context";
 import type { ActionState } from "./clinical-actions";
 
 // Prescripción de la consulta (HU-004). zod solo valida forma y enums; los rangos (ajuste, VCT,
@@ -56,9 +57,10 @@ export async function savePrescriptionAction(input: unknown): Promise<ActionStat
   const parsed = prescriptionSchema.safeParse(input);
   if (!parsed.success) return INVALID;
   const { patientId, consultationId, ...choices } = parsed.data;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
   try {
-    await saveConsultationPrescription({ consultationId, choices });
+    await saveConsultationPrescription(ctx, { consultationId, choices });
   } catch (err) {
     if (err instanceof InvalidPrescriptionError) return INVALID;
     return { ok: false, error: "No se pudo guardar la prescripción." };
@@ -69,9 +71,10 @@ export async function savePrescriptionAction(input: unknown): Promise<ActionStat
 
 export async function deletePrescriptionAction(patientId: string, consultationId: string): Promise<ActionState> {
   if (!idSchema.safeParse(patientId).success || !idSchema.safeParse(consultationId).success) return INVALID;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
   try {
-    await deleteConsultationPrescription(consultationId);
+    await deleteConsultationPrescription(ctx, consultationId);
   } catch {
     return { ok: false, error: "No se pudo borrar la prescripción." };
   }

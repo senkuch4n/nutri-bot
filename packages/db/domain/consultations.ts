@@ -19,7 +19,7 @@ import {
   type Prisma,
   type Service,
 } from "../index";
-import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveTenantSchedulingContext, type SchedulingContext, type TenantRef } from "./tenantScope";
 import { createDefaultWeeklyMeals } from "./weeklyMenu";
 
 // La consulta como entidad central (HU-003). Web la usa hoy; el bot no, pero cualquier camino
@@ -95,8 +95,8 @@ function visibleConsultation<T extends Prisma.ConsultationGetPayload<{ include: 
 }
 
 /** Lista de la pestaña. orderBy consultedAt desc, createdAt desc. */
-export async function listPatientConsultations(patientId: string): Promise<ConsultationWithRelations[]> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function listPatientConsultations(t: TenantRef, patientId: string): Promise<ConsultationWithRelations[]> {
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const rows = await prisma.consultation.findMany({
     where: { patientId, ...ownedConsultationWhere(tenantId) },
     include: consultationInclude,
@@ -107,9 +107,10 @@ export async function listPatientConsultations(patientId: string): Promise<Consu
 
 /** Detalle. null si no existe. Incluye patient (para nombre y birthDate). */
 export async function getConsultation(
+  t: TenantRef,
   consultationId: string,
 ): Promise<(ConsultationWithRelations & { patient: Patient }) | null> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const row = await prisma.consultation.findUnique({
     where: { id: consultationId, ...ownedConsultationWhere(tenantId) },
     include: { ...consultationInclude, patient: true },
@@ -118,9 +119,9 @@ export async function getConsultation(
 }
 
 /** Consultas del paciente en ese día local (para el aviso D5 de "Nueva consulta"). */
-export async function listConsultationsOnDay(patientId: string, dayKey: string): Promise<Consultation[]> {
+export async function listConsultationsOnDay(t: TenantRef, patientId: string, dayKey: string): Promise<Consultation[]> {
   assertValidDayKey(dayKey);
-  const { scope: { tenantId }, professional: { timezone } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId }, professional: { timezone } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const { start, end } = dayRangeUtc(dayKey, timezone);
   return prisma.consultation.findMany({
     where: { patientId, tenantId, consultedAt: { gte: start, lt: end } },
@@ -129,12 +130,12 @@ export async function listConsultationsOnDay(patientId: string, dayKey: string):
 }
 
 /** "Nueva consulta" (sin turno). Valida día y no futuro. No bloquea si ya hay otra ese día (D5). */
-export async function createManualConsultation(params: {
+export async function createManualConsultation(t: TenantRef, params: {
   patientId: string;
   dayKey: string;
 }): Promise<Consultation> {
   assertValidDayKey(params.dayKey);
-  const { scope: { tenantId }, professional: { timezone } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId }, professional: { timezone } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   if (isFutureDayKey(params.dayKey, new Date(), timezone)) throw new FutureConsultationDateError();
   const { id: patientId } = await prisma.patient.findUniqueOrThrow({
     where: { id_tenantId: { id: params.patientId, tenantId } },
@@ -144,13 +145,13 @@ export async function createManualConsultation(params: {
 }
 
 /** D9: solo sin turno. No futuro. En una transacción mueve la consulta y todas sus mediciones al día nuevo. */
-export async function updateManualConsultationDate(params: {
+export async function updateManualConsultationDate(t: TenantRef, params: {
   consultationId: string;
   dayKey: string;
 }): Promise<Consultation> {
   assertValidDayKey(params.dayKey);
   return prisma.$transaction(async (tx) => {
-    const { scope: { tenantId }, professional: { timezone } } = await resolveLegacySchedulingScope(tx);
+    const { scope: { tenantId }, professional: { timezone } } = await resolveTenantSchedulingContext(tx, t.tenantId);
     if (isFutureDayKey(params.dayKey, new Date(), timezone)) throw new FutureConsultationDateError();
     const noon = dayKeyToNoonUtc(params.dayKey, timezone);
     const consultationId = params.consultationId;
@@ -179,11 +180,11 @@ export async function updateManualConsultationDate(params: {
 }
 
 /** Notas: trim; "" → null. El largo (≤ CONSULTATION_NOTES_MAX) lo valida la action. */
-export async function saveConsultationNotes(params: {
+export async function saveConsultationNotes(t: TenantRef, params: {
   consultationId: string;
   notes: string | null;
 }): Promise<Consultation> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const trimmed = params.notes?.trim() ?? "";
   return prisma.consultation.update({
     where: { id: params.consultationId, ...ownedConsultationWhere(tenantId) },
@@ -192,11 +193,11 @@ export async function saveConsultationNotes(params: {
 }
 
 /** D8: indicar un plan del mismo consultorio y paciente, o quitarlo (null). Nunca modifica el plan. */
-export async function setConsultationPlan(params: {
+export async function setConsultationPlan(t: TenantRef, params: {
   consultationId: string;
   planId: string | null;
 }): Promise<Consultation> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const where = { id_tenantId: { id: params.consultationId, tenantId } };
   if (params.planId == null) {
     return prisma.consultation.update({ where, data: { planId: null } });
@@ -212,9 +213,9 @@ export async function setConsultationPlan(params: {
 }
 
 /** "Crear plan": en una transacción crea un NutritionPlan DRAFT del paciente y lo vincula. Devuelve el plan. */
-export async function createPlanForConsultation(params: { consultationId: string }): Promise<NutritionPlan> {
+export async function createPlanForConsultation(t: TenantRef, params: { consultationId: string }): Promise<NutritionPlan> {
   return prisma.$transaction(async (tx) => {
-    const { scope: { tenantId }, professional } = await resolveLegacySchedulingScope(tx);
+    const { scope: { tenantId }, professional } = await resolveTenantSchedulingContext(tx, t.tenantId);
     const where = { id_tenantId: { id: params.consultationId, tenantId } };
     const { patientId, consultedAt } = await tx.consultation.findUniqueOrThrow({
       where,
@@ -236,8 +237,8 @@ export async function createPlanForConsultation(params: { consultationId: string
 }
 
 /** Borrado a mano: solo sin mediciones, sin prescripción y sin plan. El turno no se toca. */
-export async function deleteConsultation(consultationId: string): Promise<void> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function deleteConsultation(t: TenantRef, consultationId: string): Promise<void> {
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const where = { id: consultationId, ...ownedConsultationWhere(tenantId) };
   const consultation = await prisma.consultation.findUnique({
     where,
@@ -276,7 +277,7 @@ function createUnscheduledConsultation(
 export async function findOrCreateConsultationForDay(
   tx: Prisma.TransactionClient,
   params: { patientId: string; dayKey: string },
-  { scope: { tenantId }, professional: { timezone } }: Awaited<ReturnType<typeof resolveLegacySchedulingScope>>,
+  { scope: { tenantId }, professional: { timezone } }: SchedulingContext,
 ): Promise<{ consultation: Consultation; created: boolean }> {
   const { id: patientId } = await tx.patient.findUniqueOrThrow({
     where: { id_tenantId: { id: params.patientId, tenantId } },

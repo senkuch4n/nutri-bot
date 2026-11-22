@@ -9,20 +9,21 @@ import {
 } from "@nutri-bot/core";
 import { prisma, type Consultation, type EvolutionEntry } from "../index";
 import { FutureConsultationDateError, findOrCreateConsultationForDay } from "./consultations";
-import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveTenantSchedulingContext, type TenantRef } from "./tenantScope";
 
-export async function getClinicalRecord(patientId: string) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function getClinicalRecord(t: TenantRef, patientId: string) {
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   return prisma.clinicalRecord.findUnique({
     where: { patientId, patient: { tenantId } },
   });
 }
 
 export async function upsertClinicalRecord(
+  t: TenantRef,
   patientId: string,
   data: { background?: string | null; goals?: string | null; riskFlag?: boolean },
 ) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   // ClinicalRecord has no tenantId: both branches must follow the owned patient relation.
   return prisma.clinicalRecord.upsert({
     where: { patientId, patient: { tenantId } },
@@ -31,8 +32,8 @@ export async function upsertClinicalRecord(
   });
 }
 
-export async function listEvolutionEntries(patientId: string) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function listEvolutionEntries(t: TenantRef, patientId: string) {
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   return prisma.evolutionEntry.findMany({
     where: { patientId, tenantId, patient: { tenantId } },
     orderBy: { recordedAt: "desc" },
@@ -64,13 +65,14 @@ export type EvolutionMeasures = {
  * en la consulta de ese día o en una "Sin turno" nueva, todo en una transacción.
  */
 export async function addEvolutionEntryOnDay(
+  t: TenantRef,
   patientId: string,
   dayKey: string,
   measures: EvolutionMeasures,
 ): Promise<{ entry: EvolutionEntry; consultation: Consultation; consultationCreated: boolean }> {
   if (!isValidDayKey(dayKey)) throw new Error("Fecha inválida");
   return prisma.$transaction(async (tx) => {
-    const context = await resolveLegacySchedulingScope(tx);
+    const context = await resolveTenantSchedulingContext(tx, t.tenantId);
     const { scope: { tenantId }, professional: { timezone } } = context;
     if (isFutureDayKey(dayKey, new Date(), timezone)) {
       throw new FutureConsultationDateError(CONSULTATION_TEXT.futureMeasurementDate);
@@ -91,10 +93,11 @@ export async function addEvolutionEntryOnDay(
 
 /** Alta desde el detalle de la consulta. La fecha es el mediodía del día de la consulta. */
 export async function addEvolutionEntryToConsultation(
+  t: TenantRef,
   consultationId: string,
   measures: EvolutionMeasures,
 ): Promise<EvolutionEntry> {
-  const { scope: { tenantId }, professional: { timezone } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId }, professional: { timezone } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const consultation = await prisma.consultation.findUniqueOrThrow({
     where: { id_tenantId: { id: consultationId, tenantId } },
     select: { id: true, patientId: true, consultedAt: true },
@@ -110,8 +113,8 @@ export async function addEvolutionEntryToConsultation(
   });
 }
 
-export async function deleteEvolutionEntry(id: string) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function deleteEvolutionEntry(t: TenantRef, id: string) {
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   return prisma.evolutionEntry.delete({
     where: { id, tenantId, patient: { tenantId } },
   });
@@ -136,12 +139,12 @@ const toNumber = (value: { toString(): string } | number | null): number | null 
  * elegidas con pickFormulaMeasurements(entries, consultationId): primero las de la consulta, después
  * la más reciente anterior. Un solo findMany; Decimal → number.
  */
-export async function getFormulaMeasurementsAsOf(params: {
+export async function getFormulaMeasurementsAsOf(t: TenantRef, params: {
   patientId: string;
   consultationId: string | null;
   until: Date | null;
 }): Promise<FormulaMeasurements> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const { patientId, consultationId } = params;
   if (consultationId !== null) {
     await prisma.consultation.findUniqueOrThrow({
@@ -189,9 +192,10 @@ export async function getFormulaMeasurementsAsOf(params: {
 /** Último valor no nulo de cada medida, cada uno por separado (pueden ser de fechas distintas).
  *  Delega en getFormulaMeasurementsAsOf sin consulta ni tope. */
 export async function getLatestFormulaMeasurements(
+  t: TenantRef,
   patientId: string,
 ): Promise<LatestFormulaMeasurements> {
-  const m = await getFormulaMeasurementsAsOf({ patientId, consultationId: null, until: null });
+  const m = await getFormulaMeasurementsAsOf(t, { patientId, consultationId: null, until: null });
   const pick = (v: FormulaMeasurements[keyof FormulaMeasurements]): LatestMeasurement | null =>
     v === null ? null : { value: v.value, recordedAt: v.recordedAt };
   return {

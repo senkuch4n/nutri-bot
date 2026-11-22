@@ -12,7 +12,7 @@ vi.mock("../../../packages/db/index", () => ({ prisma: mocks.prisma }));
 vi.mock("@nutri-bot/db/domain", () => ({
   createAppointment: mocks.createAppointment, createDepositCheckout: mocks.checkout,
   getProfessional: mocks.professional, findOrCreatePatientByJid: mocks.patient,
-  findLegacyPatientByJidOrThrow: mocks.scopedPatient, createPatientToken: mocks.token,
+  findPatientByJidOrThrow: mocks.scopedPatient, createPatientToken: mocks.token,
   SlotUnavailableError: class extends Error {},
   // HU-023
   isMercadoPagoCheckoutAvailable: mocks.available,
@@ -51,7 +51,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     const send = vi.fn();
     await handleIncoming(raw, "turno", send);
     expect(state.findUnique.mock.calls).toEqual(["5493510000000@lid", raw, raw].map((patientJid) => [{ where: { tenantId_patientJid: { tenantId, patientJid } } }]));
-    expect(mocks.patient.mock.calls).toEqual([[raw]]);
+    expect(mocks.patient.mock.calls).toEqual([[owner, raw]]);
     expect(state.createMany.mock.calls).toEqual(["DORMANT", "ASK_NAME"].map((step) => [{
       data: { patientJid: raw, tenantId, step, context: {} }, skipDuplicates: true,
     }]));
@@ -67,7 +67,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     mocks.cancelable.mockResolvedValue([]);
     const send = vi.fn();
     await expect(handleIncoming("fake-patient", choice, send, { alertJid: "fake-alert", afterHours: { enabled: false, start: "00:00", end: "00:00" } })).rejects.toBe(notFound);
-    expect(mocks.scopedPatient.mock.calls).toEqual([["fake-patient"]]);
+    expect(mocks.scopedPatient.mock.calls).toEqual([[owner, "fake-patient"]]);
     expect(mocks.prisma.patient.findUniqueOrThrow).not.toHaveBeenCalled();
     expect(mocks.token).not.toHaveBeenCalled();
     expect(mocks.cancelable).not.toHaveBeenCalled();

@@ -12,6 +12,17 @@ const mocks = vi.hoisted(() => {
     ConsultationNotDeletableError,
   };
 });
+// HU-025b-1: el consultorio sale del contexto de la sesión.
+const TENANT_CTX = vi.hoisted(() => ({
+  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
+}));
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: async () => TENANT_CTX,
+  requirePageContext: async () => TENANT_CTX,
+  getTenantContext: async () => TENANT_CTX,
+  TenantAccessError: class TenantAccessError extends Error {},
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
@@ -36,7 +47,8 @@ beforeEach(() => {
 describe("deleteConsultationAction", () => {
   it("si sale bien, borra, revalida la ficha y devuelve { ok: true } sin redirect", async () => {
     await expect(deleteConsultationAction("p1", "c1")).resolves.toEqual({ ok: true });
-    expect(mocks.deleteConsultation).toHaveBeenCalledWith("c1");
+    expect(mocks.deleteConsultation).toHaveBeenCalledWith(TENANT_CTX, "c1");
+    expect(mocks.belongs).toHaveBeenCalledWith(TENANT_CTX, "p1", "c1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/p1");
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
@@ -55,6 +67,14 @@ describe("deleteConsultationAction", () => {
     mocks.belongs.mockResolvedValue(false);
     const res = await deleteConsultationAction("p1", "c-otro");
     expect(res.ok).toBe(false);
+    expect(mocks.deleteConsultation).not.toHaveBeenCalled();
+  });
+});
+
+describe("HU-025: consulta de otro consultorio", () => {
+  it("belongsToPatient con el contexto de A da false para una consulta de B → Datos inválidos, sin borrar", async () => {
+    mocks.belongs.mockImplementation(async (t: { tenantId: string }, _p: string, c: string) => t.tenantId === "legacy-tenant" && c !== "c-de-b");
+    await expect(deleteConsultationAction("p1", "c-de-b")).resolves.toEqual({ ok: false, error: "Datos inválidos" });
     expect(mocks.deleteConsultation).not.toHaveBeenCalled();
   });
 });

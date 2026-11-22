@@ -499,10 +499,10 @@ describe("comidas por defecto (018b-2)", () => {
 
   it("createPlanForConsultation crea las 5 comidas y vincula el plan a la consulta", async () => {
     const tenantId = "legacy-tenant";
-    mocks.prisma.agenda = { findUnique: vi.fn().mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
+    mocks.prisma.agenda = { findFirst: vi.fn().mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
     p().consultation.findUniqueOrThrow = vi.fn().mockResolvedValue({ id: "c1", patientId: "pat1", consultedAt: new Date("2026-09-12T15:00:00Z") });
     p().nutritionPlan.create.mockResolvedValue({ id: "plan10" });
-    const plan = await createPlanForConsultation({ consultationId: "c1" });
+    const plan = await createPlanForConsultation({ tenantId }, { consultationId: "c1" });
     expect(plan).toEqual({ id: "plan10" });
     expect(p().nutritionPlan.create.mock.calls[0][0].data).toMatchObject({ patientId: "pat1", tenantId, title: "Plan del 12/09/2026", status: "DRAFT" });
     expect(defaultsOf(p().planMeal, "planId", "plan10")).toEqual(DEFAULTS);

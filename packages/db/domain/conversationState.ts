@@ -1,6 +1,6 @@
 import { prisma, type Prisma } from "../index";
 import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
-import { resolveTenantSchedulingContext, type SchedulingContext } from "./tenantScope";
+import { resolveTenantSchedulingContext, type SchedulingContext, type TenantRef } from "./tenantScope";
 
 // Historical rows without a tenant are inactive, even for the original installation.
 function ownedStateKey(tenantId: string, patientJid: string) {
@@ -16,6 +16,14 @@ export async function findLegacyConversationState(patientJid: string) {
 export async function listLegacyPatientLastContacts(patientJids: string[]) {
   if (patientJids.length === 0) return [];
   const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  return listPatientLastContacts({ tenantId }, patientJids);
+}
+
+/** HU-025 (adelantado de M5 para el directorio de pacientes, 025b-1): último contacto por JID de
+ *  los pacientes activos del consultorio `t`. */
+export async function listPatientLastContacts(t: TenantRef, patientJids: string[]) {
+  if (patientJids.length === 0) return [];
+  const { tenantId } = t;
   const patients = await prisma.patient.findMany({
     where: { tenantId, archivedAt: null, whatsappJid: { in: patientJids } },
     select: { whatsappJid: true },

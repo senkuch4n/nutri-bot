@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@nutri-bot/db/domain", () => ({
   ...mocks,
+  getTenantProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }),
   getLatestFormulaMeasurements: vi.fn().mockResolvedValue({ weightKg: null, heightCm: null, bodyFatPercent: null }),
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {
@@ -133,7 +134,7 @@ describe("patient record template picker", () => {
     expect(await planPanel()).toMatchObject({ patientId: "patient", plans: [], templates: null });
     expect(mocks.listTemplates).not.toHaveBeenCalled();
     expect(mocks.listPatientPlans).toHaveBeenCalledWith("patient");
-    expect(mocks.listPatientConsultations).toHaveBeenCalledWith("patient");
+    expect(mocks.listPatientConsultations).toHaveBeenCalledWith(TENANT_CTX, "patient");
     expect(notFound).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,17 @@ const mocks = vi.hoisted(() => ({
   getPlan: vi.fn(), addMeal: vi.fn(), addMealItem: vi.fn(), deleteMeal: vi.fn(), completion: vi.fn(),
 }));
 
+// HU-025b-1: el consultorio sale del contexto de la sesión.
+const TENANT_CTX = vi.hoisted(() => ({
+  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
+}));
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: async () => TENANT_CTX,
+  requirePageContext: async () => TENANT_CTX,
+  getTenantContext: async () => TENANT_CTX,
+  TenantAccessError: class TenantAccessError extends Error {},
+}));
 vi.mock("@nutri-bot/db/domain", () => ({
   ...mocks,
   listFoods: vi.fn().mockResolvedValue([

@@ -18,6 +18,8 @@ import { addEvolutionEntryToConsultation } from "../domain/clinical";
 import { createManualConsultation } from "../domain/consultations";
 import { createIsakStudy } from "../domain/isak";
 
+const T = { tenantId: "legacy-tenant" };
+
 interface Ids {
   patientIds: string[];
   consultationIds: string[];
@@ -44,6 +46,7 @@ async function create(file: string): Promise<void> {
     // Paciente A: 8 años (96 meses) en septiembre de 2026.
     const a = await prisma.patient.create({
       data: {
+        tenantId: T.tenantId,
         name: "Prueba HU-008 Juan (TEST)",
         whatsappJid: `test-hu008-a-${stamp}@test.invalid`,
         phone: "000",
@@ -56,35 +59,36 @@ async function create(file: string): Promise<void> {
     ids.patientIds.push(a.id);
 
     // A1 (10/09/2026): medición común + ISAK.
-    const a1 = await createManualConsultation({ patientId: a.id, dayKey: "2026-09-10" });
+    const a1 = await createManualConsultation(T, { patientId: a.id, dayKey: "2026-09-10" });
     ids.consultationIds.push(a1.id);
-    const a1m = await addEvolutionEntryToConsultation(a1.id, { weightKg: 30, heightCm: 127.3 });
+    const a1m = await addEvolutionEntryToConsultation(T, a1.id, { weightKg: 30, heightCm: 127.3 });
     ids.entryIds.push(a1m.id);
-    const a1s = await createIsakStudy({
+    const a1s = await createIsakStudy(T, {
       consultationId: a1.id,
       measures: { ...emptyMeasures(), weightKg: 30, heightCm: 127.3, waistCm: 58, hipCm: 66, ...SKINFOLDS_A1 },
     });
     ids.entryIds.push(a1s.id);
 
     // A2 (17/09/2026): solo ISAK, 45 kg (extensión de la OMS para Z > 3).
-    const a2 = await createManualConsultation({ patientId: a.id, dayKey: "2026-09-17" });
+    const a2 = await createManualConsultation(T, { patientId: a.id, dayKey: "2026-09-17" });
     ids.consultationIds.push(a2.id);
     const plus4 = Object.fromEntries(Object.entries(SKINFOLDS_A1).map(([k, v]) => [k, v + 4]));
-    const a2s = await createIsakStudy({
+    const a2s = await createIsakStudy(T, {
       consultationId: a2.id,
       measures: { ...emptyMeasures(), weightKg: 45, heightCm: 127.3, waistCm: 75, hipCm: 80, ...plus4 },
     });
     ids.entryIds.push(a2s.id);
 
     // A3 (24/09/2026): solo peso 15 kg (implausible); la talla sale de A2 (D8).
-    const a3 = await createManualConsultation({ patientId: a.id, dayKey: "2026-09-24" });
+    const a3 = await createManualConsultation(T, { patientId: a.id, dayKey: "2026-09-24" });
     ids.consultationIds.push(a3.id);
-    const a3m = await addEvolutionEntryToConsultation(a3.id, { weightKg: 15 });
+    const a3m = await addEvolutionEntryToConsultation(T, a3.id, { weightKg: 15 });
     ids.entryIds.push(a3m.id);
 
     // Paciente B: 4 años (menor de 5).
     const b = await prisma.patient.create({
       data: {
+        tenantId: T.tenantId,
         name: "Prueba HU-008 Menor 4 (TEST)",
         whatsappJid: `test-hu008-b-${stamp}@test.invalid`,
         phone: "000",
@@ -93,9 +97,9 @@ async function create(file: string): Promise<void> {
       },
     });
     ids.patientIds.push(b.id);
-    const b1 = await createManualConsultation({ patientId: b.id, dayKey: "2026-09-10" });
+    const b1 = await createManualConsultation(T, { patientId: b.id, dayKey: "2026-09-10" });
     ids.consultationIds.push(b1.id);
-    const b1m = await addEvolutionEntryToConsultation(b1.id, { weightKg: 16, heightCm: 102 });
+    const b1m = await addEvolutionEntryToConsultation(T, b1.id, { weightKg: 16, heightCm: 102 });
     ids.entryIds.push(b1m.id);
 
     writeFileSync(file, JSON.stringify(ids, null, 2));
