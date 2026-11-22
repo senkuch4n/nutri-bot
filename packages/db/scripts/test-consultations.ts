@@ -26,8 +26,10 @@ import {
   setConsultationPlan,
   updateManualConsultationDate,
 } from "../domain";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const DAY = 86_400_000;
 

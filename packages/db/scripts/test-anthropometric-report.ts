@@ -21,8 +21,10 @@ import {
   saveAnthropometricReportPdf,
   saveAnthropometricReportTexts,
 } from "../domain";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const CASE_A: IsakMeasures = {
   weightKg: 61, heightCm: 164, sittingHeightCm: 83, armSpanCm: 166.7,

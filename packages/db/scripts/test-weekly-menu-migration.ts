@@ -29,8 +29,10 @@ import {
 import { prisma } from "../index";
 import { getPlan } from "../domain/nutritionPlans";
 import { getTemplate } from "../domain/planTemplates";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const PATIENT = { birthDate: new Date("1990-01-01T12:00:00Z"), sex: "FEMALE" as const };
 const AT = new Date("2026-10-03T15:00:00Z");

@@ -47,8 +47,10 @@ import {
   setMealMode,
   setMealOptions,
 } from "../domain/weeklyMenu";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const TEST_JID = "5490000018018@s.whatsapp.net";
 const TEST_PHONE = "5490000018018";

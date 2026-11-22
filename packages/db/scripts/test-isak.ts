@@ -25,8 +25,10 @@ import {
   toIsakMeasures,
   updateIsakStudy,
 } from "../domain";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 // Casos de la HU-006 (solo números).
 const CASE_A: IsakMeasures = {

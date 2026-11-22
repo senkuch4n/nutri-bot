@@ -36,8 +36,10 @@ import {
   setRecipeItemPortions,
 } from "../domain/weeklyMenu";
 import { processRecipePhoto } from "../media/recipe-photo";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const TEST_JID = "5490000018003@s.whatsapp.net";
 const TEST_PHONE = "5490000018003";

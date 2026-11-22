@@ -27,8 +27,10 @@ import {
   toPrescriptionSnapshot,
 } from "../domain";
 import { resolveLegacySchedulingScope } from "../domain/legacySchedulingScope";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const baseChoices: PrescriptionChoices = {
   bmrFormula: "MIFFLIN_ST_JEOR",

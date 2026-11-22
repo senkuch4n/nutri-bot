@@ -23,8 +23,10 @@ import { enqueuePrepInstructions, enqueueServiceReminders } from "@nutri-bot/db/
 import { findLegacyConversationState } from "@nutri-bot/db/domain/conversationState";
 import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { handleIncoming } from "../src/conversation";
+import { LEGACY_TENANT_ID } from "@nutri-bot/db/domain/tenantAccess";
 
-const T = { tenantId: "legacy-tenant" };
+// HU-025b-1: la simulación opera el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const TEST_JID = `confirm-fixture-${randomUUID()}@invalid`;
 const HOUR = 3_600_000;
