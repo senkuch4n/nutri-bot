@@ -573,13 +573,14 @@ async function handleBookConfirm(
       getProfessional(),
     ]);
     serviceName = service.name;
+    const tenant = await getConversationTenant();
     // HU-023 (D3): sin cuenta de Mercado Pago usable no se crea el turno con seña.
-    if (service.requiresDeposit && !(await isMercadoPagoCheckoutAvailable())) {
+    if (service.requiresDeposit && !(await isMercadoPagoCheckoutAvailable(tenant))) {
       await depositUnavailable(patientId, service.name, send);
       await save(jid, STEP.MENU);
       return;
     }
-    const appointment = await createAppointment(await getConversationTenant(), {
+    const appointment = await createAppointment(tenant, {
       patientId,
       serviceId: ctx.serviceId,
       startsAt: new Date(ctx.startsAt),
@@ -589,7 +590,7 @@ async function handleBookConfirm(
       professionalAlertJid: opts.alertJid,
     });
     if (appointment.status === "AWAITING_PAYMENT") {
-      const checkout = await createDepositCheckout(appointment.id);
+      const checkout = await createDepositCheckout(tenant, appointment.id);
       await send(messages.depositRequired({ serviceName: service.name, startsAt: appointment.startsAt, tz: pro.timezone, amount: checkout.amount, currency: pro.currency, checkoutUrl: checkout.checkoutUrl }));
     } else {
       await send(messages.bookingConfirmed({ serviceName: service.name, startsAt: appointment.startsAt, tz: pro.timezone }));
@@ -623,10 +624,10 @@ async function handleBookConfirm(
 async function depositUnavailable(patientId: string, serviceName: string, send: Send): Promise<void> {
   await send(messages.DEPOSIT_UNAVAILABLE);
   try {
-    const { scope: { tenantId } } = await resolveLegacySchedulingScope();
-    const patient = await prisma.patient.findUnique({ where: { id: patientId, tenantId }, select: { name: true, phone: true } });
+    const tenant = await getConversationTenant();
+    const patient = await prisma.patient.findUnique({ where: { id: patientId, tenantId: tenant.tenantId }, select: { name: true, phone: true } });
     if (patient) {
-      await notifyMercadoPagoMissingForBooking({ patientName: patient.name, patientPhone: patient.phone, serviceName });
+      await notifyMercadoPagoMissingForBooking(tenant, { patientName: patient.name, patientPhone: patient.phone, serviceName });
     }
   } catch (err) {
     // Un error al encolar no cambia lo que ve el paciente.

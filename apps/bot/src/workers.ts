@@ -18,12 +18,13 @@ async function reconcilePayments(): Promise<void> {
   if (paymentsRunning) return;
   paymentsRunning = true;
   try {
-    const result = await reconcilePendingPayments((paymentId) => {
+    const tenant = await getConversationTenant();
+    const result = await reconcilePendingPayments(tenant, (paymentId) => {
       logger.warn({ paymentId }, "Error conciliando pago de Mercado Pago");
     });
     if (result.processed || result.failed || result.skipped) logger.info(result, "Conciliación Mercado Pago");
     // Do not expire reservations when the provider could not be consulted.
-    if (result.failed === 0) await expireStalePendingPayments();
+    if (result.failed === 0) await expireStalePendingPayments(tenant);
   } catch {
     logger.error("Error en conciliación Mercado Pago");
   } finally {
@@ -133,7 +134,7 @@ export function startCron(): void {
  *  crudo (puede traer headers con el token). */
 export async function runMercadoPagoRefresh(): Promise<void> {
   try {
-    const result = await refreshMercadoPagoAccountToken();
+    const result = await refreshMercadoPagoAccountToken(await getConversationTenant());
     if (result !== "not_needed" && result !== "not_connected") logger.info({ result }, "Renovación Mercado Pago");
   } catch {
     logger.error("Error renovando Mercado Pago");

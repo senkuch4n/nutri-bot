@@ -100,7 +100,7 @@ export async function resumenFacturacion(desdeISO: string, hastaISO: string) {
   if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
     return { error: "Fechas inválidas, usá formato ISO 8601" };
   }
-  const payments = await listApprovedPaymentsInRange(desde, hasta);
+  const payments = await listApprovedPaymentsInRange({ tenantId: LEGACY_TENANT_ID }, desde, hasta); // M8 pasa el ctx
   const total = payments.reduce((sum, p) => sum + Number(p.amount), 0);
   return { total: formatPrice(total, pro.currency), cantidad_pagos: payments.length };
 }

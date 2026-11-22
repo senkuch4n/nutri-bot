@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
-import { listApprovedPaymentsInRange, listPendingPayments } from "@nutri-bot/db/domain";
+import { getTenantProfessional, listApprovedPaymentsInRange, listPendingPayments } from "@nutri-bot/db/domain";
 import {
   APPOINTMENT_STATUS_TEXT,
   PAYMENT_TEXT,
@@ -18,7 +18,7 @@ import {
   type DepositKind,
 } from "@nutri-bot/core";
 import { Metric, PageHeader, cn } from "@/components/ui";
-import { getProfessional } from "@/lib/professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { ManualPaymentDialog } from "./manual-payment-dialog";
 import type { AppointmentOption } from "./manual-payment-form";
 import { PaymentsTable, type PaymentRow } from "./payments-table";
@@ -40,7 +40,8 @@ function monthHref(key: string, current: string): string {
 }
 
 export default async function PagosPage({ searchParams }: { searchParams: Promise<{ mes?: string | string[] }> }) {
-  const [pro, { mes }] = await Promise.all([getProfessional(), searchParams]);
+  const ctx = await requirePageContext();
+  const [pro, { mes }] = await Promise.all([getTenantProfessional(ctx.tenantId), searchParams]);
   const tz = pro.timezone;
   const now = new Date();
   const currentMonth = monthKeyInTz(now, tz);
@@ -51,12 +52,13 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
   const isCurrent = month === currentMonth;
 
   const [pending, approvedInMonth, recentAppointments] = await Promise.all([
-    listPendingPayments(),
+    listPendingPayments(ctx),
     // El dominio filtra con `lte`: se resta 1 ms para que el rango quede [1°, 1° del siguiente).
-    listApprovedPaymentsInRange(from, new Date(to.getTime() - 1)),
+    listApprovedPaymentsInRange(ctx, from, new Date(to.getTime() - 1)),
     // D9: turnos confirmados y los que ya vinieron, de la última semana y de la próxima.
     prisma.appointment.findMany({
       where: {
+        tenantId: ctx.tenantId,
         status: { in: ["CONFIRMED", "COMPLETED"] },
         startsAt: {
           gte: new Date(now.getTime() - 7 * 86_400_000),

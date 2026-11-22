@@ -265,7 +265,7 @@ export async function connectMercadoPagoAction(): Promise<void> {
   if (!email) redirect("/inicio");
   let target: string;
   try {
-    const { url } = await startMercadoPagoOAuth(email);
+    const { url } = await startMercadoPagoOAuth(ctx, email);
     target = url;
   } catch (error) {
     if (!(error instanceof MercadoPagoConfigError)) throw error;
@@ -276,9 +276,13 @@ export async function connectMercadoPagoAction(): Promise<void> {
 
 /** Botón "Desconectar" (con confirmación en el cliente). Cancela las señas pendientes de la cuenta (D6). */
 export async function disconnectMercadoPagoAction(): Promise<void> {
-  const session = await auth();
-  if (!session?.user?.email) redirect("/inicio");
-  await disconnectMercadoPagoAccount();
+  // HU-025: mismo candado que conectar (contexto de escritura); el consultorio sale del contexto.
+  const ctx = await requireTenantContext("write").catch((error: unknown) => {
+    if (error instanceof TenantAccessError) return null;
+    throw error;
+  });
+  if (!ctx) redirect("/inicio");
+  await disconnectMercadoPagoAccount(ctx);
   revalidatePath("/ajustes");
   revalidatePath("/servicios");
 }

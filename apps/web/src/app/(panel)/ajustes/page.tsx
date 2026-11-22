@@ -16,6 +16,7 @@ import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { Alert, Button, ButtonLink } from "@/components/ui";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 import { getProfessional } from "@/lib/professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { DetailDisclosure } from "../pacientes/[id]/detail-disclosure";
 import { AfterHoursForm } from "./after-hours-form";
 import { AjustesTabs } from "./ajustes-tabs";
@@ -67,11 +68,12 @@ function formatConnectedAt(date: Date, tz: string): string {
 }
 
 export default async function AjustesPage() {
+  const ctx = await requirePageContext();
   const [pro, botStatus, logo, mp] = await Promise.all([
     getProfessional(),
     prisma.botStatus.findUnique({ where: { id: 1 } }),
     prisma.professional.findUnique({ where: { id: 1 }, select: { logoData: true } }),
-    getMercadoPagoConnectionView(),
+    getMercadoPagoConnectionView(ctx),
   ]);
   const googleConnected = Boolean(pro.googleRefreshToken);
   const botConnected = botStatus?.connected ?? false;

@@ -21,7 +21,7 @@ export async function GET(req: Request): Promise<Response> {
   const email = (await auth())?.user?.email?.trim().toLowerCase();
   if (!email) return toInicio();
 
-  const result = await completeMercadoPagoOAuth({ sessionEmail: email, query: new URL(req.url).searchParams })
+  const result = await completeMercadoPagoOAuth(ctx, { sessionEmail: email, query: new URL(req.url).searchParams })
     .catch(() => {
       // No registrar la excepción ni el query: pueden contener detalles sensibles.
       console.error("[mercadopago] oauth_callback_failed");

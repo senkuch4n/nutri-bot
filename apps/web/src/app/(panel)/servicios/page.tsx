@@ -20,7 +20,7 @@ export default async function ServiciosPage() {
   const [pro, services, mp] = await Promise.all([
     getTenantProfessional(ctx.tenantId),
     listServices(ctx),
-    getMercadoPagoConnectionView(),
+    getMercadoPagoConnectionView(ctx),
   ]);
   // HU-023: sin cuenta de Mercado Pago "conectada", los servicios con seña no se pueden reservar por WhatsApp.
   const mercadoPagoReady = mp.status === "connected";

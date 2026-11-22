@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { registerManualPayment } from "@nutri-bot/db/domain";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 export type PaymentFormState = { ok: boolean; error?: string; kind?: "DEPOSIT" | "FULL"; amount?: number };
 
@@ -21,7 +22,9 @@ export async function registerManualPaymentAction(
   const parsed = manualPaymentSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
   try {
-    await registerManualPayment(parsed.data.appointmentId, {
+    // HU-025: el consultorio sale del contexto; un turno de otro consultorio falla igual que uno inexistente.
+    const ctx = await requireTenantContext("write");
+    await registerManualPayment(ctx, parsed.data.appointmentId, {
       kind: parsed.data.kind,
       amount: parsed.data.amount,
     });

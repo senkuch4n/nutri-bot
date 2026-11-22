@@ -139,7 +139,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     const send = vi.fn();
     await handleIncoming("fake-patient", "sí", send);
     expect(mocks.createAppointment).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, { patientId: "patient", serviceId: "service", startsAt, createdBy: "PATIENT", notifyPatient: false, reason: null, professionalAlertJid: undefined });
-    expect(mocks.checkout).toHaveBeenCalledWith("appointment");
+    expect(mocks.checkout).toHaveBeenCalledWith(owner, "appointment");
     const message = send.mock.calls[0]?.[0];
     for (const text of ["Consulta nutricional", "lunes 5 de octubre", "12:00", "3.000", "https://checkout.example.test/deposit", "15 minutos"]) expect(message).toContain(text);
     expect(message).not.toContain("Turno confirmado");
@@ -172,7 +172,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
       expect(send).toHaveBeenCalledTimes(1);
       expect(send).toHaveBeenCalledWith(messages.DEPOSIT_UNAVAILABLE);
       expect(mocks.prisma.patient.findUnique).toHaveBeenCalledWith({ where: { id: "patient", tenantId: "legacy-tenant" }, select: { name: true, phone: true } });
-      expect(mocks.notifyMissing).toHaveBeenCalledWith({ patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
+      expect(mocks.notifyMissing).toHaveBeenCalledWith(owner, { patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
       expect(state.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { step: "MENU", context: {} } }));
     });
 
@@ -182,7 +182,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
       mocks.checkout.mockResolvedValue({ amount: 3000, checkoutUrl: "https://checkout.example.test/deposit" });
       const send = vi.fn();
       await handleIncoming("fake-patient", "sí", send);
-      expect(mocks.checkout).toHaveBeenCalledWith("appointment");
+      expect(mocks.checkout).toHaveBeenCalledWith(owner, "appointment");
       expect(send.mock.calls[0]?.[0]).toContain("https://checkout.example.test/deposit");
       expect(mocks.notifyMissing).not.toHaveBeenCalled();
     });
@@ -195,7 +195,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
       await handleIncoming("fake-patient", "sí", send);
       expect(send).toHaveBeenCalledWith(messages.DEPOSIT_UNAVAILABLE);
       expect(send).not.toHaveBeenCalledWith(expect.stringContaining("Hubo un problema"));
-      expect(mocks.notifyMissing).toHaveBeenCalledWith({ patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
+      expect(mocks.notifyMissing).toHaveBeenCalledWith(owner, { patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
     });
 
     it("un error al encolar el aviso no cambia lo que ve el paciente", async () => {
