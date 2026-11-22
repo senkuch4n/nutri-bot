@@ -17,13 +17,19 @@ import {
 import {
   MercadoPagoConfigError,
   disconnectMercadoPagoAccount,
+  removeProfessionalLogo,
   startMercadoPagoOAuth,
+  updateProfessionalLogo,
 } from "@nutri-bot/db/domain";
 import { auth } from "@/auth";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
+import { tenantProfessionalWhere } from "@/lib/tenant-professional";
 import { TenantAccessError, requireTenantContext } from "@/lib/tenant-context";
 
 export type SettingsState = { ok: boolean; error?: string };
+
+// HU-025: cada acción escribe la profesional de la agenda principal del consultorio del contexto
+// (clave compuesta id + tenantId), nunca Professional(1) ni un id que mande el cliente.
 
 // HU-017b-4 (Q19, D19): cada grupo de Ajustes guarda SOLO sus columnas. Antes un solo form juntaba
 // General, Firma y matrícula y Estilo del PDF, y guardar uno pisaba lo tipeado en los otros.
@@ -61,8 +67,9 @@ export async function saveGeneralSettingsAction(_prev: SettingsState, formData: 
   else if (phoneResult.error === "invalid") return { ok: false, error: PHONE_INPUT_TEXT.invalid };
 
   try {
+    const ctx = await requireTenantContext("write");
     await prisma.professional.update({
-      where: { id: 1 },
+      where: tenantProfessionalWhere(ctx),
       data: { timezone, currency, phoneJid, acceptedInsurances: acceptedInsurances || null },
       select: { id: true },
     });
@@ -88,8 +95,9 @@ export async function savePdfStyleAction(_prev: SettingsState, formData: FormDat
   const parsed = pdfStyleSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? SETTINGS_TEXT.saveError };
   try {
+    const ctx = await requireTenantContext("write");
     await prisma.professional.update({
-      where: { id: 1 },
+      where: tenantProfessionalWhere(ctx),
       data: {
         pdfAccentColor: parsed.data.pdfAccentColor || null,
         pdfFooterText: parsed.data.pdfFooterText || null,
@@ -114,8 +122,9 @@ export async function saveSignatureIdentityAction(_prev: SettingsState, formData
   const parsed = signatureIdentitySchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? SETTINGS_TEXT.saveError };
   try {
+    const ctx = await requireTenantContext("write");
     await prisma.professional.update({
-      where: { id: 1 },
+      where: tenantProfessionalWhere(ctx),
       data: { title: parsed.data.title || null, licenseNumber: parsed.data.licenseNumber || null },
       select: { id: true },
     });
@@ -134,18 +143,24 @@ export async function saveGoogleCalendarIdAction(
 ): Promise<SettingsState> {
   const parsed = gcalSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  await prisma.professional.update({
-    where: { id: 1 },
-    data: { googleCalendarId: parsed.data.calendarId || null },
-    select: { id: true },
-  });
+  try {
+    const ctx = await requireTenantContext("write");
+    await prisma.professional.update({
+      where: tenantProfessionalWhere(ctx),
+      data: { googleCalendarId: parsed.data.calendarId || null },
+      select: { id: true },
+    });
+  } catch {
+    return { ok: false, error: SETTINGS_TEXT.saveError };
+  }
   revalidatePath("/ajustes");
   return { ok: true };
 }
 
 export async function disconnectGoogleAction() {
+  const ctx = await requireTenantContext("write");
   await prisma.professional.update({
-    where: { id: 1 },
+    where: tenantProfessionalWhere(ctx),
     data: { googleRefreshToken: null, googleSyncError: null },
     select: { id: true },
   });
@@ -153,7 +168,8 @@ export async function disconnectGoogleAction() {
 }
 
 export async function setBotPausedAction(paused: boolean) {
-  await prisma.professional.update({ where: { id: 1 }, data: { botPaused: paused }, select: { id: true } });
+  const ctx = await requireTenantContext("write");
+  await prisma.professional.update({ where: tenantProfessionalWhere(ctx), data: { botPaused: paused === true }, select: { id: true } });
   revalidatePath("/ajustes");
 }
 
@@ -163,6 +179,12 @@ export async function uploadLogoAction(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
+  let ctx: Awaited<ReturnType<typeof requireTenantContext>>;
+  try {
+    ctx = await requireTenantContext("write");
+  } catch {
+    return { ok: false, error: SETTINGS_TEXT.saveError };
+  }
   const file = formData.get("logo");
   if (!(file instanceof File)) {
     return { ok: false, error: "Elegí una imagen" };
@@ -172,21 +194,18 @@ export async function uploadLogoAction(
   const buffer = Buffer.from(await file.arrayBuffer());
   const check = validateLogoImage(buffer);
   if (!check.ok) return { ok: false, error: check.error };
-  await prisma.professional.update({
-    where: { id: 1 },
-    data: { logoData: buffer, logoMimeType: check.mimeType },
-    select: { id: true },
-  });
+  try {
+    await updateProfessionalLogo(ctx, { logoData: buffer, logoMimeType: check.mimeType });
+  } catch {
+    return { ok: false, error: SETTINGS_TEXT.saveError };
+  }
   revalidatePath("/ajustes");
   return { ok: true };
 }
 
 export async function removeLogoAction(): Promise<void> {
-  await prisma.professional.update({
-    where: { id: 1 },
-    data: { logoData: null, logoMimeType: null },
-    select: { id: true },
-  });
+  const ctx = await requireTenantContext("write");
+  await removeProfessionalLogo(ctx);
   revalidatePath("/ajustes");
 }
 
@@ -208,15 +227,20 @@ export async function saveAfterHoursAction(
   // Las horas se validan aunque la franja esté desactivada, para no guardar basura.
   const error = validateAfterHoursConfig({ start: attendTo, end: attendFrom });
   if (error) return { ok: false, error };
-  await prisma.professional.update({
-    where: { id: 1 },
-    data: {
-      afterHoursEnabled: afterHoursEnabled === "1",
-      afterHoursStart: attendTo,
-      afterHoursEnd: attendFrom,
-    },
-    select: { id: true },
-  });
+  try {
+    const ctx = await requireTenantContext("write");
+    await prisma.professional.update({
+      where: tenantProfessionalWhere(ctx),
+      data: {
+        afterHoursEnabled: afterHoursEnabled === "1",
+        afterHoursStart: attendTo,
+        afterHoursEnd: attendFrom,
+      },
+      select: { id: true },
+    });
+  } catch {
+    return { ok: false, error: SETTINGS_TEXT.saveError };
+  }
   revalidatePath("/ajustes");
   return { ok: true };
 }
@@ -236,12 +260,19 @@ export async function saveBotAiAction(_prev: SettingsState, formData: FormData):
   if (infoError) return { ok: false, error: infoError };
   // Sin clave se puede apagar o guardar el texto, pero no prender.
   const { hasKey, apiKeyEnvName } = getBotAiKeyStatus();
-  const current = await prisma.professional.findUnique({ where: { id: 1 }, select: { botAiEnabled: true } });
+  let ctx: Awaited<ReturnType<typeof requireTenantContext>>;
+  try {
+    ctx = await requireTenantContext("write");
+  } catch {
+    return { ok: false, error: SETTINGS_TEXT.saveError };
+  }
+  const where = tenantProfessionalWhere(ctx);
+  const current = await prisma.professional.findUnique({ where, select: { botAiEnabled: true } });
   if (enabled && !current?.botAiEnabled && !hasKey) {
     return { ok: false, error: `Para activarlo falta cargar ${apiKeyEnvName} en el servidor.` };
   }
   await prisma.professional.update({
-    where: { id: 1 },
+    where,
     data: { botAiEnabled: enabled, botAiInfo: info || null },
     select: { id: true },
   });

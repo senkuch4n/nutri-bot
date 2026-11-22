@@ -13,19 +13,24 @@ import { prisma } from "@nutri-bot/db";
 import { env } from "./env";
 import { logger } from "./logger";
 import { isIgnoredJid } from "./jid-filter";
+import { getConversationTenant } from "./tenant";
 
 const silentLogger = pino({ level: "silent" });
 
 let sock: WASocket | null = null;
 
+/** HU-025: la fila de estado (y el QR) es la del consultorio de esta instalación de WhatsApp. Se busca
+ *  por tenantId (único); una fila de otro consultorio o sin dueño nunca se adopta: el alta choca y se
+ *  loguea. Panel y sidebar leen la fila por el tenant de la sesión. */
 async function setBotStatus(data: {
   connected: boolean;
   qr?: string | null;
   lastConnectedAt?: Date;
 }) {
+  const { tenantId } = await getConversationTenant();
   await prisma.botStatus.upsert({
-    where: { id: 1 },
-    create: { id: 1, ...data },
+    where: { tenantId },
+    create: { tenantId, ...data },
     update: data,
   });
 }

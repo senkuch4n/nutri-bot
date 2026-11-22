@@ -15,7 +15,8 @@ import { signIn } from "@/auth";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { Alert, Button, ButtonLink } from "@/components/ui";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
-import { getProfessional } from "@/lib/professional";
+import { getTenantProfessional } from "@/lib/professional";
+import { tenantProfessionalWhere } from "@/lib/tenant-professional";
 import { requirePageContext } from "@/lib/tenant-context";
 import { DetailDisclosure } from "../pacientes/[id]/detail-disclosure";
 import { AfterHoursForm } from "./after-hours-form";
@@ -70,9 +71,10 @@ function formatConnectedAt(date: Date, tz: string): string {
 export default async function AjustesPage() {
   const ctx = await requirePageContext();
   const [pro, botStatus, logo, mp] = await Promise.all([
-    getProfessional(),
-    prisma.botStatus.findUnique({ where: { id: 1 } }),
-    prisma.professional.findUnique({ where: { id: 1 }, select: { logoData: true } }),
+    getTenantProfessional(ctx.tenantId),
+    // HU-025: el estado de WhatsApp y el logo son los del consultorio de la sesión.
+    prisma.botStatus.findUnique({ where: { tenantId: ctx.tenantId } }),
+    prisma.professional.findUnique({ where: tenantProfessionalWhere(ctx), select: { logoData: true } }),
     getMercadoPagoConnectionView(ctx),
   ]);
   const googleConnected = Boolean(pro.googleRefreshToken);

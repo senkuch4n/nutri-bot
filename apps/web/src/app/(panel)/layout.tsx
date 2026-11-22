@@ -19,8 +19,8 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   // El estado del bot se calcula en cada render del layout: en navegación cliente puede quedar
   // desactualizado hasta recargar (aceptado, ver SDD O3).
   const [professionalName, botStatus, pendingInquiries, cookieStore] = await Promise.all([
-    getProfessionalDisplayName(),
-    getBotShellStatus(),
+    getProfessionalDisplayName(ctx.tenantId),
+    getBotShellStatus(ctx.tenantId),
     getPendingInquiryCount(ctx.tenantId),
     cookies(),
   ]);
