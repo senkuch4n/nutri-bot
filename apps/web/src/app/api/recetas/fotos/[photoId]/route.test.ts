@@ -3,7 +3,23 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), findUser: vi.fn(), read: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: mocks.auth }));
 vi.mock("server-only", () => ({}));
-vi.mock("@nutri-bot/db", () => ({ prisma: { user: { findFirst: mocks.findUser } } }));
+// HU-025a2: resolvePrivateContentAccess envuelve getTenantContext. Este mock reproduce su cadena
+// (sesión → userId → una sola membresía OWNER/STAFF) sobre `mocks.auth` y `mocks.findUser`; el candado
+// legacy y la agenda principal se prueban en lib/tenant-context.test.ts.
+vi.mock("@/lib/tenant-context", () => ({
+  getTenantContext: async () => {
+    const session = await mocks.auth();
+    if (!session?.userId) return null;
+    const user = await mocks.findUser();
+    if (user?.memberships.length !== 1) return null;
+    const [m] = user.memberships;
+    if (m.role !== "OWNER" && m.role !== "STAFF") return null;
+    return {
+      userId: session.userId, tenantId: m.tenantId, agendaId: "agenda", professionalId: 1,
+      access: { kind: "member", tenantId: m.tenantId, role: m.role },
+    };
+  },
+}));
 vi.mock("@nutri-bot/db/domain", () => ({
   getRecipePhotoBytes: () => ({ data: Buffer.from("legacy bytes") }),
   recipesForTenant: (tenant: string) => ({ getPhotoBytes: (id: string, size: string) => mocks.read(tenant, id, size) }),
