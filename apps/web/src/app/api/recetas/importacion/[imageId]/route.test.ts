@@ -15,7 +15,7 @@ const WEBP = Buffer.concat([Buffer.from("RIFF0000WEBPVP8 "), Buffer.from([0x00, 
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.auth.mockResolvedValue({ user: { email: "panel@example.test" }, privateContentUserId: "user-b" });
+  mocks.auth.mockResolvedValue({ user: { email: "panel@example.test" }, userId: "user-b" });
   mocks.findUser.mockResolvedValue({ memberships: [{ tenantId: "tenant-b", role: "OWNER" }] });
   mocks.read.mockImplementation((tenant, id, size) => tenant === "tenant-b" && id === "own" ? { data: Buffer.concat([WEBP, Buffer.from(size)]) } : null);
 });

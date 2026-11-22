@@ -27,10 +27,14 @@ model Tenant {
 }
 
 model User {
-  id          String             @id @default(cuid())
-  email       String             @unique
-  googleSubject String?          @unique
-  memberships TenantMembership[]
+  id            String             @id @default(cuid())
+  email         String             @unique
+  googleSubject String?            @unique
+  /// HU-025: alta de la identidad (login pendiente o script).
+  createdAt     DateTime           @default(now())
+  /// HU-025: último login con Google verificado. null = nunca entró.
+  lastSignInAt  DateTime?
+  memberships   TenantMembership[]
 }
 
 enum TenantRole {
@@ -44,6 +48,8 @@ model TenantMembership {
   role     TenantRole
   tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   user     User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  /// HU-025: para Equipo.
+  createdAt DateTime   @default(now())
 
   @@id([tenantId, userId])
   @@index([userId])

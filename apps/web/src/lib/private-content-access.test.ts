@@ -11,11 +11,16 @@ const membership = { tenantId: "tenant-a", role: "OWNER" };
 
 describe("resolvePrivateContentAccess", () => {
   beforeEach(() => {
-    auth.mockReset().mockResolvedValue({ privateContentUserId: "user-a" });
+    auth.mockReset().mockResolvedValue({ userId: "user-a" });
     findUser.mockReset();
   });
 
-  it.each([null, { user: { email: "legacy@example.invalid", id: "user-a" }, tenantId: "tenant-a" }])(
+  it.each([
+    null,
+    { user: { email: "legacy@example.invalid", id: "user-a" }, tenantId: "tenant-a" },
+    // JWT anterior a HU-025: solo trae el claim viejo, hay que volver a entrar.
+    { user: { email: "legacy@example.invalid" }, privateContentUserId: "user-a" },
+  ])(
     "denies a missing or unbound session (%j)", async (session) => {
       auth.mockResolvedValue(session);
       expect(await resolvePrivateContentAccess()).toBeNull();
@@ -37,7 +42,7 @@ describe("resolvePrivateContentAccess", () => {
     ["user-a", "tenant-a", "OWNER"],
     ["user-b", "tenant-b", "STAFF"],
   ])("resolves %s from persisted membership in %s (%s)", async (userId, tenantId, role) => {
-    auth.mockResolvedValue({ privateContentUserId: userId, tenantId: "forged", role: "forged" });
+    auth.mockResolvedValue({ userId, tenantId: "forged", role: "forged" });
     findUser.mockResolvedValue({ memberships: [{ tenantId, role }] });
     expect(await resolvePrivateContentAccess()).toEqual({ userId, tenantId, role });
     expect(auth).toHaveBeenCalledTimes(1);
