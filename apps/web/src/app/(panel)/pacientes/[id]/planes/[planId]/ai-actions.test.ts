@@ -97,3 +97,19 @@ describe("HU-025: IA de planes con un plan de otro consultorio", () => {
     expect(mocks.completion).not.toHaveBeenCalled();
   });
 });
+
+describe("HU-025 (D11): logs de la IA de planes", () => {
+  it("un error del proveedor no llega al cliente ni al log con su mensaje (puede traer el prompt o la clave)", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      mocks.getPlan.mockResolvedValue({ id: "plan", patientId: "patient", meals: [] });
+      mocks.completion.mockRejectedValue(Object.assign(new Error("401 sk-secreta; paciente con diabetes"), { name: "AuthenticationError" }));
+      expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: false, error: "Error consultando a la IA" });
+      const logged = JSON.stringify(log.mock.calls);
+      expect(logged).toContain("AuthenticationError");
+      expect(logged).not.toMatch(/sk-secreta|diabetes/);
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
