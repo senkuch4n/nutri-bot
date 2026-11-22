@@ -358,3 +358,8 @@ orquestador, para que las revise a la mañana:
 - HU-023 → `implementando` (Opus; migracion-prisma, apple-design, web-design-guidelines).
 - HU-023: implementer (Opus) `done` → progress/impl_HU-023.md (2657 tests OK, typecheck OK, migración aplicada en dev con pg_dump previo). Sin recorrido visual (login Google). → `en_revision`.
 - **HU-023 aprobada** (reviewer Opus, 1ª ronda, sin cambios). 4 dudas no bloqueantes en progress/review_HU-023.md (la 1: posible falso 'revocado' si MP responde 401 a un pago de la cuenta vieja, mirar en la prueba). PR a develop con `Closes #53`; migrar el VPS antes del merge.
+
+## 2026-11-21
+
+- HU-024 (Leo, multi-tenant) mergeada a develop (PR #75) y publicada en prod (PR #76, deploy 1a3125b, 12 migraciones OK, base sin pacientes). Arreglé `backlog/HU-022.json` de Leo (→ bloqueada) para destrabar el CI, con su aviso en el PR. Pendiente en prod: correr `legacy-memberships` cuando la nutricionista use recetas y plantillas.
+- **HU-025** tomada: issue #68 asignado (estado: en curso), rama `feat/HU-025-autenticacion-permisos-tenant`, backlog en `afinando`. Lanzo el afinador.
