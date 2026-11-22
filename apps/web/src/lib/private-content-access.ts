@@ -1,6 +1,5 @@
 import "server-only";
-import { prisma } from "@nutri-bot/db";
-import { auth } from "../auth";
+import { getTenantContext } from "./tenant-context";
 
 type PrivateContentAccess = {
   userId: string;
@@ -8,19 +7,18 @@ type PrivateContentAccess = {
   role: "OWNER" | "STAFF";
 };
 
-/** OWNER and STAFF may read, create, update and delete private recipes and templates. */
-export async function resolvePrivateContentAccess(): Promise<PrivateContentAccess | null> {
-  const userId = (await auth())?.userId;
-  if (!userId) return null;
-
-  // Read current membership for each operation; two rows are sufficient to detect ambiguity.
-  const user = await prisma.user.findFirst({
-    where: { id: userId, googleSubject: { not: null } },
-    select: { memberships: { take: 2, select: { tenantId: true, role: true } } },
-  });
-  if (user?.memberships.length !== 1) return null;
-
-  const [membership] = user.memberships;
-  if (!membership || (membership.role !== "OWNER" && membership.role !== "STAFF")) return null;
-  return { userId, tenantId: membership.tenantId, role: membership.role };
+/** OWNER and STAFF may read, create, update and delete private recipes and templates.
+ *
+ *  HU-025a2: wrapper de getTenantContext() (membresía leída por request, candado legacy y agenda principal).
+ *  Conserva el retorno de HU-024 para sus ~25 consumidores; se elimina en 025b-2 cuando pasan a
+ *  requireTenantContext. Soporte (025d): "STAFF" solo si el modo lo permite. */
+export async function resolvePrivateContentAccess(
+  mode: "read" | "write" = "write",
+): Promise<PrivateContentAccess | null> {
+  const ctx = await getTenantContext();
+  if (!ctx) return null;
+  const { userId, tenantId, access } = ctx;
+  if (access.kind === "member") return { userId, tenantId, role: access.role };
+  if (mode === "write" && access.mode === "READ_ONLY") return null;
+  return { userId, tenantId, role: "STAFF" };
 }
