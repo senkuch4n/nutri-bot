@@ -29,7 +29,7 @@ function run(roster: unknown, args: string[] = []) {
   writeFileSync(rosterPath, JSON.stringify(roster), { mode: 0o600 });
   const { status, stdout, stderr } = spawnSync(process.execPath, ["--import", tsx, cli, rosterPath, ...args], {
     encoding: "utf8",
-    env: { ...process.env, ALLOWED_EMAILS: "unlisted@example.test" },
+    env: process.env,
   });
   return { status, stdout, stderr };
 }

@@ -36,8 +36,10 @@ npm install
 
 # 2. Variables de entorno
 cp .env.example .env
-#   Completá GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET (string aleatorio),
-#   ALLOWED_EMAILS (tu cuenta de Google) y PROFESSIONAL_JID (opcional, para alertas).
+#   Completá GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, AUTH_SECRET (string aleatorio)
+#   y PROFESSIONAL_JID (opcional, para alertas). El acceso al panel se da por membresía
+#   (ver "Acceso al panel" más abajo); SEED_PROFESSIONAL_EMAIL (opcional) es el email de la
+#   ficha de la profesional que crea el seed.
 
 # 3. Base de datos
 #    Si el puerto 5432 está ocupado, poné otro en .env (DB_PORT) y ajustá DATABASE_URL.
@@ -105,6 +107,25 @@ Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
 | `npm run test:confirm-flow --workspace apps/bot` | Simula sin WhatsApp real el flujo de confirmación de turno (sí/no) y las recomendaciones previas a un estudio; crea y borra sus propios datos de prueba |
 | `npm run test:bot-ai --workspace apps/bot` | Simula sin WhatsApp real ni API de IA (proveedor falso) la opción 5 del bot (preguntas con IA): tools, límites, errores, derivación con 0 y retención; crea y borra sus propios datos de prueba |
 | `npm run test:booking-reason --workspace apps/bot` | Simula sin WhatsApp real el paso del motivo de consulta al reservar (HU-013): salteo, muy corto/largo, comandos, audio, alerta con el motivo recortado, seña, edición y privacidad frente a la IA; crea y borra sus propios datos de prueba |
+
+### Acceso al panel (HU-025)
+
+Al panel entra quien tiene una **membresía vigente** en un consultorio, leída en la base en cada
+request; no hay lista de emails. El primer login con Google de una cuenta sin membresía la deja
+registrada como **identidad pendiente** (ve "Tu cuenta no tiene acceso a ningún consultorio") y el
+operador le da acceso por email con `packages/db/scripts/tenant-access.ts`. Todos los subcomandos
+son dry-run salvo `--apply`, y necesitan `DATABASE_URL` explícita (no cargan `.env`):
+
+```bash
+npm run tenant-access --workspace packages/db -- pending                     # identidades pendientes
+npm run tenant-access --workspace packages/db -- members --tenant legacy-tenant
+npm run tenant-access --workspace packages/db -- grant --email <email> --tenant legacy-tenant --role OWNER --apply
+npm run tenant-access --workspace packages/db -- revoke --email <email> --tenant legacy-tenant --apply
+npm run tenant-access --workspace packages/db -- forget-pending --email <email> --apply
+```
+
+Revocar una membresía corta el acceso en la siguiente página, ruta API o server action. Procedimiento
+de producción: [`deploy/README.md`](deploy/README.md#acceso-al-panel-por-membresía-hu-025).
 
 ### Membresías del consultorio original (HU-024)
 

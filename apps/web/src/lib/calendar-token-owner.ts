@@ -1,8 +1,9 @@
 /**
  * Decide si el refresh_token de Google de quien acaba de iniciar sesión se guarda como el
- * token del calendario de la profesional. Al panel entran varias cuentas (`ALLOWED_EMAILS`),
- * pero el calendario es uno solo: sin este filtro, cualquier login pisaba el token y la
- * sincronización pasaba a la cuenta de esa persona.
+ * token del calendario de la profesional. Al panel pueden entrar varias cuentas (cada una con su
+ * membresía, HU-025; `auth.ts` exige además ser miembro del consultorio original), pero el
+ * calendario es uno solo: sin este filtro, cualquier login pisaba el token y la sincronización
+ * pasaba a la cuenta de esa persona.
  *
  * - Con `GOOGLE_CALENDAR_OWNER_EMAIL` configurado: solo se guarda el de esa cuenta.
  * - Sin configurar: solo si todavía no hay token o la sincronización está fallando (para que la
