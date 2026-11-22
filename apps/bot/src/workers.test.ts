@@ -244,6 +244,8 @@ describe("expired session text cleanup cron (HU-012/HU-013)", () => {
 describe("service reminders cron (HU-014)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    // HU-025b-1: los crons pasan el consultorio de getConversationTenant() (hoy, el original).
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
   });
   const remindersTick = () => mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *")[0]![1];
 
@@ -254,6 +256,7 @@ describe("service reminders cron (HU-014)", () => {
     expect(mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *")).toHaveLength(2);
     await remindersTick()();
     expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
+    expect(mocks.serviceReminders).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
     expect(mocks.clearSessions).not.toHaveBeenCalled();
   });
 
@@ -269,7 +272,8 @@ describe("service reminders cron (HU-014)", () => {
     mocks.serviceReminders.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const first = runServiceReminders();
     await runServiceReminders();
-    expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
+    // El primero espera getConversationTenant() antes de llamar al dominio.
+    await vi.waitFor(() => expect(mocks.serviceReminders).toHaveBeenCalledTimes(1));
     finish({ reminders: 0, confirmations: 0 });
     await first;
   });

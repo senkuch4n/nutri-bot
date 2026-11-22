@@ -1,6 +1,7 @@
 import { calendarDayPanelTitle, firstName, formatInTimeZone, fromZonedTime } from "@nutri-bot/core";
-import { getProfessional } from "@/lib/professional";
+import { getTenantProfessional } from "@nutri-bot/db/domain";
 import { listServices } from "@/lib/services";
+import { requirePageContext } from "@/lib/tenant-context";
 import { getProfessionalDisplayName } from "@/lib/shell";
 import { loadTurnos } from "../turnos/data";
 import { HomeClient } from "./home-client";
@@ -15,7 +16,8 @@ const AWAITING_LIMIT = 20;
  * turno, la lista de hoy y los turnos que esperan la seña. Todo sale de los datos que ya usa /turnos.
  */
 export default async function HomePage() {
-  const pro = await getProfessional();
+  const ctx = await requirePageContext();
+  const pro = await getTenantProfessional(ctx.tenantId);
   const tz = pro.timezone;
   const now = new Date();
   const todayKey = formatInTimeZone(now, tz, "yyyy-MM-dd");
@@ -24,10 +26,10 @@ export default async function HomePage() {
 
   const [name, services, today, awaiting, next] = await Promise.all([
     getProfessionalDisplayName(),
-    listServices({ activeOnly: true }),
-    loadTurnos({ startsAt: { gte: todayStart, lte: todayEnd }, status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] } }),
-    loadTurnos({ status: "AWAITING_PAYMENT", startsAt: { gte: now } }, AWAITING_LIMIT),
-    loadTurnos({ status: "CONFIRMED", startsAt: { gte: now } }, 1),
+    listServices(ctx, { activeOnly: true }),
+    loadTurnos(ctx, { startsAt: { gte: todayStart, lte: todayEnd }, status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] } }),
+    loadTurnos(ctx, { status: "AWAITING_PAYMENT", startsAt: { gte: now } }, AWAITING_LIMIT),
+    loadTurnos(ctx, { status: "CONFIRMED", startsAt: { gte: now } }, 1),
   ]);
 
   return (

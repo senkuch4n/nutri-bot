@@ -27,6 +27,8 @@ import {
   updateManualConsultationDate,
 } from "../domain";
 
+const T = { tenantId: "legacy-tenant" };
+
 const DAY = 86_400_000;
 
 async function main() {
@@ -92,7 +94,7 @@ async function main() {
     // 3) Completar crea la consulta una sola vez.
     let consultationA = "";
     await step("COMPLETED crea la consulta y es idempotente", async () => {
-      const r1 = await setAppointmentStatus({ id: A.id, status: "COMPLETED" });
+      const r1 = await setAppointmentStatus(T, { id: A.id, status: "COMPLETED" });
       assert.equal(r1.appointment.status, "COMPLETED");
       assert.ok(r1.consultation);
       assert.equal(r1.consultation.created, true);
@@ -100,7 +102,7 @@ async function main() {
       const c = await prisma.consultation.findUniqueOrThrow({ where: { id: r1.consultation.id } });
       assert.equal(c.appointmentId, A.id);
       assert.equal(c.consultedAt.getTime(), A.startsAt.getTime());
-      const r2 = await setAppointmentStatus({ id: A.id, status: "COMPLETED" });
+      const r2 = await setAppointmentStatus(T, { id: A.id, status: "COMPLETED" });
       assert.deepEqual(r2.consultation, { id: r1.consultation.id, created: false });
       assert.equal(await prisma.consultation.count({ where: { appointmentId: A.id } }), 1);
       consultationA = r1.consultation.id;
@@ -108,7 +110,7 @@ async function main() {
 
     // 4) Revertir con la consulta vacía la borra.
     await step("CONFIRMED con consulta vacía la borra", async () => {
-      const r = await setAppointmentStatus({ id: A.id, status: "CONFIRMED" });
+      const r = await setAppointmentStatus(T, { id: A.id, status: "CONFIRMED" });
       assert.equal(r.removedEmptyConsultation, true);
       assert.equal(r.consultation, null);
       assert.equal(await prisma.consultation.findUnique({ where: { id: consultationA } }), null);
@@ -116,7 +118,7 @@ async function main() {
 
     // 5) Revertir con contenido la conserva; volver a completar reusa la misma.
     await step("CONFIRMED con contenido la conserva y COMPLETED reusa la misma", async () => {
-      const r1 = await setAppointmentStatus({ id: A.id, status: "COMPLETED" });
+      const r1 = await setAppointmentStatus(T, { id: A.id, status: "COMPLETED" });
       assert.ok(r1.consultation?.created);
       consultationIds.push(r1.consultation.id);
       consultationA = r1.consultation.id;
@@ -125,17 +127,17 @@ async function main() {
       assert.equal(entry.consultationId, consultationA);
       assert.equal(entry.patientId, patient.id);
       assert.equal(dayKeyInTz(entry.recordedAt, tz), dayKeyInTz(A.startsAt, tz));
-      const r2 = await setAppointmentStatus({ id: A.id, status: "CONFIRMED" });
+      const r2 = await setAppointmentStatus(T, { id: A.id, status: "CONFIRMED" });
       assert.equal(r2.removedEmptyConsultation, false);
       assert.ok(await prisma.consultation.findUnique({ where: { id: consultationA } }));
       assert.ok(await prisma.evolutionEntry.findUnique({ where: { id: entry.id } }));
-      const r3 = await setAppointmentStatus({ id: A.id, status: "COMPLETED" });
+      const r3 = await setAppointmentStatus(T, { id: A.id, status: "COMPLETED" });
       assert.deepEqual(r3.consultation, { id: consultationA, created: false });
     });
 
     // 6) NO_SHOW no crea consulta.
     await step("NO_SHOW no crea consulta", async () => {
-      const r = await setAppointmentStatus({ id: B.id, status: "NO_SHOW" });
+      const r = await setAppointmentStatus(T, { id: B.id, status: "NO_SHOW" });
       assert.equal(r.consultation, null);
       assert.equal(await prisma.consultation.count({ where: { appointmentId: B.id } }), 0);
     });

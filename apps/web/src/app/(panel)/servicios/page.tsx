@@ -6,17 +6,22 @@ import {
   serviceSummaryLine,
   shouldWarnDepositWithoutMercadoPago,
 } from "@nutri-bot/core";
-import { getMercadoPagoConnectionView } from "@nutri-bot/db/domain";
+import { getMercadoPagoConnectionView, getTenantProfessional } from "@nutri-bot/db/domain";
 import { Alert, ButtonLink, EmptyState } from "@/components/ui";
-import { getProfessional } from "@/lib/professional";
 import { listServices } from "@/lib/services";
+import { requirePageContext } from "@/lib/tenant-context";
 import { NewServiceButton } from "./new-service-button";
 import { ServiceSections, type ServiceView } from "./service-card";
 
 export const dynamic = "force-dynamic";
 
 export default async function ServiciosPage() {
-  const [pro, services, mp] = await Promise.all([getProfessional(), listServices(), getMercadoPagoConnectionView()]);
+  const ctx = await requirePageContext();
+  const [pro, services, mp] = await Promise.all([
+    getTenantProfessional(ctx.tenantId),
+    listServices(ctx),
+    getMercadoPagoConnectionView(),
+  ]);
   // HU-023: sin cuenta de Mercado Pago "conectada", los servicios con seña no se pueden reservar por WhatsApp.
   const mercadoPagoReady = mp.status === "connected";
 

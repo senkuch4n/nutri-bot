@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from "../index";
 import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveTenantSchedulingContext, type SchedulingContext } from "./tenantScope";
 
 // Historical rows without a tenant are inactive, even for the original installation.
 function ownedStateKey(tenantId: string, patientJid: string) {
@@ -65,7 +66,16 @@ export async function saveLegacyConversationState(patientJid: string, step: stri
 // Verify the original installation on the same transaction that owns the appointment write.
 // Callers obtain the JID and appointment ID from an appointment verified in this scope.
 export async function bindLegacyAppointmentConversationState(tx: Prisma.TransactionClient) {
-  const binding = await resolveLegacySchedulingScope(tx);
+  return bindConversationStateTo(tx, await resolveLegacySchedulingScope(tx));
+}
+
+/** HU-025 (025b-1): same binding for the tenant of the caller's context (web session or bot conversation).
+ *  Resolves the tenant's primary agenda on the transaction that owns the appointment write. */
+export async function bindAppointmentConversationState(tx: Prisma.TransactionClient, tenantId: string) {
+  return bindConversationStateTo(tx, await resolveTenantSchedulingContext(tx, tenantId));
+}
+
+function bindConversationStateTo(tx: Prisma.TransactionClient, binding: SchedulingContext) {
   const { tenantId } = binding.scope;
   return {
     ...binding,

@@ -1,14 +1,16 @@
 import { prisma } from "@nutri-bot/db";
 import { dayKeyInTz } from "@nutri-bot/core";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { getTenantProfessional } from "@nutri-bot/db/domain";
+import { requirePageContext } from "@/lib/tenant-context";
 import { DisponibilidadView } from "./view";
 
 export const dynamic = "force-dynamic";
 
 export default async function DisponibilidadPage() {
-  const { scope: { agendaId, tenantId }, professional } = await resolveLegacySchedulingScope();
+  const { agendaId, tenantId } = await requirePageContext();
   const agendaWhere = { agendaId, agenda: { tenantId } };
-  const [rules, exceptions] = await Promise.all([
+  const [professional, rules, exceptions] = await Promise.all([
+    getTenantProfessional(tenantId),
     // HU-017b-2 (Q16): solo las reglas activas, igual que el bot y el calendario. Las inactivas (cargas
     // viejas) no se muestran ni se tocan.
     prisma.availabilityRule.findMany({

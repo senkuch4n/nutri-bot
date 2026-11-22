@@ -42,6 +42,7 @@ import { getProfessional } from "@/lib/professional";
 import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { listServices } from "@/lib/services";
+import { requirePageContext } from "@/lib/tenant-context";
 import { EditPatientProvider } from "./edit-patient-sheet";
 import { AppointmentsSection } from "./appointments-section";
 import { ArchivedBanner } from "./archived-banner";
@@ -60,6 +61,7 @@ export type PatientRecordVariant = "page" | "modal";
  *  sobre la lista (ruta interceptada en `pacientes/(directorio)/@modal`). Con `variant="modal"` no
  *  muestra el link "← Pacientes" y el encabezado se pega arriba del diálogo, no de la página. */
 export async function PatientRecord({ id, variant }: { id: string; variant: PatientRecordVariant }) {
+  const ctx = await requirePageContext();
   const [pro, patient, plans, access, diaryEntries, measurements, consultations, prescriptions, services] =
     await Promise.all([
       getProfessional(),
@@ -84,7 +86,7 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
       getLatestFormulaMeasurements(id),
       listPatientConsultations(id),
       listLatestPrescriptions(id, 1),
-      listServices({ activeOnly: true }),
+      listServices(ctx, { activeOnly: true }),
     ]);
   if (!patient) notFound();
   const templates = access && patient.tenantId === access.tenantId

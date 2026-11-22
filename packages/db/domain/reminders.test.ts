@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
-    agenda: { findUnique: vi.fn() },
+    agenda: { findFirst: vi.fn() },
     appointment: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
     conversationState: { createMany: vi.fn(), updateMany: vi.fn() },
     outboundMessage: { findFirst: vi.fn(), create: vi.fn() },
@@ -21,6 +21,8 @@ vi.mock("../index", () => ({
 vi.mock("./outbox", () => ({ enqueueMessage: mocks.enqueueMessage }));
 
 import { enqueuePrepInstructions, enqueueReminderNow, enqueueServiceReminders, getAppointmentReminderStatus } from "./reminders";
+
+const T = { tenantId: "legacy-tenant" };
 
 const TZ = "America/Argentina/Buenos_Aires";
 const H = 3_600_000;
@@ -63,7 +65,7 @@ beforeEach(() => {
   mocks.prisma.appointment.findMany.mockResolvedValue([]);
   mocks.prisma.$queryRaw.mockImplementation(async (sql: TemplateStringsArray) =>
     [{ id: sql.join("").includes('FROM "Professional"') ? 1 : "a1" }]);
-  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { timezone: TZ } });
+  mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { timezone: TZ } });
   mocks.prisma.appointment.findUnique.mockResolvedValue({ id: "a1" });
   mocks.prisma.appointment.updateMany.mockResolvedValue({ count: 1 });
   mocks.prisma.conversationState.createMany.mockResolvedValue({ count: 1 });
@@ -73,9 +75,9 @@ beforeEach(() => {
 
 describe("verified legacy reminder scope", () => {
   it("fails closed for all entry points without the original agenda", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
-    for (const run of [enqueuePrepInstructions, enqueueServiceReminders, () => enqueueReminderNow("a1"), () => getAppointmentReminderStatus("a1")]) {
-      await expect(run()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    mocks.prisma.agenda.findFirst.mockResolvedValue(null);
+    for (const run of [() => enqueuePrepInstructions(T), () => enqueueServiceReminders(T), () => enqueueReminderNow(T, "a1"), () => getAppointmentReminderStatus(T, "a1")]) {
+      await expect(run()).rejects.toThrow("tenant_scope:tenant_scope_missing");
     }
     expect(mocks.prisma.appointment.findMany).not.toHaveBeenCalled();
     expect(mocks.prisma.appointment.findUnique).not.toHaveBeenCalled();
@@ -91,7 +93,7 @@ describe("verified legacy reminder scope", () => {
     { service: { tenantId: "other", reminders: [{ amount: 3, unit: "DAYS", asksConfirmation: true }] } },
   ])("does not act on an unowned or inconsistent scan row (%j)", async (over) => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt(over)]);
-    await expect(enqueueServiceReminders({ now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
+    await expect(enqueueServiceReminders(T, { now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
     expect(mocks.prisma.appointment.updateMany).not.toHaveBeenCalled();
     expect(mocks.prisma.conversationState.createMany).not.toHaveBeenCalled();
@@ -126,7 +128,7 @@ describe("verified legacy reminder scope", () => {
       Object.assign(committed, staged);
       return result;
     });
-    const run = enqueueServiceReminders({ now: NOW_72H });
+    const run = enqueueServiceReminders(T, { now: NOW_72H });
     if (failure === "owned state missing after conflict") {
       await expect(run).rejects.toThrow("No se pudo guardar el estado de conversación en la instalación original.");
       expect(tx.conversationState.updateMany.mock.calls).toEqual([[{
@@ -152,10 +154,10 @@ describe("verified legacy reminder scope", () => {
       conversationState: mocks.prisma.conversationState,
     };
     mocks.prisma.$transaction.mockImplementation(async (fn) => fn(tx));
-    await expect(enqueueServiceReminders({ now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
+    await expect(enqueueServiceReminders(T, { now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     const [sql, owner] = tx.$queryRaw.mock.calls[0]!;
-    expect(sql.join("?")).toMatch(/FROM "Professional"\s+WHERE id = 1 AND "tenantId" = \? FOR UPDATE/);
+    expect(sql.join("?")).toMatch(/FROM "Professional" p[\s\S]*WHERE a\."tenantId" = \? AND a\."isPrimary" = true[\s\S]*FOR UPDATE OF p/);
     expect(owner).toBe(tenantId);
     expect(tx.appointment.findUnique).toHaveBeenCalledWith({
       where: { ...appointmentScope, id: scanned.id, status: scanned.status, startsAt: scanned.startsAt,
@@ -172,7 +174,7 @@ describe("verified legacy reminder scope", () => {
   it("does not enqueue when the verified professional row cannot be locked", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt()]);
     mocks.prisma.$queryRaw.mockResolvedValue([]);
-    await expect(enqueueServiceReminders({ now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
+    await expect(enqueueServiceReminders(T, { now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
     expect(mocks.prisma.appointment.findUnique).not.toHaveBeenCalled();
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
     expect(mocks.prisma.appointment.updateMany).not.toHaveBeenCalled();
@@ -181,8 +183,8 @@ describe("verified legacy reminder scope", () => {
 
   it("does not expose or notify an appointment with an out-of-scope relationship", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(appt({ patient: { tenantId: "other", whatsappJid: JID } }));
-    await expect(getAppointmentReminderStatus("a1")).resolves.toEqual([]);
-    await expect(enqueueReminderNow("a1", { now: NOW_72H })).rejects.toThrow("Turno inexistente: a1");
+    await expect(getAppointmentReminderStatus(T, "a1")).resolves.toEqual([]);
+    await expect(enqueueReminderNow(T, "a1", { now: NOW_72H })).rejects.toThrow("Turno inexistente: a1");
     expect(mocks.prisma.outboundMessage.findFirst).not.toHaveBeenCalled();
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
@@ -200,7 +202,7 @@ describe("enqueuePrepInstructions", () => {
       appt({ id: "foreign", service: { ...service, tenantId: "other" } }),
       appt({ id: "later", service, startsAt: new Date(NOW_24H.getTime() + 24 * H + 20 * 60_000) }),
     ]);
-    expect(await enqueuePrepInstructions(20, { patientIds: ["p1", "foreign"] })).toBe(1);
+    expect(await enqueuePrepInstructions(T, 20, { patientIds: ["p1", "foreign"] })).toBe(1);
     expect(mocks.prisma.appointment.findMany.mock.calls[0]![0].where).toEqual({
       ...appointmentScope, status: "CONFIRMED", startsAt: { gte: NOW_24H },
       service: { tenantId, prepInstructions: { not: null }, prepLeadHours: { not: null } },
@@ -212,14 +214,14 @@ describe("enqueuePrepInstructions", () => {
       body: messages.prepInstructionsMessage({ serviceName: "Control", startsAt: STARTS, tz: TZ, instructions: "Ayuno" }),
     }]]);
     mocks.enqueueMessage.mockResolvedValue(false);
-    expect(await enqueuePrepInstructions(20, { patientIds: ["p1"] })).toBe(0);
+    expect(await enqueuePrepInstructions(T, 20, { patientIds: ["p1"] })).toBe(0);
   });
 });
 
 describe("enqueueServiceReminders", () => {
   it("consulta turnos CONFIRMED futuros hasta 15 días, sin filtrar por servicio activo, con scope", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([]);
-    await enqueueServiceReminders({ now: NOW_24H, scope: { patientIds: ["p1"] } });
+    await enqueueServiceReminders(T, { now: NOW_24H, scope: { patientIds: ["p1"] } });
     const { where } = mocks.prisma.appointment.findMany.mock.calls[0]![0];
     expect(where).toEqual({
       ...appointmentScope,
@@ -228,13 +230,13 @@ describe("enqueueServiceReminders", () => {
       patientId: { in: ["p1"] },
     });
     expect(JSON.stringify(where)).not.toContain("active");
-    expect(mocks.prisma.agenda.findUnique).toHaveBeenCalledWith({
-      where: { id_tenantId: { id: agendaId, tenantId }, isPrimary: true, professionalId: 1 },
-      select: { professional: { select: { timezone: true, phoneJid: true } } },
+    expect(mocks.prisma.agenda.findFirst).toHaveBeenCalledWith({
+      where: { tenantId, isPrimary: true },
+      select: { id: true, tenantId: true, professionalId: true, professional: { select: { timezone: true, phoneJid: true } } },
     });
 
     mocks.prisma.appointment.findMany.mockClear();
-    await enqueueServiceReminders({ now: NOW_24H });
+    await enqueueServiceReminders(T, { now: NOW_24H });
     expect(mocks.prisma.appointment.findMany.mock.calls[0]![0].where.patientId).toBeUndefined();
   });
 
@@ -242,7 +244,7 @@ describe("enqueueServiceReminders", () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([
       appt({ service: { name: "Control", reminders: [{ amount: 24, unit: "HOURS", asksConfirmation: false }] } }),
     ]);
-    const res = await enqueueServiceReminders({ now: NOW_24H });
+    const res = await enqueueServiceReminders(T, { now: NOW_24H });
     expect(res).toEqual({ reminders: 1, confirmations: 0 });
     const call = mocks.enqueueMessage.mock.calls[0]![0];
     expect(call).toMatchObject({ toJid: JID, kind: "REMINDER", appointmentId: "a1", dedupeKey: "auto:24h" });
@@ -253,7 +255,7 @@ describe("enqueueServiceReminders", () => {
 
   it("el que pide confirmar manda CONFIRMATION_REQUEST, marca el turno y la conversación", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt()]);
-    const res = await enqueueServiceReminders({ now: NOW_72H });
+    const res = await enqueueServiceReminders(T, { now: NOW_72H });
     expect(res).toEqual({ reminders: 0, confirmations: 1 });
     const call = mocks.enqueueMessage.mock.calls[0]![0];
     expect(call.kind).toBe("CONFIRMATION_REQUEST");
@@ -278,18 +280,18 @@ describe("enqueueServiceReminders", () => {
   it("si enqueueMessage no creó la fila, no toca turno ni conversación y no cuenta", async () => {
     mocks.enqueueMessage.mockResolvedValue(false);
     mocks.prisma.appointment.findMany.mockResolvedValue([appt()]);
-    const res = await enqueueServiceReminders({ now: NOW_72H });
+    const res = await enqueueServiceReminders(T, { now: NOW_72H });
     expect(res).toEqual({ reminders: 0, confirmations: 0 });
     expect(mocks.prisma.appointment.updateMany).not.toHaveBeenCalled();
     expect(mocks.prisma.conversationState.createMany).not.toHaveBeenCalled();
 
     mocks.prisma.appointment.findMany.mockResolvedValue([appt()]);
-    expect(await enqueueServiceReminders({ now: NOW_24H })).toEqual({ reminders: 0, confirmations: 0 });
+    expect(await enqueueServiceReminders(T, { now: NOW_24H })).toEqual({ reminders: 0, confirmations: 0 });
   });
 
   it("pide createdAt de los mensajes", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([]);
-    await enqueueServiceReminders({ now: NOW_24H });
+    await enqueueServiceReminders(T, { now: NOW_24H });
     expect(mocks.prisma.appointment.findMany.mock.calls[0]![0].include.messages.select).toEqual({
       kind: true,
       dedupeKey: true,
@@ -315,7 +317,7 @@ describe("enqueueServiceReminders", () => {
         ],
       }),
     ]);
-    expect(await enqueueServiceReminders({ now: new Date(STARTS.getTime() - 20 * H) })).toEqual({ reminders: 0, confirmations: 0 });
+    expect(await enqueueServiceReminders(T, { now: new Date(STARTS.getTime() - 20 * H) })).toEqual({ reminders: 0, confirmations: 0 });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
@@ -334,7 +336,7 @@ describe("enqueueServiceReminders", () => {
         messages: [],
       }),
     ]);
-    await enqueueServiceReminders({ now: new Date(STARTS.getTime() - 60 * H) });
+    await enqueueServiceReminders(T, { now: new Date(STARTS.getTime() - 60 * H) });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
@@ -345,7 +347,7 @@ describe("enqueueServiceReminders", () => {
         messages: [{ kind: "REMINDER", dedupeKey: "manual:x", createdAt: NOW_24H }],
       }),
     ]);
-    expect(await enqueueServiceReminders({ now: NOW_24H })).toEqual({ reminders: 1, confirmations: 0 });
+    expect(await enqueueServiceReminders(T, { now: NOW_24H })).toEqual({ reminders: 1, confirmations: 0 });
   });
 
   it("no repite: auto:24h ya encolado", async () => {
@@ -357,26 +359,26 @@ describe("enqueueServiceReminders", () => {
         ],
       }),
     ]);
-    expect(await enqueueServiceReminders({ now: NOW_24H })).toEqual({ reminders: 0, confirmations: 0 });
+    expect(await enqueueServiceReminders(T, { now: NOW_24H })).toEqual({ reminders: 0, confirmations: 0 });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
   it("confirmationRequestedAt sin fila cuenta como confirmación enviada", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt({ confirmationRequestedAt: new Date("2026-10-12T13:00:00Z") })]);
-    await enqueueServiceReminders({ now: NOW_72H });
+    await enqueueServiceReminders(T, { now: NOW_72H });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
   it("bookedAt null usa createdAt (reserva tardía → no encola)", async () => {
     const late = new Date(STARTS.getTime() - 20 * H);
     mocks.prisma.appointment.findMany.mockResolvedValue([appt({ bookedAt: null, createdAt: late })]);
-    await enqueueServiceReminders({ now: new Date(STARTS.getTime() - 19 * H) });
+    await enqueueServiceReminders(T, { now: new Date(STARTS.getTime() - 19 * H) });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
   it("reminders basura en el servicio → no tira ni encola", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt({ service: { name: "X", reminders: { foo: 1 } } })]);
-    await expect(enqueueServiceReminders({ now: NOW_24H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
+    await expect(enqueueServiceReminders(T, { now: NOW_24H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
@@ -387,14 +389,14 @@ describe("enqueueServiceReminders", () => {
       appt({ id: "a2", service: only24 }),
     ]);
     mocks.enqueueMessage.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce(true);
-    await expect(enqueueServiceReminders({ now: NOW_24H })).resolves.toEqual({ reminders: 1, confirmations: 0 });
+    await expect(enqueueServiceReminders(T, { now: NOW_24H })).resolves.toEqual({ reminders: 1, confirmations: 0 });
     expect(mocks.enqueueMessage.mock.calls[1]![0].appointmentId).toBe("a2");
   });
 
   it("si fallan todos los que tenían algo para encolar, tira", async () => {
     mocks.prisma.appointment.findMany.mockResolvedValue([appt()]);
     mocks.enqueueMessage.mockRejectedValue(new Error("boom"));
-    await expect(enqueueServiceReminders({ now: NOW_24H })).rejects.toThrow("boom");
+    await expect(enqueueServiceReminders(T, { now: NOW_24H })).rejects.toThrow("boom");
   });
 });
 
@@ -406,14 +408,14 @@ describe("enqueueReminderNow", () => {
     ["pasado", { startsAt: new Date("2026-10-13T14:00:00Z") }],
   ])("turno %s → not_applicable sin crear", async (_label, over) => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(appt(over));
-    await expect(enqueueReminderNow("a1", { now: NOW })).resolves.toBe("not_applicable");
+    await expect(enqueueReminderNow(T, "a1", { now: NOW })).resolves.toBe("not_applicable");
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
 
   it("manual pendiente → already_pending sin crear", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(appt());
     mocks.prisma.outboundMessage.findFirst.mockResolvedValue({ id: "m1" });
-    await expect(enqueueReminderNow("a1", { now: NOW })).resolves.toBe("already_pending");
+    await expect(enqueueReminderNow(T, "a1", { now: NOW })).resolves.toBe("already_pending");
     expect(mocks.prisma.outboundMessage.findFirst.mock.calls[0]![0].where).toEqual({
       appointmentId: "a1",
       OR: [{ tenantId }, { tenantId: null }],
@@ -427,7 +429,7 @@ describe("enqueueReminderNow", () => {
   it("si no, crea un REMINDER manual con la frase → queued, dentro de la transacción y con FOR UPDATE antes", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(appt());
     mocks.prisma.outboundMessage.findFirst.mockResolvedValue(null);
-    await expect(enqueueReminderNow("a1", { now: NOW })).resolves.toBe("queued");
+    await expect(enqueueReminderNow(T, "a1", { now: NOW })).resolves.toBe("queued");
     expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
     const { data } = mocks.prisma.outboundMessage.create.mock.calls[0]![0];
     expect(data).toMatchObject({ toJid: JID, kind: "REMINDER", appointmentId: "a1", tenantId, dedupeKey: `manual:${NOW.toISOString()}` });
@@ -441,21 +443,21 @@ describe("enqueueReminderNow", () => {
 
   it("turno inexistente → tira", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(null);
-    await expect(enqueueReminderNow("nope", { now: NOW })).rejects.toThrow();
+    await expect(enqueueReminderNow(T, "nope", { now: NOW })).rejects.toThrow();
   });
 });
 
 describe("getAppointmentReminderStatus", () => {
   it("turno inexistente → []", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(null);
-    await expect(getAppointmentReminderStatus("nope")).resolves.toEqual([]);
+    await expect(getAppointmentReminderStatus(T, "nope")).resolves.toEqual([]);
   });
 
   it("arma los ítems con la config vigente y los mensajes", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(
       appt({ messages: [{ kind: "CONFIRMATION_REQUEST", dedupeKey: "", status: "SENT", createdAt: new Date("2026-10-12T13:01:00Z") }] }),
     );
-    const items = await getAppointmentReminderStatus("a1", { now: new Date("2026-10-13T13:00:00Z") });
+    const items = await getAppointmentReminderStatus(T, "a1", { now: new Date("2026-10-13T13:00:00Z") });
     expect(items).toEqual([
       { label: "3 días antes, pide confirmar", state: "sent" },
       { label: "24 h antes", state: "pending" },
@@ -474,7 +476,7 @@ describe("enqueueServiceReminders con mensajes del horario viejo (prev:)", () =>
         messages: [{ kind: "CONFIRMATION_REQUEST", dedupeKey: `prev:${OLD}:m1:`, createdAt: new Date(NOW_72H.getTime() - 2 * H) }],
       }),
     ]);
-    const res = await enqueueServiceReminders({ now: NOW_72H });
+    const res = await enqueueServiceReminders(T, { now: NOW_72H });
     expect(res).toEqual({ reminders: 0, confirmations: 1 });
     expect(mocks.enqueueMessage.mock.calls[0]![0].kind).toBe("CONFIRMATION_REQUEST");
   });
@@ -490,7 +492,7 @@ describe("enqueueServiceReminders con mensajes del horario viejo (prev:)", () =>
         ],
       }),
     ]);
-    const res = await enqueueServiceReminders({ now: NOW_24H });
+    const res = await enqueueServiceReminders(T, { now: NOW_24H });
     expect(res).toEqual({ reminders: 1, confirmations: 0 });
     expect(mocks.enqueueMessage.mock.calls[0]![0]).toMatchObject({ kind: "REMINDER", dedupeKey: "auto:24h" });
   });
@@ -499,7 +501,7 @@ describe("enqueueServiceReminders con mensajes del horario viejo (prev:)", () =>
     mocks.prisma.appointment.findMany.mockResolvedValue([
       appt({ messages: [{ kind: "CONFIRMATION_REQUEST", dedupeKey: "", createdAt: new Date(NOW_72H.getTime() - 2 * H) }] }),
     ]);
-    await expect(enqueueServiceReminders({ now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
+    await expect(enqueueServiceReminders(T, { now: NOW_72H })).resolves.toEqual({ reminders: 0, confirmations: 0 });
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 });
@@ -513,7 +515,7 @@ describe("getAppointmentReminderStatus con mensajes del horario viejo (prev:)", 
         ],
       }),
     );
-    const items = await getAppointmentReminderStatus("a1", { now: new Date("2026-10-13T13:00:00Z") });
+    const items = await getAppointmentReminderStatus(T, "a1", { now: new Date("2026-10-13T13:00:00Z") });
     expect(items[0]).toEqual({ label: "3 días antes, pide confirmar", state: "pending" });
   });
 });

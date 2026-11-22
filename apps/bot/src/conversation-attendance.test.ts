@@ -2,7 +2,7 @@ import { messages } from "@nutri-bot/core";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
-  agenda: { findUnique: vi.fn() },
+  agenda: { findUnique: vi.fn(), findFirst: vi.fn() },
   appointment: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   patient: { findUnique: vi.fn() },
   conversationState: { findUnique: vi.fn(), createMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
@@ -42,6 +42,11 @@ beforeEach(() => {
   vi.resetAllMocks();
   db.$transaction.mockImplementation((fn) => fn(db));
   db.agenda.findUnique.mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires", phoneJid: "alert" } });
+  // HU-025b-1: el dominio resuelve la agenda principal del tenant de la conversación.
+  db.agenda.findFirst.mockResolvedValue({
+    id: "legacy-agenda", tenantId, professionalId: 1,
+    professional: { timezone: "America/Argentina/Buenos_Aires", phoneJid: "alert" },
+  });
   db.patient.findUnique.mockResolvedValue({ id: "p" });
   db.conversationState.findUnique.mockResolvedValue(state);
   db.conversationState.createMany.mockResolvedValue({ count: 0 });

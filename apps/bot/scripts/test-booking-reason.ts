@@ -37,6 +37,8 @@ import { messages, reasonForAlert } from "@nutri-bot/core";
 import { handleIncoming, handleIncomingMedia, type ConversationOptions } from "../src/conversation";
 import { listActiveServices } from "../src/booking";
 
+const T = { tenantId: "legacy-tenant" };
+
 const runId = randomUUID();
 const ALERT_JID = `booking-alert-${runId}@invalid`;
 const JID_ANA = `booking-ana-${runId}@invalid`;
@@ -385,7 +387,7 @@ async function main(): Promise<void> {
     await reachReasonStep(JID_ANA, sCon.id);
     const { ctx } = await stateOf(JID_ANA);
     const startsAt = new Date(ctx.startsAt as string);
-    const brunoAppt = await createAppointment({
+    const brunoAppt = await createAppointment(T, {
       patientId: bruno.id,
       serviceId: sCon.id,
       startsAt,
@@ -442,7 +444,7 @@ async function main(): Promise<void> {
 
   await scenario("14. Seña (dominio): AWAITING_PAYMENT con motivo y sin alerta", async () => {
     const now = new Date();
-    const slots = await getAvailableSlotsForService({
+    const slots = await getAvailableSlotsForService(T, {
       serviceId: sCon.id,
       from: now,
       to: new Date(now.getTime() + 21 * 24 * 60 * MIN),
@@ -464,7 +466,7 @@ async function main(): Promise<void> {
       },
     });
     serviceIds.push(sSena.id);
-    const appt = await createAppointment({
+    const appt = await createAppointment(T, {
       patientId: ana.id,
       serviceId: sSena.id,
       startsAt,
@@ -482,7 +484,7 @@ async function main(): Promise<void> {
 
   await scenario("15. Edición desde el panel (dominio): normaliza, no sincroniza ni avisa", async () => {
     assert.ok(felizApptId);
-    const u = await updateAppointmentReason({ id: felizApptId, reason: "  Control mensual  " });
+    const u = await updateAppointmentReason(T, { id: felizApptId, reason: "  Control mensual  " });
     assert.equal(u.reason, "Control mensual");
     let row = await prisma.appointment.findUniqueOrThrow({ where: { id: felizApptId } });
     assert.equal(row.reason, "Control mensual");
@@ -490,10 +492,10 @@ async function main(): Promise<void> {
     assert.equal((await takeNewAlerts()).length, 0);
     assert.equal(await takePatientMessages(), 0);
 
-    assert.equal((await updateAppointmentReason({ id: felizApptId, reason: "" })).reason, null);
-    await updateAppointmentReason({ id: felizApptId, reason: "Control mensual" });
+    assert.equal((await updateAppointmentReason(T, { id: felizApptId, reason: "" })).reason, null);
+    await updateAppointmentReason(T, { id: felizApptId, reason: "Control mensual" });
     await assert.rejects(
-      updateAppointmentReason({ id: felizApptId, reason: "a".repeat(501) }),
+      updateAppointmentReason(T, { id: felizApptId, reason: "a".repeat(501) }),
       (err) => err instanceof InvalidBookingReasonError,
     );
     row = await prisma.appointment.findUniqueOrThrow({ where: { id: felizApptId } });
@@ -501,12 +503,12 @@ async function main(): Promise<void> {
   });
 
   await scenario("16. Consulta (D8): el motivo no se copia y la consulta vacía se borra", async () => {
-    const done = await setAppointmentStatus({ id: felizApptId, status: "COMPLETED" });
+    const done = await setAppointmentStatus(T, { id: felizApptId, status: "COMPLETED" });
     assert.ok(done.consultation);
     consultationIds.add(done.consultation.id);
     const cons = await prisma.consultation.findUniqueOrThrow({ where: { id: done.consultation.id } });
     assert.equal(cons.notes, null);
-    const back = await setAppointmentStatus({ id: felizApptId, status: "CONFIRMED" });
+    const back = await setAppointmentStatus(T, { id: felizApptId, status: "CONFIRMED" });
     assert.equal(back.removedEmptyConsultation, true);
     const row = await prisma.appointment.findUniqueOrThrow({ where: { id: felizApptId } });
     assert.equal(row.reason, "Control mensual");

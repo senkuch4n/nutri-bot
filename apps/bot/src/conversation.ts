@@ -57,6 +57,7 @@ import {
   type DayOption,
 } from "./booking";
 import { logger } from "./logger";
+import { getConversationTenant } from "./tenant";
 
 type Send = (text: string) => Promise<void>;
 
@@ -578,7 +579,7 @@ async function handleBookConfirm(
       await save(jid, STEP.MENU);
       return;
     }
-    const appointment = await createAppointment({
+    const appointment = await createAppointment(await getConversationTenant(), {
       patientId,
       serviceId: ctx.serviceId,
       startsAt: new Date(ctx.startsAt),
@@ -688,7 +689,7 @@ async function handleCancelConfirm(
     include: { service: true },
   });
   if (appt && appt.status === "CONFIRMED") {
-    await cancelAppointment({ id: ctx.apptId, by: "PATIENT", notifyPatient: false });
+    await cancelAppointment(await getConversationTenant(), { id: ctx.apptId, by: "PATIENT", notifyPatient: false });
     const pro = await getProfessional();
     await send(
       messages.cancelDone({
@@ -713,7 +714,9 @@ async function handleConfirmAttendance(
 ): Promise<void> {
   if (typeof ctx.apptId !== "string" || !ctx.apptId) return;
   const attending = isYes(text) ? true : isNo(text) ? false : null;
-  const details = await respondToAppointmentAttendance({ id: ctx.apptId, whatsappJid: jid, attending, now, promptUpdatedAt });
+  const details = await respondToAppointmentAttendance(await getConversationTenant(), {
+    id: ctx.apptId, whatsappJid: jid, attending, now, promptUpdatedAt,
+  });
   if (!details) return;
   if (attending === null) {
     await send("Respondé *sí* si vas a poder venir, o *no* si no vas a poder.");

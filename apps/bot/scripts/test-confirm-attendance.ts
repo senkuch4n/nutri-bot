@@ -24,6 +24,8 @@ import { findLegacyConversationState } from "@nutri-bot/db/domain/conversationSt
 import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { handleIncoming } from "../src/conversation";
 
+const T = { tenantId: "legacy-tenant" };
+
 const TEST_JID = `confirm-fixture-${randomUUID()}@invalid`;
 const HOUR = 3_600_000;
 const appointmentIds: string[] = [];
@@ -108,7 +110,7 @@ async function main() {
   });
 
   await step("cron enqueueServiceReminders encola el pedido de confirmación", async () => {
-    const res = await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
+    const res = await enqueueServiceReminders(T, { scope: { patientIds: [patient.id] } });
     assert.ok(res.confirmations >= 1, "esperaba al menos 1 turno encolado");
     const state = await findLegacyConversationState(TEST_JID);
     assert.equal(state?.step, "CONFIRM_ATTENDANCE");
@@ -144,7 +146,7 @@ async function main() {
   });
 
   await step("cron enqueueServiceReminders encola el segundo turno (no duplica el primero)", async () => {
-    const res = await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
+    const res = await enqueueServiceReminders(T, { scope: { patientIds: [patient.id] } });
     assert.equal(res.confirmations, 1, "no debería re-encolar el turno A, que ya tiene su mensaje");
     const state = await findLegacyConversationState(TEST_JID);
     assert.equal((state?.context as { apptId?: string } | null)?.apptId, apptB.id);
@@ -172,7 +174,7 @@ async function main() {
     createdBy: "PATIENT",
     priceSnapshot: service.price,
   });
-  await enqueueServiceReminders({ scope: { patientIds: [patient.id] } });
+  await enqueueServiceReminders(T, { scope: { patientIds: [patient.id] } });
   const later = new Date(Date.now() + 2 * HOUR);
 
   await step("horas después, un mensaje común no dispara nada (silencio) y el turno sigue igual", async () => {
@@ -215,7 +217,7 @@ async function main() {
   });
 
   await step("cron enqueuePrepInstructions manda las recomendaciones previas al estudio", async () => {
-    const count = await enqueuePrepInstructions(20, { patientIds: [patient.id] });
+    const count = await enqueuePrepInstructions(T, 20, { patientIds: [patient.id] });
     assert.ok(count >= 1, "esperaba al menos 1 recomendación encolada");
     const outbound = await prisma.outboundMessage.findFirst({
       where: { appointmentId: apptC.id, kind: "PREP_INSTRUCTIONS" },

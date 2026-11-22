@@ -28,6 +28,8 @@ import {
 } from "../domain";
 import { resolveLegacySchedulingScope } from "../domain/legacySchedulingScope";
 
+const T = { tenantId: "legacy-tenant" };
+
 const baseChoices: PrescriptionChoices = {
   bmrFormula: "MIFFLIN_ST_JEOR",
   weightBasis: "ACTUAL",
@@ -248,7 +250,7 @@ async function main() {
         },
       });
       appointmentIds.push(a.id);
-      const done = await setAppointmentStatus({ id: a.id, status: "COMPLETED" });
+      const done = await setAppointmentStatus(T, { id: a.id, status: "COMPLETED" });
       assert.ok(done.consultation);
       consultationIds.push(done.consultation.id);
       const ctx = await getRequirementContextForConsultation(done.consultation.id);
@@ -256,7 +258,7 @@ async function main() {
       assert.equal(ctx.ctx?.heightCm, 162); // la del 12/09
       const p = await saveConsultationPrescription({ consultationId: done.consultation.id, choices: baseChoices });
       prescriptionIds.push(p.id);
-      const back = await setAppointmentStatus({ id: a.id, status: "CONFIRMED" });
+      const back = await setAppointmentStatus(T, { id: a.id, status: "CONFIRMED" });
       assert.equal(back.removedEmptyConsultation, false);
       assert.ok(await prisma.consultation.findUnique({ where: { id: done.consultation.id } }));
     });

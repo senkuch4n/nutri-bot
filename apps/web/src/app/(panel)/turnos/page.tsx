@@ -1,6 +1,7 @@
 import { formatInTimeZone, isValidMonthKey, monthKeyInTz } from "@nutri-bot/core";
-import { getProfessional } from "@/lib/professional";
+import { getTenantProfessional } from "@nutri-bot/db/domain";
 import { listServices } from "@/lib/services";
+import { requirePageContext } from "@/lib/tenant-context";
 import { loadTurnosMonth } from "./data";
 import { TurnosClient } from "./turnos-client";
 
@@ -14,16 +15,17 @@ function resolveMonth(raw: string | string[] | undefined, current: string): stri
 
 /** HU-021: lista de turnos del mes con su estado y lo registrado como pagado. */
 export default async function TurnosPage({ searchParams }: { searchParams: Promise<{ mes?: string | string[] }> }) {
-  const [pro, { mes }] = await Promise.all([getProfessional(), searchParams]);
+  const ctx = await requirePageContext();
+  const [pro, { mes }] = await Promise.all([getTenantProfessional(ctx.tenantId), searchParams]);
   const tz = pro.timezone;
   const now = new Date();
   const currentMonth = monthKeyInTz(now, tz);
   const month = resolveMonth(mes, currentMonth);
 
   const [appointments, activeServices, allServices] = await Promise.all([
-    loadTurnosMonth(month, tz),
-    listServices({ activeOnly: true }),
-    listServices(),
+    loadTurnosMonth(ctx, month, tz),
+    listServices(ctx, { activeOnly: true }),
+    listServices(ctx),
   ]);
 
   return (

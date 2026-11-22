@@ -29,13 +29,13 @@ import { findOrCreatePatient, phoneToJid } from "@/lib/patients";
 import {
   enqueueReminderNow,
   getAppointmentReminderStatus,
-  getProfessional,
-  getLegacySchedulingTenantId,
   getRescheduleSlots,
+  getTenantProfessional,
   rescheduleAppointment,
   RescheduleError,
   type RescheduleErrorCode,
 } from "@nutri-bot/db/domain";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -74,9 +74,11 @@ export async function createAppointmentAction(
   if (!r.ok) return { ok: false, error: r.error };
 
   try {
+    // HU-025: el consultorio sale de la sesión; un tenantId/agendaId del formulario se ignora.
+    const ctx = await requireTenantContext("write");
+    const { tenantId } = ctx;
     let patientId: string;
     if (parsed.data.patientId) {
-      const tenantId = await getLegacySchedulingTenantId();
       const existing = await prisma.patient.findUnique({
         where: { id: parsed.data.patientId, tenantId },
         select: { id: true, whatsappJid: true },
@@ -90,7 +92,6 @@ export async function createAppointmentAction(
       if (name.length < 2) return { ok: false, error: T.nameRequired };
       const phone = parsePhoneInput(parsed.data.patientPhone ?? "");
       if (!phone.ok) return { ok: false, error: PHONE_INPUT_TEXT[phone.error] };
-      const tenantId = await getLegacySchedulingTenantId();
       const taken = await prisma.patient.findUnique({
         where: { tenantId_whatsappJid: { tenantId, whatsappJid: phoneToJid(phone.digits) } },
         select: { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true },
@@ -120,7 +121,7 @@ export async function createAppointmentAction(
       }
     }
 
-    await createAppointment({
+    await createAppointment(ctx, {
       patientId,
       serviceId: parsed.data.serviceId,
       startsAt: new Date(parsed.data.startsAt),
@@ -153,12 +154,13 @@ export type AppointmentPatientOption = Pick<
 };
 
 export async function listAppointmentPatientsAction(): Promise<AppointmentPatientOption[]> {
+  const { tenantId } = await requireTenantContext("read");
   const now = new Date();
   const [pro, patients, lastVisits] = await Promise.all([
-    getProfessional(),
+    getTenantProfessional(tenantId),
     prisma.patient.findMany({
       // HU-019 (T8): solo activas; core además descarta archivadas.
-      where: { archivedAt: null },
+      where: { tenantId, archivedAt: null },
       select: {
         id: true,
         name: true,
@@ -167,7 +169,7 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
         createdAt: true,
         archivedAt: true,
         appointments: {
-          where: { status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
+          where: { tenantId, status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
           orderBy: { startsAt: "asc" },
           take: 1,
           select: { startsAt: true, status: true },
@@ -176,7 +178,7 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
     }),
     prisma.appointment.groupBy({
       by: ["patientId"],
-      where: { startsAt: { lt: now }, status: { not: "CANCELLED" } },
+      where: { tenantId, patient: { tenantId }, startsAt: { lt: now }, status: { not: "CANCELLED" } },
       _max: { startsAt: true },
     }),
   ]);
@@ -220,7 +222,7 @@ export async function listAppointmentPatientsAction(): Promise<AppointmentPatien
 
 export async function cancelAppointmentAction(id: string, reason?: string): Promise<ActionResult> {
   try {
-    await cancelAppointment({ id, by: "PROFESSIONAL", reason });
+    await cancelAppointment(await requireTenantContext("write"), { id, by: "PROFESSIONAL", reason });
   } catch {
     return { ok: false, error: "No se pudo cancelar el turno." };
   }
@@ -238,7 +240,7 @@ export async function sendReminderNowAction(
 ): Promise<ActionResult & { result?: "queued" | "already_pending" }> {
   let result: Awaited<ReturnType<typeof enqueueReminderNow>>;
   try {
-    result = await enqueueReminderNow(id);
+    result = await enqueueReminderNow(await requireTenantContext("write"), id);
   } catch {
     return { ok: false, error: "No se pudo encolar el recordatorio." };
   }
@@ -254,7 +256,8 @@ export async function getAppointmentRemindersAction(
   id: string,
 ): Promise<{ ok: true; text: string } | { ok: false }> {
   try {
-    return { ok: true, text: reminderStatusText(await getAppointmentReminderStatus(id)) };
+    const ctx = await requireTenantContext("read");
+    return { ok: true, text: reminderStatusText(await getAppointmentReminderStatus(ctx, id)) };
   } catch {
     return { ok: false };
   }
@@ -270,7 +273,7 @@ export async function setStatusAction(
 ): Promise<ActionResult & { consultation?: { id: string; created: boolean } | null }> {
   let result: Awaited<ReturnType<typeof setAppointmentStatus>>;
   try {
-    result = await setAppointmentStatus({ id, status });
+    result = await setAppointmentStatus(await requireTenantContext("write"), { id, status });
   } catch {
     return { ok: false, error: "No se pudo actualizar el turno." };
   }
@@ -296,7 +299,7 @@ export async function saveAppointmentReasonAction(
 
   let updated: Awaited<ReturnType<typeof updateAppointmentReason>>;
   try {
-    updated = await updateAppointmentReason({ id: parsed.data.id, reason: r.reason });
+    updated = await updateAppointmentReason(await requireTenantContext("write"), { id: parsed.data.id, reason: r.reason });
   } catch {
     return { ok: false, error: "No se pudo guardar el motivo." };
   }
@@ -324,7 +327,7 @@ export async function getRescheduleSlotsAction(
 ): Promise<{ ok: true; slots: string[] } | { ok: false; error: string }> {
   if (!appointmentId || !isValidDayKey(dayKey)) return { ok: false, error: "Elegí un día válido." };
   try {
-    const slots = await getRescheduleSlots({ appointmentId, dayKey });
+    const slots = await getRescheduleSlots(await requireTenantContext("read"), { appointmentId, dayKey });
     return {
       ok: true,
       slots: [...slots].sort((a, b) => a.getTime() - b.getTime()).map((d) => d.toISOString()),
@@ -349,7 +352,10 @@ export async function rescheduleAppointmentAction(
 
   let updated: Awaited<ReturnType<typeof rescheduleAppointment>>;
   try {
-    updated = await rescheduleAppointment({ id: parsed.data.id, startsAt: new Date(parsed.data.startsAt) });
+    updated = await rescheduleAppointment(await requireTenantContext("write"), {
+      id: parsed.data.id,
+      startsAt: new Date(parsed.data.startsAt),
+    });
   } catch (err) {
     if (err instanceof RescheduleError) return { ok: false, error: RESCHEDULE_ERROR_TEXT[err.code] };
     return { ok: false, error: "No se pudo reprogramar el turno. Probá de nuevo." };

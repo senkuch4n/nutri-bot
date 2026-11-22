@@ -13,6 +13,7 @@ import {
 import { prisma } from "../index";
 import { getAvailableSlotsForService, getProfessional } from "./availability";
 import { clearExpiredLegacyConversationText } from "./conversationState";
+import { LEGACY_TENANT_ID } from "./tenantAccess";
 
 export { SESSION_STEPS_WITH_PATIENT_TEXT } from "./conversationState";
 
@@ -196,7 +197,8 @@ export async function runBotAiTool(p: {
         const service =
           services.find((s) => s.id === wanted) ?? services.find((s) => normalize(s.name) === key);
         if (!service) return fail("No hay un servicio activo con ese nombre. Usá la herramienta servicios.");
-        const slots = await getAvailableSlotsForService({
+        // HU-025b-1: la IA del bot sigue sobre el consultorio original; 025c pasa el tenant de la conversación.
+        const slots = await getAvailableSlotsForService({ tenantId: LEGACY_TENANT_ID }, {
           serviceId: service.id,
           from: p.now,
           to: new Date(p.now.getTime() + AVAILABILITY_DAYS * DAY_MS),

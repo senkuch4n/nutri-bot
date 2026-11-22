@@ -180,7 +180,7 @@ describe("runBotAiTool", () => {
     mocks.getAvailableSlotsForService.mockResolvedValue([new Date("2026-10-08T13:00:00Z")]);
     const r = await runBotAiTool({ ...base, name: "disponibilidad", input: { servicio: "svc-1" } });
     expect(r.isError).toBe(false);
-    expect(mocks.getAvailableSlotsForService).toHaveBeenCalledWith({
+    expect(mocks.getAvailableSlotsForService).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, {
       serviceId: "svc-1",
       from: NOW,
       to: new Date(NOW.getTime() + 21 * 86_400_000),
@@ -198,7 +198,7 @@ describe("runBotAiTool", () => {
     mocks.getAvailableSlotsForService.mockResolvedValue([]);
     const r = await runBotAiTool({ ...base, name: "disponibilidad", input: { servicio: "ANTROPOMETRIA" } });
     expect(r.isError).toBe(false);
-    expect(mocks.getAvailableSlotsForService.mock.calls[0]![0].serviceId).toBe("svc-1");
+    expect(mocks.getAvailableSlotsForService.mock.calls[0]![1].serviceId).toBe("svc-1");
     expect(JSON.parse(r.content).sinLugar).toBe(true);
   });
 

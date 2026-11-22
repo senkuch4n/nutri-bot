@@ -1,7 +1,8 @@
 import { prisma } from "@nutri-bot/db";
 import { formatInTimeZone } from "@nutri-bot/core";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { getTenantProfessional } from "@nutri-bot/db/domain";
 import { listServices } from "@/lib/services";
+import { requirePageContext } from "@/lib/tenant-context";
 import { CalendarClient } from "../calendar-client";
 
 export const dynamic = "force-dynamic";
@@ -20,17 +21,16 @@ function hhmmss(min: number): string {
  * Next, que puede restaurar las props del render original, no lleva a otro día.
  */
 export default async function CalendarPage() {
-  const { scope: { agendaId, tenantId }, professional: { timezone: tz } } = await resolveLegacySchedulingScope();
-  const todayKey = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+  // HU-025: agenda principal y profesional del consultorio de la sesión.
+  const ctx = await requirePageContext();
+  const { agendaId, tenantId } = ctx;
 
-  const [{ currency }, services, rules] = await Promise.all([
-    prisma.professional.findUniqueOrThrow({
-      where: { id_tenantId: { id: 1, tenantId } },
-      select: { currency: true },
-    }),
-    listServices({ activeOnly: true }),
+  const [{ timezone: tz, currency }, services, rules] = await Promise.all([
+    getTenantProfessional(tenantId),
+    listServices(ctx, { activeOnly: true }),
     prisma.availabilityRule.findMany({ where: { agendaId, agenda: { tenantId }, active: true } }),
   ]);
+  const todayKey = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
 
   const businessHours = rules.map((r) => ({
     daysOfWeek: [r.weekday],

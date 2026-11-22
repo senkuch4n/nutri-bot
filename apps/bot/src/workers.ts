@@ -8,6 +8,7 @@ import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
 import { logger } from "./logger";
 import { getBotAiConfig } from "./ai/runtime";
+import { getConversationTenant } from "./tenant";
 
 const MAX_ATTEMPTS = 5;
 let outboxRunning = false;
@@ -101,7 +102,7 @@ export function startCron(): void {
 
   cron.schedule("*/15 * * * *", async () => {
     try {
-      const n = await enqueuePrepInstructions();
+      const n = await enqueuePrepInstructions(await getConversationTenant());
       if (n > 0) logger.info({ n }, "Instrucciones previas encoladas");
     } catch (err) {
       logger.error({ err }, "Error encolando instrucciones previas");
@@ -144,7 +145,7 @@ export async function runStartupJobs(): Promise<void> {
   await reconcilePayments();
   try {
     await runServiceReminders();
-    await enqueuePrepInstructions();
+    await enqueuePrepInstructions(await getConversationTenant());
     await syncGoogleCalendar();
   } catch (err) {
     logger.error({ err }, "Error en tareas de arranque");
@@ -170,7 +171,7 @@ export async function runServiceReminders(): Promise<void> {
   if (remindersRunning) return;
   remindersRunning = true;
   try {
-    const { reminders, confirmations } = await enqueueServiceReminders();
+    const { reminders, confirmations } = await enqueueServiceReminders(await getConversationTenant());
     if (reminders > 0) logger.info({ n: reminders }, "Recordatorios encolados");
     if (confirmations > 0) logger.info({ n: confirmations }, "Confirmaciones de asistencia encoladas");
   } catch (err) {

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    agenda: { findUnique: vi.fn() },
+    agenda: { findFirst: vi.fn() },
     service: { findUnique: vi.fn() },
     availabilityRule: { findMany: vi.fn() },
     availabilityException: { findMany: vi.fn() },
@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 
 import { getAvailableSlotsForService, getRescheduleSlots } from "./availability";
+
+const T = { tenantId: "legacy-tenant" };
 
 const TZ = "America/Argentina/Buenos_Aires"; // UTC−3
 const DAY = "2026-11-05"; // jueves
@@ -28,7 +30,7 @@ const local = (hhmm: string) => new Date(`${DAY}T${hhmm}:00-03:00`);
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("MIN_LEAD_MINUTES", "120");
-  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { id: 1, timezone: TZ } });
+  mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { id: 1, timezone: TZ } });
   mocks.prisma.service.findUnique.mockResolvedValue({ id: "s1", durationMin: 60, active: true });
   // Jueves 09:00–14:00 → inicios 09, 10, 11, 12 y 13.
   mocks.prisma.availabilityRule.findMany.mockResolvedValue([
@@ -42,12 +44,12 @@ beforeEach(() => {
 
 describe("getAvailableSlotsForService", () => {
   it("regresión: sin excludeAppointmentId la consulta de ocupados no excluye ningún turno", async () => {
-    const slots = await getAvailableSlotsForService({ serviceId: "s1", from: DAY_START, to: DAY_END, now: NOW });
+    const slots = await getAvailableSlotsForService(T, { serviceId: "s1", from: DAY_START, to: DAY_END, now: NOW });
     expect(slots).toEqual([local("11:00"), local("13:00")]);
     const { where } = mocks.prisma.appointment.findMany.mock.calls[0]![0];
-    expect(mocks.prisma.agenda.findUnique).toHaveBeenCalledWith({
-      where: { id_tenantId: { id: "legacy-agenda", tenantId: "legacy-tenant" }, isPrimary: true, professionalId: 1 },
-      select: { professional: { select: { timezone: true, phoneJid: true } } },
+    expect(mocks.prisma.agenda.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: "legacy-tenant", isPrimary: true },
+      select: { id: true, tenantId: true, professionalId: true, professional: { select: { timezone: true, phoneJid: true } } },
     });
     const agenda = { agendaId: "legacy-agenda", agenda: { tenantId: "legacy-tenant" } };
     expect(mocks.prisma.availabilityRule.findMany).toHaveBeenCalledWith({ where: { ...agenda, active: true } });
@@ -61,14 +63,14 @@ describe("getAvailableSlotsForService", () => {
   });
 
   it("con excludeAppointmentId deja afuera ese turno de los ocupados", async () => {
-    await getAvailableSlotsForService({ serviceId: "s1", from: DAY_START, to: DAY_END, now: NOW, excludeAppointmentId: "a1" });
+    await getAvailableSlotsForService(T, { serviceId: "s1", from: DAY_START, to: DAY_END, now: NOW, excludeAppointmentId: "a1" });
     expect(mocks.prisma.appointment.findMany.mock.calls[0]![0].where.id).toEqual({ not: "a1" });
   });
 });
 
 describe("getRescheduleSlots (HU-022)", () => {
   it("S3: inicios libres de ese día para el servicio del turno, sin el propio, con anticipación mínima", async () => {
-    const slots = await getRescheduleSlots({ appointmentId: "a1", dayKey: DAY, now: NOW });
+    const slots = await getRescheduleSlots(T, { appointmentId: "a1", dayKey: DAY, now: NOW });
     // 09 y 10 caen antes de la anticipación, 12 está ocupado por otro turno.
     expect(slots).toEqual([local("11:00"), local("13:00")]);
     expect(mocks.prisma.appointment.findUnique).toHaveBeenCalledWith({
@@ -84,7 +86,7 @@ describe("getRescheduleSlots (HU-022)", () => {
     mocks.prisma.availabilityException.findMany.mockResolvedValue([
       { date: new Date(`${DAY}T00:00:00Z`), type: "BLOCKED", startTime: null, endTime: null },
     ]);
-    await expect(getRescheduleSlots({ appointmentId: "a1", dayKey: DAY, now: NOW })).resolves.toEqual([]);
+    await expect(getRescheduleSlots(T, { appointmentId: "a1", dayKey: DAY, now: NOW })).resolves.toEqual([]);
   });
 
   it("solo devuelve inicios de ese día, no del siguiente", async () => {
@@ -92,7 +94,7 @@ describe("getRescheduleSlots (HU-022)", () => {
       { weekday: 4, startTime: "09:00", endTime: "14:00", active: true },
       { weekday: 5, startTime: "00:00", endTime: "02:00", active: true },
     ]);
-    const slots = await getRescheduleSlots({ appointmentId: "a1", dayKey: DAY, now: NOW });
+    const slots = await getRescheduleSlots(T, { appointmentId: "a1", dayKey: DAY, now: NOW });
     expect(slots.every((s) => s < DAY_END)).toBe(true);
   });
 
@@ -103,13 +105,13 @@ describe("getRescheduleSlots (HU-022)", () => {
     ["CONFIRMED", new Date("2026-11-05T11:00:00Z")], // ya pasó
   ])("S5: turno %s (%s) → [] sin calcular horarios", async (status, startsAt) => {
     mocks.prisma.appointment.findUnique.mockResolvedValue({ ...OWN, status, startsAt });
-    await expect(getRescheduleSlots({ appointmentId: "a1", dayKey: DAY, now: NOW })).resolves.toEqual([]);
+    await expect(getRescheduleSlots(T, { appointmentId: "a1", dayKey: DAY, now: NOW })).resolves.toEqual([]);
     expect(mocks.prisma.appointment.findMany).not.toHaveBeenCalled();
   });
 
   it("S5: AWAITING_PAYMENT futuro sí se puede reprogramar", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue({ ...OWN, status: "AWAITING_PAYMENT" });
-    await expect(getRescheduleSlots({ appointmentId: "a1", dayKey: DAY, now: NOW })).resolves.toEqual([
+    await expect(getRescheduleSlots(T, { appointmentId: "a1", dayKey: DAY, now: NOW })).resolves.toEqual([
       local("11:00"),
       local("13:00"),
     ]);
@@ -117,10 +119,10 @@ describe("getRescheduleSlots (HU-022)", () => {
 
   it("turno inexistente → []", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue(null);
-    await expect(getRescheduleSlots({ appointmentId: "nope", dayKey: DAY, now: NOW })).resolves.toEqual([]);
+    await expect(getRescheduleSlots(T, { appointmentId: "nope", dayKey: DAY, now: NOW })).resolves.toEqual([]);
   });
 
   it("día inválido → tira", async () => {
-    await expect(getRescheduleSlots({ appointmentId: "a1", dayKey: "2026-02-30", now: NOW })).rejects.toThrow("Fecha inválida");
+    await expect(getRescheduleSlots(T, { appointmentId: "a1", dayKey: "2026-02-30", now: NOW })).rejects.toThrow("Fecha inválida");
   });
 });

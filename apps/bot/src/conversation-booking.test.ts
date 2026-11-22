@@ -138,7 +138,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     mocks.checkout.mockResolvedValue({ amount: 3000, checkoutUrl: "https://checkout.example.test/deposit" });
     const send = vi.fn();
     await handleIncoming("fake-patient", "sí", send);
-    expect(mocks.createAppointment).toHaveBeenCalledWith({ patientId: "patient", serviceId: "service", startsAt, createdBy: "PATIENT", notifyPatient: false, reason: null, professionalAlertJid: undefined });
+    expect(mocks.createAppointment).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, { patientId: "patient", serviceId: "service", startsAt, createdBy: "PATIENT", notifyPatient: false, reason: null, professionalAlertJid: undefined });
     expect(mocks.checkout).toHaveBeenCalledWith("appointment");
     const message = send.mock.calls[0]?.[0];
     for (const text of ["Consulta nutricional", "lunes 5 de octubre", "12:00", "3.000", "https://checkout.example.test/deposit", "15 minutos"]) expect(message).toContain(text);
