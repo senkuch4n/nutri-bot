@@ -13,7 +13,7 @@ import {
   disconnectMercadoPagoAccount, enqueueAfterHoursDigest, enqueueMessage, expireStalePendingPayments, findFoodNameConflicts,
   getFood, getFoodUsage, getMercadoPagoConnectionView, getMercadoPagoCredentials, getProfessionalPdfAssets,
   getProfessionalSignatureImage, listApprovedPaymentsInRange, listFoodMeasures, listFoods, listInquiries,
-  listMeasuresForPicker, listPendingPayments, markInquiryAnswered, markMercadoPagoAccountError, moveFoodMeasure,
+  listMeasuresForPicker, listPendingPayments, markInquiryAnswered, recipesForTenant, markMercadoPagoAccountError, moveFoodMeasure,
   notifyMercadoPagoMissingForBooking, reconcilePendingPayments, recordInquiryMessage, registerManualPayment,
   removeProfessionalLogo, removeProfessionalSignature, resolveMeasureItem, setFoodActive, updateFoodMeasure,
   updateOwnFood, updateProfessionalLogo, updateProfessionalSignature,
@@ -262,6 +262,28 @@ describe("M7 alimentos y medidas", () => {
     assert.equal((await getFood(D, saraId))?.active, true);
     assert.equal((await prisma.food.findUniqueOrThrow({ where: { id: saraId } })).active, true);
     await setFoodActive(C, saraId, true);
+  });
+
+  test("el catálogo de recetas sigue la misma regla: un SARA 2 oculto por C no aparece en sus recetas", async () => {
+    const ids = async (t: typeof C, include: string[] = []) =>
+      new Map((await recipesForTenant(t.tenantId).foods(include)).map((f) => [f.id, f.active]));
+    await setFoodActive(C, saraId, false);
+    try {
+      assert.equal((await ids(C)).has(saraId), false, "C lo ocultó: fuera del catálogo de C");
+      assert.equal((await ids(D)).get(saraId), true, "la preferencia de C no afecta a D");
+      assert.equal((await ids(C, [saraId])).get(saraId), false, "si la receta ya lo usa, entra marcado inactivo");
+      const catalogC = await ids(C, [fx.d.ownFoodId]);
+      assert.ok(catalogC.has(fx.c.ownFoodId) && !catalogC.has(fx.d.ownFoodId), "un propio de D nunca entra, ni pedido");
+    } finally {
+      await setFoodActive(C, saraId, true);
+    }
+    // Columna global `active` en false sin preferencia: para el consultorio manda la preferencia (sigue visible).
+    await prisma.food.update({ where: { id: saraId }, data: { active: false } });
+    try {
+      assert.equal((await ids(C)).get(saraId), true);
+    } finally {
+      await prisma.food.update({ where: { id: saraId }, data: { active: true } });
+    }
   });
 
   test("control positivo: C carga una medida en un SARA 2 sin tocar las de D", async () => {

@@ -44,12 +44,13 @@ export class FoodNotFoundError extends Error {
 type VisibilityRow = { source: FoodSource; active: boolean; catalogActive: boolean; visibility: { visible: boolean }[] };
 
 /** `active` tal como lo ve el consultorio (la preferencia del tenant manda sobre SARA 2). */
-function activeForTenant(f: VisibilityRow): boolean {
+export function activeForTenant(f: VisibilityRow): boolean {
   if (f.source !== "SARA2") return f.active;
   return f.catalogActive && (f.visibility[0]?.visible ?? true);
 }
 
-const visibilityFor = (t: TenantRef) => ({ where: { tenantId: t.tenantId }, select: { visible: true }, take: 1 }) as const;
+/** `include`/`select` de la preferencia del tenant (para `activeForTenant`). */
+export const visibilityFor = (t: TenantRef) => ({ where: { tenantId: t.tenantId }, select: { visible: true }, take: 1 }) as const;
 
 export const FOOD_SUMMARY_SELECT = {
   id: true,

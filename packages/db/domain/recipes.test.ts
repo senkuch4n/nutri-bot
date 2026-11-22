@@ -461,6 +461,41 @@ describe("lecturas", () => {
     await listFoodsForRecipes();
     expect(p().food.findMany.mock.calls[1][0].where).toEqual({ active: true });
   });
+
+  it("recipesForTenant().foods usa la visibilidad del consultorio (preferencia de SARA 2), no la columna global active", async () => {
+    const row = (id: string, extra: Record<string, unknown>) => ({
+      id, name: id, group: "VERDURAS", kcalPer100: dec(10), proteinPer100: dec(1), carbsPer100: dec(1), fatPer100: dec(0),
+      fiberPer100: null, ...extra,
+    });
+    p().food.findMany.mockResolvedValue([
+      // SARA 2 con columna global en false pero sin preferencia del tenant: visible (manda la preferencia).
+      row("sara-global-off", { source: "SARA2", active: false, catalogActive: true, visibility: [] }),
+      // SARA 2 que el tenant ocultó (pedido por la receta): entra marcado inactivo.
+      row("sara-hidden", { source: "SARA2", active: true, catalogActive: true, visibility: [{ visible: false }] }),
+      row("own", { source: "PROPIO", active: true, catalogActive: true, visibility: [] }),
+    ]);
+    const foods = await recipesForTenant("tenant-a").foods(["sara-hidden"]);
+    expect(foods.map((f) => [f.id, f.active])).toEqual([["sara-global-off", true], ["sara-hidden", false], ["own", true]]);
+
+    const visible = {
+      OR: [
+        { source: "SARA2", catalogActive: true, visibility: { none: { tenantId: "tenant-a", visible: false } } },
+        { source: "PROPIO", tenantId: "tenant-a", active: true },
+      ],
+    };
+    const call = p().food.findMany.mock.calls[0][0];
+    expect(call.where).toEqual({
+      AND: [
+        { OR: [{ source: "SARA2" }, { source: "PROPIO", tenantId: "tenant-a" }] },
+        { OR: [visible, { id: { in: ["sara-hidden"] } }] },
+      ],
+    });
+    // La preferencia que se lee es solo la de este consultorio: la de otro no afecta.
+    expect(call.select.visibility).toEqual({ where: { tenantId: "tenant-a" }, select: { visible: true }, take: 1 });
+
+    await recipesForTenant("tenant-a").foods();
+    expect(p().food.findMany.mock.calls[1][0].where).toEqual(visible);
+  });
 });
 
 describe("RECIPE_ITEM_SELECT (018c)", () => {
