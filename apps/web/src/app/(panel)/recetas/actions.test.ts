@@ -34,7 +34,7 @@ vi.mock("@nutri-bot/db", () => ({ prisma: { user: { findFirst: mocks.findUser } 
 
 const tenantId = "tenant-a";
 function allowPanel() {
-  mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" }, privateContentUserId: "user-a" });
+  mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" }, userId: "user-a" });
   mocks.findUser.mockResolvedValue({ memberships: [{ tenantId, role: "STAFF" }] });
   mocks.recipesForTenant.mockReturnValue({
     create: mocks.createRecipe, update: mocks.updateRecipe,

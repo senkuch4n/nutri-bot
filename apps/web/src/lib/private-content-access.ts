@@ -10,7 +10,7 @@ type PrivateContentAccess = {
 
 /** OWNER and STAFF may read, create, update and delete private recipes and templates. */
 export async function resolvePrivateContentAccess(): Promise<PrivateContentAccess | null> {
-  const userId = (await auth())?.privateContentUserId;
+  const userId = (await auth())?.userId;
   if (!userId) return null;
 
   // Read current membership for each operation; two rows are sufficient to detect ambiguity.
