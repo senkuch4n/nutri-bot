@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalEmail, decideTenantAccess, isMutatingPanelRequest, type AccessFacts } from "./tenant-access";
+import { canRemoveMember, canonicalEmail, decideTenantAccess, isMutatingPanelRequest, type AccessFacts } from "./tenant-access";
 
 const facts = (over: Partial<AccessFacts> = {}): AccessFacts => ({
   linked: true,
@@ -123,5 +123,24 @@ describe("isMutatingPanelRequest", () => {
     ["GET a un prefijo del callback no cuenta", req("GET", "/api/mercadopago/oauth"), false],
   ])("%s → %s", (_name, r, expected) => {
     expect(isMutatingPanelRequest(r)).toBe(expected);
+  });
+});
+
+describe("canRemoveMember (7.2.1)", () => {
+  const owner = { userId: "u-owner", role: "OWNER" as const };
+  it.each([
+    ["actor STAFF → not_owner", { actor: { userId: "u-staff", role: "STAFF" as const }, target: { userId: "u-x", role: "STAFF" as const }, ownerCount: 1 }, { ok: false, reason: "not_owner" }],
+    ["actor soporte (role null) → not_owner", { actor: { userId: "op", role: null }, target: { userId: "u-x", role: "STAFF" as const }, ownerCount: 1 }, { ok: false, reason: "not_owner" }],
+    ["target null (otro consultorio o inventado) → not_member", { actor: owner, target: null, ownerCount: 1 }, { ok: false, reason: "not_member" }],
+    ["target = actor → self", { actor: owner, target: { userId: "u-owner", role: "OWNER" as const }, ownerCount: 2 }, { ok: false, reason: "self" }],
+    ["target OWNER con ownerCount 1 → last_owner", { actor: owner, target: { userId: "u-other", role: "OWNER" as const }, ownerCount: 1 }, { ok: false, reason: "last_owner" }],
+    ["target OWNER con 2 → ok (C5)", { actor: owner, target: { userId: "u-other", role: "OWNER" as const }, ownerCount: 2 }, { ok: true }],
+    ["target STAFF → ok", { actor: owner, target: { userId: "u-staff", role: "STAFF" as const }, ownerCount: 1 }, { ok: true }],
+  ] as const)("%s", (_name, input, expected) => {
+    expect(canRemoveMember(input)).toEqual(expected);
+  });
+
+  it("not_owner gana sobre cualquier otra regla (soporte nunca quita, ni a sí mismo)", () => {
+    expect(canRemoveMember({ actor: { userId: "op", role: null }, target: null, ownerCount: 0 })).toEqual({ ok: false, reason: "not_owner" });
   });
 });

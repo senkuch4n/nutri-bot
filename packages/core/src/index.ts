@@ -58,3 +58,4 @@ export * from "./plan-templates";
 export * from "./reschedule-clock";
 export * from "./tenant-access";
 export * from "./access-text";
+export * from "./team-text";

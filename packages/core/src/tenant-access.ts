@@ -73,3 +73,25 @@ export function isMutatingPanelRequest(r: { method: string; pathname: string; is
   const path = r.pathname.length > 1 ? r.pathname.replace(/\/+$/, "") : r.pathname;
   return MUTATING_GET_PATHS.includes(path);
 }
+
+/** 025b (7.2.1): resultado de "Quitar acceso" en Ajustes → Equipo. */
+export type RemoveMemberCheck = { ok: true } | { ok: false; reason: "not_owner" | "self" | "last_owner" | "not_member" };
+
+/** 025b (7.2.1, D4, C5): reglas de "Quitar acceso".
+ *  - Solo una OWNER quita (STAFF o soporte, `role: null` → not_owner).
+ *  - El objetivo tiene que ser miembro de este consultorio (null = otro consultorio o inventado → not_member).
+ *  - Nadie se quita a sí misma (self).
+ *  - No se quita a la última OWNER (last_owner), aunque la UI no lo permita: defensa en profundidad para el
+ *    script y para dos OWNER quitándose a la vez (el lock de la transacción serializa).
+ *  - Una OWNER puede quitar a otra OWNER (C5). */
+export function canRemoveMember(p: {
+  actor: { userId: string; role: MembershipRole | null };
+  target: { userId: string; role: MembershipRole } | null;
+  ownerCount: number;
+}): RemoveMemberCheck {
+  if (p.actor.role !== "OWNER") return { ok: false, reason: "not_owner" };
+  if (!p.target) return { ok: false, reason: "not_member" };
+  if (p.target.userId === p.actor.userId) return { ok: false, reason: "self" };
+  if (p.target.role === "OWNER" && p.ownerCount <= 1) return { ok: false, reason: "last_owner" };
+  return { ok: true };
+}
