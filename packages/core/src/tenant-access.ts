@@ -60,3 +60,16 @@ export function decideTenantAccess(
 export function canonicalEmail(email: string): string {
   return email.trim().toLowerCase();
 }
+
+/** GET que escriben aunque sean navegación (lista cerrada). */
+const MUTATING_GET_PATHS: readonly string[] = ["/api/mercadopago/oauth/callback"];
+
+/** 025a: ¿la request modifica algo? Server action (header next-action), método distinto de GET/HEAD,
+ *  o una ruta GET que escribe (lista cerrada: "/api/mercadopago/oauth/callback"). */
+export function isMutatingPanelRequest(r: { method: string; pathname: string; isServerAction: boolean }): boolean {
+  if (r.isServerAction) return true;
+  const method = r.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return true;
+  const path = r.pathname.length > 1 ? r.pathname.replace(/\/+$/, "") : r.pathname;
+  return MUTATING_GET_PATHS.includes(path);
+}

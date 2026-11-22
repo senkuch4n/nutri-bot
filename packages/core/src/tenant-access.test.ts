@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalEmail, decideTenantAccess, type AccessFacts } from "./tenant-access";
+import { canonicalEmail, decideTenantAccess, isMutatingPanelRequest, type AccessFacts } from "./tenant-access";
 
 const facts = (over: Partial<AccessFacts> = {}): AccessFacts => ({
   linked: true,
@@ -101,5 +101,27 @@ describe("decideTenantAccess", () => {
       platformOperator: true,
       activeSupportGrants: [{ id: "g", tenantId: "otro", mode: "READ_WRITE", expiresAt: new Date() }],
     }))).toEqual({ ok: true, grant: { kind: "member", tenantId: "legacy-tenant", role: "STAFF" } });
+  });
+});
+
+describe("isMutatingPanelRequest", () => {
+  const req = (method: string, pathname: string, isServerAction = false) => ({ method, pathname, isServerAction });
+
+  it.each([
+    ["GET página", req("GET", "/pacientes"), false],
+    ["HEAD", req("HEAD", "/pacientes"), false],
+    ["GET /api/slots", req("GET", "/api/slots"), false],
+    ["get en minúsculas", req("get", "/turnos"), false],
+    ["POST con server action", req("POST", "/pacientes", true), true],
+    ["GET con server action", req("GET", "/pacientes", true), true],
+    ["POST a la API", req("POST", "/api/appointments"), true],
+    ["PUT a la API", req("PUT", "/api/professional/logo"), true],
+    ["DELETE a la API", req("DELETE", "/api/professional/signature"), true],
+    ["PATCH", req("PATCH", "/api/appointments"), true],
+    ["GET al callback de MP (escribe)", req("GET", "/api/mercadopago/oauth/callback"), true],
+    ["GET al callback de MP con barra final", req("GET", "/api/mercadopago/oauth/callback/"), true],
+    ["GET a un prefijo del callback no cuenta", req("GET", "/api/mercadopago/oauth"), false],
+  ])("%s → %s", (_name, r, expected) => {
+    expect(isMutatingPanelRequest(r)).toBe(expected);
   });
 });
