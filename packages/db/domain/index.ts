@@ -29,3 +29,4 @@ export * from "./professionalSelect";
 export * from "./planSections";
 export * from "./planTemplateImport";
 export * from "./tenantAccess";
+export * from "./tenantScope";

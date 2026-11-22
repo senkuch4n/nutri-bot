@@ -11,6 +11,8 @@
     "./domain/conversationState": "./domain/conversationState.ts",
     "./domain/legacySchedulingScope": "./domain/legacySchedulingScope.ts",
     "./domain/outbox": "./domain/outbox.ts",
+    "./domain/tenantAccess": "./domain/tenantAccess.ts",
+    "./domain/tenantScope": "./domain/tenantScope.ts",
     "./media": "./media/recipe-photo.ts"
   },
   "scripts": {
