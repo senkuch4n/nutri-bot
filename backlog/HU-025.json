@@ -4,16 +4,41 @@
   "slug": "autenticacion-permisos-tenant",
   "titulo": "Autenticación, permisos y aislamiento entre consultorios",
   "origen": "Backlog SaaS de NutriBot, issue #68. Sigue a HU-024 (modelo multi-tenant, en producción desde 2026-11-21).",
-  "estado": "arquitectura_lista",
+  "estado": "implementando",
   "intentos_revision": 0,
   "hu": "docs/hu-autenticacion-permisos-tenant.md",
   "sdd": "Refactorizaciones/autenticacion-permisos-tenant.md",
-  "rama": "feat/HU-025-autenticacion-permisos-tenant",
+  "rama": "feat/HU-025a2-acceso-por-membresia",
   "lock": "https://github.com/senkuch4n/nutri-bot/issues/68",
   "notas": "Depende de #67 (HU-024, mergeada). Bloquea HU-026, HU-030 y HU-031. HU-024 dejó resolvePrivateContentAccess() solo para recetas y plantillas; ALLOWED_EMAILS sigue dando acceso al panel; las membresías solo se crean con el script legacy-memberships. Puede requerir migración (rol PLATFORM_ADMIN, tenant del token del portal): si pasa, agregar la label `migración` al issue.",
   "skills_architect": [
     "migracion-prisma",
     "refactor",
     "ui"
-  ]
+  ],
+  "entrega_actual": "025a-2",
+  "entregas": {
+    "025a-1": {
+      "estado": "aprobada",
+      "rama": "feat/HU-025a1-registro-identidad",
+      "modelo": "opus",
+      "modelo_reviewer": "opus",
+      "skills": [
+        "migracion-prisma"
+      ],
+      "impl": "progress/impl_HU-025a1.md",
+      "review": "progress/review_HU-025a1.md"
+    },
+    "025a-2": {
+      "estado": "implementando",
+      "rama": "feat/HU-025a2-acceso-por-membresia",
+      "modelo": "opus",
+      "skills": [
+        "ui-ux-pro-max",
+        "ui-styling",
+        "web-design-guidelines",
+        "apple-design"
+      ]
+    }
+  }
 }

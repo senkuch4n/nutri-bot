@@ -363,3 +363,4 @@ orquestador, para que las revise a la mañana:
 
 - HU-024 (Leo, multi-tenant) mergeada a develop (PR #75) y publicada en prod (PR #76, deploy 1a3125b, 12 migraciones OK, base sin pacientes). Arreglé `backlog/HU-022.json` de Leo (→ bloqueada) para destrabar el CI, con su aviso en el PR. Pendiente en prod: correr `legacy-memberships` cuando la nutricionista use recetas y plantillas.
 - **HU-025** tomada: issue #68 asignado (estado: en curso), rama `feat/HU-025-autenticacion-permisos-tenant`, backlog en `afinando`. Lanzo el afinador.
+- **025a-1 aprobada** (Opus/Opus; review en progress/review_HU-025a1.md). Nota del reviewer para el deploy: si después de la fase 3 `/ajustes` muestra error de calendario, Daiana vuelve a entrar (en la fase 2 el refresh token no se guarda porque todavía no tiene membresía). 025a-2 en curso en el worktree `../Nutri-Bot-HU025a2`, encima de 025a-1.
