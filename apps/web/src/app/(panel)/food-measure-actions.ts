@@ -24,6 +24,7 @@ import type {
 import { errorCode } from "@/lib/error-code";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
 import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 import { touchTemplate } from "@/lib/touch-template";
 import { hasPanelSession } from "./recetas/recipe-save";
 
@@ -172,8 +173,10 @@ export async function setMeasureItemQtyAction(input: {
       await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty, access.tenantId);
       await touchTemplate(d.ownerId, access.tenantId);
     } else {
-      await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty);
-      await revalidateMenuOwner(d.kind, d.ownerId);
+      // HU-025b-1: el ítem de un plan siempre se acota al consultorio de la sesión.
+      const ctx = await requireTenantContext("write");
+      await setMeasureItemQuantity(d.kind, d.ownerId, d.itemId, d.qty, ctx.tenantId);
+      await revalidateMenuOwner(d.kind, d.ownerId, ctx.tenantId);
     }
     return { ok: true };
   } catch (err) {

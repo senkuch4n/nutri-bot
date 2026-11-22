@@ -45,12 +45,12 @@ describe("addSection", () => {
   });
 
   it("plan: usa planSection con planId; sin secciones order 0", async () => {
-    await addSection("plan", "p1", { title: "T", body: "x" });
-    expect(p().planSection.create.mock.calls[0][0].data).toEqual({ planId: "p1", title: "T", body: "x", order: 0 });
+    await addSection("plan", "p1", { title: "T", body: "x" }, "legacy-tenant");
+    expect(p().planSection.create.mock.calls[0][0].data).toEqual({ plan: { connect: { id: "p1", tenantId: "legacy-tenant" } }, title: "T", body: "x", order: 0 });
   });
 
   it("entrada inválida → PlanSectionInvalidError con el código, sin escribir", async () => {
-    const err = await addSection("plan", "p1", { title: "a".repeat(81), body: "x" }).catch((e) => e);
+    const err = await addSection("plan", "p1", { title: "a".repeat(81), body: "x" }, "legacy-tenant").catch((e) => e);
     expect(err).toBeInstanceOf(PlanSectionInvalidError);
     expect(err.code).toBe("TITLE_TOO_LONG");
     expect(p().planSection.create).not.toHaveBeenCalled();
@@ -58,15 +58,15 @@ describe("addSection", () => {
 
   it("preserva el filtro por plan al contar secciones y calcular el orden", async () => {
     p().planSection.aggregate.mockResolvedValue({ _max: { order: 3 } });
-    await addSection("plan", "p1", { title: "T", body: "x" });
-    expect(p().planSection.count).toHaveBeenCalledWith({ where: { planId: "p1" } });
-    expect(p().planSection.aggregate).toHaveBeenCalledWith({ where: { planId: "p1" }, _max: { order: true } });
-    expect(p().planSection.create).toHaveBeenCalledWith({ data: { planId: "p1", title: "T", body: "x", order: 4 }, select: { id: true } });
+    await addSection("plan", "p1", { title: "T", body: "x" }, "legacy-tenant");
+    expect(p().planSection.count).toHaveBeenCalledWith({ where: { planId: "p1", plan: { tenantId: "legacy-tenant" } } });
+    expect(p().planSection.aggregate).toHaveBeenCalledWith({ where: { planId: "p1", plan: { tenantId: "legacy-tenant" } }, _max: { order: true } });
+    expect(p().planSection.create).toHaveBeenCalledWith({ data: { plan: { connect: { id: "p1", tenantId: "legacy-tenant" } }, title: "T", body: "x", order: 4 }, select: { id: true } });
   });
 
   it("con 30 → PlanSectionLimitError", async () => {
     p().planSection.count.mockResolvedValue(30);
-    await expect(addSection("plan", "p1", { title: "T", body: "x" })).rejects.toBeInstanceOf(PlanSectionLimitError);
+    await expect(addSection("plan", "p1", { title: "T", body: "x" }, "legacy-tenant")).rejects.toBeInstanceOf(PlanSectionLimitError);
     expect(p().planSection.create).not.toHaveBeenCalled();
   });
 });
@@ -85,8 +85,8 @@ describe("updateSection / deleteSection", () => {
   it("count 0 → PlanSectionNotFoundError", async () => {
     p().planSection.updateMany.mockResolvedValue({ count: 0 });
     p().planSection.deleteMany.mockResolvedValue({ count: 0 });
-    await expect(updateSection("plan", "p1", "x", { title: "T", body: "b" })).rejects.toBeInstanceOf(PlanSectionNotFoundError);
-    await expect(deleteSection("plan", "p1", "x")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(updateSection("plan", "p1", "x", { title: "T", body: "b" }, "legacy-tenant")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(deleteSection("plan", "p1", "x", "legacy-tenant")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
   });
 });
 
@@ -98,16 +98,16 @@ describe("moveSection", () => {
   ];
   it("intercambia order con la vecina", async () => {
     p().planSection.findMany.mockResolvedValue(rows);
-    await moveSection("plan", "p1", "b", -1);
+    await moveSection("plan", "p1", "b", -1, "legacy-tenant");
     expect(p().planSection.updateMany.mock.calls).toEqual([
-      [{ where: { id: "b", planId: "p1" }, data: { order: 0 } }],
-      [{ where: { id: "a", planId: "p1" }, data: { order: 1 } }],
+      [{ where: { id: "b", planId: "p1", plan: { tenantId: "legacy-tenant" } }, data: { order: 0 } }],
+      [{ where: { id: "a", planId: "p1", plan: { tenantId: "legacy-tenant" } }, data: { order: 1 } }],
     ]);
   });
   it("en el borde no escribe", async () => {
     p().planSection.findMany.mockResolvedValue(rows);
-    await moveSection("plan", "p1", "c", 1);
-    await moveSection("plan", "p1", "a", -1);
+    await moveSection("plan", "p1", "c", 1, "legacy-tenant");
+    await moveSection("plan", "p1", "a", -1, "legacy-tenant");
     expect(p().planSection.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -174,5 +174,23 @@ describe("appendToSection", () => {
     const err = await appendToSection(mocks.prisma as any, "template", "t1", "s1", "xyz").catch((e) => e);
     expect(err).toBeInstanceOf(PlanSectionInvalidError);
     expect(err.code).toBe("BODY_TOO_LONG");
+  });
+});
+
+describe("HU-025b-1: secciones de plan siempre con el tenant", () => {
+  it("sin tenant un plan no se lee ni se escribe (PlanSectionNotFoundError)", async () => {
+    await expect(addSection("plan", "p1", { title: "T", body: "x" })).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(updateSection("plan", "p1", "s", { title: "T", body: "x" })).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(deleteSection("plan", "p1", "s")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(moveSection("plan", "p1", "s", 1)).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    expect(p().planSection.create).not.toHaveBeenCalled();
+    expect(p().planSection.updateMany).not.toHaveBeenCalled();
+    expect(p().planSection.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("un plan de otro consultorio: el filtro por tenant no lo encuentra", async () => {
+    p().planSection.updateMany.mockResolvedValue({ count: 0 });
+    await expect(updateSection("plan", "plan-de-b", "s", { title: "T", body: "x" }, "tenant-a")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    expect(p().planSection.updateMany.mock.calls[0][0].where).toEqual({ id: "s", planId: "plan-de-b", plan: { tenantId: "tenant-a" } });
   });
 });

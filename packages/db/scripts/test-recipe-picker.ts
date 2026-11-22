@@ -37,6 +37,8 @@ import {
 } from "../domain/weeklyMenu";
 import { processRecipePhoto } from "../media/recipe-photo";
 
+const T = { tenantId: "legacy-tenant" };
+
 const TEST_JID = "5490000018003@s.whatsapp.net";
 const TEST_PHONE = "5490000018003";
 
@@ -103,9 +105,9 @@ async function main() {
 
   const patient = await prisma.patient.create({ data: { whatsappJid: TEST_JID, phone: TEST_PHONE, name: "Prueba HU-018c" } });
   created.patientId = patient.id;
-  const plan = await createPlan(patient.id, { title: "Plan de prueba HU-018c" });
+  const plan = await createPlan(T, patient.id, { title: "Plan de prueba HU-018c" });
   created.planIds.push(plan.id);
-  await updatePlan(plan.id, { status: "ACTIVE" });
+  await updatePlan(T, plan.id, { status: "ACTIVE" });
   const meals = await prisma.planMeal.findMany({ where: { planId: plan.id }, orderBy: { order: "asc" } });
   const breakfast = meals.find((m) => m.name === "Desayuno")!;
   const snacks = meals.find((m) => m.name === "Colaciones")!;
@@ -113,7 +115,7 @@ async function main() {
   assert.ok(snacks.isOptions && snacks.mode === "EVERY_DAY");
 
   // 1. Agregar en lunes y miércoles.
-  const added = await addRecipeItems("plan", plan.id, { mealId: breakfast.id, recipeId, weekdays: ["WED", "MON"] });
+  const added = await addRecipeItems("plan", plan.id, { mealId: breakfast.id, recipeId, weekdays: ["WED", "MON"] }, T.tenantId);
   assert.equal(added.itemIds.length, 2);
   const rows = await prisma.planMealItem.findMany({ where: { id: { in: added.itemIds } }, orderBy: { weekday: "asc" } });
   assert.deepEqual(rows.map((r) => [r.weekday, r.recipeId, n(r.portions), r.foodId, r.quantityGrams]), [
@@ -125,8 +127,8 @@ async function main() {
 
   // 2. Porciones del lunes a 1,5; getPlan trae la receta y los macros salen de core.
   const mondayId = added.itemIds[0]!;
-  await setRecipeItemPortions("plan", plan.id, mondayId, 1.5);
-  const full = await getPlan(plan.id);
+  await setRecipeItemPortions("plan", plan.id, mondayId, 1.5, T.tenantId);
+  const full = await getPlan(T, plan.id);
   const monday = full!.meals.flatMap((m) => m.items).find((i) => i.id === mondayId)!;
   assert.equal(n(monday.portions), 1.5);
   assert.ok(monday.recipe, "getPlan incluye la receta");
@@ -153,14 +155,14 @@ async function main() {
   ).perPortion;
   assert.ok(perPortion && perPortion.kcal > 0);
   assert.deepEqual(recipeItemMacros(perPortion, 1.5), scaleMacros(perPortion, 1.5));
-  await assert.rejects(setRecipeItemPortions("plan", "otro-plan", mondayId, 2), { name: "MealOwnershipError" });
+  await assert.rejects(setRecipeItemPortions("plan", "otro-plan", mondayId, 2, T.tenantId), { name: "MealOwnershipError" });
   step(2, `setRecipeItemPortions a 1,5 y getPlan con la receta (${perPortion.kcal} kcal por porción)`);
 
   // 3. Copiar el lunes al viernes conserva la receta y sus porciones; Deshacer la saca.
-  const snapshots = await copyDay("plan", plan.id, { from: "MON", to: ["FRI"] });
+  const snapshots = await copyDay("plan", plan.id, { from: "MON", to: ["FRI"] }, T.tenantId);
   const friday = await prisma.planMealItem.findMany({ where: { mealId: breakfast.id, weekday: "FRI" } });
   assert.deepEqual(friday.map((i) => [i.recipeId, n(i.portions)]), [[recipeId, 1.5]]);
-  await restoreMealSnapshots("plan", plan.id, snapshots);
+  await restoreMealSnapshots("plan", plan.id, snapshots, T.tenantId);
   assert.equal(await prisma.planMealItem.count({ where: { mealId: breakfast.id, weekday: "FRI" } }), 0);
   const restored = await prisma.planMealItem.findMany({ where: { mealId: breakfast.id }, orderBy: { weekday: "asc" } });
   assert.deepEqual(restored.map((i) => [i.weekday, i.recipeId, n(i.portions)]), [["MON", recipeId, 1.5], ["WED", recipeId, 1]]);
@@ -177,11 +179,11 @@ async function main() {
   step(5, "patientCanSeeRecipePhoto = true con el plan ACTIVE");
 
   // 6. Colaciones (EVERY_DAY, opciones).
-  const snack = await addRecipeItems("plan", plan.id, { mealId: snacks.id, recipeId, weekdays: null });
+  const snack = await addRecipeItems("plan", plan.id, { mealId: snacks.id, recipeId, weekdays: null }, T.tenantId);
   assert.equal(snack.itemIds.length, 1);
   const snackRow = await prisma.planMealItem.findUniqueOrThrow({ where: { id: snack.itemIds[0]! } });
   assert.equal(snackRow.weekday, null);
-  await assert.rejects(addRecipeItems("plan", plan.id, { mealId: snacks.id, recipeId, weekdays: ["MON"] }), { name: "MealWeekdayMismatchError" });
+  await assert.rejects(addRecipeItems("plan", plan.id, { mealId: snacks.id, recipeId, weekdays: ["MON"] }, T.tenantId), { name: "MealWeekdayMismatchError" });
   step(6, "addRecipeItems en Colaciones (EVERY_DAY) con null → 1 ítem sin día");
 
   // 7. Plantilla: agregar la receta y aplicarla al paciente.
@@ -190,7 +192,7 @@ async function main() {
   const tpl = await getTemplate(template.id);
   const tplBreakfast = tpl!.meals.find((m) => m.name === "Desayuno")!;
   await addRecipeItems("template", template.id, { mealId: tplBreakfast.id, recipeId, portions: 2, weekdays: ["THU"] });
-  const applied = await applyTemplateToPatient(template.id, patient.id);
+  const applied = await getPlan(T, (await applyTemplateToPatient(template.id, patient.id, T.tenantId)).id);
   assert.ok(applied);
   created.planIds.push(applied.id);
   const appliedItems = applied.meals.flatMap((m) => m.items.map((i) => ({ meal: m.name, ...i })));
@@ -205,19 +207,19 @@ async function main() {
   //    paso 1 se vuelven a leer.)
   const breakfastIds = (await prisma.planMealItem.findMany({ where: { mealId: breakfast.id }, select: { id: true } })).map((i) => i.id);
   assert.equal(breakfastIds.length, 2);
-  assert.equal(await removeMenuItems("plan", plan.id, breakfastIds), 2);
+  assert.equal(await removeMenuItems("plan", plan.id, breakfastIds, T.tenantId), 2);
   const otherPlanItem = appliedItems.find((i) => i.recipeId)!.id;
-  assert.equal(await removeMenuItems("plan", plan.id, [otherPlanItem]), 0, "un ítem de otro plan no se borra");
+  assert.equal(await removeMenuItems("plan", plan.id, [otherPlanItem], T.tenantId), 0, "un ítem de otro plan no se borra");
   assert.equal(await prisma.planMealItem.count({ where: { id: otherPlanItem } }), 1);
   step(8, "removeMenuItems borra los 2 del desayuno; con el id de otro plan, 0");
 
   // 9. Archivar: no se agrega más, pero el plan la sigue mostrando.
   await archiveRecipe(recipeId);
   await assert.rejects(
-    addRecipeItems("plan", plan.id, { mealId: breakfast.id, recipeId, weekdays: ["TUE"] }),
+    addRecipeItems("plan", plan.id, { mealId: breakfast.id, recipeId, weekdays: ["TUE"] }, T.tenantId),
     (err) => err instanceof RecipeNotAvailableError,
   );
-  const after = await getPlan(plan.id);
+  const after = await getPlan(T, plan.id);
   const stillThere = after!.meals.flatMap((m) => m.items).find((i) => i.id === snack.itemIds[0]);
   assert.equal(stillThere?.recipe?.status, "ARCHIVED");
   step(9, "archiveRecipe → addRecipeItems da RecipeNotAvailableError y el plan sigue mostrando el ítem");
@@ -233,12 +235,12 @@ async function main() {
   assert.ok(preview.ingredients.length >= 2 && preview.ingredients.every((i) => i.name.length > 0));
   assert.doesNotMatch(JSON.stringify(preview), /rawText|importHints|published/);
   assert.ok(preview.perPortion && Math.abs(preview.perPortion.kcal - perPortion.kcal) < 0.05);
-  const planPreviews = await listPlanRecipePreviews(plan.id);
+  const planPreviews = await listPlanRecipePreviews(T, plan.id);
   assert.deepEqual(planPreviews.map((r) => r.id), [recipeId]);
-  assert.deepEqual((await listPlanRecipePreviews(applied.id)).map((r) => r.id), [recipeId]);
+  assert.deepEqual((await listPlanRecipePreviews(T, applied.id)).map((r) => r.id), [recipeId]);
   await prisma.recipe.update({ where: { id: recipeId }, data: { status: "DRAFT" } });
   assert.equal(await getRecipePreview(recipeId), null);
-  assert.deepEqual(await listPlanRecipePreviews(plan.id), []);
+  assert.deepEqual(await listPlanRecipePreviews(T, plan.id), []);
   step(10, "getRecipePreview / listPlanRecipePreviews: archivada visible, sin repetir, sin importación; borrador → null");
 }
 

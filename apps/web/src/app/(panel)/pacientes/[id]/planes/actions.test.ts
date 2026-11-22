@@ -16,6 +16,17 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+// HU-025b-1: el consultorio sale del contexto de la sesión.
+const TENANT_CTX = vi.hoisted(() => ({
+  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
+}));
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: async () => TENANT_CTX,
+  requirePageContext: async () => TENANT_CTX,
+  getTenantContext: async () => TENANT_CTX,
+  TenantAccessError: class TenantAccessError extends Error {},
+}));
 vi.mock("@nutri-bot/db/domain", () => ({
   TemplateNotPublishedError: mocks.TemplateNotPublishedError,
   TemplateApplicationUnavailableError: mocks.TemplateApplicationUnavailableError,
@@ -88,7 +99,7 @@ it("preserves manual plan creation without private-content membership", async ()
   data.set("title", "Manual plan");
   await createPlanAction({ ok: false }, data);
   expect(mocks.access).not.toHaveBeenCalled();
-  expect(mocks.createPlan).toHaveBeenCalledWith("pat1", { title: "Manual plan" });
+  expect(mocks.createPlan).toHaveBeenCalledWith(TENANT_CTX, "pat1", { title: "Manual plan" });
   expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat1");
   expect(mocks.redirect).toHaveBeenCalledWith("/pacientes/pat1/planes/plan1");
 });

@@ -22,6 +22,17 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+// HU-025b-1: el consultorio sale del contexto de la sesión.
+const TENANT_CTX = vi.hoisted(() => ({
+  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
+}));
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: async () => TENANT_CTX,
+  requirePageContext: async () => TENANT_CTX,
+  getTenantContext: async () => TENANT_CTX,
+  TenantAccessError: class TenantAccessError extends Error {},
+}));
 vi.mock("@nutri-bot/db/domain", () => ({
   RecipeNotAvailableError: mocks.RecipeNotAvailableError,
   addRecipeItems: mocks.addRecipeItems,
@@ -109,7 +120,7 @@ describe("recipe-picker-actions", () => {
     const forged = { ...add, tenantId: "tenant-b" };
     expect(await addRecipeToMealAction(forged)).toEqual({ ok: true, itemIds: ["a", "b"] });
     expect(mocks.addRecipeItems).toHaveBeenCalledWith("plan", "plan1", { mealId: "meal1", recipeId: "rec1", portions: 1, weekdays: ["TUE", "THU"] }, "tenant-a");
-    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "plan1");
+    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "plan1", "tenant-a");
 
     await addRecipeToMealAction({ ...add, kind: "template", ownerId: "t1", weekdays: null });
     expect(mocks.addRecipeItems).toHaveBeenLastCalledWith("template", "t1", { mealId: "meal1", recipeId: "rec1", portions: 1, weekdays: null }, "tenant-a");
@@ -146,7 +157,7 @@ describe("recipe-picker-actions", () => {
     mocks.removeMenuItems.mockResolvedValue(2);
     expect(await removeRecipeItemsAction({ kind: "template", ownerId: "t1", itemIds: ["a", "b"] })).toEqual({ ok: true });
     expect(mocks.removeMenuItems).toHaveBeenCalledWith("template", "t1", ["a", "b"], "tenant-a");
-    expect(mocks.revalidateMenuOwner.mock.calls).toEqual([["plan", "plan1"]]);
+    expect(mocks.revalidateMenuOwner.mock.calls).toEqual([["plan", "plan1", "tenant-a"]]);
     expect(mocks.touchTemplate.mock.calls).toEqual([["t1", "tenant-a"]]);
 
     mocks.removeMenuItems.mockRejectedValueOnce(new RangeError("x"));

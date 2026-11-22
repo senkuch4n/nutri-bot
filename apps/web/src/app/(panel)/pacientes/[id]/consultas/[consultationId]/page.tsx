@@ -61,7 +61,7 @@ export default async function ConsultationPage({
   const [consultation, pro, plans] = await Promise.all([
     getConsultation(tenant, consultationId),
     getTenantProfessional(tenant.tenantId),
-    listPatientPlans(id),
+    listPatientPlans(tenant, id),
   ]);
   if (!consultation || consultation.patientId !== id) notFound();
 

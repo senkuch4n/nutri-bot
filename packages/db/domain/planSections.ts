@@ -61,10 +61,11 @@ const SECTION_SELECT = { id: true, title: true, body: true, order: true } as con
 export async function listSections(
   kind: MealOwnerKind,
   ownerId: string,
+  tenantId?: string,
 ): Promise<{ id: string; title: string; body: string; order: number }[]> {
   const { section, ownerField } = sectionDb(kind, prisma);
   return (await section.findMany({
-    where: { [ownerField]: ownerId },
+    where: { [ownerField]: ownerId, ...ownerRelation(kind, sectionScope(kind, tenantId)) },
     orderBy: { order: "asc" },
     select: SECTION_SELECT,
   })) as { id: string; title: string; body: string; order: number }[];
@@ -77,27 +78,42 @@ async function nextOrder(section: SectionDelegate, where: object): Promise<numbe
   return agg._max.order === null ? 0 : agg._max.order + 1;
 }
 
-function templateOwner(kind: MealOwnerKind, tenantId?: string) {
-  if (tenantId === undefined) return undefined;
-  if (kind !== "template") throw new PlanSectionNotFoundError();
+/** HU-025: alcance del dueño. Plantilla: su tenant (y estado si se pide); plan: el tenant del plan. */
+type SectionScope = { tenantId: string; status?: "DRAFT" };
+
+/** Un plan exige tenant (sin él, PlanSectionNotFoundError, como un dueño inexistente). Una plantilla
+ *  sin tenant conserva el camino legacy de HU-024 hasta 025b-2. */
+function sectionScope(kind: MealOwnerKind, tenantId: string | undefined): SectionScope | undefined {
+  if (tenantId === undefined) {
+    if (kind === "plan") throw new PlanSectionNotFoundError();
+    return undefined;
+  }
   return { tenantId };
+}
+
+function ownerRelation(kind: MealOwnerKind, scope: SectionScope | undefined) {
+  // Sin alcance: solo la importación de plantillas sin tenant (scripts legacy); nunca un plan.
+  if (!scope) return {};
+  return kind === "template" ? { template: scope } : { plan: { tenantId: scope.tenantId } };
 }
 
 async function createIn(
   db: Db, kind: MealOwnerKind, ownerId: string, value: { title: string; body: string },
-  scope?: { tenantId: string; status?: "DRAFT" },
+  scope: SectionScope | undefined,
 ) {
   const { section, ownerField } = sectionDb(kind, db);
-  const owner = { [ownerField]: ownerId };
-  const where = scope ? { ...owner, template: scope } : owner;
+  const where = { [ownerField]: ownerId, ...ownerRelation(kind, scope) };
   const count = await section.count({ where });
   if (count >= PLAN_SECTION_LIMITS.maxPerOwner) throw new PlanSectionLimitError();
   const order = await nextOrder(section, where);
+  // connect con el tenant: un dueño de otro consultorio no se encuentra (P2025), igual que uno inexistente.
+  const owner = !scope
+    ? { [ownerField]: ownerId }
+    : kind === "template"
+      ? { template: { connect: { id: ownerId, ...scope } } }
+      : { plan: { connect: { id: ownerId, tenantId: scope.tenantId } } };
   return (await section.create({
-    data: {
-      ...(scope ? { template: { connect: { id: ownerId, ...scope } } } : owner),
-      title: value.title, body: value.body, order,
-    },
+    data: { ...owner, title: value.title, body: value.body, order },
     select: { id: true },
   })) as { id: string };
 }
@@ -110,7 +126,7 @@ export async function addSection(
   tenantId?: string,
 ): Promise<{ id: string }> {
   const value = validated(input);
-  const scope = templateOwner(kind, tenantId);
+  const scope = sectionScope(kind, tenantId);
   return prisma.$transaction((tx) => createIn(tx, kind, ownerId, value, scope));
 }
 
@@ -122,16 +138,19 @@ export async function updateSection(
   tenantId?: string,
 ): Promise<void> {
   const value = validated(input);
-  const template = templateOwner(kind, tenantId);
+  const scope = sectionScope(kind, tenantId);
   const { section, ownerField } = sectionDb(kind, prisma);
-  const r = await section.updateMany({ where: { id: sectionId, [ownerField]: ownerId, ...(template && { template }) }, data: value });
+  const r = await section.updateMany({
+    where: { id: sectionId, [ownerField]: ownerId, ...ownerRelation(kind, scope) },
+    data: value,
+  });
   if (r.count === 0) throw new PlanSectionNotFoundError();
 }
 
 export async function deleteSection(kind: MealOwnerKind, ownerId: string, sectionId: string, tenantId?: string): Promise<void> {
-  const template = templateOwner(kind, tenantId);
+  const scope = sectionScope(kind, tenantId);
   const { section, ownerField } = sectionDb(kind, prisma);
-  const r = await section.deleteMany({ where: { id: sectionId, [ownerField]: ownerId, ...(template && { template }) } });
+  const r = await section.deleteMany({ where: { id: sectionId, [ownerField]: ownerId, ...ownerRelation(kind, scope) } });
   if (r.count === 0) throw new PlanSectionNotFoundError();
 }
 
@@ -143,10 +162,10 @@ export async function moveSection(
   direction: -1 | 1,
   tenantId?: string,
 ): Promise<void> {
-  const template = templateOwner(kind, tenantId);
+  const scope = sectionScope(kind, tenantId);
   await prisma.$transaction(async (tx) => {
     const { section, ownerField } = sectionDb(kind, tx);
-    const where = { [ownerField]: ownerId, ...(template && { template }) };
+    const where = { [ownerField]: ownerId, ...ownerRelation(kind, scope) };
     const all = (await section.findMany({
       where,
       orderBy: { order: "asc" },
@@ -158,9 +177,9 @@ export async function moveSection(
     if (!other) return;
     const me = all[idx]!;
     const first = await section.updateMany({ where: { id: me.id, ...where }, data: { order: other.order } });
-    if (template && first.count === 0) throw new PlanSectionNotFoundError();
+    if (scope && first.count === 0) throw new PlanSectionNotFoundError();
     const second = await section.updateMany({ where: { id: other.id, ...where }, data: { order: me.order } });
-    if (template && second.count === 0) throw new PlanSectionNotFoundError();
+    if (scope && second.count === 0) throw new PlanSectionNotFoundError();
   });
 }
 
@@ -176,13 +195,16 @@ export async function appendToSection(
   text: string,
   tenantId?: string,
 ): Promise<{ id: string }> {
-  if (tenantId !== undefined && kind !== "template") throw new PlanSectionNotFoundError();
-  const draftOwner = tenantId === undefined ? undefined : { tenantId, status: "DRAFT" as const };
+  // Importación de plantillas: solo borradores. Un plan exige el tenant (HU-025b-1).
+  if (kind === "plan" && tenantId === undefined) throw new PlanSectionNotFoundError();
+  const scope: SectionScope | undefined = tenantId === undefined
+    ? undefined
+    : kind === "template" ? { tenantId, status: "DRAFT" } : { tenantId };
   if (sectionId === null) {
-    return createIn(tx, kind, ownerId, validated({ title: PLAN_IMPORT_TEXT.newSectionTitle, body: text }), draftOwner);
+    return createIn(tx, kind, ownerId, validated({ title: PLAN_IMPORT_TEXT.newSectionTitle, body: text }), scope);
   }
   const { section, ownerField } = sectionDb(kind, tx);
-  const where = { id: sectionId, [ownerField]: ownerId, ...(draftOwner && { template: draftOwner }) };
+  const where = { id: sectionId, [ownerField]: ownerId, ...ownerRelation(kind, scope) };
   const current = (await section.findFirst({
     where,
     select: { id: true, title: true, body: true },

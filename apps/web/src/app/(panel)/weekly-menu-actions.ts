@@ -15,6 +15,7 @@ import {
 import { WEEKDAYS, type Weekday } from "@nutri-bot/core";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
 import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 import { touchTemplate } from "@/lib/touch-template";
 
 // HU-018b (SDD 6.1): acciones del editor semanal, compartidas por planes y plantillas. Cada una
@@ -49,8 +50,10 @@ async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>
       undo = await fn(parsed.data, access.tenantId);
       await touchTemplate(ownerId, access.tenantId);
     } else {
-      undo = await fn(parsed.data);
-      await revalidateMenuOwner(kind, ownerId);
+      // HU-025b-1: un plan siempre va con el consultorio de la sesión (sin él, el dominio no lo toca).
+      const ctx = await requireTenantContext("write");
+      undo = await fn(parsed.data, ctx.tenantId);
+      await revalidateMenuOwner(kind, ownerId, ctx.tenantId);
     }
     return undo ? { ok: true, undo } : { ok: true };
   } catch (err) {

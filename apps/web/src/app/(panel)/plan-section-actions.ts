@@ -16,6 +16,7 @@ import type { PlanSectionActionResult } from "@/components/plan-sections/types";
 import { errorCode } from "@/lib/error-code";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
 import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 import { touchTemplate } from "@/lib/touch-template";
 import { hasPanelSession } from "./recetas/recipe-save";
 
@@ -71,8 +72,10 @@ async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>
       out = await fn(parsed.data, access.tenantId);
       await touchTemplate(ownerId, access.tenantId);
     } else {
-      out = await fn(parsed.data);
-      await revalidateMenuOwner(kind, ownerId);
+      // HU-025b-1: un plan siempre va con el consultorio de la sesión (sin él, el dominio no lo toca).
+      const ctx = await requireTenantContext("write");
+      out = await fn(parsed.data, ctx.tenantId);
+      await revalidateMenuOwner(kind, ownerId, ctx.tenantId);
       revalidatePath("/portal/plan");
     }
     return out ? { ok: true, id: out.id } : { ok: true };

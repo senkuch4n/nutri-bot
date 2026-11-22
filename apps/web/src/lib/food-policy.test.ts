@@ -133,7 +133,7 @@ describe("patient record template picker", () => {
     mocks.access.mockResolvedValue(access);
     expect(await planPanel()).toMatchObject({ patientId: "patient", plans: [], templates: null });
     expect(mocks.listTemplates).not.toHaveBeenCalled();
-    expect(mocks.listPatientPlans).toHaveBeenCalledWith("patient");
+    expect(mocks.listPatientPlans).toHaveBeenCalledWith(TENANT_CTX, "patient");
     expect(mocks.listPatientConsultations).toHaveBeenCalledWith(TENANT_CTX, "patient");
     expect(notFound).not.toHaveBeenCalled();
   });
@@ -207,7 +207,7 @@ describe("SARA2-only new food selections", () => {
     const payload = JSON.parse(mocks.completion.mock.calls[0]![0].messages[1].content);
     expect(payload.alimentos).toContain("SARA food");
     expect(payload.alimentos).not.toContain("Historical food");
-    expect(mocks.addMealItem).toHaveBeenCalledWith("new-meal", expect.objectContaining({ foodId: "sara" }));
+    expect(mocks.addMealItem).toHaveBeenCalledWith(TENANT_CTX, "new-meal", expect.objectContaining({ foodId: "sara" }));
   });
 
   it("returns an actionable AI error without calling AI when only PROPIO exists", async () => {
@@ -230,8 +230,11 @@ describe("SARA2-only new food selections", () => {
     mocks.getFood.mockResolvedValue(sara);
     await action(form({ planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", quantityGrams: "100" }));
     const write = action === addPlanMealItemAction ? mocks.addMealItem : mocks.addTemplateMealItem;
-    const scope = action === addPlanMealItemAction ? [] : [{ templateId: "template", tenantId: "tenant" }];
-    expect(write).toHaveBeenCalledWith("meal", expect.objectContaining({ foodId: "sara" }), ...scope);
+    if (action === addPlanMealItemAction) {
+      expect(write).toHaveBeenCalledWith(TENANT_CTX, "meal", expect.objectContaining({ foodId: "sara" }));
+    } else {
+      expect(write).toHaveBeenCalledWith("meal", expect.objectContaining({ foodId: "sara" }), { templateId: "template", tenantId: "tenant" });
+    }
   });
 
   it("disables the own-food creation action and redirects its old page", async () => {
@@ -258,11 +261,12 @@ describe("SARA2-only new food selections", () => {
     }));
     expect(mocks.resolveMeasureItem).toHaveBeenCalledWith("sara", "m1", 1.5);
     const write = action === addPlanMealItemAction ? mocks.addMealItem : mocks.addTemplateMealItem;
-    const scope = action === addPlanMealItemAction ? [] : [{ templateId: "template", tenantId: "tenant" }];
-    expect(write).toHaveBeenCalledWith("meal", {
+    const data = {
       foodId: "sara", customLabel: null, notes: null, order: 0, weekday: "TUE",
       measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180, quantityGrams: 270,
-    }, ...scope);
+    };
+    if (action === addPlanMealItemAction) expect(write).toHaveBeenCalledWith(TENANT_CTX, "meal", data);
+    else expect(write).toHaveBeenCalledWith("meal", data, { templateId: "template", tenantId: "tenant" });
   });
 
   it.each([addPlanMealItemAction, addTemplateMealItemAction])("HU-018d: cantidad inválida no escribe y un PROPIO con medida sigue rechazado", async (action) => {

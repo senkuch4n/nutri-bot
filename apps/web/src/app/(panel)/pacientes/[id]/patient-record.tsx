@@ -83,7 +83,7 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
           },
         },
       }),
-      listPatientPlans(id),
+      listPatientPlans(ctx, id),
       resolvePrivateContentAccess(),
       listDiaryEntries(ctx, id),
       getLatestFormulaMeasurements(ctx, id),

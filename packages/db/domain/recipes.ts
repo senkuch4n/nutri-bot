@@ -14,6 +14,7 @@ import {
 } from "@nutri-bot/core";
 import { prisma, type Prisma } from "../index";
 import { FOOD_REFERENCE_UNAVAILABLE, unavailableFoodReferences } from "./foodReferenceOwnership";
+import type { TenantRef } from "./tenantScope";
 
 // HU-018a: recetario. Los macros no se guardan: se calculan con computeRecipeMacros (core) desde
 // los ingredientes cada vez que se leen (D4, D10). Ninguna función devuelve bytes, salvo
@@ -487,9 +488,15 @@ export async function getRecipePreview(recipeId: string, tenantId?: string): Pro
 }
 
 /** Las recetas DISTINTAS usadas en ítems del plan (cualquier estado salvo DRAFT), en orden de nombre. */
-export async function listPlanRecipePreviews(planId: string): Promise<RecipePreview[]> {
+/** HU-025b-1: recetas del consultorio usadas en un plan del consultorio (`t`). */
+export async function listPlanRecipePreviews(t: TenantRef, planId: string): Promise<RecipePreview[]> {
+  const { tenantId } = t;
   const rows = await prisma.recipe.findMany({
-    where: { status: { not: "DRAFT" }, planItems: { some: { meal: { planId } } } },
+    where: {
+      tenantId,
+      status: { not: "DRAFT" },
+      planItems: { some: { meal: { planId, plan: { tenantId, patient: { tenantId } } } } },
+    },
     select: RECIPE_PREVIEW_SELECT,
     orderBy: { name: "asc" },
   });

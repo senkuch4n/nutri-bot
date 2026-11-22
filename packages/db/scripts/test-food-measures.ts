@@ -39,6 +39,8 @@ import {
   setMeasureItemQuantity,
 } from "../domain/weeklyMenu";
 
+const T = { tenantId: "legacy-tenant" };
+
 const TEST_JID = "5490000018004@s.whatsapp.net";
 const TEST_PHONE = "5490000018004";
 
@@ -108,7 +110,7 @@ async function main() {
 
   const patient = await prisma.patient.create({ data: { whatsappJid: TEST_JID, phone: TEST_PHONE, name: "Prueba HU-018d" } });
   created.patientId = patient.id;
-  const plan = await createPlan(patient.id, { title: "Plan de prueba HU-018d" });
+  const plan = await createPlan(T, patient.id, { title: "Plan de prueba HU-018d" });
   created.planIds.push(plan.id);
   const meals = await prisma.planMeal.findMany({ where: { planId: plan.id }, orderBy: { order: "asc" } });
   const lunch = meals.find((m) => m.name === "Almuerzo")!;
@@ -139,26 +141,26 @@ async function main() {
   step(3, "resolveMeasureItem 1½ taza → 270 g, plural «tazas»; con otro alimento → not found");
 
   // 4. Ítem en medida casera en el Almuerzo del lunes.
-  const added = await addMealItem(lunch.id, { foodId: arroz.id, order: 0, weekday: "MON", ...fields });
-  const full = await getPlan(plan.id);
+  const added = await addMealItem(T, lunch.id, { foodId: arroz.id, order: 0, weekday: "MON", ...fields });
+  const full = await getPlan(T, plan.id);
   const mondayItem = full!.meals.flatMap((m) => m.items).find((i) => i.id === added.id)!;
   assert.deepEqual(measureOf(mondayItem), [1.5, "taza", "tazas", 180, 270]);
   step(4, "addMealItem con medida → getPlan trae los cuatro campos y 270 g");
 
   // 5. Copiar el lunes al jueves conserva la medida; Deshacer la saca.
-  const snapshots = await copyDay("plan", plan.id, { from: "MON", to: ["THU"] });
+  const snapshots = await copyDay("plan", plan.id, { from: "MON", to: ["THU"] }, T.tenantId);
   const thursday = await prisma.planMealItem.findMany({ where: { mealId: lunch.id, weekday: "THU" } });
   assert.deepEqual(thursday.map(measureOf), [[1.5, "taza", "tazas", 180, 270]]);
-  await restoreMealSnapshots("plan", plan.id, snapshots);
+  await restoreMealSnapshots("plan", plan.id, snapshots, T.tenantId);
   assert.equal(await prisma.planMealItem.count({ where: { mealId: lunch.id, weekday: "THU" } }), 0);
   step(5, "copyDay MON → THU copia la medida; Deshacer la saca");
 
   // 6. Repetir en todos los días; Deshacer.
-  const before = await repeatMealInAllDays("plan", plan.id, lunch.id, "MON");
+  const before = await repeatMealInAllDays("plan", plan.id, lunch.id, "MON", T.tenantId);
   const all = await prisma.planMealItem.findMany({ where: { mealId: lunch.id } });
   assert.equal(all.length, 7);
   assert.ok(all.every((i) => i.measureName === "taza" && n(i.quantityGrams) === 270));
-  await restoreMealSnapshots("plan", plan.id, [before]);
+  await restoreMealSnapshots("plan", plan.id, [before], T.tenantId);
   const restored = await prisma.planMealItem.findMany({ where: { mealId: lunch.id } });
   assert.deepEqual(restored.map((i) => [i.weekday, ...measureOf(i)]), [["MON", 1.5, "taza", "tazas", 180, 270]]);
   step(6, "repeatMealInAllDays → 7 ítems con medida; Deshacer deja solo el lunes");
@@ -171,7 +173,7 @@ async function main() {
   const tplSnacks = tpl!.meals.find((m) => m.mode === "EVERY_DAY")!;
   const cdaFields = await resolveMeasureItem(arroz.id, cda.id, 1);
   await addTemplateMealItem(tplSnacks.id, { foodId: arroz.id, order: 0, weekday: null, ...cdaFields });
-  const applied = await applyTemplateToPatient(template.id, patient.id);
+  const applied = await getPlan(T, (await applyTemplateToPatient(template.id, patient.id, T.tenantId)).id);
   assert.ok(applied);
   created.planIds.push(applied.id);
   const appliedItems = applied.meals.flatMap((m) => m.items);
@@ -193,11 +195,11 @@ async function main() {
   step(9, "deleteFoodMeasure taza → el ítem sigue igual; al alimento le queda «cda»");
 
   // 10. (1b) Stepper: usa los gramos COPIADOS en el ítem (180), no los de la medida (160, ya borrada).
-  assert.deepEqual(await setMeasureItemQuantity("plan", plan.id, lunchItemId, 2), { quantityGrams: 360 });
+  assert.deepEqual(await setMeasureItemQuantity("plan", plan.id, lunchItemId, 2, T.tenantId), { quantityGrams: 360 });
   const stepped = await prisma.planMealItem.findUniqueOrThrow({ where: { id: lunchItemId } });
   assert.deepEqual(measureOf(stepped), [2, "taza", "tazas", 180, 360]);
-  await assert.rejects(setMeasureItemQuantity("plan", applied.id, lunchItemId, 1), (err) => err instanceof MealOwnershipError);
-  await assert.rejects(setMeasureItemQuantity("plan", plan.id, lunchItemId, 1.3), (err) => err instanceof RangeError);
+  await assert.rejects(setMeasureItemQuantity("plan", applied.id, lunchItemId, 1, T.tenantId), (err) => err instanceof MealOwnershipError);
+  await assert.rejects(setMeasureItemQuantity("plan", plan.id, lunchItemId, 1.3, T.tenantId), (err) => err instanceof RangeError);
   assert.equal(n((await prisma.planMealItem.findUniqueOrThrow({ where: { id: lunchItemId } })).quantityGrams), 360);
   step(10, "setMeasureItemQuantity a 2 → 360 g (180 copiados); otro plan → MealOwnershipError; 1,3 → RangeError");
 

@@ -35,6 +35,8 @@ import {
   type RecipeInput,
 } from "./recipes";
 
+const T = { tenantId: "legacy-tenant" };
+
 const p = () => mocks.prisma;
 const dec = (v: number) => ({ toString: () => String(v) });
 
@@ -523,9 +525,13 @@ describe("RecipePreview (018c-2)", () => {
 
   it("listPlanRecipePreviews pide recetas distintas del plan, sin borradores y por nombre", async () => {
     p().recipe.findMany.mockResolvedValue([row]);
-    const list = await listPlanRecipePreviews("plan1");
+    const list = await listPlanRecipePreviews(T, "plan1");
     const args = p().recipe.findMany.mock.calls[0][0];
-    expect(args.where).toEqual({ status: { not: "DRAFT" }, planItems: { some: { meal: { planId: "plan1" } } } });
+    expect(args.where).toEqual({
+      tenantId: "legacy-tenant",
+      status: { not: "DRAFT" },
+      planItems: { some: { meal: { planId: "plan1", plan: { tenantId: "legacy-tenant", patient: { tenantId: "legacy-tenant" } } } } },
+    });
     expect(args.orderBy).toEqual({ name: "asc" });
     expect(list.map((x) => x.id)).toEqual(["r1"]);
   });

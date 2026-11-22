@@ -10,6 +10,7 @@ import {
   deleteMeal,
   getPlan,
   getLatestFormulaMeasurements,
+  getTenantProfessional,
 } from "@nutri-bot/db/domain";
 import {
   activityLevelOption,
@@ -20,7 +21,6 @@ import {
   sexLabel,
 } from "@nutri-bot/core";
 import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
-import { getProfessional } from "@/lib/professional";
 import { requireTenantContext } from "@/lib/tenant-context";
 
 export type AiPlanState = { ok: boolean; error?: string };
@@ -59,11 +59,13 @@ export async function generateAiPlanAction(
   const parsed = requestSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
   const { planId, patientId, instructions } = parsed.data;
+  // HU-025: el plan y la paciente tienen que ser del consultorio de la sesión. Un plan de otro
+  // consultorio se rechaza como inexistente ANTES de armar el pedido a DeepSeek.
   const ctx = await requireTenantContext("write").catch(() => null);
   if (!ctx) return { ok: false, error: "Plan no encontrado" };
 
-  const plan = await getPlan(planId);
-  if (!plan) return { ok: false, error: "Plan no encontrado" };
+  const plan = await getPlan(ctx, planId);
+  if (!plan || plan.patientId !== patientId) return { ok: false, error: "Plan no encontrado" };
   // HU-018b: el plan nuevo trae comidas por defecto vacías; la IA corre si no hay ningún ítem.
   if (plan.meals.some((meal) => meal.items.length > 0)) {
     return {
@@ -73,12 +75,12 @@ export async function generateAiPlanAction(
   }
 
   const [pro, p, clinicalRecord, m, foods] = await Promise.all([
-    getProfessional(),
+    getTenantProfessional(ctx.tenantId),
     prisma.patient.findUnique({
-      where: { id: patientId },
+      where: { id_tenantId: { id: patientId, tenantId: ctx.tenantId } },
       select: { birthDate: true, sex: true, activityLevel: true, nutritionGoal: true },
     }),
-    prisma.clinicalRecord.findUnique({ where: { patientId } }),
+    prisma.clinicalRecord.findUnique({ where: { patientId, patient: { tenantId: ctx.tenantId } } }),
     getLatestFormulaMeasurements(ctx, patientId),
     listFoods({ activeOnly: true, source: "SARA2" }),
   ]);
@@ -171,7 +173,7 @@ export async function generateAiPlanAction(
   // 018b-2 (revisión de 018b-1): la IA tarda segundos y la profesional pudo cargar algo mientras
   // tanto. Se relee el plan justo antes de borrar y solo se borran comidas que siguen vacías; si ya
   // hay ítems, no se toca nada.
-  const fresh = await getPlan(planId);
+  const fresh = await getPlan(ctx, planId);
   if (!fresh) return { ok: false, error: "Plan no encontrado" };
   if (fresh.meals.some((meal) => meal.items.length > 0)) {
     return {
@@ -179,15 +181,15 @@ export async function generateAiPlanAction(
       error: "Este plan ya tiene comidas cargadas. Generá la propuesta en un plan vacío.",
     };
   }
-  for (const meal of fresh.meals) await deleteMeal(meal.id);
+  for (const meal of fresh.meals) await deleteMeal(ctx, meal.id);
 
   let mealOrder = 0;
   for (const meal of proposal) {
     // La propuesta se carga como comidas "Igual todos los días", como antes de la HU-018b.
-    const createdMeal = await addMeal(planId, { name: meal.name, order: mealOrder++, mode: "EVERY_DAY" });
+    const createdMeal = await addMeal(ctx, planId, { name: meal.name, order: mealOrder++, mode: "EVERY_DAY" });
     let itemOrder = 0;
     for (const item of meal.items) {
-      await addMealItem(createdMeal.id, {
+      await addMealItem(ctx, createdMeal.id, {
         foodId: item.foodId,
         quantityGrams: item.quantityGrams,
         notes: item.note || null,

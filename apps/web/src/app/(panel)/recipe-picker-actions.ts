@@ -55,7 +55,7 @@ function logError(err: unknown): void {
 
 async function refreshPickerOwner(kind: MealOwnerKind, ownerId: string, tenantId: string): Promise<void> {
   if (kind === "template") await touchTemplate(ownerId, tenantId);
-  else await revalidateMenuOwner(kind, ownerId);
+  else await revalidateMenuOwner(kind, ownerId, tenantId);
 }
 
 /** Recetas publicadas para la grilla del buscador (se llama cada vez que se abre). */

@@ -27,6 +27,17 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+// HU-025b-1: el consultorio sale del contexto de la sesión.
+const TENANT_CTX = vi.hoisted(() => ({
+  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
+}));
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: async () => TENANT_CTX,
+  requirePageContext: async () => TENANT_CTX,
+  getTenantContext: async () => TENANT_CTX,
+  TenantAccessError: class TenantAccessError extends Error {},
+}));
 vi.mock("@nutri-bot/db/domain", () => ({
   PlanSectionInvalidError: mocks.PlanSectionInvalidError,
   PlanSectionLimitError: mocks.PlanSectionLimitError,
@@ -116,8 +127,8 @@ describe("plan-section-actions", () => {
     mocks.addSection.mockResolvedValue({ id: "s9" });
     const r = await addPlanSectionAction({ kind: "plan", ownerId: "p1", title: "T", body: "b" });
     expect(r).toEqual({ ok: true, id: "s9" });
-    expect(mocks.addSection).toHaveBeenCalledWith("plan", "p1", { title: "T", body: "b" });
-    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "p1");
+    expect(mocks.addSection).toHaveBeenCalledWith("plan", "p1", { title: "T", body: "b" }, "legacy-tenant");
+    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "p1", "legacy-tenant");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/portal/plan");
   });
 
@@ -132,6 +143,6 @@ describe("plan-section-actions", () => {
   it("mover: dirección inválida → genérico; válida → llama al dominio", async () => {
     expect((await movePlanSectionAction({ kind: "plan", ownerId: "p1", sectionId: "s1", direction: 2 as never })).ok).toBe(false);
     await movePlanSectionAction({ kind: "plan", ownerId: "p1", sectionId: "s1", direction: -1 });
-    expect(mocks.moveSection).toHaveBeenCalledWith("plan", "p1", "s1", -1);
+    expect(mocks.moveSection).toHaveBeenCalledWith("plan", "p1", "s1", -1, "legacy-tenant");
   });
 });

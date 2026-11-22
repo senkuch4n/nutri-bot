@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
 import { MorphDialogTitle } from "@/components/primitives/morph-dialog";
 import { prisma } from "@nutri-bot/db";
-import { getPlan, getPlanConsultationId, getPlanTarget, listFoods, listMeasuresForPicker } from "@nutri-bot/db/domain";
+import {
+  getPlan, getPlanConsultationId, getPlanTarget, getTenantProfessional, listFoods, listMeasuresForPicker,
+} from "@nutri-bot/db/domain";
 import { computeAgeYears, computePlanMicronutrients, formatInTimeZone } from "@nutri-bot/core";
-import { getProfessional } from "@/lib/professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { formatDateTime } from "@nutri-bot/core";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
@@ -48,19 +50,21 @@ export async function PlanDetail({
   dia: string | string[] | undefined;
   variant: "page" | "modal";
 }) {
+  // HU-025: plan del consultorio de la sesión; uno de otro consultorio → notFound(), como inexistente.
+  const ctx = await requirePageContext();
   const [plan, foods, pro, planTarget, measures] = await Promise.all([
-    getPlan(planId),
+    getPlan(ctx, planId),
     listFoods({ activeOnly: true, source: "SARA2" }),
-    getProfessional(),
-    getPlanTarget(planId),
+    getTenantProfessional(ctx.tenantId),
+    getPlanTarget(ctx, planId),
     listMeasuresForPicker(),
   ]);
   if (!plan || plan.patientId !== id) notFound();
 
   const [patient, latestEntry] = await Promise.all([
-    prisma.patient.findUniqueOrThrow({ where: { id } }),
+    prisma.patient.findUniqueOrThrow({ where: { id_tenantId: { id, tenantId: ctx.tenantId } } }),
     prisma.evolutionEntry.findFirst({
-      where: { patientId: id, weightKg: { not: null } },
+      where: { patientId: id, tenantId: ctx.tenantId, weightKg: { not: null } },
       orderBy: { recordedAt: "desc" },
     }),
   ]);
@@ -76,7 +80,7 @@ export async function PlanDetail({
       }
     : null;
   // D11: sin objetivo, el aviso lleva a la consulta del plan o, si no tiene, a la pestaña Consultas.
-  const planConsultationId = target ? null : await getPlanConsultationId(plan.id);
+  const planConsultationId = target ? null : await getPlanConsultationId(ctx, plan.id);
   const targetMissingHref = target
     ? null
     : planConsultationId

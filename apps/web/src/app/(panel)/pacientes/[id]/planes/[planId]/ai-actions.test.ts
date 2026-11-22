@@ -23,13 +23,13 @@ vi.mock("@nutri-bot/db/domain", () => ({
     { id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", active: true, kcalPer100: 100 },
   ]),
   getLatestFormulaMeasurements: vi.fn().mockResolvedValue({ weightKg: null, heightCm: null }),
+  getTenantProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }),
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {
   patient: { findUnique: vi.fn().mockResolvedValue(null) },
   clinicalRecord: { findUnique: vi.fn().mockResolvedValue(null) },
 } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
 vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
 
 import { generateAiPlanAction } from "./ai-actions";
@@ -53,19 +53,19 @@ beforeEach(() => {
 describe("generateAiPlanAction: releer antes de borrar", () => {
   it("borra las comidas que lee justo antes de crear, no las de la primera lectura", async () => {
     mocks.getPlan
-      .mockResolvedValueOnce({ id: "plan", meals: [emptyMeal("a"), emptyMeal("b")] })
-      .mockResolvedValueOnce({ id: "plan", meals: [emptyMeal("b")] });
+      .mockResolvedValueOnce({ id: "plan", patientId: "patient", meals: [emptyMeal("a"), emptyMeal("b")] })
+      .mockResolvedValueOnce({ id: "plan", patientId: "patient", meals: [emptyMeal("b")] });
     expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: true });
     expect(mocks.getPlan).toHaveBeenCalledTimes(2);
-    expect(mocks.deleteMeal.mock.calls).toEqual([["b"]]);
-    expect(mocks.addMeal).toHaveBeenCalledWith("plan", { name: "Desayuno", order: 0, mode: "EVERY_DAY" });
-    expect(mocks.addMealItem).toHaveBeenCalledWith("new-meal", expect.objectContaining({ foodId: "sara", weekday: null }));
+    expect(mocks.deleteMeal.mock.calls).toEqual([[TENANT_CTX, "b"]]);
+    expect(mocks.addMeal).toHaveBeenCalledWith(TENANT_CTX, "plan", { name: "Desayuno", order: 0, mode: "EVERY_DAY" });
+    expect(mocks.addMealItem).toHaveBeenCalledWith(TENANT_CTX, "new-meal", expect.objectContaining({ foodId: "sara", weekday: null }));
   });
 
   it("si mientras respondía la IA se cargó un ítem, no borra ni crea nada", async () => {
     mocks.getPlan
-      .mockResolvedValueOnce({ id: "plan", meals: [emptyMeal("a")] })
-      .mockResolvedValueOnce({ id: "plan", meals: [{ ...emptyMeal("a"), items: [{ id: "x" }] }] });
+      .mockResolvedValueOnce({ id: "plan", patientId: "patient", meals: [emptyMeal("a")] })
+      .mockResolvedValueOnce({ id: "plan", patientId: "patient", meals: [{ ...emptyMeal("a"), items: [{ id: "x" }] }] });
     expect(await generateAiPlanAction({ ok: false }, form())).toEqual({
       ok: false,
       error: "Este plan ya tiene comidas cargadas. Generá la propuesta en un plan vacío.",
@@ -76,8 +76,24 @@ describe("generateAiPlanAction: releer antes de borrar", () => {
   });
 
   it("si el plan se borró mientras tanto, devuelve error sin crear comidas", async () => {
-    mocks.getPlan.mockResolvedValueOnce({ id: "plan", meals: [] }).mockResolvedValueOnce(null);
+    mocks.getPlan.mockResolvedValueOnce({ id: "plan", patientId: "patient", meals: [] }).mockResolvedValueOnce(null);
     expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: false, error: "Plan no encontrado" });
     expect(mocks.addMeal).not.toHaveBeenCalled();
+  });
+});
+
+describe("HU-025: IA de planes con un plan de otro consultorio", () => {
+  it("getPlan con el contexto de A no encuentra el plan de B → rechazo sin llamar a DeepSeek", async () => {
+    mocks.getPlan.mockResolvedValueOnce(null);
+    expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: false, error: "Plan no encontrado" });
+    expect(mocks.getPlan).toHaveBeenCalledWith(TENANT_CTX, "plan");
+    expect(mocks.completion).not.toHaveBeenCalled();
+    expect(mocks.addMeal).not.toHaveBeenCalled();
+  });
+
+  it("un plan propio de otra paciente (patientId del form distinto) → rechazo sin llamar a DeepSeek", async () => {
+    mocks.getPlan.mockResolvedValueOnce({ id: "plan", patientId: "otra", meals: [] });
+    expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: false, error: "Plan no encontrado" });
+    expect(mocks.completion).not.toHaveBeenCalled();
   });
 });
