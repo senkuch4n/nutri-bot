@@ -189,11 +189,11 @@ async function main() {
   step(6, "addRecipeItems en Colaciones (EVERY_DAY) con null → 1 ítem sin día");
 
   // 7. Plantilla: agregar la receta y aplicarla al paciente.
-  const template = await createTemplate({ title: "Plantilla de prueba HU-018c", notes: null });
+  const template = await createTemplate({ title: "Plantilla de prueba HU-018c", notes: null }, T.tenantId);
   created.templateId = template.id;
-  const tpl = await getTemplate(template.id);
+  const tpl = await getTemplate(template.id, T.tenantId);
   const tplBreakfast = tpl!.meals.find((m) => m.name === "Desayuno")!;
-  await addRecipeItems("template", template.id, { mealId: tplBreakfast.id, recipeId, portions: 2, weekdays: ["THU"] });
+  await addRecipeItems("template", template.id, { mealId: tplBreakfast.id, recipeId, portions: 2, weekdays: ["THU"] }, T.tenantId);
   const applied = await getPlan(T, (await applyTemplateToPatient(template.id, patient.id, T.tenantId)).id);
   assert.ok(applied);
   created.planIds.push(applied.id);

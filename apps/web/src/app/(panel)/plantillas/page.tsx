@@ -1,6 +1,5 @@
 import { Files } from "lucide-react";
-import { notFound } from "next/navigation";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requirePageContext } from "@/lib/tenant-context";
 import { listTemplates } from "@nutri-bot/db/domain";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { NewTemplateDialog } from "./new-template-dialog";
@@ -9,8 +8,7 @@ import { TemplatesTable } from "./templates-table";
 export const dynamic = "force-dynamic";
 
 export default async function PlantillasPage() {
-  const access = await resolvePrivateContentAccess();
-  if (!access) notFound();
+  const access = await requirePageContext();
   const templates = await listTemplates({ tenantId: access.tenantId });
 
   return (

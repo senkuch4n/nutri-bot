@@ -86,9 +86,11 @@ describe("escrituras de plan, comida e ítem", () => {
 
 describe("menú semanal de un plan", () => {
   it("sin tenant un plan no se lee ni se escribe (MealOwnershipError)", async () => {
-    await expect(setMealMode("plan", "plan", "meal", { mode: "PER_DAY" })).rejects.toBeInstanceOf(MealOwnershipError);
-    await expect(copyDay("plan", "plan", { from: "MON", to: ["TUE"] })).rejects.toBeInstanceOf(MealOwnershipError);
-    await expect(nextItemOrder("plan", "meal", null)).rejects.toBeInstanceOf(MealOwnershipError);
+    // Desde 025b-2 el tenant es obligatorio por tipo: el cast simula un llamador JS que lo omite.
+    const unscoped = <F>(fn: F) => fn as unknown as (...args: unknown[]) => Promise<unknown>;
+    await expect(unscoped(setMealMode)("plan", "plan", "meal", { mode: "PER_DAY" })).rejects.toBeInstanceOf(MealOwnershipError);
+    await expect(unscoped(copyDay)("plan", "plan", { from: "MON", to: ["TUE"] })).rejects.toBeInstanceOf(MealOwnershipError);
+    await expect(unscoped(nextItemOrder)("plan", "meal", null)).rejects.toBeInstanceOf(MealOwnershipError);
     expect(db.planMeal.findFirst).not.toHaveBeenCalled();
     expect(db.planMealItem.findFirst).not.toHaveBeenCalled();
   });

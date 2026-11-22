@@ -45,17 +45,21 @@ vi.mock("@/app/(panel)/plan-section-actions", () => ({}));
 vi.mock("@/app/(panel)/plantillas/import-actions", () => ({}));
 vi.mock("server-only", () => ({})); // lib/revalidate-menu-owner (HU-018c)
 vi.mock("next/navigation", () => ({ notFound: vi.fn(), redirect: vi.fn() }));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `access`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.access(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.access()) ?? null, TenantAccessError };
+});
 // HU-025b-1: las páginas y acciones toman el consultorio del contexto de la sesión.
 const TENANT_CTX = vi.hoisted(() => ({
-  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
-  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
-}));
-vi.mock("@/lib/tenant-context", () => ({
-  requirePageContext: async () => TENANT_CTX,
-  requireTenantContext: async () => TENANT_CTX,
-  getTenantContext: async () => TENANT_CTX,
-  TenantAccessError: class TenantAccessError extends Error {},
+  userId: "u", tenantId: "tenant", agendaId: "agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "tenant", role: "OWNER" as const },
 }));
 vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
 vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
@@ -97,7 +101,7 @@ function form(values: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.access.mockResolvedValue({ tenantId: "tenant", role: "OWNER" });
+  mocks.access.mockResolvedValue(TENANT_CTX);
   mocks.listFoods.mockImplementation(async (_t, params) => {
     const foods = [sara, own];
     return params.source ? foods.filter((food) => food.source === params.source) : foods;
@@ -131,13 +135,18 @@ describe("patient record template picker", () => {
     expect(mocks.listTemplates).toHaveBeenCalledWith({ status: "PUBLISHED", tenantId: "tenant" });
   });
 
-  it.each([null, { tenantId: "other", role: "OWNER" }])("preserves unrelated patient views but hides the picker for membership %j", async (access) => {
-    mocks.access.mockResolvedValue(access);
-    expect(await planPanel()).toMatchObject({ patientId: "patient", plans: [], templates: null });
-    expect(mocks.listTemplates).not.toHaveBeenCalled();
+  it("HU-025b-2: planes, consultas y plantillas salen del mismo contexto de la sesión", async () => {
+    expect(await planPanel()).toMatchObject({ patientId: "patient", plans: [] });
     expect(mocks.listPatientPlans).toHaveBeenCalledWith(TENANT_CTX, "patient");
     expect(mocks.listPatientConsultations).toHaveBeenCalledWith(TENANT_CTX, "patient");
-    expect(notFound).not.toHaveBeenCalled();
+    expect(mocks.listTemplates).toHaveBeenCalledWith({ status: "PUBLISHED", tenantId: "tenant" });
+  });
+
+  it("sin contexto la ficha no se arma ni lista plantillas", async () => {
+    mocks.access.mockResolvedValue(null);
+    await expect(PatientRecord({ id: "patient", variant: "page" })).rejects.toThrow("no_context");
+    expect(mocks.listTemplates).not.toHaveBeenCalled();
+    expect(mocks.listPatientPlans).not.toHaveBeenCalled();
   });
 });
 
@@ -147,12 +156,10 @@ describe("private template pages", () => {
     expect(mocks.listTemplates).toHaveBeenCalledWith({ tenantId: "tenant" });
   });
 
-  it("does not query templates without membership", async () => {
+  it("does not query templates without a tenant context (requirePageContext → /inicio)", async () => {
     mocks.access.mockResolvedValue(null);
-    vi.mocked(notFound).mockImplementationOnce(() => { throw new Error("404"); });
-    await expect(TemplatesPage()).rejects.toThrow("404");
-    vi.mocked(notFound).mockImplementationOnce(() => { throw new Error("404"); });
-    await expect(TemplatePage({ params: Promise.resolve({ id: "other" }) })).rejects.toThrow("404");
+    await expect(TemplatesPage()).rejects.toThrow("no_context");
+    await expect(TemplatePage({ params: Promise.resolve({ id: "other" }) })).rejects.toThrow("no_context");
     expect(mocks.listTemplates).not.toHaveBeenCalled();
     expect(mocks.getTemplate).not.toHaveBeenCalled();
   });

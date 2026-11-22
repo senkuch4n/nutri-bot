@@ -151,9 +151,9 @@ async function main() {
   ok("createPlan trae Desayuno…Cena 'Cambia cada día' y Colaciones con opciones");
 
   // 2. Plantilla nueva con las mismas comidas.
-  const newTemplate = await createTemplate({ title: "Plantilla prueba HU-018b", notes: null });
+  const newTemplate = await createTemplate({ title: "Plantilla prueba HU-018b", notes: null }, T.tenantId);
   created.templateId = newTemplate.id;
-  const template0 = await getTemplate(newTemplate.id);
+  const template0 = await getTemplate(newTemplate.id, T.tenantId);
   assert.equal(template0?.meals.length, 5);
   assert.equal(template0?.meals[4]?.isOptions, true);
   ok("createTemplate trae las mismas 5 comidas");
@@ -258,13 +258,14 @@ async function main() {
   ok("addMeal en un plan semanal crea la comida 'Cambia cada día'");
 
   // 10. Plantilla semanal aplicada al paciente: copia modos, días e ítems.
-  const template = await getTemplate(newTemplate.id);
+  const template = await getTemplate(newTemplate.id, T.tenantId);
+  const tplScope = { templateId: newTemplate.id, tenantId: T.tenantId };
   const tDesayuno = template!.meals.find((m) => m.name === "Desayuno")!;
   const tColaciones = template!.meals.find((m) => m.name === "Colaciones")!;
-  await addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 120, order: 0, weekday: "TUE" });
-  await addTemplateMealItem(tColaciones.id, { foodId: f2.id, quantityGrams: 80, order: 0, weekday: null });
+  await addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 120, order: 0, weekday: "TUE" }, tplScope);
+  await addTemplateMealItem(tColaciones.id, { foodId: f2.id, quantityGrams: 80, order: 0, weekday: null }, tplScope);
   await assert.rejects(
-    addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 1, order: 1, weekday: null }),
+    addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 1, order: 1, weekday: null }, tplScope),
     MealWeekdayMismatchError,
   );
   const applied = await getPlan(T, (await applyTemplateToPatient(newTemplate.id, patient.id, T.tenantId)).id);

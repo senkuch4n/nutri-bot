@@ -15,7 +15,7 @@ import {
 import type { TemplateImportActionResult } from "@/components/template-import/types";
 import { errorCode } from "@/lib/error-code";
 import { touchTemplate } from "@/lib/touch-template";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 // HU-020 (SDD 6.2): revisión de un borrador importado de PDF (publicar, avisos, texto sin ubicar,
 // vincular receta). "use server": exporta SOLO funciones async; los tipos viven en
@@ -40,7 +40,7 @@ function logError(err: unknown): void {
 }
 
 export async function publishTemplateAction(input: { templateId: string }): Promise<TemplateImportActionResult> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return SESSION_EXPIRED;
   const parsed = templateSchema.safeParse(input);
   if (!parsed.success) return GENERIC;
@@ -60,7 +60,7 @@ export async function dismissTemplateHintAction(input: {
   templateId: string;
   hintId: string;
 }): Promise<TemplateImportActionResult> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return SESSION_EXPIRED;
   const parsed = hintSchema.safeParse(input);
   if (!parsed.success) return GENERIC;
@@ -84,7 +84,7 @@ export async function resolveUnplacedHintAction(input: {
   hintId: string;
   target: { kind: "meal"; mealId: string; weekday: (typeof WEEKDAYS)[number] | null } | { kind: "section"; sectionId: string | null };
 }): Promise<TemplateImportActionResult> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return SESSION_EXPIRED;
   const parsed = resolveSchema.safeParse(input);
   if (!parsed.success) return GENERIC;
@@ -104,7 +104,7 @@ export async function linkHintRecipeAction(input: {
   hintId: string;
   portions: number;
 }): Promise<TemplateImportActionResult> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return SESSION_EXPIRED;
   const parsed = linkSchema.safeParse(input);
   if (!parsed.success) return GENERIC;

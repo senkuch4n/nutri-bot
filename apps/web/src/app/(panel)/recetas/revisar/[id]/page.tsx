@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { recipeFileTitle } from "@nutri-bot/core/recipe-import";
 import { recipeReviewForTenant, recipesForTenant } from "@nutri-bot/db/domain";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requirePageContext } from "@/lib/tenant-context";
 import { ReviewScreen } from "./review-screen";
 import type { RecipeReview } from "./review-parts";
 
@@ -22,8 +22,7 @@ export default async function RevisarBorradorPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const access = await resolvePrivateContentAccess();
-  if (!access) notFound();
+  const access = await requirePageContext();
   const recipes = recipesForTenant(access.tenantId);
   const draftReview = recipeReviewForTenant(access.tenantId);
   const [{ id }, query] = await Promise.all([params, searchParams]);

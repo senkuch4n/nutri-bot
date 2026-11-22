@@ -371,8 +371,10 @@ describe("M3 planes: escrituras con ids de B se rechazan sin cambiar filas", () 
     await rejectsUnchanged("updateSection", () => updateSection("plan", planB, fx.b.sectionId, { title: "x", body: "y" }, t));
     await rejectsUnchanged("deleteSection", () => deleteSection("plan", planB, fx.b.sectionId, t));
     await rejectsUnchanged("moveSection", () => moveSection("plan", planB, fx.b.sectionId, 1, t));
-    // Un plan sin tenant ya no se toca (antes de 025b-1 este camino no filtraba).
-    await rejectsUnchanged("setMealMode sin tenant", () => setMealMode("plan", fx.a.planId, fx.a.mealId, { mode: "EVERY_DAY" }));
+    // Un plan sin tenant ya no se toca (antes de 025b-1 este camino no filtraba). Desde 025b-2 el tenant es
+    // obligatorio por tipo: el cast simula un llamador JS que lo omite.
+    const unscopedSetMealMode = setMealMode as unknown as (...args: unknown[]) => Promise<unknown>;
+    await rejectsUnchanged("setMealMode sin tenant", () => unscopedSetMealMode("plan", fx.a.planId, fx.a.mealId, { mode: "EVERY_DAY" }));
   });
 });
 

@@ -8,7 +8,6 @@ import {
   TemplateContainsHistoricalFoodError,
 } from "@nutri-bot/db/domain";
 import { PLAN_IMPORT_TEXT } from "@nutri-bot/core";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { requireTenantContext } from "@/lib/tenant-context";
 
 export type PlanListState = { ok: boolean; error?: string };
@@ -48,7 +47,7 @@ export async function applyTemplateAction(
 ): Promise<PlanListState> {
   const parsed = applyTemplateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Elegí una plantilla" };
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, error: "Plantilla no encontrada" };
   let plan: Awaited<ReturnType<typeof applyTemplateToPatient>>;
   try {

@@ -64,20 +64,18 @@ export function deleteTemplate(id: string, tenantId?: string) {
 }
 
 /** HU-018b: mismo default de `mode` que addMeal (PER_DAY si la plantilla ya es semanal). */
+/** HU-025 (025b-2 M10): el tenant es obligatorio por tipo (antes, opcional para scripts legacy). */
 export async function addTemplateMeal(
   templateId: string,
   data: { name: string; order: number; mode?: MealMode; isOptions?: boolean },
-  tenantId?: string,
+  tenantId: string,
 ) {
   const { mode, isOptions } = await resolveNewMealMode("template", templateId, data, tenantId);
   const meal = { name: data.name, order: data.order, mode, isOptions };
-  if (tenantId !== undefined) {
-    // Nested creation enforces ownership on the write, not just on the ordering read.
-    return prisma.planTemplate.update({
-      where: { id: templateId, tenantId }, data: { meals: { create: meal } }, select: { id: true },
-    });
-  }
-  return prisma.templateMeal.create({ data: { templateId, ...meal } });
+  // Nested creation enforces ownership on the write, not just on the ordering read.
+  return prisma.planTemplate.update({
+    where: { id: templateId, tenantId }, data: { meals: { create: meal } }, select: { id: true },
+  });
 }
 
 export function updateTemplateMeal(mealId: string, data: Partial<{ name: string; order: number }>) {
@@ -107,21 +105,19 @@ type TemplateItemData = {
   measureGrams?: number | string | null;
 };
 
-export async function addTemplateMealItem(mealId: string, data: TemplateItemData, scope?: TemplateMealScope) {
+/** HU-025 (025b-2 M10): el alcance (plantilla + tenant) es obligatorio por tipo. */
+export async function addTemplateMealItem(mealId: string, data: TemplateItemData, scope: TemplateMealScope) {
   const weekday = data.weekday ?? null;
   await assertWeekdayMatchesMeal("template", mealId, weekday, scope);
-  if (scope) {
-    return prisma.$transaction(async (tx) => {
-      if (data.foodId != null && (await unavailableFoodReferences(tx, scope.tenantId, [data.foodId])).size > 0) {
-        throw new Error(FOOD_REFERENCE_UNAVAILABLE);
-      }
-      return tx.templateMeal.update({
-        where: { id: mealId, ...templateMealScope(scope) },
-        data: { items: { create: { ...data, weekday } } }, select: { id: true },
-      });
+  return prisma.$transaction(async (tx) => {
+    if (data.foodId != null && (await unavailableFoodReferences(tx, scope.tenantId, [data.foodId])).size > 0) {
+      throw new Error(FOOD_REFERENCE_UNAVAILABLE);
+    }
+    return tx.templateMeal.update({
+      where: { id: mealId, ...templateMealScope(scope) },
+      data: { items: { create: { ...data, weekday } } }, select: { id: true },
     });
-  }
-  return prisma.templateMealItem.create({ data: { mealId, ...data, weekday } });
+  });
 }
 
 export function updateTemplateMealItem(mealId: string, data: Partial<Omit<TemplateItemData, "weekday">>) {

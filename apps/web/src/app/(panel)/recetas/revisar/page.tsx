@@ -1,8 +1,8 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { ListChecks } from "lucide-react";
 import { RECIPE_TEXT } from "@nutri-bot/core";
 import { recipeReviewForTenant } from "@nutri-bot/db/domain";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requirePageContext } from "@/lib/tenant-context";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +14,7 @@ export default async function RevisarPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const access = await resolvePrivateContentAccess();
-  if (!access) notFound();
+  const access = await requirePageContext();
   const review = recipeReviewForTenant(access.tenantId);
   const query = await searchParams;
   const file = typeof query.archivo === "string" && query.archivo.trim() !== "" ? query.archivo : null;

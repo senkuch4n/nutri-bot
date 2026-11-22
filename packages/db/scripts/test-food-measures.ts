@@ -169,12 +169,12 @@ async function main() {
   const lunchItemId = restored[0]!.id;
 
   // 7. Plantilla con medida (comida EVERY_DAY) → aplicar al paciente.
-  const template = await createTemplate({ title: "Plantilla de prueba HU-018d", notes: null });
+  const template = await createTemplate({ title: "Plantilla de prueba HU-018d", notes: null }, T.tenantId);
   created.templateId = template.id;
-  const tpl = await getTemplate(template.id);
+  const tpl = await getTemplate(template.id, T.tenantId);
   const tplSnacks = tpl!.meals.find((m) => m.mode === "EVERY_DAY")!;
   const cdaFields = await resolveMeasureItem(T, arroz.id, cda.id, 1);
-  await addTemplateMealItem(tplSnacks.id, { foodId: arroz.id, order: 0, weekday: null, ...cdaFields });
+  await addTemplateMealItem(tplSnacks.id, { foodId: arroz.id, order: 0, weekday: null, ...cdaFields }, { templateId: template.id, tenantId: T.tenantId });
   const applied = await getPlan(T, (await applyTemplateToPatient(template.id, patient.id, T.tenantId)).id);
   assert.ok(applied);
   created.planIds.push(applied.id);
