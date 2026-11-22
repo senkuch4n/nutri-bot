@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# HU-025 (10.3): probe de aislamiento entre consultorios para las funciones de dominio de 025b-1 (M1–M3).
+# HU-025 (10.3): probe de aislamiento entre consultorios para las funciones de dominio de 025b-1 (M1–M3)
+# y de 025b-2 (M4–M7: pagos y Mercado Pago, mensajes y outbox, activos de la profesional, alimentos).
 # Solo Postgres descartable: contenedor y red propios, tmpfs, puerto 127.0.0.1 aleatorio, password aleatoria,
 # copia del schema fuera del repo. Nunca carga el .env del repo ni toca la base de desarrollo.
 # Usa el contexto de Docker del entorno (`docker` a secas, o DOCKER_HOST/DOCKER_CONTEXT si están definidos).
@@ -48,12 +49,15 @@ export DATABASE_URL="postgresql://postgres:$pass@$binding/tenant_isolation"
 # Toda escritura exige una URL descartable de este probe.
 [[ $DATABASE_URL =~ ^postgresql://postgres:[a-f0-9]{36}@127\.0\.0\.1:[0-9]+/tenant_isolation$ ]] || exit 2
 
-echo '1/2 instalación desde cero (todas las migraciones)'
+echo '1/3 instalación desde cero (todas las migraciones)'
 env -u NODE_OPTIONS HOME="$scratch/home" TMPDIR="$scratch/tmp" NO_UPDATE_NOTIFIER=1 PRISMA_HIDE_UPDATE_MESSAGE=1 \
   "$prisma_cli" migrate deploy --schema "$scratch/prisma/schema.prisma" >/dev/null
 
-echo '2/2 integración: consultorios A y B, cada función de dominio de M1–M3 con { tenantId: A } e ids de B'
+echo '2/3 integración: consultorios A y B, cada función de dominio de M1–M3 con { tenantId: A } e ids de B'
 cd "$root/packages/db"
 TENANT_ISOLATION_DISPOSABLE=1 VITEST= NODE_ENV=test MIN_LEAD_MINUTES=0 env -u NODE_OPTIONS HOME="$scratch/home" \
   "$tsx_cli" --test "$root/packages/db/scripts/tenant-isolation.integration.ts"
+echo '3/3 integración 025b-2: consultorios C y D, cada función de dominio de M4–M7 con { tenantId: C } e ids de D'
+TENANT_ISOLATION_DISPOSABLE=1 VITEST= NODE_ENV=test MIN_LEAD_MINUTES=0 env -u NODE_OPTIONS HOME="$scratch/home" \
+  "$tsx_cli" --test "$root/packages/db/scripts/tenant-isolation-b2.integration.ts"
 echo 'test-tenant-isolation: OK'
