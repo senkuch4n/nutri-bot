@@ -101,7 +101,7 @@ sesión nueva puede retomar donde quedó otra. Mapa:
 | Archivo / carpeta | Qué contiene | Quién lo escribe |
 |---|---|---|
 | `backlog/<id>.json` | Estado de cada HU (`no_afinada` → ... → `aprobada`/`bloqueada`), con su `responsable`. Un archivo por HU para no pisarse en los merges | **Solo el orquestador del responsable** |
-| `backlog/_reglas.json` | Estados válidos, máx. 1 HU activa **por responsable**, tope de 2 reintentos de revisión | — |
+| `backlog/_reglas.json` | Estados válidos, máx. 10 HU activas **por responsable** (en lotes, con un reviewer por lote), tope de 2 reintentos de revisión | — |
 | `progress/current-<usuario>.md` | Bitácora viva de cada persona (`<usuario>` = `git config user.name`) | Orquestador de esa persona |
 | `progress/history.md` | Log append-only de HU cerradas (`merge=union` en `.gitattributes`: los agregados de los dos se juntan solos) | Orquestador, al cerrar cada HU |
 | Issues de GitHub (label `HU`) | Quién tiene cada HU (assignee), estado grueso (labels `estado: …`) y dependencias. Es el **lock** para tomar una HU | Orquestador (vía `gh`) y las personas |
@@ -149,7 +149,7 @@ El repo lo trabajan dos personas, cada una con su orquestador. Reglas:
   |---|---|
   | `no_afinada` | label `estado: backlog` |
   | `validada`, `arquitectura_lista` (sin arrancar) | label `estado: lista` |
-  | `afinando`, `afinada_pendiente_validacion`, `en_arquitectura`, `implementando`, `rechazada_reintentando` | label `estado: en curso` |
+  | `afinando`, `afinada_pendiente_validacion`, `en_arquitectura`, `implementando`, `implementada`, `rechazada_reintentando` | label `estado: en curso` |
   | `en_revision` | label `estado: en revisión` |
   | `aprobada` | issue cerrado (el PR lo cierra con `Closes #<n>`) |
   | `bloqueada` | label `estado: bloqueada` |
