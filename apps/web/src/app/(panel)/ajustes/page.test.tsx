@@ -1,14 +1,20 @@
 // HU-025 (025b-2 M11, 7.2.1): la pestaña Equipo solo la ve la responsable (OWNER).
+// HU-028a (D4b): los botones de Mercado Pago (conectar, reconectar, desconectar) también.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isValidElement, type ReactElement } from "react";
 
-const mocks = vi.hoisted(() => ({ ctx: vi.fn(), members: vi.fn(), botStatus: vi.fn(), logo: vi.fn() }));
+const mocks = vi.hoisted(() => ({ ctx: vi.fn(), members: vi.fn(), botStatus: vi.fn(), logo: vi.fn(), mpView: vi.fn() }));
 const Null = vi.hoisted(() => () => null);
+const MP = vi.hoisted(() => ({
+  MercadoPagoCallbackBanner: () => null,
+  MercadoPagoConnectButton: () => null,
+  MercadoPagoDisconnectButton: () => null,
+}));
 vi.mock("@/lib/tenant-context", () => ({ requirePageContext: mocks.ctx }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { botStatus: { findUnique: mocks.botStatus }, professional: { findUnique: mocks.logo } } }));
 vi.mock("@nutri-bot/db/domain", () => ({
   listTenantMembers: mocks.members,
-  getMercadoPagoConnectionView: vi.fn().mockResolvedValue({ status: "not_connected", hasActiveDepositServices: false, pendingDepositCount: 0 }),
+  getMercadoPagoConnectionView: mocks.mpView,
 }));
 vi.mock("@/lib/professional", () => ({
   getTenantProfessional: vi.fn().mockResolvedValue({
@@ -29,7 +35,7 @@ vi.mock("./bot-toggle", () => ({ BotToggle: Null }));
 vi.mock("./general-form", () => ({ GeneralForm: Null }));
 vi.mock("./google-calendar-form", () => ({ GoogleCalendarForm: Null, GoogleDisconnectButton: Null }));
 vi.mock("./logo-form", () => ({ LogoForm: Null }));
-vi.mock("./mercadopago-section", () => ({ MercadoPagoCallbackBanner: Null, MercadoPagoConnectButton: Null, MercadoPagoDisconnectButton: Null }));
+vi.mock("./mercadopago-section", () => MP);
 vi.mock("./pdf-style-form", () => ({ PdfStyleForm: Null }));
 vi.mock("./signature-form", () => ({ SignatureForm: Null }));
 vi.mock("./signature-identity-form", () => ({ SignatureIdentityForm: Null }));
@@ -44,8 +50,11 @@ const ctx = (role: "OWNER" | "STAFF") => ({
 
 type TabsProps = { tabs: string[]; panels: Record<string, unknown>; summaries: Record<string, string> };
 
+const MP_VIEW = { status: "not_connected", hasActiveDepositServices: false, pendingDepositCount: 0 };
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.mpView.mockResolvedValue(MP_VIEW);
   mocks.botStatus.mockResolvedValue(null);
   mocks.logo.mockResolvedValue(null);
   mocks.members.mockResolvedValue([
@@ -81,5 +90,51 @@ describe("Ajustes → Equipo", () => {
     mocks.ctx.mockResolvedValue(ctx("STAFF"));
     await AjustesPage();
     expect(mocks.botStatus).toHaveBeenCalledWith({ where: { tenantId: "tenant-a" } });
+  });
+});
+
+/** Tipos de los elementos de un árbol de React (sin renderizar). */
+function elementTypes(node: unknown, out: unknown[] = []): unknown[] {
+  if (Array.isArray(node)) node.forEach((n) => elementTypes(n, out));
+  else if (isValidElement(node)) {
+    out.push(node.type);
+    const props = node.props as Record<string, unknown>;
+    for (const value of Object.values(props)) elementTypes(value, out);
+  }
+  return out;
+}
+
+describe("Ajustes → Mercado Pago (HU-028a)", () => {
+  const connected = {
+    ...MP_VIEW, status: "connected", userId: "555", nickname: "VENDEDOR", email: "v@example.test", liveMode: true,
+    connectedAt: new Date(0), errorCode: null,
+  };
+
+  it.each([
+    ["not_connected", MP_VIEW, [MP.MercadoPagoConnectButton]],
+    ["connected", connected, [MP.MercadoPagoConnectButton, MP.MercadoPagoDisconnectButton]],
+    ["needs_reconnect", { ...connected, status: "needs_reconnect", errorCode: "revoked" }, [MP.MercadoPagoConnectButton, MP.MercadoPagoDisconnectButton]],
+  ])("OWNER ve los botones (%s)", async (_status, view, expected) => {
+    mocks.ctx.mockResolvedValue(ctx("OWNER"));
+    mocks.mpView.mockResolvedValue(view);
+    const el = (await AjustesPage()) as ReactElement<TabsProps>;
+    const types = elementTypes(el.props.panels.mercadopago);
+    for (const type of expected) expect(types).toContain(type);
+    expect(types).toContain(MP.MercadoPagoCallbackBanner);
+  });
+
+  it.each([
+    ["not_connected", MP_VIEW],
+    ["connected", connected],
+    ["needs_reconnect", { ...connected, status: "needs_reconnect", errorCode: "revoked" }],
+  ])("STAFF ve el estado y los datos, sin botones (%s)", async (_status, view) => {
+    mocks.ctx.mockResolvedValue(ctx("STAFF"));
+    mocks.mpView.mockResolvedValue(view);
+    const el = (await AjustesPage()) as ReactElement<TabsProps>;
+    const types = elementTypes(el.props.panels.mercadopago);
+    expect(types).not.toContain(MP.MercadoPagoConnectButton);
+    expect(types).not.toContain(MP.MercadoPagoDisconnectButton);
+    expect(types).toContain(MP.MercadoPagoCallbackBanner);
+    expect(el.props.panels.mercadopago).toBeTruthy();
   });
 });
