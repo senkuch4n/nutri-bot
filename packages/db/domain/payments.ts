@@ -6,7 +6,7 @@ import {
   getMercadoPagoCredentials,
   markMercadoPagoAccountError,
   MercadoPagoUnavailableError,
-  resolveMercadoPagoWebhookTenant,
+  resolveMercadoPagoWebhookAccount,
   type MercadoPagoCredentials,
 } from "./mercadopagoAccount";
 
@@ -142,19 +142,26 @@ export async function createDepositCheckout(
   }
 }
 
-/** Webhook público (sin sesión): el consultorio sale de la cuenta de Mercado Pago que recibe el aviso,
- *  nunca del payload. Después, syncMercadoPagoPayment solo toca pagos de turnos de ese consultorio. */
+/** Webhook público (sin sesión). HU-028a: la cuenta sale del `user_id` de la notificación (firma ya
+ *  verificada por la ruta) y se RE-VERIFICA: el pago se consulta con el token de esa cuenta y
+ *  syncMercadoPagoPayment solo toca un Payment de ese consultorio y de ese vendedor. */
 export async function handleMercadoPagoWebhook(
   query: Record<string, string | string[] | undefined>,
-): Promise<void> {
+  notification: { userId: string | null },
+): Promise<"processed" | "ignored"> {
   const type = typeof query.type === "string" ? query.type : undefined;
   const rawId = type === "payment" ? query["data.id"] : undefined;
   const paymentId = Array.isArray(rawId) ? rawId[0] : rawId;
-  if (!paymentId) return;
+  if (!paymentId) return "ignored";
 
-  const tenant = await resolveMercadoPagoWebhookTenant();
-  if (!tenant) return;
-  await syncMercadoPagoPayment(tenant, paymentId);
+  const account = await resolveMercadoPagoWebhookAccount(notification.userId);
+  if (!account) {
+    // Solo el código: nada del payload (ni ids, ni montos, ni datos del pagador).
+    console.warn("[mercadopago] webhook_ignored", { code: "unknown_account" });
+    return "ignored";
+  }
+  await syncMercadoPagoPayment(account.tenant, paymentId);
+  return "processed";
 }
 
 export async function syncMercadoPagoPayment(
@@ -169,6 +176,10 @@ export async function syncMercadoPagoPayment(
   const mpPayment = await withRevocationGuard(t, creds, () =>
     new MercadoPagoPayment(mercadoPagoClient(creds.accessToken)).get({ id: paymentId }),
   );
+  // HU-028a: el pago tiene que ser de la cuenta con la que se consultó (si MP informa el vendedor).
+  if (creds.source === "account" && mpPayment.collector_id != null && String(mpPayment.collector_id) !== creds.sellerUserId) {
+    return;
+  }
   const internalId = mpPayment.external_reference;
   if (!internalId || (expectedInternalId && internalId !== expectedInternalId)) return;
   await prisma.$transaction(async (tx) => {
@@ -183,7 +194,12 @@ export async function syncMercadoPagoPayment(
     });
     const appointment = existing?.appointment;
     if (!existing || !appointment?.tenantPatient || !appointment.tenantService) return;
-    if (existing.mercadopagoUserId && existing.mercadopagoUserId !== creds.sellerUserId) return;
+    // HU-028a: regla de vendedor estricta. Cuenta OAuth → el Payment tiene que ser de esa misma cuenta;
+    // respaldo .env (dev) → solo pagos creados sin cuenta.
+    const sellerMatches = creds.source === "account"
+      ? existing.mercadopagoUserId === creds.sellerUserId
+      : existing.mercadopagoUserId === null;
+    if (!sellerMatches) return;
     const reservation = { ...scope, id: appointment.id, patientId: appointment.patientId, serviceId: appointment.serviceId };
     const ownedReservation = { ...reservation, ...verifiedAppointmentLinks };
     if (!await lockPaymentReservation(tx, reservation, false)) return;
@@ -298,6 +314,17 @@ export async function reconcilePendingPayments(
     }
   }
   return { processed, failed, skipped };
+}
+
+/** HU-028a (bot): consultorios con al menos una seña PENDING de Mercado Pago, orden por tenantId. */
+export async function listTenantsWithPendingMercadoPagoPayments(): Promise<TenantRef[]> {
+  const rows = await prisma.appointment.findMany({
+    where: { tenantId: { not: null }, payments: { some: { status: "PENDING", provider: "mercadopago" } } },
+    distinct: ["tenantId"],
+    select: { tenantId: true },
+    orderBy: { tenantId: "asc" },
+  });
+  return rows.flatMap(({ tenantId }) => (tenantId ? [{ tenantId }] : []));
 }
 
 export async function expireStalePendingPayments(t: TenantRef, olderThanMinutes = 15): Promise<number> {
