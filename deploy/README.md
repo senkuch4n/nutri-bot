@@ -93,3 +93,5 @@ acá y actualizar las URLs en Google OAuth y en la aplicación Numa de Mercado P
 
 El QR de WhatsApp se escanea desde el panel (`/ajustes/whatsapp`). La sesión vive en el volumen
 `whatsapp-auth`: ningún otro proceso puede correr el bot con el mismo número.
+Si WhatsApp cierra la sesión (logout), el bot vacía el volumen solo y genera un QR nuevo: alcanza
+con volver a escanear desde el panel. Para restaurar una sesión respaldada, parar el bot antes.

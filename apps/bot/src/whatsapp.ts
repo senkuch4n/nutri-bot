@@ -6,6 +6,8 @@ import makeWASocket, {
   type WAMessage,
   type WASocket,
 } from "@whiskeysockets/baileys";
+import { readdir, rm } from "node:fs/promises";
+import path from "node:path";
 import pino from "pino";
 import qrcodeTerminal from "qrcode-terminal";
 import QRCode from "qrcode";
@@ -49,6 +51,12 @@ function statusErrorCode(err: unknown): string {
     if (typeof name === "string" && name) return name;
   }
   return "unknown";
+}
+
+/** Vacía la carpeta de sesión de Baileys sin borrar la carpeta (en producción es un volumen montado). */
+async function clearAuthDir(): Promise<void> {
+  const entries = await readdir(env.authDir);
+  await Promise.all(entries.map((e) => rm(path.join(env.authDir, e), { recursive: true, force: true })));
 }
 
 function extractText(m: WAMessage): string | null {
@@ -119,9 +127,20 @@ export async function startWhatsApp(
       const code = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output
         ?.statusCode;
       if (code === DisconnectReason.loggedOut) {
-        logger.error(
-          `Sesión cerrada (logout). Borrá la carpeta ${env.authDir} y volvé a escanear el QR.`,
-        );
+        // La sesión guardada ya no sirve: se borra y se arranca de cero, así el panel muestra un QR
+        // nuevo en /ajustes/whatsapp sin entrar al servidor. Si no se puede borrar, no se reintenta
+        // (volvería a dar logout en bucle).
+        try {
+          await clearAuthDir();
+        } catch (err) {
+          logger.error(
+            { code: statusErrorCode(err) },
+            "Sesión cerrada (logout) y no se pudo borrar la sesión: hay que borrarla a mano y reiniciar el bot.",
+          );
+          return;
+        }
+        logger.error("Sesión cerrada (logout): se borró la sesión y se genera un QR nuevo para volver a vincular.");
+        setTimeout(() => void startWhatsApp(onMessage, onMedia), 3000);
       } else {
         logger.warn(`Conexión cerrada (código ${code ?? "?"}). Reconectando en 3s…`);
         setTimeout(() => void startWhatsApp(onMessage, onMedia), 3000);
