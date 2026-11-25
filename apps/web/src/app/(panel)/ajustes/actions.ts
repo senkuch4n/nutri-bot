@@ -21,11 +21,10 @@ import {
   startMercadoPagoOAuth,
   updateProfessionalLogo,
 } from "@nutri-bot/db/domain";
-import { auth } from "@/auth";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 import { withReauth } from "@/lib/reauth";
 import { tenantProfessionalWhere } from "@/lib/tenant-professional";
-import { TenantAccessError, requireTenantContext } from "@/lib/tenant-context";
+import { TenantAccessError, requireOwnerContext, requireTenantContext } from "@/lib/tenant-context";
 
 export type SettingsState = { ok: boolean; error?: string; reauth?: true };
 
@@ -286,18 +285,16 @@ export async function saveBotAiAction(_prev: SettingsState, formData: FormData):
 /** Botón "Conectar Mercado Pago" / "Reconectar": crea el estado del OAuth y manda a Mercado Pago.
  *  `redirect` tira NEXT_REDIRECT: se llama fuera del try/catch. */
 export async function connectMercadoPagoAction(): Promise<void> {
-  // HU-025: hace falta un contexto de consultorio con escritura; el email de la sesión sigue atando el state.
-  const ctx = await requireTenantContext("write").catch((error: unknown) => {
+  // HU-028a (D4b): solo el OWNER del consultorio conecta o reconecta; el state queda atado a su userId y
+  // al consultorio. Un STAFF no ve el botón: si fuerza el POST, vuelve a /inicio.
+  const ctx = await requireOwnerContext().catch((error: unknown) => {
     if (error instanceof TenantAccessError) return null;
     throw error;
   });
   if (!ctx) redirect("/inicio");
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) redirect("/inicio");
   let target: string;
   try {
-    const { url } = await startMercadoPagoOAuth(ctx, email);
+    const { url } = await startMercadoPagoOAuth(ctx, { userId: ctx.userId });
     target = url;
   } catch (error) {
     if (!(error instanceof MercadoPagoConfigError)) throw error;
@@ -308,8 +305,8 @@ export async function connectMercadoPagoAction(): Promise<void> {
 
 /** Botón "Desconectar" (con confirmación en el cliente). Cancela las señas pendientes de la cuenta (D6). */
 export async function disconnectMercadoPagoAction(): Promise<void> {
-  // HU-025: mismo candado que conectar (contexto de escritura); el consultorio sale del contexto.
-  const ctx = await requireTenantContext("write").catch((error: unknown) => {
+  // HU-028a (D4b): mismo candado que conectar (solo OWNER); el consultorio sale del contexto.
+  const ctx = await requireOwnerContext().catch((error: unknown) => {
     if (error instanceof TenantAccessError) return null;
     throw error;
   });

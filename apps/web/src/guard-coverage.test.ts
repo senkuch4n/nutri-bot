@@ -17,7 +17,7 @@ const API = join(APP, "api");
 const LIB = join(SRC, "lib");
 
 const ACTION_GUARDS = ["requireTenantContext(", "requireOwnerContext(", "requirePageContext("];
-const ROUTE_GUARDS = ["getTenantContext(", "requireTenantContext("];
+const ROUTE_GUARDS = ["getTenantContext(", "requireTenantContext(", "requireOwnerContext("]; // HU-028a: el callback de MP es owner-only
 /** Rutas API sin sesión del panel: Auth.js y el webhook firmado de Mercado Pago (el tenant sale del pago). */
 const API_EXEMPT = [join(API, "auth"), join(API, "webhooks")];
 
