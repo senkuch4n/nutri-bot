@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   warn: vi.fn(),
   info: vi.fn(),
   error: vi.fn(),
+  authDir: "/tmp/no-se-usa",
 }));
 
 vi.mock("@whiskeysockets/baileys", () => ({
@@ -23,10 +24,13 @@ vi.mock("pino", () => ({ default: () => ({}) }));
 vi.mock("qrcode-terminal", () => ({ default: { generate: vi.fn() } }));
 vi.mock("qrcode", () => ({ default: { toDataURL: async () => "data:image/png;base64,qr" } }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { botStatus: { upsert: mocks.upsert } } }));
-vi.mock("./env", () => ({ env: { authDir: "/tmp/no-se-usa" } }));
+vi.mock("./env", () => ({ env: { get authDir() { return mocks.authDir; } } }));
 vi.mock("./logger", () => ({ logger: { warn: mocks.warn, info: mocks.info, error: mocks.error, debug: vi.fn() } }));
 vi.mock("./tenant", () => ({ getConversationTenant: mocks.tenant }));
 
+import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { startWhatsApp } from "./whatsapp";
 
 const close = { connection: "close", lastDisconnect: { error: { output: { statusCode: 500 } } } };
@@ -91,5 +95,46 @@ describe("estado del bot en connection.update", () => {
     await expect(connectionUpdate({ connection: "open" })).resolves.toBeUndefined();
     expect(mocks.warn).toHaveBeenCalledWith({ code: "TypeError", connected: true }, "No se pudo registrar el estado del bot");
     expect(mocks.info).toHaveBeenCalledWith("WhatsApp conectado.");
+  });
+});
+
+describe("logout de WhatsApp: se recupera solo", () => {
+  const loggedOut = { connection: "close", lastDisconnect: { error: { output: { statusCode: 401 } } } };
+  let scratch: string;
+
+  beforeEach(async () => {
+    scratch = await mkdtemp(path.join(os.tmpdir(), "nutribot-wa-"));
+    mocks.authDir = path.join(scratch, "auth");
+    await mkdir(path.join(mocks.authDir, "sub"), { recursive: true });
+    await writeFile(path.join(mocks.authDir, "creds.json"), "{}");
+    await writeFile(path.join(mocks.authDir, "sub", "pre-key-1.json"), "{}");
+  });
+
+  afterEach(async () => {
+    await rm(scratch, { recursive: true, force: true });
+  });
+
+  it("borra la sesión rechazada (sin borrar la carpeta) y vuelve a arrancar para generar un QR nuevo", async () => {
+    await startWhatsApp(vi.fn());
+    await connectionUpdate(loggedOut);
+    expect(await readdir(mocks.authDir)).toEqual([]);
+    expect(mocks.error).toHaveBeenCalledWith(
+      "Sesión cerrada (logout): se borró la sesión y se genera un QR nuevo para volver a vincular.",
+    );
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.makeWASocket).toHaveBeenCalledTimes(2);
+  });
+
+  it("si no puede borrar la sesión, no reintenta (evita un bucle de logout) y loguea solo el código", async () => {
+    mocks.authDir = path.join(scratch, "no-es-carpeta");
+    await writeFile(mocks.authDir, "x"); // readdir falla con ENOTDIR
+    await startWhatsApp(vi.fn());
+    await expect(connectionUpdate(loggedOut)).resolves.toBeUndefined();
+    expect(mocks.error).toHaveBeenCalledWith(
+      { code: "ENOTDIR" },
+      "Sesión cerrada (logout) y no se pudo borrar la sesión: hay que borrarla a mano y reiniciar el bot.",
+    );
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.makeWASocket).toHaveBeenCalledTimes(1);
   });
 });
