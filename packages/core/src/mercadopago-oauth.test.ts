@@ -5,10 +5,12 @@ import {
   buildMercadoPagoAuthorizationUrl,
   classifyMercadoPagoFailure,
   isMercadoPagoTokenExpired,
+  isPlatformMercadoPagoUserId,
   mercadoPagoConnectionStatus,
   mercadoPagoRedirectUri,
   needsMercadoPagoRefresh,
   parseMercadoPagoCallback,
+  parseMercadoPagoNotificationUserId,
   parseMercadoPagoTokenResponse,
   requiresLiveMercadoPagoAccount,
   shouldSendThrottledAlert,
@@ -232,8 +234,15 @@ describe("MERCADOPAGO_TEXT", () => {
       "rejected",
       "not_configured",
       "wrong_environment",
+      "account_in_use",
     ];
     expect(Object.keys(MERCADOPAGO_TEXT.callback).sort()).toEqual([...results].sort());
+  });
+
+  it("account_in_use (HU-028a, D3a) tiene el texto exacto", () => {
+    expect(MERCADOPAGO_TEXT.callback.account_in_use).toBe(
+      "Esta cuenta de Mercado Pago ya está conectada en otro consultorio. Usá otra cuenta o escribinos a soporte.",
+    );
   });
 
   it("disconnectPending en singular y plural", () => {
@@ -254,5 +263,42 @@ describe("MERCADOPAGO_TEXT", () => {
   it("sin jerga técnica a la vista", () => {
     const flat = JSON.stringify(MERCADOPAGO_TEXT, (_k, v) => (typeof v === "function" ? v(2) : v));
     expect(flat).not.toMatch(/MERCADOPAGO_|token|OAuth|PKCE/i);
+  });
+});
+
+describe("parseMercadoPagoNotificationUserId (HU-028a)", () => {
+  it("acepta user_id numérico o string de dígitos", () => {
+    expect(parseMercadoPagoNotificationUserId({ user_id: 123 })).toBe("123");
+    expect(parseMercadoPagoNotificationUserId({ user_id: "456" })).toBe("456");
+    expect(parseMercadoPagoNotificationUserId({ user_id: "1".repeat(20) })).toBe("1".repeat(20));
+  });
+
+  it.each([
+    ["null", null],
+    ["string suelto", "x"],
+    ["objeto vacío", {}],
+    ["user_id null", { user_id: null }],
+    ["negativo", { user_id: -1 }],
+    ["decimal", { user_id: 1.5 }],
+    ["con letras", { user_id: "12a" }],
+    ["más de 20 dígitos", { user_id: "1".repeat(21) }],
+    ["objeto", { user_id: { a: 1 } }],
+    ["string vacío", { user_id: "" }],
+    ["array", [1]],
+  ])("%s → null", (_label, body) => {
+    expect(parseMercadoPagoNotificationUserId(body)).toBeNull();
+  });
+});
+
+describe("isPlatformMercadoPagoUserId (HU-028a)", () => {
+  it("variable ausente o vacía → false siempre", () => {
+    expect(isPlatformMercadoPagoUserId("99", {})).toBe(false);
+    expect(isPlatformMercadoPagoUserId("99", { ARZIUM_MERCADOPAGO_USER_ID: "" })).toBe(false);
+    expect(isPlatformMercadoPagoUserId("", { ARZIUM_MERCADOPAGO_USER_ID: "  " })).toBe(false);
+  });
+
+  it("compara contra la variable recortada", () => {
+    expect(isPlatformMercadoPagoUserId("99", { ARZIUM_MERCADOPAGO_USER_ID: " 99 " })).toBe(true);
+    expect(isPlatformMercadoPagoUserId("98", { ARZIUM_MERCADOPAGO_USER_ID: " 99 " })).toBe(false);
   });
 });
