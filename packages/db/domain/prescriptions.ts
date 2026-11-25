@@ -14,7 +14,7 @@ import {
 } from "@nutri-bot/core";
 import { prisma, type NutritionPrescription, type Patient } from "../index";
 import { getFormulaMeasurementsAsOf } from "./clinical";
-import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveTenantSchedulingContext, type SchedulingContext, type TenantRef } from "./tenantScope";
 
 // Prescripción energética de una consulta (HU-004). La usa solo web. El servidor recalcula todo
 // con packages/core: del cliente solo se toman las elecciones (`choices`).
@@ -46,14 +46,15 @@ function measurementsUntil(consultedAt: Date, tz: string): Date {
  *  `ctx` null si falta algo bloqueante (sexo, fecha de nacimiento, peso, talla) o si es menor de 5.
  *  HU-008: de 5 a 17 el ctx lleva population "PEDIATRIC". */
 export async function getRequirementContextForConsultation(
+  t: TenantRef,
   consultationId: string,
 ): Promise<RequirementContextForConsultation> {
-  return loadRequirementContext(consultationId, await resolveLegacySchedulingScope());
+  return loadRequirementContext(consultationId, await resolveTenantSchedulingContext(prisma, t.tenantId));
 }
 
 async function loadRequirementContext(
   consultationId: string,
-  { scope: { tenantId }, professional: { timezone } }: Awaited<ReturnType<typeof resolveLegacySchedulingScope>>,
+  { scope: { tenantId }, professional: { timezone } }: SchedulingContext,
 ): Promise<RequirementContextForConsultation> {
   const consultation = await prisma.consultation.findUniqueOrThrow({
     where: { id: consultationId, tenantId, patient: { tenantId } },
@@ -66,7 +67,7 @@ async function loadRequirementContext(
     },
   });
   const { patient, consultedAt } = consultation;
-  const measurements = await getFormulaMeasurementsAsOf({
+  const measurements = await getFormulaMeasurementsAsOf({ tenantId }, {
     patientId: patient.id,
     consultationId: consultation.id,
     until: measurementsUntil(consultedAt, timezone),
@@ -92,13 +93,13 @@ async function loadRequirementContext(
 /** Prescripción anterior de referencia (D1, D9, D12): la de la consulta del paciente con
  *  consultedAt más reciente que sea <= la de esta consulta, excluyendo esta; desempate
  *  createdAt desc de la consulta. null si no hay. Decimal → number. */
-export async function getReferencePrescription(params: {
+export async function getReferencePrescription(t: TenantRef, params: {
   patientId: string;
   consultationId: string;
   /** Retained for existing callers; the cutoff uses the persisted consultation date. */
   consultedAt: Date;
 }): Promise<ReferencePrescription | null> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const patientScope = { patientId: params.patientId, tenantId, patient: { tenantId } };
   const anchor = await prisma.consultation.findUnique({
     where: { id: params.consultationId, ...patientScope },
@@ -145,11 +146,11 @@ export async function getReferencePrescription(params: {
  * bodyFatRecordedAt = measurements.bodyFatPercent.recordedAt si bodyFatSource = MEASURED, si no null.
  * No toca Patient (D10).
  */
-export async function saveConsultationPrescription(params: {
+export async function saveConsultationPrescription(t: TenantRef, params: {
   consultationId: string;
   choices: PrescriptionChoices;
 }): Promise<NutritionPrescription> {
-  const context = await resolveLegacySchedulingScope();
+  const context = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const { scope: { tenantId } } = context;
   const { ctx, measurements, patient } = await loadRequirementContext(params.consultationId, context);
   if (ctx === null) throw new InvalidPrescriptionError(["Faltan datos para los cálculos"]);
@@ -174,8 +175,8 @@ export async function saveConsultationPrescription(params: {
 }
 
 /** Borra la prescripción de una consulta propia. Idempotente. */
-export async function deleteConsultationPrescription(consultationId: string): Promise<void> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function deleteConsultationPrescription(t: TenantRef, consultationId: string): Promise<void> {
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   await prisma.nutritionPrescription.deleteMany({
     where: { consultationId, consultation: { tenantId, patient: { tenantId } } },
   });
@@ -184,10 +185,11 @@ export async function deleteConsultationPrescription(consultationId: string): Pr
 /** Las `take` prescripciones más recientes del paciente, por consultation.consultedAt desc y
  *  consultation.createdAt desc, con { consultation: { id, consultedAt } }. */
 export async function listLatestPrescriptions(
+  t: TenantRef,
   patientId: string,
   take: number,
 ): Promise<Array<NutritionPrescription & { consultation: { id: string; consultedAt: Date } }>> {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { scope: { tenantId } } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   return prisma.nutritionPrescription.findMany({
     where: { consultation: { patientId, tenantId, patient: { tenantId } } },
     include: { consultation: { select: { id: true, consultedAt: true } } },

@@ -60,7 +60,9 @@ describe("GET /api/mercadopago/oauth/callback", () => {
       const res = await GET(new Request(CALLBACK));
       expect(res.status).toBe(303);
       expect(res.headers.get("location")).toBe(`https://panel.example.test/ajustes?tab=mercadopago&mp=${result}`);
-      const arg = mocks.complete.mock.calls[0]![0];
+      // HU-025: el consultorio es el del contexto, nunca del query.
+      expect(mocks.complete.mock.calls[0]![0]).toEqual({ userId: "u", tenantId: "legacy-tenant" });
+      const arg = mocks.complete.mock.calls[0]![1];
       expect(arg.sessionEmail).toBe("pro@example.test");
       expect(arg.query.get("code")).toBe("TG-code");
       expect(arg.query.get("state")).toBe("st");

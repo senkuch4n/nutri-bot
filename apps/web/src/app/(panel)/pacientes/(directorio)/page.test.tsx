@@ -2,13 +2,14 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 
 const mocks = vi.hoisted(() => ({
-  patient: vi.fn(), legacyState: vi.fn(), lastContacts: vi.fn(), scope: vi.fn(),
+  patient: vi.fn(), legacyState: vi.fn(), lastContacts: vi.fn(), scope: vi.fn(), professional: vi.fn(),
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {
   patient: { findMany: mocks.patient }, conversationState: { findMany: mocks.legacyState },
 } }));
-vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: mocks.scope }));
-vi.mock("@nutri-bot/db/domain/conversationState", () => ({ listLegacyPatientLastContacts: mocks.lastContacts }));
+vi.mock("@/lib/tenant-context", () => ({ requirePageContext: mocks.scope }));
+vi.mock("@nutri-bot/db/domain", () => ({ getTenantProfessional: mocks.professional }));
+vi.mock("@nutri-bot/db/domain/conversationState", () => ({ listPatientLastContacts: mocks.lastContacts }));
 vi.mock("@/components/ui", () => ({ PageHeader: () => null }));
 vi.mock("../new-patient-dialog", () => ({ NewPatientDialog: () => null }));
 vi.mock("../archived-patient-list", () => ({ ArchivedPatientList: () => null }));
@@ -25,7 +26,8 @@ const archived = { ...original, id: "archived", archivedAt: today };
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.scope.mockResolvedValue({ scope, professional: { timezone: "UTC" } });
+  mocks.scope.mockResolvedValue({ userId: "u", ...scope, professionalId: 1 });
+  mocks.professional.mockResolvedValue({ timezone: "UTC" });
   mocks.patient.mockImplementation(async ({ where }) => {
     const rows = where.archivedAt === null ? [active] : [archived];
     return where.tenantId === scope.tenantId ? rows : [...rows, { ...rows[0], ...foreign }];
@@ -38,7 +40,7 @@ it("loads the original directory and asks the adapter for only the listed active
   const view = await PacientesPage({ searchParams: Promise.resolve({}) });
   expect(view.props.named).toEqual([expect.objectContaining({ id: original.id, statusLine: expect.stringContaining("Te escribió") })]);
   expect(view.props.archivedCount).toBe(1);
-  expect(mocks.lastContacts.mock.calls).toEqual([[[original.whatsappJid]]]);
+  expect(mocks.lastContacts.mock.calls).toEqual([[expect.objectContaining({ tenantId: scope.tenantId }), [original.whatsappJid]]]);
   expect(mocks.legacyState).not.toHaveBeenCalled();
   expect(mocks.patient).toHaveBeenCalledWith(expect.objectContaining({
     where: { tenantId: scope.tenantId, archivedAt: null },
@@ -76,11 +78,19 @@ it("preserves the archived view without reading conversation state", async () =>
   expect(mocks.lastContacts).not.toHaveBeenCalled();
 });
 
-it.each([undefined, "archivadas"])("fails closed when the original scope cannot be verified (%s)", async (vista) => {
-  mocks.scope.mockRejectedValue(new Error("No se pudo verificar la agenda de la instalación original."));
+it.each([undefined, "archivadas"])("fails closed without a tenant context (%s)", async (vista) => {
+  mocks.scope.mockRejectedValue(new Error("NEXT_REDIRECT"));
   await expect(PacientesPage({ searchParams: Promise.resolve({ vista }) }))
-    .rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    .rejects.toThrow("NEXT_REDIRECT");
   expect(mocks.patient).not.toHaveBeenCalled();
   expect(mocks.legacyState).not.toHaveBeenCalled();
   expect(mocks.lastContacts).not.toHaveBeenCalled();
+});
+
+it("HU-025: con el contexto de otro consultorio lista solo sus pacientes", async () => {
+  mocks.scope.mockResolvedValue({ userId: "u", tenantId: "tenant-b", agendaId: "agenda-b", professionalId: 7 });
+  mocks.patient.mockResolvedValue([]);
+  await PacientesPage({ searchParams: Promise.resolve({}) });
+  for (const [args] of mocks.patient.mock.calls) expect(args.where.tenantId).toBe("tenant-b");
+  expect(mocks.professional).toHaveBeenCalledWith("tenant-b");
 });

@@ -24,13 +24,14 @@ import {
   getPreviousIsakStudy,
   getReferencePrescription,
   getRequirementContextForConsultation,
+  getTenantProfessional,
   listPatientPlans,
   toIsakMeasures,
   toPrescriptionSnapshot,
 } from "@nutri-bot/db/domain";
 import { Alert, Button, ButtonLink, Card, PageHeader } from "@/components/ui";
 import { toEvolutionRow } from "@/lib/evolution-rows";
-import { getProfessional } from "@/lib/professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { ConsultationDateSheet } from "../../consultation-date-sheet";
 import { AnthropometricDiagnosisCard, type DiagnosisSourceKey } from "./anthropometric-diagnosis";
 import { ConsultationMeasurements } from "./consultation-measurements";
@@ -55,10 +56,12 @@ export default async function ConsultationPage({
   searchParams: Promise<{ isak?: string | string[]; aviso?: string | string[] }>;
 }) {
   const [{ id, consultationId }, { isak, aviso }] = await Promise.all([params, searchParams]);
+  // HU-025: consulta del consultorio de la sesión; de otro consultorio → notFound(), como inexistente.
+  const tenant = await requirePageContext();
   const [consultation, pro, plans] = await Promise.all([
-    getConsultation(consultationId),
-    getProfessional(),
-    listPatientPlans(id),
+    getConsultation(tenant, consultationId),
+    getTenantProfessional(tenant.tenantId),
+    listPatientPlans(tenant, id),
   ]);
   if (!consultation || consultation.patientId !== id) notFound();
 
@@ -84,7 +87,7 @@ export default async function ConsultationPage({
   });
 
   // ── HU-004: diagnóstico y requerimiento, con las mediciones D4 (de la consulta o anteriores) ──
-  const requirement = await getRequirementContextForConsultation(consultation.id);
+  const requirement = await getRequirementContextForConsultation(tenant, consultation.id);
   const m = requirement.measurements;
   const dateLabel = (d: Date) => formatInTimeZone(d, tz, "dd/MM/yyyy");
   const fromOther = (s: SourcedMeasurement | null) => s !== null && s.consultationId !== consultation.id;
@@ -122,7 +125,7 @@ export default async function ConsultationPage({
   const ctx = requirement.ctx;
   const reference =
     ctx && !prescription
-      ? await getReferencePrescription({
+      ? await getReferencePrescription(tenant, {
           patientId: id,
           consultationId: consultation.id,
           consultedAt: consultation.consultedAt,
@@ -163,8 +166,8 @@ export default async function ConsultationPage({
       ageMonths: monthsAt(consultation.consultedAt),
     });
     const [previousEntry, report] = await Promise.all([
-      getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt }),
-      getAnthropometricReportMeta(isakEntry.id),
+      getPreviousIsakStudy(tenant, { patientId: id, before: consultation.consultedAt }),
+      getAnthropometricReportMeta(tenant, isakEntry.id),
     ]);
     const previousAt = previousEntry?.consultation?.consultedAt ?? null;
     const previous =

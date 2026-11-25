@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
-  agenda: { findUnique: vi.fn() },
+  agenda: { findFirst: vi.fn() },
   professional: { findUnique: vi.fn() },
   consultation: { findMany: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
   evolutionEntry: { findFirst: vi.fn(), updateMany: vi.fn() },
@@ -13,6 +13,8 @@ vi.mock("../index", () => ({ prisma: db }));
 
 import { AppointmentConsultationDateError, ConsultationNotDeletableError, ConsultationPlanMismatchError, createPlanForConsultation, deleteConsultation, FutureConsultationDateError, getConsultation, listPatientConsultations, saveConsultationNotes, setConsultationPlan, updateManualConsultationDate } from "./consultations";
 
+const T = { tenantId: "legacy-tenant" };
+
 const tenantId = "legacy-tenant";
 const consultation = { id: "c1", patientId: "p1", tenantId, consultedAt: new Date("2026-09-13T01:00:00Z") };
 const newPlan = { id: "new", patientId: "p1", tenantId, title: "Plan del 12/09/2026", status: "DRAFT" };
@@ -23,7 +25,7 @@ const planKey = { id: "plan", tenantId };
 beforeEach(() => {
   vi.resetAllMocks();
   db.$transaction.mockImplementation((run) => run(db));
-  db.agenda.findUnique.mockResolvedValue({ professional });
+  db.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional });
   db.professional.findUnique.mockResolvedValue(professional);
   db.nutritionPlan.create.mockResolvedValue(newPlan);
 });
@@ -47,10 +49,10 @@ describe("private consultation reads and writes", () => {
       if (!matches(stored as typeof owned, where)) throw new Error("Record not found");
       return Object.assign(stored, data);
     });
-    await expect(listPatientConsultations("p1")).resolves.toEqual([]);
-    await expect(getConsultation("c1")).resolves.toBeNull();
-    await expect(saveConsultationNotes({ consultationId: "c1", notes: "changed" })).rejects.toThrow("Record not found");
-    await expect(deleteConsultation("c1")).rejects.toThrow("La consulta no existe");
+    await expect(listPatientConsultations(T, "p1")).resolves.toEqual([]);
+    await expect(getConsultation(T, "c1")).resolves.toBeNull();
+    await expect(saveConsultationNotes(T, { consultationId: "c1", notes: "changed" })).rejects.toThrow("Record not found");
+    await expect(deleteConsultation(T, "c1")).rejects.toThrow("La consulta no existe");
     expect(stored.notes).toBe("original");
     expect(db.consultation.deleteMany).not.toHaveBeenCalled();
   });
@@ -63,8 +65,8 @@ describe("private consultation reads and writes", () => {
   ])("does not return a consultation with an incompatible to-one link: %j", async (link) => {
     db.consultation.findMany.mockResolvedValue([{ ...owned, ...link }]);
     db.consultation.findUnique.mockResolvedValue({ ...owned, ...link });
-    await expect(listPatientConsultations("p1")).resolves.toEqual([]);
-    await expect(getConsultation("c1")).resolves.toBeNull();
+    await expect(listPatientConsultations(T, "p1")).resolves.toEqual([]);
+    await expect(getConsultation(T, "c1")).resolves.toBeNull();
   });
 
   it("preserves owned list and detail results, without incompatible measurements", async () => {
@@ -78,8 +80,8 @@ describe("private consultation reads and writes", () => {
     db.consultation.findMany.mockResolvedValue([row]);
     db.consultation.findUnique.mockResolvedValue(row);
     const expected = { ...owned, prescription, plan, appointment, evolutionEntries: [entry] };
-    await expect(listPatientConsultations("p1")).resolves.toEqual([expected]);
-    await expect(getConsultation("c1")).resolves.toEqual(expected);
+    await expect(listPatientConsultations(T, "p1")).resolves.toEqual([expected]);
+    await expect(getConsultation(T, "c1")).resolves.toEqual(expected);
     expect(db.consultation.findMany).toHaveBeenCalledWith(expect.objectContaining({
       orderBy: [{ consultedAt: "desc" }, { createdAt: "desc" }],
     }));
@@ -90,27 +92,27 @@ describe("private consultation reads and writes", () => {
       expect(where).toEqual({ id: "c1", tenantId, patient: { tenantId } });
       return { ...owned, ...data };
     });
-    await expect(saveConsultationNotes({ consultationId: "c1", notes: " hola " })).resolves.toMatchObject({ notes: "hola" });
-    await expect(saveConsultationNotes({ consultationId: "c1", notes: " " })).resolves.toMatchObject({ notes: null });
+    await expect(saveConsultationNotes(T, { consultationId: "c1", notes: " hola " })).resolves.toMatchObject({ notes: "hola" });
+    await expect(saveConsultationNotes(T, { consultationId: "c1", notes: " " })).resolves.toMatchObject({ notes: null });
   });
 
   it("blocks content and repeats ownership and content guards when deleting", async () => {
     db.consultation.findUnique.mockResolvedValueOnce({ ...owned, _count: { evolutionEntries: 1 } }).mockResolvedValue(owned);
-    await expect(deleteConsultation("c1")).rejects.toThrow(ConsultationNotDeletableError);
+    await expect(deleteConsultation(T, "c1")).rejects.toThrow(ConsultationNotDeletableError);
     expect(db.consultation.deleteMany).not.toHaveBeenCalled();
     db.consultation.deleteMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValue({ count: 1 });
-    await expect(deleteConsultation("c1")).rejects.toThrow(ConsultationNotDeletableError);
-    await expect(deleteConsultation("c1")).resolves.toBeUndefined();
+    await expect(deleteConsultation(T, "c1")).rejects.toThrow(ConsultationNotDeletableError);
+    await expect(deleteConsultation(T, "c1")).resolves.toBeUndefined();
     expect(db.consultation.deleteMany).toHaveBeenCalledWith({ where: {
       id: "c1", tenantId, patient: { tenantId }, planId: null, evolutionEntries: { none: {} }, prescription: { is: null },
     } });
   });
 
   it("fails closed when the original agenda cannot be verified", async () => {
-    db.agenda.findUnique.mockResolvedValue(null);
-    for (const run of [() => listPatientConsultations("p1"), () => getConsultation("c1"),
-      () => saveConsultationNotes({ consultationId: "c1", notes: null }), () => deleteConsultation("c1")]) {
-      await expect(run()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    db.agenda.findFirst.mockResolvedValue(null);
+    for (const run of [() => listPatientConsultations(T, "p1"), () => getConsultation(T, "c1"),
+      () => saveConsultationNotes(T, { consultationId: "c1", notes: null }), () => deleteConsultation(T, "c1")]) {
+      await expect(run()).rejects.toThrow("tenant_scope:tenant_scope_missing");
     }
     for (const query of Object.values(db.consultation)) expect(query).not.toHaveBeenCalled();
   });
@@ -130,7 +132,7 @@ function expectNoWrites() {
 }
 
 describe("changing a manual consultation date", () => {
-  const move = (dayKey = "2020-09-14") => updateManualConsultationDate({ consultationId: "c1", dayKey });
+  const move = (dayKey = "2020-09-14") => updateManualConsultationDate(T, { consultationId: "c1", dayKey });
   const noon = new Date("2020-09-14T15:00:00Z");
   const expectNoDateWrites = () => {
     expect(db.consultation.update).not.toHaveBeenCalled();
@@ -145,8 +147,8 @@ describe("changing a manual consultation date", () => {
 
   it("fails closed without the verified agenda", async () => {
     mockConsultation(tenantId);
-    db.agenda.findUnique.mockResolvedValue(null);
-    await expect(move()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    db.agenda.findFirst.mockResolvedValue(null);
+    await expect(move()).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expectNoDateWrites();
   });
 
@@ -201,19 +203,19 @@ describe("changing a manual consultation date", () => {
 });
 
 const operations = {
-  link: () => setConsultationPlan({ consultationId: "c1", planId: "plan" }),
-  unlink: () => setConsultationPlan({ consultationId: "c1", planId: null }),
-  create: () => createPlanForConsultation({ consultationId: "c1" }),
+  link: () => setConsultationPlan(T, { consultationId: "c1", planId: "plan" }),
+  unlink: () => setConsultationPlan(T, { consultationId: "c1", planId: null }),
+  create: () => createPlanForConsultation(T, { consultationId: "c1" }),
 };
 
 describe("consultation → plan writes", () => {
   it.each(Object.keys(operations) as (keyof typeof operations)[])("%s fails closed without a verified legacy agenda", async (op) => {
-    db.agenda.findUnique.mockResolvedValue(null);
+    db.agenda.findFirst.mockResolvedValue(null);
     mockConsultation(tenantId);
-    await expect(operations[op]()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
-    expect(db.agenda.findUnique).toHaveBeenCalledWith({
-      where: { id_tenantId: { id: "legacy-agenda", tenantId }, isPrimary: true, professionalId: 1 },
-      select: { professional: { select: { timezone: true, phoneJid: true } } },
+    await expect(operations[op]()).rejects.toThrow("tenant_scope:tenant_scope_missing");
+    expect(db.agenda.findFirst).toHaveBeenCalledWith({
+      where: { tenantId, isPrimary: true },
+      select: { id: true, tenantId: true, professionalId: true, professional: { select: { timezone: true, phoneJid: true } } },
     });
     expect(db.consultation.findUniqueOrThrow).not.toHaveBeenCalled();
     expectNoWrites();

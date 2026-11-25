@@ -7,8 +7,8 @@ import {
   type ReminderStatusItem,
 } from "@nutri-bot/core";
 import { prisma, type Prisma } from "../index";
-import { bindLegacyAppointmentConversationState } from "./conversationState";
-import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { bindAppointmentConversationState } from "./conversationState";
+import { lockTenantScheduling, resolveTenantSchedulingContext, type TenantRef, type TenantScope } from "./tenantScope";
 import { enqueueMessage } from "./outbox";
 
 /** Filtro opcional para pruebas: limita los crons a estos pacientes (nunca toca turnos ajenos). */
@@ -16,15 +16,14 @@ export interface EnqueueScope {
   patientIds?: string[];
 }
 
-type LegacyScope = Awaited<ReturnType<typeof resolveLegacySchedulingScope>>["scope"];
 
-function appointmentScope(scope: LegacyScope) {
+function appointmentScope(scope: TenantScope) {
   return { ...scope, patient: { tenantId: scope.tenantId }, service: { tenantId: scope.tenantId } };
 }
 
 function hasOwnedRelations(
   appt: { tenantId: string | null; agendaId: string | null; patient: { tenantId: string | null } | null; service: { tenantId: string | null } | null },
-  scope: LegacyScope,
+  scope: TenantScope,
 ): boolean {
   return appt.tenantId === scope.tenantId && appt.agendaId === scope.agendaId &&
     appt.patient?.tenantId === scope.tenantId && appt.service?.tenantId === scope.tenantId;
@@ -32,7 +31,7 @@ function hasOwnedRelations(
 
 function currentAppointmentWhere(
   appt: { id: string; patientId: string; serviceId: string; startsAt: Date; updatedAt: Date; patient: { whatsappJid: string } },
-  scope: LegacyScope,
+  scope: TenantScope,
 ) {
   return {
     ...appointmentScope(scope), id: appt.id, status: "CONFIRMED", startsAt: appt.startsAt,
@@ -41,14 +40,14 @@ function currentAppointmentWhere(
   } satisfies Prisma.AppointmentWhereUniqueInput;
 }
 
-function appointmentMessageScope({ tenantId }: LegacyScope) {
+function appointmentMessageScope({ tenantId }: TenantScope) {
   // Historical messages without an explicit owner inherit it from the verified appointment.
   return { OR: [{ tenantId }, { tenantId: null }] };
 }
 
 /** Manda las recomendaciones previas a estudios que las tengan configuradas. */
-export async function enqueuePrepInstructions(windowMinutes = 20, scope: EnqueueScope = {}): Promise<number> {
-  const { scope: legacy, professional: pro } = await resolveLegacySchedulingScope();
+export async function enqueuePrepInstructions(t: TenantRef, windowMinutes = 20, scope: EnqueueScope = {}): Promise<number> {
+  const { scope: legacy, professional: pro } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const now = Date.now();
   const due = await prisma.appointment.findMany({
     where: {
@@ -75,7 +74,7 @@ export async function enqueuePrepInstructions(windowMinutes = 20, scope: Enqueue
     if (appt.startsAt >= horizon) continue;
     const current = await prisma.appointment.findUnique({ where: currentAppointmentWhere(appt, legacy), select: { id: true } });
     if (!current) continue;
-    const created = await enqueueMessage({
+    const created = await enqueueMessage(t, {
       toJid: appt.patient.whatsappJid,
       kind: "PREP_INSTRUCTIONS",
       appointmentId: appt.id,
@@ -123,9 +122,10 @@ export interface ServiceRemindersResult {
  * Consumidores: bot (workers.ts: cron y arranque) y scripts de prueba.
  */
 export async function enqueueServiceReminders(
+  t: TenantRef,
   opts: { now?: Date; scope?: EnqueueScope } = {},
 ): Promise<ServiceRemindersResult> {
-  const { scope: legacy, professional: pro } = await resolveLegacySchedulingScope();
+  const { scope: legacy, professional: pro } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const now = opts.now ?? new Date();
   const scope = opts.scope ?? {};
   const appts = await prisma.appointment.findMany({
@@ -185,16 +185,14 @@ export async function enqueueServiceReminders(
           tz: pro.timezone,
         });
         const claimed = await prisma.$transaction(async (tx) => {
-          // Same order as rescheduling: original Professional first, then outbox,
+          // Same order as rescheduling: the tenant's primary-agenda Professional first, then outbox,
           // appointment write and conversation. Recheck the schedule after any lock wait.
-          const locked = await tx.$queryRaw<{ id: number }[]>`SELECT id FROM "Professional"
-            WHERE id = 1 AND "tenantId" = ${legacy.tenantId} FOR UPDATE`;
-          if (locked.length !== 1) return false;
-          const state = await bindLegacyAppointmentConversationState(tx);
+          if (!(await lockTenantScheduling(tx, legacy.tenantId))) return false;
+          const state = await bindAppointmentConversationState(tx, legacy.tenantId);
           const pending = { ...where, confirmationRequestedAt: null };
           const current = await tx.appointment.findUnique({ where: pending, select: { id: true } });
           if (!current) return false;
-          const created = await enqueueMessage({
+          const created = await enqueueMessage(t, {
             toJid: jid, kind: "CONFIRMATION_REQUEST", appointmentId: appt.id, body,
           }, tx);
           if (!created) return false;
@@ -211,7 +209,7 @@ export async function enqueueServiceReminders(
       } else {
         const current = await prisma.appointment.findUnique({ where, select: { id: true } });
         if (!current) continue;
-        const created = await enqueueMessage({
+        const created = await enqueueMessage(t, {
           toJid: jid,
           kind: "REMINDER",
           appointmentId: appt.id,
@@ -247,12 +245,13 @@ export type ReminderNowResult = "queued" | "already_pending" | "not_applicable";
  * encolen dos.
  */
 export async function enqueueReminderNow(
+  t: TenantRef,
   appointmentId: string,
   opts: { now?: Date } = {},
 ): Promise<ReminderNowResult> {
   const now = opts.now ?? new Date();
   return prisma.$transaction(async (tx) => {
-    const { scope, professional: pro } = await resolveLegacySchedulingScope(tx);
+    const { scope, professional: pro } = await resolveTenantSchedulingContext(tx, t.tenantId);
     const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Appointment"
       WHERE id = ${appointmentId} AND "tenantId" = ${scope.tenantId} AND "agendaId" = ${scope.agendaId}
       FOR UPDATE`;
@@ -293,10 +292,11 @@ export async function enqueueReminderNow(
  * del servicio. Turno inexistente → []. Consumidor: web.
  */
 export async function getAppointmentReminderStatus(
+  t: TenantRef,
   appointmentId: string,
   opts: { now?: Date } = {},
 ): Promise<ReminderStatusItem[]> {
-  const { scope, professional: pro } = await resolveLegacySchedulingScope();
+  const { scope, professional: pro } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const appt = await prisma.appointment.findUnique({
     where: { id: appointmentId, ...appointmentScope(scope) },
     include: {

@@ -1,6 +1,5 @@
 import { RECIPE_ITEM_SELECT } from "./recipes";
 import { prisma, type MealMode, type Prisma, type Weekday } from "../index";
-import { getPlan } from "./nutritionPlans";
 import { FOOD_REFERENCE_UNAVAILABLE, unavailableFoodReferences } from "./foodReferenceOwnership";
 import {
   assertWeekdayMatchesMeal, createDefaultWeeklyMeals, resolveNewMealMode, templateMealScope,
@@ -65,20 +64,18 @@ export function deleteTemplate(id: string, tenantId?: string) {
 }
 
 /** HU-018b: mismo default de `mode` que addMeal (PER_DAY si la plantilla ya es semanal). */
+/** HU-025 (025b-2 M10): el tenant es obligatorio por tipo (antes, opcional para scripts legacy). */
 export async function addTemplateMeal(
   templateId: string,
   data: { name: string; order: number; mode?: MealMode; isOptions?: boolean },
-  tenantId?: string,
+  tenantId: string,
 ) {
   const { mode, isOptions } = await resolveNewMealMode("template", templateId, data, tenantId);
   const meal = { name: data.name, order: data.order, mode, isOptions };
-  if (tenantId !== undefined) {
-    // Nested creation enforces ownership on the write, not just on the ordering read.
-    return prisma.planTemplate.update({
-      where: { id: templateId, tenantId }, data: { meals: { create: meal } }, select: { id: true },
-    });
-  }
-  return prisma.templateMeal.create({ data: { templateId, ...meal } });
+  // Nested creation enforces ownership on the write, not just on the ordering read.
+  return prisma.planTemplate.update({
+    where: { id: templateId, tenantId }, data: { meals: { create: meal } }, select: { id: true },
+  });
 }
 
 export function updateTemplateMeal(mealId: string, data: Partial<{ name: string; order: number }>) {
@@ -108,21 +105,19 @@ type TemplateItemData = {
   measureGrams?: number | string | null;
 };
 
-export async function addTemplateMealItem(mealId: string, data: TemplateItemData, scope?: TemplateMealScope) {
+/** HU-025 (025b-2 M10): el alcance (plantilla + tenant) es obligatorio por tipo. */
+export async function addTemplateMealItem(mealId: string, data: TemplateItemData, scope: TemplateMealScope) {
   const weekday = data.weekday ?? null;
   await assertWeekdayMatchesMeal("template", mealId, weekday, scope);
-  if (scope) {
-    return prisma.$transaction(async (tx) => {
-      if (data.foodId != null && (await unavailableFoodReferences(tx, scope.tenantId, [data.foodId])).size > 0) {
-        throw new Error(FOOD_REFERENCE_UNAVAILABLE);
-      }
-      return tx.templateMeal.update({
-        where: { id: mealId, ...templateMealScope(scope) },
-        data: { items: { create: { ...data, weekday } } }, select: { id: true },
-      });
+  return prisma.$transaction(async (tx) => {
+    if (data.foodId != null && (await unavailableFoodReferences(tx, scope.tenantId, [data.foodId])).size > 0) {
+      throw new Error(FOOD_REFERENCE_UNAVAILABLE);
+    }
+    return tx.templateMeal.update({
+      where: { id: mealId, ...templateMealScope(scope) },
+      data: { items: { create: { ...data, weekday } } }, select: { id: true },
     });
-  }
-  return prisma.templateMealItem.create({ data: { mealId, ...data, weekday } });
+  });
 }
 
 export function updateTemplateMealItem(mealId: string, data: Partial<Omit<TemplateItemData, "weekday">>) {
@@ -162,35 +157,26 @@ const templateCopyInclude = {
 
 type TemplateCopy = Prisma.PlanTemplateGetPayload<{ include: typeof templateCopyInclude }>;
 
-export function applyTemplateToPatient(templateId: string, patientId: string): Promise<Awaited<ReturnType<typeof getPlan>>>;
-export function applyTemplateToPatient(templateId: string, patientId: string, tenantId: string): Promise<{ id: string }>;
-export async function applyTemplateToPatient(templateId: string, patientId: string, tenantId?: string) {
-  if (tenantId !== undefined) {
-    return prisma.$transaction(async (tx) => {
-      const patient = await tx.patient.findUnique({ where: { id: patientId, tenantId }, select: { id: true } });
-      if (!patient) throw new TemplateApplicationUnavailableError();
-      const template = await tx.planTemplate.findUnique({ where: { id: templateId, tenantId }, include: templateCopyInclude });
-      if (!template) throw new TemplateApplicationUnavailableError();
-      if (template.status === "DRAFT") throw new TemplateNotPublishedError(templateId);
+/** HU-025b-1: sin la sobrecarga sin tenant. Paciente y plantilla tienen que ser del consultorio. */
+export async function applyTemplateToPatient(templateId: string, patientId: string, tenantId: string): Promise<{ id: string }> {
+  return prisma.$transaction(async (tx) => {
+    const patient = await tx.patient.findUnique({ where: { id: patientId, tenantId }, select: { id: true } });
+    if (!patient) throw new TemplateApplicationUnavailableError();
+    const template = await tx.planTemplate.findUnique({ where: { id: templateId, tenantId }, include: templateCopyInclude });
+    if (!template) throw new TemplateApplicationUnavailableError();
+    if (template.status === "DRAFT") throw new TemplateNotPublishedError(templateId);
 
-      const items = template.meals.flatMap((meal) => meal.items);
-      if (items.some((item) => item.food && item.food.source !== "SARA2")) throw new TemplateContainsHistoricalFoodError();
-      if (items.some((item) => item.foodId !== null && !item.food)) throw new TemplateApplicationUnavailableError();
-      const recipeIds = [...new Set(items.flatMap((item) => item.recipeId ? [item.recipeId] : []))];
-      // Don't hydrate recipe data or create a new link to another tenant's recipe.
-      if (recipeIds.length && await tx.recipe.count({ where: { id: { in: recipeIds }, tenantId } }) !== recipeIds.length) {
-        throw new TemplateApplicationUnavailableError();
-      }
-      // The composite patient FK enforces this ownership at write time too.
-      return tx.nutritionPlan.create({ data: templatePlanData(template, patientId, tenantId), select: { id: true } });
-    }, { isolationLevel: "Serializable" });
-  }
-
-  const template = await getTemplate(templateId);
-  if (!template) throw new Error(`Plantilla no encontrada: ${templateId}`);
-  if (template.status === "DRAFT") throw new TemplateNotPublishedError(templateId);
-  const plan = await prisma.$transaction((tx) => tx.nutritionPlan.create({ data: templatePlanData(template, patientId) }));
-  return getPlan(plan.id);
+    const items = template.meals.flatMap((meal) => meal.items);
+    if (items.some((item) => item.food && item.food.source !== "SARA2")) throw new TemplateContainsHistoricalFoodError();
+    if (items.some((item) => item.foodId !== null && !item.food)) throw new TemplateApplicationUnavailableError();
+    const recipeIds = [...new Set(items.flatMap((item) => item.recipeId ? [item.recipeId] : []))];
+    // Don't hydrate recipe data or create a new link to another tenant's recipe.
+    if (recipeIds.length && await tx.recipe.count({ where: { id: { in: recipeIds }, tenantId } }) !== recipeIds.length) {
+      throw new TemplateApplicationUnavailableError();
+    }
+    // The composite patient FK enforces this ownership at write time too.
+    return tx.nutritionPlan.create({ data: templatePlanData(template, patientId, tenantId), select: { id: true } });
+  }, { isolationLevel: "Serializable" });
 }
 
 function templatePlanData(template: TemplateCopy, patientId: string, tenantId?: string): Prisma.NutritionPlanUncheckedCreateInput {

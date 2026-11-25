@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => {
     updateSection: vi.fn(),
     deleteSection: vi.fn(),
     moveSection: vi.fn(),
-    hasPanelSession: vi.fn(),
     access: vi.fn(),
     touchTemplate: vi.fn(),
     revalidateMenuOwner: vi.fn(),
@@ -36,9 +35,18 @@ vi.mock("@nutri-bot/db/domain", () => ({
   deleteSection: mocks.deleteSection,
   moveSection: mocks.moveSection,
 }));
-vi.mock("./recetas/recipe-save", () => ({ hasPanelSession: mocks.hasPanelSession }));
 vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.revalidateMenuOwner }));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `access`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.access(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.access()) ?? null, TenantAccessError };
+});
 vi.mock("@/lib/touch-template", () => ({ touchTemplate: mocks.touchTemplate }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
@@ -52,7 +60,6 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
-  mocks.hasPanelSession.mockResolvedValue(true);
   mocks.access.mockResolvedValue({ tenantId: "tenant-a" });
 });
 
@@ -79,8 +86,8 @@ describe("plan-section-actions", () => {
     expect(mocks.touchTemplate.mock.calls).toEqual([["t1", "tenant-a"]]);
   });
 
-  it("sin sesión → error de sesión sin llamar al dominio", async () => {
-    mocks.hasPanelSession.mockResolvedValue(false);
+  it("sin contexto → error de sesión sin llamar al dominio", async () => {
+    mocks.access.mockResolvedValue(null);
     const r = await addPlanSectionAction({ kind: "plan", ownerId: "p1", title: "T", body: "b" });
     expect(r).toEqual({ ok: false, error: "Tu sesión venció. Volvé a entrar." });
     expect(mocks.addSection).not.toHaveBeenCalled();
@@ -116,8 +123,8 @@ describe("plan-section-actions", () => {
     mocks.addSection.mockResolvedValue({ id: "s9" });
     const r = await addPlanSectionAction({ kind: "plan", ownerId: "p1", title: "T", body: "b" });
     expect(r).toEqual({ ok: true, id: "s9" });
-    expect(mocks.addSection).toHaveBeenCalledWith("plan", "p1", { title: "T", body: "b" });
-    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "p1");
+    expect(mocks.addSection).toHaveBeenCalledWith("plan", "p1", { title: "T", body: "b" }, "tenant-a");
+    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "p1", "tenant-a");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/portal/plan");
   });
 
@@ -132,6 +139,6 @@ describe("plan-section-actions", () => {
   it("mover: dirección inválida → genérico; válida → llama al dominio", async () => {
     expect((await movePlanSectionAction({ kind: "plan", ownerId: "p1", sectionId: "s1", direction: 2 as never })).ok).toBe(false);
     await movePlanSectionAction({ kind: "plan", ownerId: "p1", sectionId: "s1", direction: -1 });
-    expect(mocks.moveSection).toHaveBeenCalledWith("plan", "p1", "s1", -1);
+    expect(mocks.moveSection).toHaveBeenCalledWith("plan", "p1", "s1", -1, "tenant-a");
   });
 });

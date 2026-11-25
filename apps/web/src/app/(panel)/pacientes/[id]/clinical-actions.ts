@@ -8,8 +8,9 @@ import {
   FutureConsultationDateError,
   addEvolutionEntryOnDay,
   deleteEvolutionEntry,
+  getTenantProfessional,
 } from "@nutri-bot/db/domain";
-import { getProfessional } from "@/lib/professional";
+import { requireTenantContext } from "@/lib/tenant-context";
 import { MEASURE_FIELDS, parseMeasuresFromForm } from "./measure-form-data";
 
 /** `message` (opcional): texto del toast de éxito cuando depende del resultado. */
@@ -42,9 +43,11 @@ export async function addEvolutionEntryAction(
   if (!measures.ok) return { ok: false, error: measures.error };
 
   try {
+    // HU-025: consultorio de la sesión; un paciente de otro consultorio no se encuentra.
+    const ctx = await requireTenantContext("write");
     const [{ consultation }, pro] = await Promise.all([
-      addEvolutionEntryOnDay(patientId, recordedAt, measures.measures),
-      getProfessional(),
+      addEvolutionEntryOnDay(ctx, patientId, recordedAt, measures.measures),
+      getTenantProfessional(ctx.tenantId),
     ]);
     revalidatePath(`/pacientes/${patientId}`);
     revalidatePath(`/pacientes/${patientId}/consultas/${consultation.id}`);
@@ -68,12 +71,13 @@ export async function deleteEvolutionEntryByIdAction(patientId: string, entryId:
   const failed = { ok: false, error: "No se pudo borrar la medición." } as const;
   if (!idSchema.safeParse(patientId).success || !idSchema.safeParse(entryId).success) return failed;
   try {
-    const entry = await prisma.evolutionEntry.findUnique({
-      where: { id: entryId },
+    const ctx = await requireTenantContext("write");
+    const entry = await prisma.evolutionEntry.findFirst({
+      where: { id: entryId, tenantId: ctx.tenantId, patient: { tenantId: ctx.tenantId } },
       select: { patientId: true, consultationId: true },
     });
     if (!entry || entry.patientId !== patientId) return failed;
-    await deleteEvolutionEntry(entryId);
+    await deleteEvolutionEntry(ctx, entryId);
     revalidatePath(`/pacientes/${patientId}`);
     if (entry.consultationId) revalidatePath(`/pacientes/${patientId}/consultas/${entry.consultationId}`);
     return { ok: true };

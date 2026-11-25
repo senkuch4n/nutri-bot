@@ -151,11 +151,12 @@ describe("direct template ownership", () => {
     }, select: { id: true } });
   });
 
-  it("leaves legacy adds to the existing item create and database checks", async () => {
+  it("HU-025: sin alcance (llamador JS que lo omite) no escribe nada", async () => {
     p().templateMeal.findUnique.mockResolvedValue({ mode: "EVERY_DAY" });
-    await addTemplateMealItem("m1", { foodId: "unowned", order: 1 });
-    expect(p().templateMealItem.create).toHaveBeenCalledWith({ data: { mealId: "m1", foodId: "unowned", order: 1, weekday: null } });
-    expect(p().food.findMany).not.toHaveBeenCalled();
+    const unscoped = addTemplateMealItem as unknown as (...args: unknown[]) => Promise<unknown>;
+    await expect(unscoped("m1", { foodId: "unowned", order: 1 })).rejects.toThrow();
+    expect(p().templateMealItem.create).not.toHaveBeenCalled();
+    expect(p().templateMeal.update).not.toHaveBeenCalled();
   });
 
   it("scopes item order by meal, day, template and tenant", async () => {
@@ -175,13 +176,26 @@ describe("direct template ownership", () => {
   });
 });
 
+
+// HU-025b-1: applyTemplateToPatient ya no tiene camino sin tenant. Los casos de copia corren con el
+// consultorio de la plantilla y de la paciente (los dos mockeados como propios).
+const T_ID = "tenantA";
+function scopedApply() {
+  p().patient = { findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })) };
+  p().recipe = { count: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => where.id.in.length) };
+}
+function withFoods<T extends { meals: { items: { foodId: string | null }[] }[] }>(t: T): T {
+  return { ...t, meals: t.meals.map((m) => ({ ...m, items: m.items.map((i) => ({ ...i, food: i.foodId ? { source: "SARA2" } : null })) })) };
+}
+
 describe("applyTemplateToPatient", () => {
+  beforeEach(scopedApply);
   it("copia el ítem de receta con recipeId, portions y weekday, y el de alimento sin porciones", async () => {
-    p().planTemplate.findUnique.mockResolvedValue(template);
+    p().planTemplate.findUnique.mockResolvedValue(withFoods(template));
     p().nutritionPlan.create.mockResolvedValue({ id: "plan1" });
     p().nutritionPlan.findUnique.mockResolvedValue({ id: "plan1" });
 
-    await applyTemplateToPatient("tpl1", "pat1");
+    await applyTemplateToPatient("tpl1", "pat1", T_ID);
 
     expect(p().nutritionPlan.create).toHaveBeenCalledTimes(1);
     const data = p().nutritionPlan.create.mock.calls[0][0].data;
@@ -196,11 +210,11 @@ describe("applyTemplateToPatient", () => {
   });
 
   it("HU-018d: copia la medida casera del ítem (cantidad, nombre, plural y gramos por medida)", async () => {
-    p().planTemplate.findUnique.mockResolvedValue(template);
+    p().planTemplate.findUnique.mockResolvedValue(withFoods(template));
     p().nutritionPlan.create.mockResolvedValue({ id: "plan1" });
     p().nutritionPlan.findUnique.mockResolvedValue({ id: "plan1" });
 
-    await applyTemplateToPatient("tpl1", "pat1");
+    await applyTemplateToPatient("tpl1", "pat1", T_ID);
 
     const measureItem = p().nutritionPlan.create.mock.calls[0][0].data.meals.create[0].items.create[2];
     expect(measureItem).toMatchObject({ foodId: "f2", measureName: "cda", measurePlural: "cdas", order: 2, weekday: "THU" });
@@ -211,7 +225,7 @@ describe("applyTemplateToPatient", () => {
 
   it("si la plantilla no existe, no crea nada", async () => {
     p().planTemplate.findUnique.mockResolvedValue(null);
-    await expect(applyTemplateToPatient("nope", "pat1")).rejects.toThrow(/Plantilla no encontrada/);
+    await expect(applyTemplateToPatient("nope", "pat1", T_ID)).rejects.toThrow(/Plantilla no encontrada/);
     expect(p().nutritionPlan.create).not.toHaveBeenCalled();
   });
 });
@@ -294,23 +308,24 @@ describe("HU-020 listTemplates", () => {
 });
 
 describe("HU-020 applyTemplateToPatient", () => {
+  beforeEach(scopedApply);
   it("un borrador → TemplateNotPublishedError, sin crear el plan", async () => {
-    p().planTemplate.findUnique.mockResolvedValue({ ...template, status: "DRAFT" });
-    await expect(applyTemplateToPatient("tpl1", "pat1")).rejects.toBeInstanceOf(TemplateNotPublishedError);
+    p().planTemplate.findUnique.mockResolvedValue(withFoods({ ...template, status: "DRAFT" }));
+    await expect(applyTemplateToPatient("tpl1", "pat1", T_ID)).rejects.toBeInstanceOf(TemplateNotPublishedError);
     expect(p().nutritionPlan.create).not.toHaveBeenCalled();
   });
 
   it("copia las secciones en el orden de la plantilla", async () => {
-    p().planTemplate.findUnique.mockResolvedValue({
+    p().planTemplate.findUnique.mockResolvedValue(withFoods({
       ...template,
       sections: [
         { id: "s1", title: "Recomendaciones", body: "a\nb", order: 0 },
         { id: "s2", title: "Reemplazos", body: "c", order: 1 },
       ],
-    });
+    }));
     p().nutritionPlan.create.mockResolvedValue({ id: "plan1" });
     p().nutritionPlan.findUnique.mockResolvedValue({ id: "plan1" });
-    await applyTemplateToPatient("tpl1", "pat1");
+    await applyTemplateToPatient("tpl1", "pat1", T_ID);
     expect(p().nutritionPlan.create.mock.calls[0][0].data.sections).toEqual({
       create: [
         { title: "Recomendaciones", body: "a\nb", order: 0 },
@@ -320,10 +335,10 @@ describe("HU-020 applyTemplateToPatient", () => {
   });
 
   it("sin secciones → create: []", async () => {
-    p().planTemplate.findUnique.mockResolvedValue(template);
+    p().planTemplate.findUnique.mockResolvedValue(withFoods(template));
     p().nutritionPlan.create.mockResolvedValue({ id: "plan1" });
     p().nutritionPlan.findUnique.mockResolvedValue({ id: "plan1" });
-    await applyTemplateToPatient("tpl1", "pat1");
+    await applyTemplateToPatient("tpl1", "pat1", T_ID);
     expect(p().nutritionPlan.create.mock.calls[0][0].data.sections).toEqual({ create: [] });
   });
 });

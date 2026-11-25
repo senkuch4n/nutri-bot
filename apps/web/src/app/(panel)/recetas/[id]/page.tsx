@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { RECIPE_TEXT } from "@nutri-bot/core";
 import { recipesForTenant } from "@nutri-bot/db/domain";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requirePageContext } from "@/lib/tenant-context";
 import { RecipeForm } from "../recipe-form";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +13,7 @@ export default async function RecetaPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const access = await resolvePrivateContentAccess();
-  if (!access) notFound();
+  const access = await requirePageContext();
   const recipes = recipesForTenant(access.tenantId);
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const recipe = await recipes.get(id);

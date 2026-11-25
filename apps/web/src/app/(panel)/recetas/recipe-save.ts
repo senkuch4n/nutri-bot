@@ -9,7 +9,6 @@ import {
 } from "@nutri-bot/core";
 import type { RecipeInput, recipesForTenant } from "@nutri-bot/db/domain";
 import { processRecipePhoto } from "@nutri-bot/db/media";
-import { auth } from "@/auth";
 
 // HU-018a: lo que comparten las server actions del editor (recetas/actions.ts) y de la revisión de
 // borradores (recetas/revisar/actions.ts): el esquema del payload y la foto. No es un archivo
@@ -64,11 +63,6 @@ export const payloadSchema = z.object({
 });
 
 export type RecipeFormPayload = z.infer<typeof payloadSchema>;
-
-export async function hasPanelSession(): Promise<boolean> {
-  const session = await auth();
-  return Boolean(session?.user);
-}
 
 export function parsePayload(raw: FormDataEntryValue | null): RecipeFormPayload | null {
   if (typeof raw !== "string") return null;

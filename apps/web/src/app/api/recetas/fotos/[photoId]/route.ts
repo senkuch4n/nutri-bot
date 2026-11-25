@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { recipesForTenant } from "@nutri-bot/db/domain";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { getTenantContext } from "@/lib/tenant-context";
 
 // HU-018a: el panel verifica pertenencia y propiedad para cada lectura, incluso al cambiar de sesión.
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(req: Request, { params }: { params: Promise<{ photoId: string }> }): Promise<Response> {
-  const access = await resolvePrivateContentAccess();
+  const access = await getTenantContext();
   if (!access) return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: NO_STORE });
 
   const { photoId } = await params;

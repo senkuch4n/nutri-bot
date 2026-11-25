@@ -1,10 +1,11 @@
 import "server-only";
 import { prisma, Prisma } from "@nutri-bot/db";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import type { TenantRef } from "@nutri-bot/db/domain/tenantScope";
 import type { ServiceReminder } from "@nutri-bot/core";
 
-export async function listServices(opts?: { activeOnly?: boolean }) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+// HU-025: servicios del consultorio del contexto (t), nunca de un tenantId que mande el cliente.
+
+export async function listServices({ tenantId }: TenantRef, opts?: { activeOnly?: boolean }) {
   return prisma.service.findMany({
     where: { tenantId, ...(opts?.activeOnly ? { active: true } : {}) },
     orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -62,18 +63,15 @@ function serviceData(data: ServiceFields) {
   };
 }
 
-export async function createService(data: ServiceFields) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function createService({ tenantId }: TenantRef, data: ServiceFields) {
   return prisma.service.create({ data: { ...serviceData(data), tenantId } });
 }
 
 /** HU-017b-2 (Q17): si no viene active, no se toca. El form de edición no lo manda. */
-export async function updateService(id: string, data: ServiceFields & { active?: boolean }) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function updateService({ tenantId }: TenantRef, id: string, data: ServiceFields & { active?: boolean }) {
   return prisma.service.update({ where: { id, tenantId }, data: { ...serviceData(data), active: data.active } });
 }
 
-export async function setServiceActive(id: string, active: boolean) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+export async function setServiceActive({ tenantId }: TenantRef, id: string, active: boolean) {
   return prisma.service.update({ where: { id, tenantId }, data: { active } });
 }

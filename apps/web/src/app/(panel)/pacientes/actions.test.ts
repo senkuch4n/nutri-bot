@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   findOrCreatePatient: vi.fn(),
   archivePatient: vi.fn(),
-  getLegacySchedulingTenantId: vi.fn(),
+  requireTenantContext: vi.fn(),
   unarchivePatient: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -23,11 +23,13 @@ vi.mock("@nutri-bot/db", () => ({
 }));
 vi.mock("@nutri-bot/db/domain", () => ({
   archivePatient: mocks.archivePatient,
-  getLegacySchedulingTenantId: mocks.getLegacySchedulingTenantId,
   unarchivePatient: mocks.unarchivePatient,
   updatePatientFormulaData: vi.fn(),
-  getProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
+  getTenantProfessional: vi.fn(async () => ({ timezone: "America/Argentina/Buenos_Aires" })),
 }));
+vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: mocks.requireTenantContext }));
+
+const CTX = { userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1 };
 
 vi.mock("@/lib/patients", () => ({
   findOrCreatePatient: mocks.findOrCreatePatient,
@@ -57,7 +59,7 @@ beforeEach(() => {
   mocks.transaction.mockReset();
   mocks.transaction.mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops));
   mocks.findUnique.mockReset();
-  mocks.getLegacySchedulingTenantId.mockReset().mockResolvedValue("legacy-tenant");
+  mocks.requireTenantContext.mockReset().mockResolvedValue(CTX);
   mocks.findOrCreatePatient.mockReset();
   mocks.findOrCreatePatient.mockResolvedValue({ id: "pat-new" });
   mocks.archivePatient.mockReset();
@@ -72,7 +74,7 @@ describe("createPatientAction", () => {
     expect(mocks.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { tenantId_whatsappJid: { tenantId: "legacy-tenant", whatsappJid: "5493515552345@s.whatsapp.net" } } }),
     );
-    expect(mocks.findOrCreatePatient).toHaveBeenCalledWith({ phone: "5493515552345", name: "Lucía Pérez" });
+    expect(mocks.findOrCreatePatient).toHaveBeenCalledWith(CTX, { phone: "5493515552345", name: "Lucía Pérez" });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
   });
 
@@ -120,7 +122,7 @@ describe("createPatientAction", () => {
   });
 
   it("no consulta ni escribe pacientes sin alcance verificado", async () => {
-    mocks.getLegacySchedulingTenantId.mockRejectedValueOnce(new Error("missing scope"));
+    mocks.requireTenantContext.mockRejectedValueOnce(new Error("tenant_access:no_context"));
     const result = await createPatientAction({ ok: false }, form({ name: "Lucía", phone: "351 555 2345" }));
     expect(result).toEqual({ ok: false, error: "No se pudo guardar. Probá de nuevo." });
     expect(mocks.findUnique).not.toHaveBeenCalled();
@@ -144,7 +146,7 @@ describe("setPatientNameAction", () => {
     const result = await setPatientNameAction({ ok: false }, form({ id: "pat-1", name: "  Lucía Pérez  " }));
     expect(result).toEqual({ ok: true, name: "Lucía Pérez" });
     expect(mocks.update).toHaveBeenCalledTimes(1);
-    expect(mocks.update).toHaveBeenCalledWith({ where: { id: "pat-1" }, data: { name: "Lucía Pérez" } });
+    expect(mocks.update).toHaveBeenCalledWith({ where: { id_tenantId: { id: "pat-1", tenantId: "legacy-tenant" } }, data: { name: "Lucía Pérez" } });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1");
   });
@@ -202,7 +204,7 @@ describe("updatePatientDataAction", () => {
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
     expect(mocks.transaction.mock.calls[0]![0]).toHaveLength(2);
     expect(mocks.update).toHaveBeenCalledWith({
-      where: { id: "pat-1" },
+      where: { id_tenantId: { id: "pat-1", tenantId: "legacy-tenant" } },
       data: {
         name: "Brenda Yebara",
         birthDate: new Date("1991-05-10T00:00:00.000Z"),
@@ -215,9 +217,9 @@ describe("updatePatientDataAction", () => {
     });
     const clinical = { background: "Hipotiroidismo", goals: "Bajar 5 kg", riskFlag: true };
     expect(mocks.upsert).toHaveBeenCalledWith({
-      where: { patientId: "pat-1" },
+      where: { patientId: "pat-1", patient: { tenantId: "legacy-tenant" } },
       update: clinical,
-      create: { patientId: "pat-1", ...clinical },
+      create: { ...clinical, patient: { connect: { id_tenantId: { id: "pat-1", tenantId: "legacy-tenant" } } } },
     });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1", "layout");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
@@ -291,7 +293,7 @@ describe("archivePatientAction (HU-019)", () => {
     mocks.findUnique.mockResolvedValue({ name: " Ana López " });
     const r = await archivePatientAction("pat-1");
     expect(r).toEqual({ ok: true, name: "Ana López" });
-    expect(mocks.archivePatient).toHaveBeenCalledWith("pat-1", expect.any(Date));
+    expect(mocks.archivePatient).toHaveBeenCalledWith(CTX, "pat-1", expect.any(Date));
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
@@ -340,7 +342,7 @@ describe("unarchivePatientAction (HU-019)", () => {
     mocks.unarchivePatient.mockResolvedValue({ ok: true });
     mocks.findUnique.mockResolvedValue({ name: null });
     expect(await unarchivePatientAction("pat-1")).toEqual({ ok: true, name: null });
-    expect(mocks.unarchivePatient).toHaveBeenCalledWith("pat-1");
+    expect(mocks.unarchivePatient).toHaveBeenCalledWith(CTX, "pat-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/avisos");
@@ -352,5 +354,26 @@ describe("unarchivePatientAction (HU-019)", () => {
     mocks.unarchivePatient.mockRejectedValue(new Error("db"));
     expect(await unarchivePatientAction("pat-1")).toEqual({ ok: false, error: "No se pudo desarchivar. Probá de nuevo." });
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe("HU-025: paciente de otro consultorio = inexistente", () => {
+  it("setPatientNameAction con un id de B: el where con el tenant del contexto no lo encuentra → error genérico", async () => {
+    mocks.update.mockRejectedValueOnce(Object.assign(new Error("not found"), { code: "P2025" }));
+    const res = await setPatientNameAction({ ok: false }, form({ id: "pat-b", name: "X" }));
+    expect(res.ok).toBe(false);
+    expect(mocks.update.mock.calls[0]![0].where).toEqual({ id_tenantId: { id: "pat-b", tenantId: "legacy-tenant" } });
+  });
+
+  it("sin contexto: ninguna escritura", async () => {
+    mocks.requireTenantContext.mockRejectedValue(new Error("tenant_access:no_context"));
+    expect((await setPatientNameAction({ ok: false }, form({ id: "pat-1", name: "X" }))).ok).toBe(false);
+    expect((await updatePatientDataAction({ ok: false }, form({ id: "pat-1", name: "X" }))).ok).toBe(false);
+    expect((await archivePatientAction("pat-1")).ok).toBe(false);
+    expect((await unarchivePatientAction("pat-1")).ok).toBe(false);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.archivePatient).not.toHaveBeenCalled();
+    expect(mocks.unarchivePatient).not.toHaveBeenCalled();
   });
 });

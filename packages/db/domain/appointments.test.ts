@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
-    agenda: { findUnique: vi.fn() },
+    agenda: { findFirst: vi.fn() },
     service: { findUnique: vi.fn() },
     patient: { findUnique: vi.fn(), updateMany: vi.fn() },
     appointment: { create: vi.fn(), update: vi.fn(), findUniqueOrThrow: vi.fn(), findUnique: vi.fn() },
@@ -43,6 +43,8 @@ import {
   updateAppointmentReason,
 } from "./appointments";
 
+const T = { tenantId: "legacy-tenant" };
+
 const TZ = "America/Argentina/Buenos_Aires";
 const STARTS = new Date("2026-10-12T13:00:00Z");
 const SERVICE = { id: "s1", name: "Primera consulta", durationMin: 30, price: 25000, requiresDeposit: false, depositKind: "FIXED", depositValue: 5000 };
@@ -55,10 +57,10 @@ function createData() {
 }
 
 function mockLegacyAgenda() {
-  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { timezone: TZ, phoneJid: "pro@s.whatsapp.net" } });
+  mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { timezone: TZ, phoneJid: "pro@s.whatsapp.net" } });
 }
 function enqueued(kind: string) {
-  return mocks.enqueueMessage.mock.calls.map((c) => c[0]).filter((m) => m.kind === kind);
+  return mocks.enqueueMessage.mock.calls.map((c) => c[1]).filter((m) => m.kind === kind);
 }
 
 describe("createAppointment con motivo (HU-013)", () => {
@@ -79,19 +81,19 @@ describe("createAppointment con motivo (HU-013)", () => {
   });
 
   it("guarda el motivo normalizado y sigue marcando needsGoogleSync", async () => {
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "  Bajar de peso  " });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false, reason: "  Bajar de peso  " });
     expect(createData().reason).toBe("Bajar de peso");
     expect(createData().needsGoogleSync).toBe(true);
   });
 
   it.each([{ reason: "   " }, {}])("vacío o ausente → null (%j)", async (extra) => {
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, ...extra });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false, ...extra });
     expect(createData().reason).toBeNull();
   });
 
   it("más de 500 → InvalidBookingReasonError sin leer ni escribir", async () => {
     await expect(
-      createAppointment({ ...base, createdBy: "PATIENT", reason: "a".repeat(501) }),
+      createAppointment(T, { ...base, createdBy: "PATIENT", reason: "a".repeat(501) }),
     ).rejects.toBeInstanceOf(InvalidBookingReasonError);
     expect(mocks.prisma.appointment.create).not.toHaveBeenCalled();
     expect(mocks.prisma.service.findUnique).not.toHaveBeenCalled();
@@ -99,16 +101,17 @@ describe("createAppointment con motivo (HU-013)", () => {
   });
 
   it("la alerta de turno nuevo lleva el motivo (sin seña)", async () => {
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Bajar de peso" });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Bajar de peso" });
     const alerts = enqueued("PROFESSIONAL_ALERT");
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]).toMatchObject({ toJid: "pro@s.whatsapp.net", verifiedTenantId: "legacy-tenant" });
+    expect(alerts[0]).toMatchObject({ toJid: "pro@s.whatsapp.net" });
+    expect(mocks.enqueueMessage.mock.calls.find((c) => c[1].kind === "PROFESSIONAL_ALERT")![0]).toEqual({ tenantId: "legacy-tenant" });
     expect(alerts[0]).not.toHaveProperty("appointmentId");
     expect(alerts[0].body).toContain("📝 Motivo: Bajar de peso");
   });
 
   it("sin motivo la alerta es la de siempre", async () => {
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: null });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false, reason: null });
     const alerts = enqueued("PROFESSIONAL_ALERT");
     expect(alerts).toHaveLength(1);
     expect(alerts[0].body).toBe(
@@ -123,7 +126,7 @@ describe("createAppointment con motivo (HU-013)", () => {
   });
 
   it("professionalAlertJid reemplaza el destino; null apaga la alerta", async () => {
-    await createAppointment({
+    await createAppointment(T, {
       ...base,
       createdBy: "PATIENT",
       notifyPatient: false,
@@ -133,7 +136,7 @@ describe("createAppointment con motivo (HU-013)", () => {
     expect(enqueued("PROFESSIONAL_ALERT").map((m) => m.toJid)).toEqual(["fake@s.whatsapp.net"]);
 
     mocks.enqueueMessage.mockClear();
-    await createAppointment({
+    await createAppointment(T, {
       ...base,
       createdBy: "PATIENT",
       notifyPatient: false,
@@ -145,17 +148,17 @@ describe("createAppointment con motivo (HU-013)", () => {
 
   it("con seña guarda el motivo y no avisa todavía", async () => {
     mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Control" });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false, reason: "Control" });
     expect(createData().status).toBe("AWAITING_PAYMENT");
     expect(createData().reason).toBe("Control");
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
 
   it("desde el panel guarda el motivo, confirma al paciente sin motivo y no alerta", async () => {
-    await createAppointment({ ...base, createdBy: "PROFESSIONAL", reason: "Control mensual" });
+    await createAppointment(T, { ...base, createdBy: "PROFESSIONAL", reason: "Control mensual" });
     expect(createData().reason).toBe("Control mensual");
     expect(mocks.enqueueMessage).toHaveBeenCalledTimes(1);
-    const msg = mocks.enqueueMessage.mock.calls[0]![0];
+    const msg = mocks.enqueueMessage.mock.calls[0]![1];
     expect(msg.kind).toBe("CONFIRMATION");
     expect(msg.body).not.toContain("Motivo");
   });
@@ -188,7 +191,7 @@ describe("cancelAppointment en la agenda original", () => {
 
   it.each([{ tenantId: "otro", agendaId: "otra" }, { agendaId: "otra" }])("rechaza turno fuera de alcance (%j)", async (foreign) => {
     row = { ...row, ...foreign };
-    await expect(cancelAppointment(params)).rejects.toThrow("Turno inexistente");
+    await expect(cancelAppointment(T, params)).rejects.toThrow("Turno inexistente");
     expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
     expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
@@ -196,7 +199,7 @@ describe("cancelAppointment en la agenda original", () => {
 
   it("no usa una paciente ajena para avisos o estado aunque el turno parezca propio", async () => {
     row = { ...row, patient: { ...row.patient, tenantId: "otro" } };
-    await expect(cancelAppointment(params)).rejects.toThrow();
+    await expect(cancelAppointment(T, params)).rejects.toThrow();
     expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
     expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
@@ -205,7 +208,7 @@ describe("cancelAppointment en la agenda original", () => {
   it("cancela, conserva el motivo, limpia solo el estado del turno y encola el aviso profesional atribuido", async () => {
     const reason = "Avisó que no puede asistir";
     const data = { status: "CANCELLED", cancelledBy: "PATIENT", cancelReason: reason, needsGoogleSync: true };
-    await expect(cancelAppointment({ ...params, reason })).resolves.toMatchObject(data);
+    await expect(cancelAppointment(T, { ...params, reason })).resolves.toMatchObject(data);
     expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: appt.id, ...scope, status: "CONFIRMED", patientId: PATIENT.id, serviceId: SERVICE.id }), data,
     });
@@ -213,17 +216,17 @@ describe("cancelAppointment en la agenda original", () => {
       patientJid: PATIENT.whatsappJid, tenantId: "legacy-tenant", step: { in: ["CANCEL_CONFIRM", "CONFIRM_ATTENDANCE"] },
       context: { path: ["apptId"], equals: appt.id },
     } });
-    expect(mocks.enqueueMessage.mock.calls).toEqual([[{
-      toJid: "pro@s.whatsapp.net", kind: "PROFESSIONAL_ALERT", verifiedTenantId: scope.tenantId,
+    expect(mocks.enqueueMessage.mock.calls).toEqual([[{ tenantId: "legacy-tenant" }, {
+      toJid: "pro@s.whatsapp.net", kind: "PROFESSIONAL_ALERT",
       body: messages.professionalCancelAlert({ patientName: PATIENT.name, patientPhone: PATIENT.phone, serviceName: SERVICE.name, startsAt: STARTS, tz: TZ }),
     }]]);
   });
 
   it("conserva el aviso a la paciente para cancelaciones desde el panel", async () => {
-    await expect(cancelAppointment({ id: appt.id, by: "PROFESSIONAL" })).resolves.toMatchObject({
+    await expect(cancelAppointment(T, { id: appt.id, by: "PROFESSIONAL" })).resolves.toMatchObject({
       status: "CANCELLED", cancelledBy: "PROFESSIONAL", cancelReason: null, needsGoogleSync: true,
     });
-    expect(mocks.enqueueMessage.mock.calls).toEqual([[{
+    expect(mocks.enqueueMessage.mock.calls).toEqual([[{ tenantId: "legacy-tenant" }, {
       toJid: PATIENT.whatsappJid, kind: "CANCELLATION", appointmentId: appt.id,
       body: messages.cancelDone({ serviceName: SERVICE.name, startsAt: STARTS, tz: TZ }),
     }]]);
@@ -231,7 +234,7 @@ describe("cancelAppointment en la agenda original", () => {
 
   it("no muta ni avisa si ya no está confirmado", async () => {
     row = { ...row, status: "AWAITING_PAYMENT" };
-    await expect(cancelAppointment(params)).resolves.toEqual(row);
+    await expect(cancelAppointment(T, params)).resolves.toEqual(row);
     expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
     expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
@@ -239,7 +242,7 @@ describe("cancelAppointment en la agenda original", () => {
 
   it("no limpia estado ni avisa si falla la escritura condicional", async () => {
     mocks.prisma.appointment.update.mockRejectedValue(new Error("Turno modificado"));
-    await expect(cancelAppointment(params)).rejects.toThrow("Turno modificado");
+    await expect(cancelAppointment(T, params)).rejects.toThrow("Turno modificado");
     expect(mocks.prisma.conversationState.deleteMany).not.toHaveBeenCalled();
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
   });
@@ -259,7 +262,7 @@ describe("updateAppointmentReason (HU-013, D5)", () => {
   });
 
   it("actualiza solo el motivo normalizado", async () => {
-    const r = await updateAppointmentReason({ id: "a1", reason: "  Nuevo motivo " });
+    const r = await updateAppointmentReason(T, { id: "a1", reason: "  Nuevo motivo " });
     expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
       where: { id: "a1", ...scope },
       data: { reason: "Nuevo motivo" },
@@ -270,7 +273,7 @@ describe("updateAppointmentReason (HU-013, D5)", () => {
   });
 
   it("vacío → null", async () => {
-    await updateAppointmentReason({ id: "a1", reason: "" });
+    await updateAppointmentReason(T, { id: "a1", reason: "" });
     expect(mocks.prisma.appointment.update.mock.calls[0]![0].data).toEqual({ reason: null });
   });
 
@@ -285,7 +288,7 @@ describe("updateAppointmentReason (HU-013, D5)", () => {
       row.reason = data.reason;
       return row;
     });
-    await expect(updateAppointmentReason({ id: "a1", reason: "Nuevo" })).rejects.toThrow("Turno inexistente");
+    await expect(updateAppointmentReason(T, { id: "a1", reason: "Nuevo" })).rejects.toThrow("Turno inexistente");
     expect(row.reason).toBe("Anterior");
     expect(mocks.enqueueMessage).not.toHaveBeenCalled();
     expect(mocks.prisma.consultation.create).not.toHaveBeenCalled();
@@ -293,17 +296,17 @@ describe("updateAppointmentReason (HU-013, D5)", () => {
   });
 
   it("no escribe sin verificar la agenda original", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
-    await expect(updateAppointmentReason({ id: "a1", reason: "Nuevo" }))
-      .rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    mocks.prisma.agenda.findFirst.mockResolvedValue(null);
+    await expect(updateAppointmentReason(T, { id: "a1", reason: "Nuevo" }))
+      .rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
   });
 
   it("más de 500 → error sin leer ni escribir", async () => {
-    await expect(updateAppointmentReason({ id: "a1", reason: "a".repeat(501) })).rejects.toBeInstanceOf(
+    await expect(updateAppointmentReason(T, { id: "a1", reason: "a".repeat(501) })).rejects.toBeInstanceOf(
       InvalidBookingReasonError,
     );
-    expect(mocks.prisma.agenda.findUnique).not.toHaveBeenCalled();
+    expect(mocks.prisma.agenda.findFirst).not.toHaveBeenCalled();
     expect(mocks.prisma.appointment.update).not.toHaveBeenCalled();
   });
 });
@@ -327,7 +330,7 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
 
   it("sin seña → bookedAt es el momento de la reserva", async () => {
     const before = Date.now();
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false });
     const data = createData();
     expect(data.status).toBe("CONFIRMED");
     expect(data.bookedAt).toBeInstanceOf(Date);
@@ -337,7 +340,7 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
 
   it("con seña (paciente + requiresDeposit) → bookedAt null", async () => {
     mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false });
     const data = createData();
     expect(data.status).toBe("AWAITING_PAYMENT");
     expect(data.bookedAt).toBeNull();
@@ -345,13 +348,13 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
 
   it("desde el panel con un servicio con seña → confirmado y sellado", async () => {
     mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
-    await createAppointment({ ...base, createdBy: "PROFESSIONAL", notifyPatient: false });
+    await createAppointment(T, { ...base, createdBy: "PROFESSIONAL", notifyPatient: false });
     expect(createData().bookedAt).toBeInstanceOf(Date);
   });
 });
 
 describe("reservar desarchiva (HU-019, T4/T5)", () => {
-  const UNARCHIVE = { where: { id: "p1", archivedAt: { not: null } }, data: { archivedAt: null } };
+  const UNARCHIVE = { where: { id: "p1", tenantId: "legacy-tenant", archivedAt: { not: null } }, data: { archivedAt: null } };
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -371,7 +374,7 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
   });
 
   it.each(["PROFESSIONAL", "PATIENT"] as const)("createAppointment (%s) desarchiva dentro de la transacción", async (createdBy) => {
-    const appt = await createAppointment({ ...base, createdBy, notifyPatient: false });
+    const appt = await createAppointment(T, { ...base, createdBy, notifyPatient: false });
     expect(appt.id).toBe("a1");
     expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
     expect(mocks.prisma.appointment.create.mock.invocationCallOrder[0]).toBeLessThan(
@@ -381,14 +384,14 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
 
   it("con seña (AWAITING_PAYMENT) también desarchiva", async () => {
     mocks.prisma.service.findUnique.mockResolvedValue({ ...SERVICE, requiresDeposit: true });
-    await createAppointment({ ...base, createdBy: "PATIENT", notifyPatient: false });
+    await createAppointment(T, { ...base, createdBy: "PATIENT", notifyPatient: false });
     expect(createData().status).toBe("AWAITING_PAYMENT");
     expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
   });
 
   it("horario no disponible → SlotUnavailableError sin desarchivar", async () => {
     mocks.checkSlotAvailable.mockResolvedValue(false);
-    await expect(createAppointment({ ...base, createdBy: "PROFESSIONAL" })).rejects.toBeInstanceOf(SlotUnavailableError);
+    await expect(createAppointment(T, { ...base, createdBy: "PROFESSIONAL" })).rejects.toBeInstanceOf(SlotUnavailableError);
     expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
   });
 
@@ -417,10 +420,10 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
     }
 
     it("sin agenda original verificada → rechaza antes de leer el turno", async () => {
-      mocks.prisma.agenda.findUnique.mockResolvedValue(null);
+      mocks.prisma.agenda.findFirst.mockResolvedValue(null);
       mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(STARTS));
-      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" }))
-        .rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+      await expect(setAppointmentStatus(T, { id: "a1", status: "COMPLETED" }))
+        .rejects.toThrow("tenant_scope:tenant_scope_missing");
       expect(mocks.prisma.appointment.findUniqueOrThrow).not.toHaveBeenCalled();
       expectNoWrites();
     });
@@ -436,7 +439,7 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
         if (!Object.entries(where).every(([key, value]) => row[key as keyof typeof row] === value)) throw notFound;
         return row;
       });
-      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" })).rejects.toBe(notFound);
+      await expect(setAppointmentStatus(T, { id: "a1", status: "COMPLETED" })).rejects.toBe(notFound);
       expectNoWrites();
     });
 
@@ -448,14 +451,14 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
       mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue({
         ...prevAppt(new Date(Date.now() + 86_400_000), "COMPLETED"), consultation: { ...attached, ...mismatch },
       });
-      await expect(setAppointmentStatus({ id: "a1", status }))
+      await expect(setAppointmentStatus(T, { id: "a1", status }))
         .rejects.toThrow("La consulta no pertenece a la paciente y al consultorio del turno.");
       expectNoWrites();
     });
 
     it("completa el turno en su agenda y crea la consulta con su tenant", async () => {
       mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(STARTS, "CONFIRMED"));
-      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" })).resolves.toEqual({
+      await expect(setAppointmentStatus(T, { id: "a1", status: "COMPLETED" })).resolves.toEqual({
         appointment: { id: "a1", status: "COMPLETED" }, consultation: { id: "c1", created: true },
         removedEmptyConsultation: false,
       });
@@ -471,7 +474,7 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
       mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue({
         ...prevAppt(STARTS, "COMPLETED"), consultation: { ...attached, notes: hasNotes ? "Control" : null },
       });
-      await expect(setAppointmentStatus({ id: "a1", status: "NO_SHOW" })).resolves.toEqual({
+      await expect(setAppointmentStatus(T, { id: "a1", status: "NO_SHOW" })).resolves.toEqual({
         appointment: { id: "a1", status: "NO_SHOW" }, consultation: null, removedEmptyConsultation: !hasNotes,
       });
       if (hasNotes) expect(mocks.prisma.consultation.deleteMany).not.toHaveBeenCalled();
@@ -489,7 +492,7 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
         code: "P2002", clientVersion: "test",
       }), { code: "P2002" });
       mocks.prisma.consultation.create.mockRejectedValueOnce(conflict);
-      await expect(setAppointmentStatus({ id: "a1", status: "COMPLETED" })).resolves.toEqual({
+      await expect(setAppointmentStatus(T, { id: "a1", status: "COMPLETED" })).resolves.toEqual({
         appointment: { id: "a1", status: "COMPLETED" }, consultation: { id: "c1", created: false },
         removedEmptyConsultation: false,
       });
@@ -499,13 +502,13 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
 
     it("a CONFIRMED con turno futuro → desarchiva", async () => {
       mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(new Date(Date.now() + 86_400_000)));
-      await setAppointmentStatus({ id: "a1", status: "CONFIRMED" });
+      await setAppointmentStatus(T, { id: "a1", status: "CONFIRMED" });
       expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith(UNARCHIVE);
     });
 
     it("a CONFIRMED con turno pasado → no desarchiva", async () => {
       mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(prevAppt(new Date(Date.now() - 86_400_000)));
-      await setAppointmentStatus({ id: "a1", status: "CONFIRMED" });
+      await setAppointmentStatus(T, { id: "a1", status: "CONFIRMED" });
       expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
     });
 
@@ -513,7 +516,7 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
       mocks.prisma.appointment.findUniqueOrThrow.mockResolvedValue(
         prevAppt(new Date(Date.now() + 86_400_000), "CONFIRMED"),
       );
-      await setAppointmentStatus({ id: "a1", status });
+      await setAppointmentStatus(T, { id: "a1", status });
       expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
     });
   });
@@ -550,7 +553,7 @@ describe("rescheduleAppointment (HU-022)", () => {
   });
 
   async function expectCode(code: string, params = { id: "a1", startsAt: NEW_START, now: NOW }) {
-    const err = await rescheduleAppointment(params).catch((e: unknown) => e);
+    const err = await rescheduleAppointment(T, params).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RescheduleError);
     expect((err as InstanceType<typeof RescheduleError>).code).toBe(code);
   }
@@ -584,10 +587,11 @@ describe("rescheduleAppointment (HU-022)", () => {
     mocks.checkSlotAvailable.mockResolvedValue(false);
     await expectCode("SLOT_TAKEN");
     expect(mocks.checkSlotAvailable).toHaveBeenCalledWith(
+      T,
       { serviceId: "s1", startsAt: NEW_START, excludeAppointmentId: "a1", now: NOW },
       mocks.prisma,
     );
-    expect(mocks.prisma.$queryRaw.mock.calls[0]![0].join("?")).toContain('"Professional" WHERE id = 1 FOR UPDATE');
+    expect(mocks.prisma.$queryRaw.mock.calls[0]![0].join("?")).toContain("FOR UPDATE OF p");
     expect(mocks.prisma.$queryRaw.mock.invocationCallOrder[0]!).toBeLessThan(
       mocks.prisma.appointment.findUnique.mock.invocationCallOrder[0]!,
     );
@@ -604,7 +608,7 @@ describe("rescheduleAppointment (HU-022)", () => {
   });
 
   it("S6: conserva la duración, resincroniza Google, reinicia la confirmación y sella bookedAt", async () => {
-    const updated = await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    const updated = await rescheduleAppointment(T, { id: "a1", startsAt: NEW_START, now: NOW });
     expect(mocks.prisma.appointment.update).toHaveBeenCalledWith({
       where: { id: "a1" },
       data: {
@@ -622,7 +626,7 @@ describe("rescheduleAppointment (HU-022)", () => {
 
   it("S5/S6: AWAITING_PAYMENT se reprograma sin sellar bookedAt (lo sella el pago)", async () => {
     mocks.prisma.appointment.findUnique.mockResolvedValue({ ...APPT, status: "AWAITING_PAYMENT", bookedAt: null });
-    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    await rescheduleAppointment(T, { id: "a1", startsAt: NEW_START, now: NOW });
     const { data } = mocks.prisma.appointment.update.mock.calls[0]![0];
     expect(data).not.toHaveProperty("bookedAt");
     expect(data.startsAt).toEqual(NEW_START);
@@ -633,7 +637,7 @@ describe("rescheduleAppointment (HU-022)", () => {
       { id: "m1", dedupeKey: "auto:24h" },
       { id: "m2", dedupeKey: "" },
     ]);
-    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    await rescheduleAppointment(T, { id: "a1", startsAt: NEW_START, now: NOW });
     expect(mocks.prisma.outboundMessage.deleteMany).toHaveBeenCalledWith({
       where: { appointmentId: "a1", kind: { in: ["REMINDER", "CONFIRMATION_REQUEST"] }, status: "PENDING" },
     });
@@ -653,7 +657,7 @@ describe("rescheduleAppointment (HU-022)", () => {
   });
 
   it("S6: si la paciente quedó respondiendo la confirmación de ESTE turno, se reinicia esa conversación", async () => {
-    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    await rescheduleAppointment(T, { id: "a1", startsAt: NEW_START, now: NOW });
     expect(mocks.prisma.conversationState.updateMany).toHaveBeenCalledWith({
       where: { patientJid: PATIENT.whatsappJid, tenantId: "legacy-tenant", step: "CONFIRM_ATTENDANCE", context: { path: ["apptId"], equals: "a1" } },
       data: { step: "DORMANT", context: {} },
@@ -661,9 +665,9 @@ describe("rescheduleAppointment (HU-022)", () => {
   });
 
   it("S7: encola un AD_HOC a la paciente con el día y la hora nuevos, después de la transacción", async () => {
-    await rescheduleAppointment({ id: "a1", startsAt: NEW_START, now: NOW });
+    await rescheduleAppointment(T, { id: "a1", startsAt: NEW_START, now: NOW });
     expect(mocks.enqueueMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.enqueueMessage).toHaveBeenCalledWith({
+    expect(mocks.enqueueMessage).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, {
       toJid: PATIENT.whatsappJid,
       kind: "AD_HOC",
       appointmentId: "a1",

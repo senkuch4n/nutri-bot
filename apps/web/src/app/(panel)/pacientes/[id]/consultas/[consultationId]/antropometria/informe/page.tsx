@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { formatDateTime } from "@nutri-bot/core";
 import { loadIsakReportContext } from "@/lib/anthropometric-report";
+import { requirePageContext } from "@/lib/tenant-context";
 import { ReportEditor } from "./report-editor";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,8 @@ export const dynamic = "force-dynamic";
 /** Informe antropométrico de la consulta (HU-007, épica 46). */
 export default async function IsakReportPage({ params }: { params: Promise<{ id: string; consultationId: string }> }) {
   const { id, consultationId } = await params;
-  const loaded = await loadIsakReportContext(id, consultationId);
+  const tenant = await requirePageContext();
+  const loaded = await loadIsakReportContext(tenant, id, consultationId);
   if (loaded.status === "not_found") notFound();
   if (loaded.status === "no_study") redirect(`${loaded.consultationHref}?aviso=sin-isak`);
   const { ctx } = loaded;

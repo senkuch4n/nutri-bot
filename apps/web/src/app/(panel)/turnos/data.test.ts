@@ -10,6 +10,7 @@ vi.mock("@nutri-bot/db", () => ({ prisma: { appointment: { findMany: mocks.findM
 import { loadTurnosMonth } from "./data";
 
 const tz = "America/Argentina/Buenos_Aires";
+const SCOPE = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
 const dec = (value: string) => ({ toString: () => value });
 
 function row(overrides: Record<string, unknown> = {}) {
@@ -38,17 +39,17 @@ beforeEach(() => {
 
 describe("loadTurnosMonth", () => {
   it("queries every status of the month, approved payments only, sorted by start and id", async () => {
-    await loadTurnosMonth("2026-10", tz);
+    await loadTurnosMonth(SCOPE, "2026-10", tz);
     const { from, to } = monthRangeInTz("2026-10", tz);
     const args = mocks.findMany.mock.calls[0]![0];
-    expect(args.where).toEqual({ startsAt: { gte: from, lt: to } });
+    expect(args.where).toEqual({ startsAt: { gte: from, lt: to }, tenantId: "legacy-tenant", agendaId: "legacy-agenda" });
     expect(args.select.payments).toEqual({ where: { status: "APPROVED" }, select: { amount: true } });
     expect(args.orderBy).toEqual([{ startsAt: "asc" }, { id: "asc" }]);
   });
 
   it("maps the row into a serializable DTO", async () => {
     mocks.findMany.mockResolvedValue([row()]);
-    const [dto] = await loadTurnosMonth("2026-10", tz);
+    const [dto] = await loadTurnosMonth(SCOPE, "2026-10", tz);
     expect(dto).toEqual({
       id: "a1",
       startsAt: "2026-10-20T13:00:00.000Z",
@@ -87,7 +88,7 @@ describe("loadTurnosMonth", () => {
         consultation: { id: "c2", notes: "  ", planId: null, prescription: null, _count: { evolutionEntries: 0 } },
       }),
     ]);
-    const [archived, cancelled] = await loadTurnosMonth("2026-10", tz);
+    const [archived, cancelled] = await loadTurnosMonth(SCOPE, "2026-10", tz);
     expect(archived).toMatchObject({
       googleSynced: false,
       approvedAmounts: [],
@@ -101,5 +102,13 @@ describe("loadTurnosMonth", () => {
       cancelReason: "Venció el tiempo para pagar la seña",
       consultation: { id: "c2", hasContent: false },
     });
+  });
+});
+
+describe("HU-025: loadTurnos acotado al consultorio", () => {
+  it("el filtro de quien llama no puede pisar tenant ni agenda", async () => {
+    const { loadTurnos } = await import("./data");
+    await loadTurnos({ tenantId: "tenant-a", agendaId: "agenda-a" }, { tenantId: "tenant-b", agendaId: "agenda-b", status: "CONFIRMED" });
+    expect(mocks.findMany.mock.calls[0]![0].where).toEqual({ status: "CONFIRMED", tenantId: "tenant-a", agendaId: "agenda-a" });
   });
 });

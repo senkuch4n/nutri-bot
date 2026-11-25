@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTenantImportImageBytes } from "@nutri-bot/db/domain";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { getTenantContext } from "@/lib/tenant-context";
 
 // HU-018a-2: imágenes de la carga asistida (página renderizada y fotos candidatas) para la pantalla
 // de revisión. Son datos de terceros que viven solo en la base (D3): requieren sesión del panel.
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(req: Request, { params }: { params: Promise<{ imageId: string }> }): Promise<Response> {
-  const access = await resolvePrivateContentAccess();
+  const access = await getTenantContext();
   if (!access) return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: NO_STORE });
 
   const { imageId } = await params;

@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { OUTBOX_TEXT, broadcastRecipients } from "@nutri-bot/core";
+import { requireTenantContext } from "@/lib/tenant-context";
 import { avisosOutboxWhere } from "./outbox-scope";
 
-export type BroadcastState = { ok: boolean; error?: string; sent?: number };
+export type BroadcastState = { ok: boolean; error?: string; sent?: number; reauth?: true };
 
 const broadcastSchema = z.object({ body: z.string().trim().min(3, "Escribí un mensaje").max(1000) });
 
@@ -20,7 +20,12 @@ export async function broadcastMessageAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
 
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  let tenantId: string;
+  try {
+    ({ tenantId } = await requireTenantContext("write"));
+  } catch {
+    return { ok: false, error: OUTBOX_TEXT.error, reauth: true };
+  }
   const patients = await prisma.patient.findMany({
     // HU-019 (D5): sin archivadas (core también las descarta).
     where: { tenantId, archivedAt: null },
@@ -44,7 +49,7 @@ export async function broadcastMessageAction(
 }
 
 export async function retryMessageAction(id: string) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { tenantId } = await requireTenantContext("write");
   // Ronda 2 (017b-3): solo si sigue FAILED; una fila que ya se envió (o ya se reintentó) no se vuelve a mandar.
   await prisma.outboundMessage.updateMany({
     where: { ...avisosOutboxWhere(tenantId), id, status: "FAILED" },
@@ -54,7 +59,7 @@ export async function retryMessageAction(id: string) {
 }
 
 export async function retryAllFailedAction() {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { tenantId } = await requireTenantContext("write");
   await prisma.outboundMessage.updateMany({
     where: { ...avisosOutboxWhere(tenantId), status: "FAILED" },
     data: { status: "PENDING", lastError: null },

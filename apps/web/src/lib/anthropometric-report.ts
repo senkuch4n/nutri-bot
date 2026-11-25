@@ -20,10 +20,12 @@ import {
   getConsultation,
   getIsakStudy,
   getPreviousIsakStudy,
+  getTenantProfessional,
   toIsakMeasures,
   type AnthropometricReportMeta,
+  type TenantRef,
 } from "@nutri-bot/db/domain";
-import { getProfessional, type Professional } from "@/lib/professional";
+import type { Professional } from "@/lib/professional";
 
 // HU-007: todo lo que necesitan la página del informe, las actions y el route handler del PDF.
 // Arma lo mismo que la página del estudio (HU-006) y no recalcula nada por su cuenta.
@@ -52,14 +54,16 @@ export type IsakReportContext = {
   stale: boolean;
 };
 
+/** HU-025: todo sale del consultorio `t`; una consulta o estudio de otro consultorio → not_found. */
 export async function loadIsakReportContext(
+  t: TenantRef,
   patientId: string,
   consultationId: string,
 ): Promise<{ status: "ok"; ctx: IsakReportContext } | { status: "not_found" } | { status: "no_study"; consultationHref: string }> {
   const [consultation, pro, entry] = await Promise.all([
-    getConsultation(consultationId),
-    getProfessional(),
-    getIsakStudy(consultationId),
+    getConsultation(t, consultationId),
+    getTenantProfessional(t.tenantId),
+    getIsakStudy(t, consultationId),
   ]);
   if (!consultation || consultation.patientId !== patientId) return { status: "not_found" };
   const consultationHref = `/pacientes/${patientId}/consultas/${consultationId}`;
@@ -77,7 +81,7 @@ export async function loadIsakReportContext(
   const currentMeasures = toIsakMeasures(entry);
   const currentDateLabel = dateLabel(consultation.consultedAt);
 
-  const previousEntry = await getPreviousIsakStudy({ patientId, before: consultation.consultedAt });
+  const previousEntry = await getPreviousIsakStudy(t, { patientId, before: consultation.consultedAt });
   const previousAt = previousEntry?.consultation?.consultedAt ?? null;
   const previous =
     previousEntry && previousAt
@@ -118,7 +122,7 @@ export async function loadIsakReportContext(
 
   const model = buildIsakReportModel(input);
   const drafts = buildIsakReportDrafts(input);
-  const report = await getAnthropometricReportMeta(entry.id);
+  const report = await getAnthropometricReportMeta(t, entry.id);
   const sourceKey = isakReportSourceKey({
     sex: patient.sex,
     current: {

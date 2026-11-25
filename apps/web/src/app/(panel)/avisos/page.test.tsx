@@ -1,22 +1,25 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import AvisosPage from "./page";
 
-const { db, resolveScope } = vi.hoisted(() => ({
+const { db, resolveScope, professional } = vi.hoisted(() => ({
   db: {
     patient: { findMany: vi.fn() },
     outboundMessage: { findMany: vi.fn(), groupBy: vi.fn() },
   },
   resolveScope: vi.fn(),
+  professional: vi.fn(),
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: db }));
-vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: resolveScope }));
+vi.mock("@/lib/tenant-context", () => ({ requirePageContext: resolveScope }));
+vi.mock("@nutri-bot/db/domain", () => ({ getTenantProfessional: professional }));
 vi.mock("@/components/ui", () => ({ PageHeader: () => null }));
 vi.mock("./avisos-view", () => ({ AvisosView: () => null }));
 vi.mock("./broadcast-form", () => ({ BroadcastForm: () => null }));
 
 beforeEach(() => {
   vi.resetAllMocks();
-  resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" }, professional: { timezone: "UTC", phoneJid: null } });
+  resolveScope.mockResolvedValue({ userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1 });
+  professional.mockResolvedValue({ timezone: "UTC", phoneJid: null });
 });
 
 it("scopes message rows and totals together and resolves names only among original patients", async () => {

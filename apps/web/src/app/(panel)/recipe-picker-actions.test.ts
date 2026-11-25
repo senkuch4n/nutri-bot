@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => {
     removeMenuItems: vi.fn(),
     setRecipeItemPortions: vi.fn(),
     recipesForTenant: vi.fn(),
-    resolvePrivateContentAccess: vi.fn(),
+    ctx: vi.fn(),
     touchTemplate: vi.fn(),
     revalidateMenuOwner: vi.fn(),
   };
@@ -31,7 +31,17 @@ vi.mock("@nutri-bot/db/domain", () => ({
   setRecipeItemPortions: mocks.setRecipeItemPortions,
 }));
 vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.revalidateMenuOwner }));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.resolvePrivateContentAccess }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `ctx`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.ctx(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.ctx()) ?? null, TenantAccessError };
+});
 vi.mock("@/lib/touch-template", () => ({ touchTemplate: mocks.touchTemplate }));
 
 import * as actions from "./recipe-picker-actions";
@@ -56,7 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
   mocks.recipesForTenant.mockReturnValue({ list: mocks.listRecipeCards });
-  mocks.resolvePrivateContentAccess.mockResolvedValue({ tenantId: "tenant-a" });
+  mocks.ctx.mockResolvedValue({ tenantId: "tenant-a" });
 });
 
 describe("recipe-picker-actions", () => {
@@ -70,7 +80,7 @@ describe("recipe-picker-actions", () => {
   });
 
   it("sin sesión → sessionExpired y no toca el dominio", async () => {
-    mocks.resolvePrivateContentAccess.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     const results = await Promise.all([
       listPickerRecipesAction(),
       addRecipeToMealAction(add),
@@ -83,7 +93,7 @@ describe("recipe-picker-actions", () => {
   });
 
   it("una sesión sin pertenencia no autoriza ninguno de los cinco endpoints", async () => {
-    mocks.resolvePrivateContentAccess.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     const results = await Promise.all([
       listPickerRecipesAction(), getRecipePreviewAction("r1"), addRecipeToMealAction(add),
       setRecipeItemPortionsAction({ kind: "plan", ownerId: "plan1", itemId: "i1", portions: 1.5 }),
@@ -109,7 +119,7 @@ describe("recipe-picker-actions", () => {
     const forged = { ...add, tenantId: "tenant-b" };
     expect(await addRecipeToMealAction(forged)).toEqual({ ok: true, itemIds: ["a", "b"] });
     expect(mocks.addRecipeItems).toHaveBeenCalledWith("plan", "plan1", { mealId: "meal1", recipeId: "rec1", portions: 1, weekdays: ["TUE", "THU"] }, "tenant-a");
-    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "plan1");
+    expect(mocks.revalidateMenuOwner).toHaveBeenCalledWith("plan", "plan1", "tenant-a");
 
     await addRecipeToMealAction({ ...add, kind: "template", ownerId: "t1", weekdays: null });
     expect(mocks.addRecipeItems).toHaveBeenLastCalledWith("template", "t1", { mealId: "meal1", recipeId: "rec1", portions: 1, weekdays: null }, "tenant-a");
@@ -146,7 +156,7 @@ describe("recipe-picker-actions", () => {
     mocks.removeMenuItems.mockResolvedValue(2);
     expect(await removeRecipeItemsAction({ kind: "template", ownerId: "t1", itemIds: ["a", "b"] })).toEqual({ ok: true });
     expect(mocks.removeMenuItems).toHaveBeenCalledWith("template", "t1", ["a", "b"], "tenant-a");
-    expect(mocks.revalidateMenuOwner.mock.calls).toEqual([["plan", "plan1"]]);
+    expect(mocks.revalidateMenuOwner.mock.calls).toEqual([["plan", "plan1", "tenant-a"]]);
     expect(mocks.touchTemplate.mock.calls).toEqual([["t1", "tenant-a"]]);
 
     mocks.removeMenuItems.mockRejectedValueOnce(new RangeError("x"));
@@ -163,7 +173,7 @@ describe("recipe-picker-actions", () => {
 
 describe("getRecipePreviewAction (018c-2)", () => {
   it("sin sesión → sessionExpired y no lee la receta", async () => {
-    mocks.resolvePrivateContentAccess.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     expect(await getRecipePreviewAction("r1")).toEqual({ ok: false, error: SESSION });
     expect(mocks.getRecipePreview).not.toHaveBeenCalled();
   });

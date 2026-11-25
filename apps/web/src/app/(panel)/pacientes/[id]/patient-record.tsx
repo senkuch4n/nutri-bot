@@ -36,12 +36,12 @@ import {
   listPatientPlans,
   listTemplates,
   listDiaryEntries,
+  getTenantProfessional,
   type LatestMeasurement,
 } from "@nutri-bot/db/domain";
-import { getProfessional } from "@/lib/professional";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { listServices } from "@/lib/services";
+import { requirePageContext } from "@/lib/tenant-context";
 import { EditPatientProvider } from "./edit-patient-sheet";
 import { AppointmentsSection } from "./appointments-section";
 import { ArchivedBanner } from "./archived-banner";
@@ -60,36 +60,38 @@ export type PatientRecordVariant = "page" | "modal";
  *  sobre la lista (ruta interceptada en `pacientes/(directorio)/@modal`). Con `variant="modal"` no
  *  muestra el link "← Pacientes" y el encabezado se pega arriba del diálogo, no de la página. */
 export async function PatientRecord({ id, variant }: { id: string; variant: PatientRecordVariant }) {
-  const [pro, patient, plans, access, diaryEntries, measurements, consultations, prescriptions, services] =
+  const ctx = await requirePageContext();
+  const [pro, patient, plans, diaryEntries, measurements, consultations, prescriptions, services] =
     await Promise.all([
-      getProfessional(),
+      getTenantProfessional(ctx.tenantId),
+      // HU-025: paciente del consultorio de la sesión; uno de otro consultorio → notFound().
       prisma.patient.findUnique({
-        where: { id },
+        where: { id_tenantId: { id, tenantId: ctx.tenantId } },
         include: {
           appointments: {
+            where: { tenantId: ctx.tenantId },
             include: { service: true, consultation: { select: { id: true } } },
             orderBy: { startsAt: "desc" },
           },
           clinicalRecord: true,
           // R7 (017c-4): Historial necesita saber si el estudio ISAK tiene informe ("y su informe").
           evolutionEntries: {
+            where: { tenantId: ctx.tenantId },
             orderBy: { recordedAt: "desc" },
             include: { anthropometricReport: { select: { id: true } } },
           },
         },
       }),
-      listPatientPlans(id),
-      resolvePrivateContentAccess(),
-      listDiaryEntries(id),
-      getLatestFormulaMeasurements(id),
-      listPatientConsultations(id),
-      listLatestPrescriptions(id, 1),
-      listServices({ activeOnly: true }),
+      listPatientPlans(ctx, id),
+      listDiaryEntries(ctx, id),
+      getLatestFormulaMeasurements(ctx, id),
+      listPatientConsultations(ctx, id),
+      listLatestPrescriptions(ctx, id, 1),
+      listServices(ctx, { activeOnly: true }),
     ]);
   if (!patient) notFound();
-  const templates = access && patient.tenantId === access.tenantId
-    ? await listTemplates({ status: "PUBLISHED", tenantId: access.tenantId })
-    : null;
+  // Plantillas del consultorio del contexto (el paciente ya es de ese consultorio).
+  const templates = await listTemplates({ status: "PUBLISHED", tenantId: ctx.tenantId });
 
   const tz = pro.timezone;
   const now = new Date();

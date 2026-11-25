@@ -115,6 +115,7 @@ describe("payment cron without Baileys or database", () => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
     mocks.reconcile.mockResolvedValue({ processed: 1, failed: 0 });
   });
   it("reconciles and expires every minute, not only on five-minute boundaries", async () => {
@@ -125,6 +126,9 @@ describe("payment cron without Baileys or database", () => {
     expect(mocks.reconcile).toHaveBeenCalledTimes(1);
     expect(mocks.expire).toHaveBeenCalledTimes(1);
     expect(mocks.reconcile.mock.invocationCallOrder[0]).toBeLessThan(mocks.expire.mock.invocationCallOrder[0]!);
+    // HU-025: conciliación y vencimiento con el consultorio de getConversationTenant().
+    expect(mocks.reconcile.mock.calls[0]?.[0]).toEqual({ tenantId: "legacy-tenant" });
+    expect(mocks.expire).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
     vi.useRealTimers();
   });
   it("does not expire reservations when a payment lookup fails", async () => {
@@ -151,7 +155,8 @@ describe("payment cron without Baileys or database", () => {
     const tick = mocks.schedule.mock.calls[0]?.[1];
     const first = tick();
     await tick();
-    expect(mocks.reconcile).toHaveBeenCalledTimes(1);
+    // El primero espera getConversationTenant() antes de llamar al dominio.
+    await vi.waitFor(() => expect(mocks.reconcile).toHaveBeenCalledTimes(1));
     finish({ processed: 0, failed: 0 });
     await first;
     vi.useRealTimers();
@@ -161,6 +166,7 @@ describe("payment cron without Baileys or database", () => {
 describe("after-hours digest cron (HU-011)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
   });
   it("is the last schedule, runs every minute and calls enqueueAfterHoursDigest once per tick", async () => {
     mocks.digest.mockResolvedValue({ digested: 2, outboundId: "out1" });
@@ -169,6 +175,7 @@ describe("after-hours digest cron (HU-011)", () => {
     expect(last[0]).toBe("* * * * *");
     await last[1]();
     expect(mocks.digest).toHaveBeenCalledTimes(1);
+    expect(mocks.digest).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
     // La conciliación de pagos sigue siendo la primera.
     expect(mocks.schedule.mock.calls.length).toBeGreaterThan(1);
   });
@@ -188,7 +195,7 @@ describe("after-hours digest cron (HU-011)", () => {
     const tick = mocks.schedule.mock.calls.at(-1)![1];
     const first = tick();
     await tick();
-    expect(mocks.digest).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(mocks.digest).toHaveBeenCalledTimes(1));
     finish({ digested: 0, outboundId: null });
     await first;
   });
@@ -244,6 +251,8 @@ describe("expired session text cleanup cron (HU-012/HU-013)", () => {
 describe("service reminders cron (HU-014)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    // HU-025b-1: los crons pasan el consultorio de getConversationTenant() (hoy, el original).
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
   });
   const remindersTick = () => mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *")[0]![1];
 
@@ -254,6 +263,7 @@ describe("service reminders cron (HU-014)", () => {
     expect(mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *")).toHaveLength(2);
     await remindersTick()();
     expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
+    expect(mocks.serviceReminders).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
     expect(mocks.clearSessions).not.toHaveBeenCalled();
   });
 
@@ -269,7 +279,8 @@ describe("service reminders cron (HU-014)", () => {
     mocks.serviceReminders.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const first = runServiceReminders();
     await runServiceReminders();
-    expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
+    // El primero espera getConversationTenant() antes de llamar al dominio.
+    await vi.waitFor(() => expect(mocks.serviceReminders).toHaveBeenCalledTimes(1));
     finish({ reminders: 0, confirmations: 0 });
     await first;
   });
@@ -300,6 +311,7 @@ describe("service reminders cron (HU-014)", () => {
 describe("renovación diaria de Mercado Pago (HU-023)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
   });
   it("hay un cron \"0 6 * * *\" cuyo tick renueva una vez", async () => {
     mocks.mpRefresh.mockResolvedValue("refreshed");
@@ -308,7 +320,7 @@ describe("renovación diaria de Mercado Pago (HU-023)", () => {
     expect(daily).toHaveLength(1);
     await daily[0]![1]();
     expect(mocks.mpRefresh).toHaveBeenCalledTimes(1);
-    expect(mocks.mpRefresh).toHaveBeenCalledWith();
+    expect(mocks.mpRefresh).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
     expect(mocks.info).toHaveBeenCalledWith({ result: "refreshed" }, "Renovación Mercado Pago");
     // Va entre Google Calendar y la limpieza de sesiones; los asserts de orden siguen valiendo.
     const exprs = mocks.schedule.mock.calls.map((c) => c[0]);

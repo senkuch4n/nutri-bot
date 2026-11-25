@@ -3,7 +3,8 @@ import { prisma } from "@nutri-bot/db";
 import { SETTINGS_TEXT as T, formatInTimeZone } from "@nutri-bot/core";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { Alert, ButtonLink, PageHeader } from "@/components/ui";
-import { getProfessional } from "@/lib/professional";
+import { getTenantProfessional } from "@/lib/professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { DetailDisclosure } from "../../pacientes/[id]/detail-disclosure";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,12 @@ export const revalidate = 0;
  * menos 264 px. Solo lee `BotStatus`: no pide un código nuevo ni desvincula nada.
  */
 export default async function WhatsAppStatusPage() {
+  // HU-025: el QR es solo el de la fila BotStatus del consultorio de la sesión. Mostrar el de otro
+  // consultorio sería entregarle su número. 025d veda esta pantalla en modo soporte (C2).
+  const ctx = await requirePageContext();
   const [pro, status] = await Promise.all([
-    getProfessional(),
-    prisma.botStatus.findUnique({ where: { id: 1 } }),
+    getTenantProfessional(ctx.tenantId),
+    prisma.botStatus.findUnique({ where: { tenantId: ctx.tenantId } }),
   ]);
 
   const connected = status?.connected ?? false;

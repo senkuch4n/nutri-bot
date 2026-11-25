@@ -36,6 +36,8 @@ import { addTemplateMealItem, applyTemplateToPatient, createTemplate } from "./p
 import { createPlan } from "./nutritionPlans";
 import { createPlanForConsultation } from "./consultations";
 
+const T = { tenantId: "legacy-tenant" };
+
 const p = () => mocks.prisma;
 const item = (id: string, weekday: string | null, order = 0, extra: Record<string, unknown> = {}) => ({
   id, mealId: "meal1", foodId: `f-${id}`, customLabel: null, quantityGrams: { toString: () => "150.00" },
@@ -47,14 +49,24 @@ const meal = (mode: "EVERY_DAY" | "PER_DAY", items: unknown[], extra: Record<str
 const tenantTemplate = { templateId: "t1", template: { tenantId: "tenant-a" } };
 const tenantRecipeItem = item("rec-item", "MON", 0, { foodId: null, quantityGrams: null, recipeId: "recipe-b", portions: 1 });
 
-const createdRows = (d: ReturnType<typeof delegate>) => d.createMany.mock.calls.flatMap((c) => c[0].data);
+/** Filas creadas: por createMany (planes) o, en plantillas con tenant (HU-025), una por una con connect. */
+const createdRows = (d: ReturnType<typeof delegate>) => [
+  ...d.createMany.mock.calls.flatMap((c) => c[0].data),
+  ...d.create.mock.calls.flatMap((c) => {
+    const { meal, food, recipe, ...data } = c[0].data ?? {};
+    if (!meal?.connect) return [];
+    return [{ ...data, mealId: meal.connect.id, foodId: food?.connect?.id ?? null, recipeId: recipe?.connect?.id ?? null }];
+  }),
+];
 
 beforeEach(() => {
   vi.resetAllMocks();
-  for (const key of ["planMeal", "planMealItem", "templateMeal", "templateMealItem", "nutritionPlan", "nutritionPrescription", "consultation", "recipe", "planTemplate"]) {
+  for (const key of ["planMeal", "planMealItem", "templateMeal", "templateMealItem", "nutritionPlan", "nutritionPrescription", "consultation", "recipe", "planTemplate", "food"]) {
     mocks.prisma[key] = delegate();
   }
   mocks.prisma.$transaction = vi.fn((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
+  // HU-025b-1: los caminos de plan verifican el plan del consultorio (copyDay) y acotan por tenant.
+  mocks.prisma.nutritionPlan.findUnique.mockResolvedValue({ id: "plan1", patientId: "pat1" });
 });
 
 describe("recipe references from an owned plan", () => {
@@ -65,19 +77,22 @@ describe("recipe references from an owned plan", () => {
     p().planMeal.count.mockResolvedValue(1);
     p().nutritionPlan.findUnique.mockResolvedValue({ tenantId: "tenant-a" });
     p().recipe.count.mockResolvedValue(0);
-    p().recipe.findUnique.mockResolvedValue({ status: "PUBLISHED", tenantId: "tenant-b" });
+    // Con el tenant del contexto, la receta de B no se encuentra (where con tenantId).
+    p().recipe.findUnique.mockImplementation(async ({ where }: { where: { tenantId?: string } }) =>
+      where.tenantId === undefined || where.tenantId === "tenant-b" ? { status: "PUBLISHED", tenantId: "tenant-b" } : null);
     p().planMealItem.create.mockResolvedValue({ id: "inserted" });
     const run = {
-      copy: () => copyDay("plan", "p1", { from: "MON", to: ["TUE"] }),
-      repeat: () => repeatMealInAllDays("plan", "p1", "meal1", "MON"),
+      copy: () => copyDay("plan", "p1", { from: "MON", to: ["TUE"] }, "tenant-a"),
+      repeat: () => repeatMealInAllDays("plan", "p1", "meal1", "MON", "tenant-a"),
       restore: () => restoreMealSnapshots("plan", "p1", [{ mealId: "meal1", mode: "PER_DAY", isOptions: false,
         items: [{ ...tenantRecipeItem, weekday: "MON", quantityGrams: null, foodId: null, recipeId: "recipe-b", portions: 1,
           customLabel: null, notes: null, measureQty: null, measureName: null, measurePlural: null, measureGrams: null }],
-      }]),
-      mode: () => setMealMode("plan", "p1", "meal1", { mode: "PER_DAY" }),
-      add: () => addRecipeItems("plan", "p1", { mealId: "meal1", recipeId: "recipe-b", weekdays: ["MON"] }),
+      }], "tenant-a"),
+      mode: () => setMealMode("plan", "p1", "meal1", { mode: "PER_DAY" }, "tenant-a"),
+      add: () => addRecipeItems("plan", "p1", { mealId: "meal1", recipeId: "recipe-b", weekdays: ["MON"] }, "tenant-a"),
     };
-    await expect(run[operation]()).rejects.toThrow("La receta no pertenece a este consultorio.");
+    await expect(run[operation]()).rejects.toThrow(
+      operation === "add" ? "La receta no está publicada." : "La receta no pertenece a este consultorio.");
     for (const method of ["deleteMany", "createMany", "create", "updateMany"]) {
       expect(p().planMealItem[method]).not.toHaveBeenCalled();
     }
@@ -89,7 +104,7 @@ describe("recipe references from an owned plan", () => {
     p().nutritionPlan.findUnique.mockResolvedValue({ tenantId: "tenant-a" });
     p().recipe.count.mockImplementation(({ where }: { where: { OR: { tenantId: string | null }[] } }) =>
       where.OR.some(({ tenantId }) => tenantId === recipeOwner) ? 1 : 0);
-    await copyDay("plan", "p1", { from: "MON", to: ["TUE"] });
+    await copyDay("plan", "p1", { from: "MON", to: ["TUE"] }, "tenant-a");
     expect(createdRows(p().planMealItem)).toMatchObject([{ weekday: "TUE", recipeId: "recipe-b" }]);
   });
 });
@@ -201,10 +216,10 @@ describe("tenant-scoped weekly template operations", () => {
 describe("setMealMode", () => {
   it("EVERY_DAY → PER_DAY copia cada ítem a los 7 días y borra los originales", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", [item("a", null, 0), item("b", null, 1)], { isOptions: true }));
-    const before = await setMealMode("plan", "plan1", "meal1", { mode: "PER_DAY" });
+    const before = await setMealMode("plan", "plan1", "meal1", { mode: "PER_DAY" }, "legacy-tenant");
 
     expect(p().$transaction).toHaveBeenCalledTimes(1);
-    expect(p().planMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", planId: "plan1" });
+    expect(p().planMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", planId: "plan1", plan: { tenantId: "legacy-tenant" } });
     const rows = createdRows(p().planMealItem);
     expect(rows).toHaveLength(14);
     expect(rows.filter((r: any) => r.foodId === "f-a").map((r: any) => r.weekday)).toEqual(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]);
@@ -223,7 +238,7 @@ describe("setMealMode", () => {
 
   it("PER_DAY → EVERY_DAY conserva el día elegido y borra los otros filtrando por mealId", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", [item("a", "MON"), item("b", "WED")]));
-    await setMealMode("plan", "plan1", "meal1", { mode: "EVERY_DAY", keepWeekday: "WED" });
+    await setMealMode("plan", "plan1", "meal1", { mode: "EVERY_DAY", keepWeekday: "WED" }, "legacy-tenant");
     expect(p().planMealItem.deleteMany).toHaveBeenCalledWith({ where: { mealId: "meal1", weekday: { not: "WED" } } });
     expect(p().planMealItem.updateMany).toHaveBeenCalledWith({ where: { mealId: "meal1", weekday: "WED" }, data: { weekday: null } });
     expect(p().planMeal.update).toHaveBeenCalledWith({ where: { id: "meal1" }, data: { mode: "EVERY_DAY" } });
@@ -232,16 +247,16 @@ describe("setMealMode", () => {
 
   it("mismo modo no escribe; comida de otro dueño → MealOwnershipError", async () => {
     p().planMeal.findFirst.mockResolvedValueOnce(meal("PER_DAY", []));
-    await setMealMode("plan", "plan1", "meal1", { mode: "PER_DAY" });
+    await setMealMode("plan", "plan1", "meal1", { mode: "PER_DAY" }, "legacy-tenant");
     expect(p().planMeal.update).not.toHaveBeenCalled();
     p().planMeal.findFirst.mockResolvedValueOnce(null);
-    await expect(setMealMode("plan", "otro", "meal1", { mode: "EVERY_DAY" })).rejects.toBeInstanceOf(MealOwnershipError);
+    await expect(setMealMode("plan", "otro", "meal1", { mode: "EVERY_DAY" }, "legacy-tenant")).rejects.toBeInstanceOf(MealOwnershipError);
   });
 
   it("kind template usa templateMeal / templateMealItem y templateId", async () => {
     p().templateMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", [item("a", null)]));
-    await setMealMode("template", "t1", "meal1", { mode: "PER_DAY" });
-    expect(p().templateMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", templateId: "t1" });
+    await setMealMode("template", "t1", "meal1", { mode: "PER_DAY" }, "legacy-tenant");
+    expect(p().templateMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", templateId: "t1", template: { tenantId: "legacy-tenant" } });
     expect(createdRows(p().templateMealItem)).toHaveLength(7);
     expect(p().planMealItem.createMany).not.toHaveBeenCalled();
   });
@@ -250,13 +265,13 @@ describe("setMealMode", () => {
 describe("setMealOptions", () => {
   it("en una comida PER_DAY → MealModeError y no escribe", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", []));
-    await expect(setMealOptions("plan", "plan1", "meal1", true)).rejects.toBeInstanceOf(MealModeError);
+    await expect(setMealOptions("plan", "plan1", "meal1", true, "legacy-tenant")).rejects.toBeInstanceOf(MealModeError);
     expect(p().planMeal.update).not.toHaveBeenCalled();
   });
   it("en una EVERY_DAY la prende", async () => {
     p().templateMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", []));
-    await setMealOptions("template", "t1", "meal1", true);
-    expect(p().templateMeal.update).toHaveBeenCalledWith({ where: { id: "meal1" }, data: { isOptions: true } });
+    await setMealOptions("template", "t1", "meal1", true, "legacy-tenant");
+    expect(p().templateMeal.update).toHaveBeenCalledWith({ where: { id: "meal1", templateId: "t1", template: { tenantId: "legacy-tenant" } }, data: { isOptions: true } });
   });
 });
 
@@ -266,8 +281,8 @@ describe("copyDay", () => {
       meal("PER_DAY", [item("a", "MON", 0), item("b", "MON", 1), item("c", "TUE")], { id: "m1" }),
       meal("PER_DAY", [item("d", "FRI")], { id: "m2" }),
     ]);
-    const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["TUE", "WED"] });
-    expect(p().planMeal.findMany.mock.calls[0][0].where).toEqual({ planId: "plan1", mode: "PER_DAY" });
+    const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["TUE", "WED"] }, "legacy-tenant");
+    expect(p().planMeal.findMany.mock.calls[0][0].where).toEqual({ planId: "plan1", plan: { tenantId: "legacy-tenant" }, mode: "PER_DAY" });
     expect(p().planMealItem.deleteMany.mock.calls.map((c: any) => c[0])).toEqual([
       { where: { mealId: "m1", weekday: { in: ["TUE", "WED"] } } },
       { where: { mealId: "m2", weekday: { in: ["TUE", "WED"] } } },
@@ -280,22 +295,23 @@ describe("copyDay", () => {
     expect(snapshots[0]!.items).toHaveLength(3);
   });
   it("to vacío, con el día de origen o repetido → error sin tocar la base", async () => {
-    await expect(copyDay("plan", "plan1", { from: "MON", to: [] })).rejects.toBeInstanceOf(MealModeError);
-    await expect(copyDay("plan", "plan1", { from: "MON", to: ["MON", "TUE"] })).rejects.toBeInstanceOf(MealModeError);
-    await expect(copyDay("plan", "plan1", { from: "MON", to: ["TUE", "TUE"] })).rejects.toBeInstanceOf(MealModeError);
+    await expect(copyDay("plan", "plan1", { from: "MON", to: [] }, "legacy-tenant")).rejects.toBeInstanceOf(MealModeError);
+    await expect(copyDay("plan", "plan1", { from: "MON", to: ["MON", "TUE"] }, "legacy-tenant")).rejects.toBeInstanceOf(MealModeError);
+    await expect(copyDay("plan", "plan1", { from: "MON", to: ["TUE", "TUE"] }, "legacy-tenant")).rejects.toBeInstanceOf(MealModeError);
     expect(p().$transaction).not.toHaveBeenCalled();
   });
   it("template: filtra por templateId", async () => {
     p().templateMeal.findMany.mockResolvedValue([]);
-    await copyDay("template", "t1", { from: "SUN", to: ["SAT"] });
-    expect(p().templateMeal.findMany.mock.calls[0][0].where).toEqual({ templateId: "t1", mode: "PER_DAY" });
+    p().planTemplate.findUnique.mockResolvedValueOnce({ id: "t1" });
+    await copyDay("template", "t1", { from: "SUN", to: ["SAT"] }, "legacy-tenant");
+    expect(p().templateMeal.findMany.mock.calls[0][0].where).toEqual({ templateId: "t1", template: { tenantId: "legacy-tenant" }, mode: "PER_DAY" });
   });
 });
 
 describe("repeatMealInAllDays", () => {
   it("reemplaza los otros 6 días de esa comida", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", [item("a", "MON"), item("x", "THU")]));
-    const before = await repeatMealInAllDays("plan", "plan1", "meal1", "MON");
+    const before = await repeatMealInAllDays("plan", "plan1", "meal1", "MON", "legacy-tenant");
     expect(p().planMealItem.deleteMany).toHaveBeenCalledWith({
       where: { mealId: "meal1", weekday: { in: ["TUE", "WED", "THU", "FRI", "SAT", "SUN"] } },
     });
@@ -304,7 +320,7 @@ describe("repeatMealInAllDays", () => {
   });
   it("repeats a legacy plan food ID without applying a template scope", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", [item("legacy", "MON")]));
-    const undo = await repeatMealInAllDays("plan", "plan1", "meal1", "MON");
+    const undo = await repeatMealInAllDays("plan", "plan1", "meal1", "MON", "legacy-tenant");
     expect(undo.items).toMatchObject([{ weekday: "MON", foodId: "f-legacy" }]);
     expect(createdRows(p().planMealItem)).toEqual(
       ["TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((weekday) => ({ ...undo.items[0], mealId: "meal1", weekday })),
@@ -313,7 +329,7 @@ describe("repeatMealInAllDays", () => {
   });
   it("en una comida EVERY_DAY → MealModeError", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", []));
-    await expect(repeatMealInAllDays("plan", "plan1", "meal1", "MON")).rejects.toBeInstanceOf(MealModeError);
+    await expect(repeatMealInAllDays("plan", "plan1", "meal1", "MON", "legacy-tenant")).rejects.toBeInstanceOf(MealModeError);
   });
 });
 
@@ -324,8 +340,8 @@ describe("restoreMealSnapshots", () => {
   };
   it("borra los ítems de la comida, restaura el modo y recrea los de la foto", async () => {
     p().planMeal.count.mockResolvedValue(1);
-    await restoreMealSnapshots("plan", "plan1", [snap]);
-    expect(p().planMeal.count).toHaveBeenCalledWith({ where: { id: { in: ["meal1"] }, planId: "plan1" } });
+    await restoreMealSnapshots("plan", "plan1", [snap], "legacy-tenant");
+    expect(p().planMeal.count).toHaveBeenCalledWith({ where: { id: { in: ["meal1"] }, planId: "plan1", plan: { tenantId: "legacy-tenant" } } });
     expect(p().planMealItem.deleteMany).toHaveBeenCalledWith({ where: { mealId: "meal1" } });
     expect(p().planMeal.update).toHaveBeenCalledWith({ where: { id: "meal1" }, data: { mode: "PER_DAY", isOptions: false } });
     expect(createdRows(p().planMealItem)).toEqual([
@@ -334,48 +350,48 @@ describe("restoreMealSnapshots", () => {
   });
   it("comida de otro dueño → MealOwnershipError y no escribe nada", async () => {
     p().templateMeal.count.mockResolvedValue(0);
-    await expect(restoreMealSnapshots("template", "t1", [snap])).rejects.toBeInstanceOf(MealOwnershipError);
+    await expect(restoreMealSnapshots("template", "t1", [snap], "legacy-tenant")).rejects.toBeInstanceOf(MealOwnershipError);
     expect(p().templateMealItem.deleteMany).not.toHaveBeenCalled();
     expect(p().templateMeal.update).not.toHaveBeenCalled();
     expect(p().templateMealItem.createMany).not.toHaveBeenCalled();
   });
   it("una foto que rompe las invariantes → MealModeError", async () => {
-    await expect(restoreMealSnapshots("plan", "plan1", [{ ...snap, isOptions: true }])).rejects.toBeInstanceOf(MealModeError);
-    await expect(restoreMealSnapshots("plan", "plan1", [{ ...snap, mode: "EVERY_DAY" }])).rejects.toBeInstanceOf(MealModeError);
+    await expect(restoreMealSnapshots("plan", "plan1", [{ ...snap, isOptions: true }], "legacy-tenant")).rejects.toBeInstanceOf(MealModeError);
+    await expect(restoreMealSnapshots("plan", "plan1", [{ ...snap, mode: "EVERY_DAY" }], "legacy-tenant")).rejects.toBeInstanceOf(MealModeError);
   });
 });
 
 describe("assertWeekdayMatchesMeal / nextItemOrder / moveMeal", () => {
   it("renames a plan meal with the legacy trimmed name and plan ownership check", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", []));
-    await renameMeal("plan", "plan1", "meal1", "  Almuerzo  ");
-    expect(p().planMeal.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "meal1", planId: "plan1" } }));
+    await renameMeal("plan", "plan1", "meal1", "  Almuerzo  ", "legacy-tenant");
+    expect(p().planMeal.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "meal1", planId: "plan1", plan: { tenantId: "legacy-tenant" } } }));
     expect(p().planMeal.update).toHaveBeenCalledWith({ where: { id: "meal1" }, data: { name: "Almuerzo" } });
   });
   it("EVERY_DAY + día → error; PER_DAY + null → error; correctos pasan", async () => {
     p().planMeal.findUnique.mockResolvedValueOnce({ mode: "EVERY_DAY" });
-    await expect(assertWeekdayMatchesMeal("plan", "meal1", "MON")).rejects.toBeInstanceOf(MealWeekdayMismatchError);
+    await expect(assertWeekdayMatchesMeal("plan", "meal1", "MON", { tenantId: "legacy-tenant" })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
     p().planMeal.findUnique.mockResolvedValueOnce({ mode: "PER_DAY" });
-    await expect(assertWeekdayMatchesMeal("plan", "meal1", null)).rejects.toBeInstanceOf(MealWeekdayMismatchError);
+    await expect(assertWeekdayMatchesMeal("plan", "meal1", null, { tenantId: "legacy-tenant" })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
     p().templateMeal.findUnique.mockResolvedValueOnce({ mode: "PER_DAY" });
-    await expect(assertWeekdayMatchesMeal("template", "meal1", "TUE")).resolves.toBeUndefined();
+    await expect(assertWeekdayMatchesMeal("template", "meal1", "TUE", { templateId: "t1", tenantId: "legacy-tenant" })).resolves.toBeUndefined();
     p().planMeal.findUnique.mockResolvedValueOnce({ mode: "EVERY_DAY" });
-    await expect(assertWeekdayMatchesMeal("plan", "meal1", null)).resolves.toBeUndefined();
+    await expect(assertWeekdayMatchesMeal("plan", "meal1", null, { tenantId: "legacy-tenant" })).resolves.toBeUndefined();
   });
   it("nextItemOrder es el siguiente dentro de (mealId, weekday)", async () => {
     p().planMealItem.findFirst.mockResolvedValueOnce({ order: 2 });
-    expect(await nextItemOrder("plan", "meal1", "TUE")).toBe(3);
-    expect(p().planMealItem.findFirst.mock.calls[0][0].where).toEqual({ mealId: "meal1", weekday: "TUE" });
+    expect(await nextItemOrder("plan", "meal1", "TUE", { tenantId: "legacy-tenant" })).toBe(3);
+    expect(p().planMealItem.findFirst.mock.calls[0][0].where).toEqual({ mealId: "meal1", weekday: "TUE", meal: { plan: { tenantId: "legacy-tenant" } } });
     p().planMealItem.findFirst.mockResolvedValueOnce(null);
-    expect(await nextItemOrder("plan", "meal1", null)).toBe(0);
+    expect(await nextItemOrder("plan", "meal1", null, { tenantId: "legacy-tenant" })).toBe(0);
   });
   it("moveMeal up intercambia order con la anterior; en la primera no hace nada", async () => {
     p().planMeal.findFirst
       .mockResolvedValueOnce(meal("EVERY_DAY", [], { order: 3 }))
       .mockResolvedValueOnce({ id: "prev", order: 1 });
-    await moveMeal("plan", "plan1", "meal1", "up");
+    await moveMeal("plan", "plan1", "meal1", "up", "legacy-tenant");
     expect(p().planMeal.findFirst.mock.calls[1][0]).toEqual({
-      where: { planId: "plan1", order: { lt: 3 } }, orderBy: { order: "desc" },
+      where: { planId: "plan1", plan: { tenantId: "legacy-tenant" }, order: { lt: 3 } }, orderBy: { order: "desc" },
     });
     expect(p().planMeal.update.mock.calls.map((c: any) => c[0])).toEqual([
       { where: { id: "meal1" }, data: { order: 1 } },
@@ -384,7 +400,7 @@ describe("assertWeekdayMatchesMeal / nextItemOrder / moveMeal", () => {
 
     vi.mocked(p().planMeal.update).mockClear();
     p().planMeal.findFirst.mockResolvedValueOnce(meal("EVERY_DAY", [], { order: 0 })).mockResolvedValueOnce(null);
-    await moveMeal("plan", "plan1", "meal1", "up");
+    await moveMeal("plan", "plan1", "meal1", "up", "legacy-tenant");
     expect(p().planMeal.update).not.toHaveBeenCalled();
   });
 });
@@ -392,24 +408,28 @@ describe("assertWeekdayMatchesMeal / nextItemOrder / moveMeal", () => {
 describe("nutritionPlans / planTemplates", () => {
   it("addMeal hereda PER_DAY si el plan ya es semanal; si no, EVERY_DAY", async () => {
     p().planMeal.count.mockResolvedValueOnce(2);
-    await addMeal("plan1", { name: "Postre", order: 5 });
-    expect(p().planMeal.create.mock.calls[0][0].data).toEqual({ planId: "plan1", name: "Postre", order: 5, mode: "PER_DAY", isOptions: false });
+    await addMeal(T, "plan1", { name: "Postre", order: 5 });
+    expect(p().planMeal.create.mock.calls[0][0].data).toEqual({
+      plan: { connect: { id: "plan1", tenantId: "legacy-tenant", patient: { tenantId: "legacy-tenant" } } }, name: "Postre", order: 5, mode: "PER_DAY", isOptions: false,
+    });
+    expect(p().planMeal.count.mock.calls[0][0].where).toEqual({ planId: "plan1", plan: { tenantId: "legacy-tenant" }, mode: "PER_DAY" });
     p().planMeal.count.mockResolvedValueOnce(0);
-    await addMeal("plan1", { name: "Postre", order: 5 });
+    await addMeal(T, "plan1", { name: "Postre", order: 5 });
     expect(p().planMeal.create.mock.calls[1][0].data.mode).toBe("EVERY_DAY");
-    await addMeal("plan1", { name: "IA", order: 0, mode: "EVERY_DAY" });
+    await addMeal(T, "plan1", { name: "IA", order: 0, mode: "EVERY_DAY" });
     expect(p().planMeal.count).toHaveBeenCalledTimes(2);
   });
   it("addMealItem valida el día contra el modo y lo guarda", async () => {
     p().planMeal.findUnique.mockResolvedValueOnce({ mode: "EVERY_DAY" });
-    await expect(addMealItem("meal1", { foodId: "f", order: 0, weekday: "MON" })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
+    await expect(addMealItem(T, "meal1", { foodId: "f", order: 0, weekday: "MON" })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
     expect(p().planMealItem.create).not.toHaveBeenCalled();
     p().planMeal.findUnique.mockResolvedValueOnce({ mode: "EVERY_DAY" });
-    await addMealItem("meal1", { foodId: "f", order: 0 });
+    await addMealItem(T, "meal1", { foodId: "f", order: 0 });
     expect(p().planMealItem.create.mock.calls[0][0].data).toEqual({ mealId: "meal1", foodId: "f", order: 0, weekday: null });
     p().templateMeal.findUnique.mockResolvedValueOnce({ mode: "PER_DAY" });
-    await addTemplateMealItem("meal1", { foodId: "f", order: 2, weekday: "SAT" });
-    expect(p().templateMealItem.create.mock.calls[0][0].data.weekday).toBe("SAT");
+    p().food.findMany.mockResolvedValueOnce([{ id: "f", source: "SARA2", tenantId: null }]);
+    await addTemplateMealItem("meal1", { foodId: "f", order: 2, weekday: "SAT" }, { templateId: "t1", tenantId: "legacy-tenant" });
+    expect(p().templateMeal.update.mock.calls[0][0].data.items.create.weekday).toBe("SAT");
   });
 
   const prescription = (id: string) => ({
@@ -419,26 +439,27 @@ describe("nutritionPlans / planTemplates", () => {
   it("getPlanTarget prefiere la consulta del plan", async () => {
     p().nutritionPlan.findUnique.mockResolvedValue({ patientId: "pat1" });
     p().nutritionPrescription.findFirst.mockResolvedValueOnce(prescription("c-plan"));
-    expect(await getPlanTarget("plan1")).toEqual({
+    expect(await getPlanTarget(T, "plan1")).toEqual({
       kcal: 1800, protein: 110, carbs: 200, fat: 60, consultationId: "c-plan",
       consultedAt: new Date("2026-09-12T15:00:00Z"), source: "PLAN_CONSULTATION",
     });
     const args = p().nutritionPrescription.findFirst.mock.calls[0][0];
-    expect(args.where).toEqual({ consultation: { planId: "plan1" } });
+    expect(args.where).toEqual({ consultation: { planId: "plan1", tenantId: "legacy-tenant", patientId: "pat1" } });
+    expect(p().nutritionPlan.findUnique.mock.calls[0][0].where).toEqual({ id: "plan1", tenantId: "legacy-tenant", patient: { tenantId: "legacy-tenant" } });
     expect(args.orderBy).toEqual([{ consultation: { consultedAt: "desc" } }, { consultation: { createdAt: "desc" } }]);
   });
   it("getPlanTarget: si el plan no tiene, la más reciente del paciente; si no hay, null", async () => {
     p().nutritionPlan.findUnique.mockResolvedValue({ patientId: "pat1" });
     p().nutritionPrescription.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(prescription("c-last"));
-    const target = await getPlanTarget("plan1");
+    const target = await getPlanTarget(T, "plan1");
     expect(target?.source).toBe("LATEST");
     expect(target?.consultationId).toBe("c-last");
-    expect(p().nutritionPrescription.findFirst.mock.calls[1][0].where).toEqual({ consultation: { patientId: "pat1" } });
+    expect(p().nutritionPrescription.findFirst.mock.calls[1][0].where).toEqual({ consultation: { patientId: "pat1", tenantId: "legacy-tenant" } });
 
     p().nutritionPrescription.findFirst.mockResolvedValue(null);
-    expect(await getPlanTarget("plan1")).toBeNull();
+    expect(await getPlanTarget(T, "plan1")).toBeNull();
     p().nutritionPlan.findUnique.mockResolvedValue(null);
-    expect(await getPlanTarget("nope")).toBeNull();
+    expect(await getPlanTarget(T, "nope")).toBeNull();
   });
 
   it("applyTemplateToPatient copia mode, isOptions y weekday", async () => {
@@ -454,7 +475,12 @@ describe("nutritionPlans / planTemplates", () => {
       ],
     }) };
     p().nutritionPlan.create = vi.fn().mockResolvedValue({ id: "newplan" });
-    await applyTemplateToPatient("t1", "pat1");
+    // HU-025b-1: siempre con el consultorio de la plantilla y de la paciente.
+    p().patient = { findUnique: vi.fn().mockResolvedValue({ id: "pat1" }) };
+    p().recipe.count.mockResolvedValue(1);
+    const tpl = await p().planTemplate.findUnique();
+    for (const m of tpl.meals) for (const i of m.items) i.food = i.foodId ? { source: "SARA2" } : null;
+    await applyTemplateToPatient("t1", "pat1", "legacy-tenant");
     const created = p().nutritionPlan.create.mock.calls[0][0].data.meals.create;
     expect(created.map((m: any) => [m.name, m.mode, m.isOptions])).toEqual([["Desayuno", "PER_DAY", false], ["Colaciones", "EVERY_DAY", true]]);
     expect(created[0].items.create[0].weekday).toBe("TUE");
@@ -478,10 +504,10 @@ const defaultsOf = (d: ReturnType<typeof delegate>, ownerKey: string, ownerId: s
 
 describe("comidas por defecto (018b-2)", () => {
   it("createPlan crea el plan DRAFT y las 5 comidas en la misma transacción", async () => {
-    p().agenda = { findUnique: vi.fn().mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
+    p().agenda = { findFirst: vi.fn().mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
     p().patient = { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: "pat1" }) };
     p().nutritionPlan.create.mockResolvedValue({ id: "plan9" });
-    const plan = await createPlan("pat1", { title: "Plan de octubre" });
+    const plan = await createPlan(T, "pat1", { title: "Plan de octubre" });
     expect(plan).toEqual({ id: "plan9" });
     expect(p().$transaction).toHaveBeenCalledTimes(1);
     expect(p().nutritionPlan.create).toHaveBeenCalledWith({ data: { patientId: "pat1", tenantId: "legacy-tenant", title: "Plan de octubre", status: "DRAFT" } });
@@ -499,10 +525,10 @@ describe("comidas por defecto (018b-2)", () => {
 
   it("createPlanForConsultation crea las 5 comidas y vincula el plan a la consulta", async () => {
     const tenantId = "legacy-tenant";
-    mocks.prisma.agenda = { findUnique: vi.fn().mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
+    mocks.prisma.agenda = { findFirst: vi.fn().mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { timezone: "America/Argentina/Buenos_Aires" } }) };
     p().consultation.findUniqueOrThrow = vi.fn().mockResolvedValue({ id: "c1", patientId: "pat1", consultedAt: new Date("2026-09-12T15:00:00Z") });
     p().nutritionPlan.create.mockResolvedValue({ id: "plan10" });
-    const plan = await createPlanForConsultation({ consultationId: "c1" });
+    const plan = await createPlanForConsultation({ tenantId }, { consultationId: "c1" });
     expect(plan).toEqual({ id: "plan10" });
     expect(p().nutritionPlan.create.mock.calls[0][0].data).toMatchObject({ patientId: "pat1", tenantId, title: "Plan del 12/09/2026", status: "DRAFT" });
     expect(defaultsOf(p().planMeal, "planId", "plan10")).toEqual(DEFAULTS);
@@ -518,7 +544,7 @@ const recipeItem = (id: string, weekday: string | null, portions = "1.5") =>
 describe("fotos con recetas (018c)", () => {
   it("copyDay, repeatMealInAllDays y setMealMode copian recipeId y portions", async () => {
     p().planMeal.findMany.mockResolvedValue([meal("PER_DAY", [recipeItem("r", "MON"), item("a", "MON", 1)], { id: "m1" })]);
-    const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["FRI"] });
+    const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["FRI"] }, "legacy-tenant");
     expect(createdRows(p().planMealItem)[0]).toEqual({
       mealId: "m1", foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "FRI", recipeId: "rec1", portions: 1.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null,
     });
@@ -527,12 +553,13 @@ describe("fotos con recetas (018c)", () => {
 
     vi.mocked(p().planMealItem.createMany).mockClear();
     p().planMeal.findFirst.mockResolvedValueOnce(meal("PER_DAY", [recipeItem("r", "TUE")]));
-    await repeatMealInAllDays("plan", "plan1", "meal1", "TUE");
+    await repeatMealInAllDays("plan", "plan1", "meal1", "TUE", "legacy-tenant");
     expect(createdRows(p().planMealItem).every((r: any) => r.recipeId === "rec1" && r.portions === 1.5 && r.foodId === null)).toBe(true);
 
     vi.mocked(p().templateMealItem.createMany).mockClear();
     p().templateMeal.findFirst.mockResolvedValueOnce(meal("EVERY_DAY", [recipeItem("r", null, "2")]));
-    await setMealMode("template", "t1", "meal1", { mode: "PER_DAY" });
+    p().recipe.count.mockResolvedValueOnce(1); // la receta es del consultorio de la plantilla
+    await setMealMode("template", "t1", "meal1", { mode: "PER_DAY" }, "legacy-tenant");
     const rows = createdRows(p().templateMealItem);
     expect(rows).toHaveLength(7);
     expect(rows.every((r: any) => r.recipeId === "rec1" && r.portions === 2)).toBe(true);
@@ -543,7 +570,7 @@ describe("fotos con recetas (018c)", () => {
     await restoreMealSnapshots("plan", "plan1", [{
       mealId: "meal1", mode: "PER_DAY", isOptions: false,
       items: [{ foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON", recipeId: "rec1", portions: 0.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null }],
-    }]);
+    }], "legacy-tenant");
     expect(createdRows(p().planMealItem)).toEqual([
       { mealId: "meal1", foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 0, weekday: "MON", recipeId: "rec1", portions: 0.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null },
     ]);
@@ -559,7 +586,7 @@ describe("fotos con recetas (018c)", () => {
       { ...base, recipeId: null, foodId: "f1", portions: 1 },
     ];
     for (const i of bad) {
-      await expect(restoreMealSnapshots("plan", "plan1", [{ mealId: "meal1", mode: "PER_DAY", isOptions: false, items: [i] }]))
+      await expect(restoreMealSnapshots("plan", "plan1", [{ mealId: "meal1", mode: "PER_DAY", isOptions: false, items: [i] }], "legacy-tenant"))
         .rejects.toBeInstanceOf(MealModeError);
     }
     expect(p().$transaction).not.toHaveBeenCalled();
@@ -627,17 +654,20 @@ describe("addRecipeItems", () => {
     published();
     p().planMealItem.findFirst.mockResolvedValueOnce({ order: 2 }).mockResolvedValueOnce(null);
     p().planMealItem.create.mockResolvedValueOnce({ id: "new-tue" }).mockResolvedValueOnce({ id: "new-thu" });
-    const result = await addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["THU", "TUE"] });
+    const result = await addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["THU", "TUE"] }, "legacy-tenant");
     expect(result).toEqual({ itemIds: ["new-tue", "new-thu"] });
     expect(p().$transaction).toHaveBeenCalledTimes(1);
-    expect(p().planMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", planId: "plan1" });
-    expect(p().recipe.findUnique).toHaveBeenCalledWith({ where: { id: "rec1" }, select: { status: true } });
+    expect(p().planMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", planId: "plan1", plan: { tenantId: "legacy-tenant" } });
+    // HU-025b-1: el plan siempre va con el tenant → receta PUBLISHED del consultorio y connect acotado.
+    const recipeWhere = { id: "rec1", tenantId: "legacy-tenant", status: "PUBLISHED" };
+    expect(p().recipe.findUnique).toHaveBeenCalledWith({ where: recipeWhere, select: { status: true } });
     expect(p().planMealItem.findFirst.mock.calls.map((c: any) => c[0].where)).toEqual([
       { mealId: "meal1", weekday: "TUE" }, { mealId: "meal1", weekday: "THU" },
     ]);
+    const connect = { meal: { connect: { id: "meal1", planId: "plan1", plan: { tenantId: "legacy-tenant" } } }, recipe: { connect: recipeWhere } };
     expect(p().planMealItem.create.mock.calls.map((c: any) => c[0].data)).toEqual([
-      { mealId: "meal1", recipeId: "rec1", portions: 1, weekday: "TUE", order: 3, foodId: null, quantityGrams: null, customLabel: null, notes: null },
-      { mealId: "meal1", recipeId: "rec1", portions: 1, weekday: "THU", order: 0, foodId: null, quantityGrams: null, customLabel: null, notes: null },
+      { ...connect, portions: 1, weekday: "TUE", order: 3, quantityGrams: null, customLabel: null, notes: null },
+      { ...connect, portions: 1, weekday: "THU", order: 0, quantityGrams: null, customLabel: null, notes: null },
     ]);
   });
 
@@ -646,32 +676,32 @@ describe("addRecipeItems", () => {
     p().planMeal.findFirst.mockResolvedValueOnce(meal("EVERY_DAY", []));
     p().planMealItem.findFirst.mockResolvedValueOnce(null);
     p().planMealItem.create.mockResolvedValueOnce({ id: "x" });
-    expect(await addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", portions: 2, weekdays: null })).toEqual({ itemIds: ["x"] });
+    expect(await addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", portions: 2, weekdays: null }, "legacy-tenant")).toEqual({ itemIds: ["x"] });
     expect(p().planMealItem.create.mock.calls[0][0].data).toMatchObject({ weekday: null, portions: 2 });
 
     vi.mocked(p().planMealItem.create).mockClear();
     p().planMeal.findFirst.mockResolvedValueOnce(meal("EVERY_DAY", []));
-    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON"] })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
+    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON"] }, "legacy-tenant")).rejects.toBeInstanceOf(MealWeekdayMismatchError);
     p().planMeal.findFirst.mockResolvedValueOnce(meal("PER_DAY", []));
-    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: null })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
+    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: null }, "legacy-tenant")).rejects.toBeInstanceOf(MealWeekdayMismatchError);
     p().planMeal.findFirst.mockResolvedValueOnce(meal("PER_DAY", []));
-    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: [] })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
+    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: [] }, "legacy-tenant")).rejects.toBeInstanceOf(MealWeekdayMismatchError);
     p().planMeal.findFirst.mockResolvedValueOnce(meal("PER_DAY", []));
-    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON", "MON"] })).rejects.toBeInstanceOf(MealWeekdayMismatchError);
+    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON", "MON"] }, "legacy-tenant")).rejects.toBeInstanceOf(MealWeekdayMismatchError);
     expect(p().planMealItem.create).not.toHaveBeenCalled();
   });
 
   it.each([["DRAFT"], ["ARCHIVED"], [null]])("receta %s → RecipeNotAvailableError sin create", async (status) => {
     p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", []));
     p().recipe.findUnique.mockResolvedValue(status ? { status } : null);
-    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON"] })).rejects.toBeInstanceOf(RecipeNotAvailableError);
+    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON"] }, "legacy-tenant")).rejects.toBeInstanceOf(RecipeNotAvailableError);
     expect(p().planMealItem.create).not.toHaveBeenCalled();
   });
 
   it("comida de otro dueño → MealOwnershipError; porciones 0,3 → RangeError", async () => {
     p().planMeal.findFirst.mockResolvedValue(null);
-    await expect(addRecipeItems("plan", "otro", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON"] })).rejects.toBeInstanceOf(MealOwnershipError);
-    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", portions: 0.3, weekdays: ["MON"] })).rejects.toBeInstanceOf(RangeError);
+    await expect(addRecipeItems("plan", "otro", { mealId: "meal1", recipeId: "rec1", weekdays: ["MON"] }, "legacy-tenant")).rejects.toBeInstanceOf(MealOwnershipError);
+    await expect(addRecipeItems("plan", "plan1", { mealId: "meal1", recipeId: "rec1", portions: 0.3, weekdays: ["MON"] }, "legacy-tenant")).rejects.toBeInstanceOf(RangeError);
     expect(p().planMealItem.create).not.toHaveBeenCalled();
   });
 
@@ -680,8 +710,8 @@ describe("addRecipeItems", () => {
     published();
     p().templateMealItem.findFirst.mockResolvedValue(null);
     p().templateMealItem.create.mockResolvedValue({ id: "t-item" });
-    await addRecipeItems("template", "t1", { mealId: "meal1", recipeId: "rec1", weekdays: ["SUN"] });
-    expect(p().templateMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", templateId: "t1" });
+    await addRecipeItems("template", "t1", { mealId: "meal1", recipeId: "rec1", weekdays: ["SUN"] }, "legacy-tenant");
+    expect(p().templateMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "meal1", templateId: "t1", template: { tenantId: "legacy-tenant" } });
     expect(p().templateMealItem.create).toHaveBeenCalledTimes(1);
     expect(p().planMealItem.create).not.toHaveBeenCalled();
   });
@@ -689,24 +719,27 @@ describe("addRecipeItems", () => {
 
 describe("setRecipeItemPortions / removeMenuItems", () => {
   it("filtra por receta y dueño; 1,5 actualiza; 5 → RangeError; sin ítem → MealOwnershipError", async () => {
-    p().planMealItem.findFirst.mockResolvedValueOnce({ id: "it1" });
-    await setRecipeItemPortions("plan", "plan1", "it1", 1.5);
-    expect(p().planMealItem.findFirst.mock.calls[0][0].where).toEqual({ id: "it1", recipeId: { not: null }, meal: { planId: "plan1" } });
-    expect(p().planMealItem.update).toHaveBeenCalledWith({ where: { id: "it1" }, data: { portions: 1.5 } });
+    p().planMealItem.updateMany.mockResolvedValueOnce({ count: 1 });
+    await setRecipeItemPortions("plan", "plan1", "it1", 1.5, "legacy-tenant");
+    expect(p().planMealItem.updateMany).toHaveBeenCalledWith({
+      where: { id: "it1", recipeId: { not: null }, meal: { planId: "plan1", plan: { tenantId: "legacy-tenant" } } }, data: { portions: 1.5 },
+    });
 
-    await expect(setRecipeItemPortions("plan", "plan1", "it1", 5)).rejects.toBeInstanceOf(RangeError);
-    p().templateMealItem.findFirst.mockResolvedValueOnce(null);
-    await expect(setRecipeItemPortions("template", "t1", "it1", 1)).rejects.toBeInstanceOf(MealOwnershipError);
-    expect(p().templateMealItem.findFirst.mock.calls[0][0].where.meal).toEqual({ templateId: "t1" });
-    expect(p().planMealItem.update).toHaveBeenCalledTimes(1);
+    await expect(setRecipeItemPortions("plan", "plan1", "it1", 5, "legacy-tenant")).rejects.toBeInstanceOf(RangeError);
+    p().templateMealItem.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(setRecipeItemPortions("template", "t1", "it1", 1, "legacy-tenant")).rejects.toBeInstanceOf(MealOwnershipError);
+    expect(p().templateMealItem.updateMany.mock.calls[0][0].where.meal).toEqual({ templateId: "t1", template: { tenantId: "legacy-tenant" } });
+    expect(p().planMealItem.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it("removeMenuItems borra solo esos ids del dueño; [] o 51 ids → RangeError", async () => {
     p().planMealItem.deleteMany.mockResolvedValue({ count: 2 });
-    expect(await removeMenuItems("plan", "plan1", ["a", "b"])).toBe(2);
-    expect(p().planMealItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["a", "b"] }, meal: { planId: "plan1" } } });
-    await expect(removeMenuItems("plan", "plan1", [])).rejects.toBeInstanceOf(RangeError);
-    await expect(removeMenuItems("plan", "plan1", Array.from({ length: 51 }, (_, i) => `i${i}`))).rejects.toBeInstanceOf(RangeError);
+    expect(await removeMenuItems("plan", "plan1", ["a", "b"], "legacy-tenant")).toBe(2);
+    expect(p().planMealItem.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["a", "b"] }, recipeId: { not: null }, meal: { planId: "plan1", plan: { tenantId: "legacy-tenant" } } },
+    });
+    await expect(removeMenuItems("plan", "plan1", [], "legacy-tenant")).rejects.toBeInstanceOf(RangeError);
+    await expect(removeMenuItems("plan", "plan1", Array.from({ length: 51 }, (_, i) => `i${i}`), "legacy-tenant")).rejects.toBeInstanceOf(RangeError);
     expect(p().planMealItem.deleteMany).toHaveBeenCalledTimes(1);
   });
 });
@@ -722,7 +755,7 @@ describe("HU-018d: medida casera en copias e invariantes", () => {
 
   it("copyDay copia los cuatro campos de la medida", async () => {
     p().planMeal.findMany.mockResolvedValue([meal("PER_DAY", [measureItem("a", "MON")], { id: "m1" })]);
-    const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["THU"] });
+    const snapshots = await copyDay("plan", "plan1", { from: "MON", to: ["THU"] }, "legacy-tenant");
     expect(createdRows(p().planMealItem)).toEqual([
       { mealId: "m1", foodId: "f-a", customLabel: null, notes: null, order: 0, weekday: "THU", recipeId: null, portions: null, ...MEASURE },
     ]);
@@ -731,7 +764,7 @@ describe("HU-018d: medida casera en copias e invariantes", () => {
 
   it("repeatMealInAllDays copia la medida a los otros 6 días", async () => {
     p().planMeal.findFirst.mockResolvedValue(meal("PER_DAY", [measureItem("a", "MON")]));
-    await repeatMealInAllDays("plan", "plan1", "meal1", "MON");
+    await repeatMealInAllDays("plan", "plan1", "meal1", "MON", "legacy-tenant");
     const rows = createdRows(p().planMealItem);
     expect(rows).toHaveLength(6);
     expect(rows.every((r: any) => r.measureName === "taza" && r.measureQty === 1.5 && r.measureGrams === 180 && r.measurePlural === "tazas")).toBe(true);
@@ -739,7 +772,7 @@ describe("HU-018d: medida casera en copias e invariantes", () => {
 
   it("setMealMode EVERY_DAY → PER_DAY copia la medida a los 7 días", async () => {
     p().templateMeal.findFirst.mockResolvedValue(meal("EVERY_DAY", [measureItem("a", null)]));
-    await setMealMode("template", "t1", "meal1", { mode: "PER_DAY" });
+    await setMealMode("template", "t1", "meal1", { mode: "PER_DAY" }, "legacy-tenant");
     const rows = createdRows(p().templateMealItem);
     expect(rows).toHaveLength(7);
     expect(rows.every((r: any) => r.measureName === "taza" && r.quantityGrams === 270)).toBe(true);
@@ -750,7 +783,7 @@ describe("HU-018d: medida casera en copias e invariantes", () => {
     recipeId: null, portions: null, measureQty: 1.5, measureName: "taza", measurePlural: "tazas", measureGrams: 180,
   };
   const restore = (i: typeof base | Record<string, unknown>) =>
-    restoreMealSnapshots("plan", "plan1", [{ mealId: "meal1", mode: "PER_DAY", isOptions: false, items: [i as typeof base] }]);
+    restoreMealSnapshots("plan", "plan1", [{ mealId: "meal1", mode: "PER_DAY", isOptions: false, items: [i as typeof base] }], "legacy-tenant");
 
   it("restoreMealSnapshots acepta una foto con medida válida y la recrea", async () => {
     p().planMeal.count.mockResolvedValue(1);
@@ -783,18 +816,19 @@ describe("HU-018d (1b): setMeasureItemQuantity", () => {
 
   it("usa los gramos COPIADOS en el ítem, filtra por medida y dueño", async () => {
     p().planMealItem.findFirst.mockResolvedValueOnce({ id: "it1", measureGrams: dec(180) });
-    const out = await setMeasureItemQuantity("plan", "plan1", "it1", 2);
+    const out = await setMeasureItemQuantity("plan", "plan1", "it1", 2, "legacy-tenant");
     expect(out).toEqual({ quantityGrams: 360 });
     expect(p().planMealItem.findFirst.mock.calls[0][0].where).toEqual({
-      id: "it1", measureName: { not: null }, meal: { planId: "plan1" },
+      id: "it1", measureName: { not: null }, meal: { planId: "plan1", plan: { tenantId: "legacy-tenant" } },
     });
     expect(p().planMealItem.update).toHaveBeenCalledWith({ where: { id: "it1" }, data: { measureQty: 2, quantityGrams: 360 } });
   });
 
   it("¼ de 0,1 g redondea a 2 decimales; plantilla usa templateId", async () => {
     p().templateMealItem.findFirst.mockResolvedValueOnce({ id: "it2", measureGrams: dec(0.1) });
-    expect(await setMeasureItemQuantity("template", "t1", "it2", 0.25)).toEqual({ quantityGrams: 0.03 });
-    expect(p().templateMealItem.findFirst.mock.calls[0][0].where.meal).toEqual({ templateId: "t1" });
+    p().templateMealItem.updateMany.mockResolvedValueOnce({ count: 1 });
+    expect(await setMeasureItemQuantity("template", "t1", "it2", 0.25, "legacy-tenant")).toEqual({ quantityGrams: 0.03 });
+    expect(p().templateMealItem.findFirst.mock.calls[0][0].where.meal).toEqual({ templateId: "t1", template: { tenantId: "legacy-tenant" } });
   });
 
   it("scopes template measure reads and writes by item, template and tenant", async () => {
@@ -814,7 +848,7 @@ describe("HU-018d (1b): setMeasureItemQuantity", () => {
 
   it("cantidad fuera de la grilla → RangeError sin tocar la base", async () => {
     for (const bad of [0, 1.3, 20.25, Number.NaN]) {
-      await expect(setMeasureItemQuantity("plan", "plan1", "it1", bad)).rejects.toBeInstanceOf(RangeError);
+      await expect(setMeasureItemQuantity("plan", "plan1", "it1", bad, "legacy-tenant")).rejects.toBeInstanceOf(RangeError);
     }
     expect(p().planMealItem.findFirst).not.toHaveBeenCalled();
     expect(p().planMealItem.update).not.toHaveBeenCalled();
@@ -822,7 +856,7 @@ describe("HU-018d (1b): setMeasureItemQuantity", () => {
 
   it("ítem sin medida o de otro dueño → MealOwnershipError", async () => {
     p().planMealItem.findFirst.mockResolvedValueOnce(null);
-    await expect(setMeasureItemQuantity("plan", "otro", "it1", 1)).rejects.toBeInstanceOf(MealOwnershipError);
+    await expect(setMeasureItemQuantity("plan", "otro", "it1", 1, "legacy-tenant")).rejects.toBeInstanceOf(MealOwnershipError);
     expect(p().planMealItem.update).not.toHaveBeenCalled();
   });
 });

@@ -36,6 +36,20 @@ describe("LoginScreen", () => {
   });
 });
 
+describe("aviso tras un rechazo del login (6.1 paso 1)", () => {
+  it("con ?error= (sin sesión) el login muestra el aviso genérico, sin el código", async () => {
+    mocks.getTenantAccess.mockResolvedValue({ ok: false, reason: "unauthenticated", email: null });
+    const out = html(await AccessGateScreen({ signInError: "AccessDenied" }));
+    expect(out).toContain("No pudimos iniciar sesión con esa cuenta de Google.");
+    expect(out).not.toContain("AccessDenied");
+    expect(out).toContain("Entrar con Google");
+  });
+  it("sin ?error= no hay aviso", async () => {
+    mocks.getTenantAccess.mockResolvedValue({ ok: false, reason: "unauthenticated", email: null });
+    expect(html(await AccessGateScreen())).not.toContain("No pudimos iniciar sesión");
+  });
+});
+
 describe("NoAccessScreen", () => {
   it("identidad pendiente: título h1, email de la sesión, pedido registrado y las dos acciones", () => {
     const out = noAccess("no_membership");

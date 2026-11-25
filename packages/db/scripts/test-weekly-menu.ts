@@ -47,6 +47,10 @@ import {
   setMealMode,
   setMealOptions,
 } from "../domain/weeklyMenu";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
+
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const TEST_JID = "5490000018018@s.whatsapp.net";
 const TEST_PHONE = "5490000018018";
@@ -82,7 +86,7 @@ function toWeekly(meals: LoadedMeal[]): WeeklyMenuMeal[] {
 }
 
 async function loadPlan(planId: string): Promise<LoadedPlan> {
-  const plan = await getPlan(planId);
+  const plan = await getPlan(T, planId);
   assert.ok(plan, "el plan existe");
   return plan;
 }
@@ -103,8 +107,8 @@ function ok(message: string) {
 }
 
 async function addItem(mealId: string, weekday: Weekday | null, foodId: string, grams: number) {
-  const order = await nextItemOrder("plan", mealId, weekday);
-  return addMealItem(mealId, { foodId, quantityGrams: grams, order, weekday });
+  const order = await nextItemOrder("plan", mealId, weekday, { tenantId: T.tenantId });
+  return addMealItem(T, mealId, { foodId, quantityGrams: grams, order, weekday });
 }
 
 async function main() {
@@ -131,7 +135,7 @@ async function main() {
   created.patientId = patient.id;
 
   // 1. Plan nuevo con comidas por defecto.
-  const newPlan = await createPlan(patient.id, { title: "Plan prueba HU-018b" });
+  const newPlan = await createPlan(T, patient.id, { title: "Plan prueba HU-018b" });
   created.planIds.push(newPlan.id);
   let plan = await loadPlan(newPlan.id);
   assert.deepEqual(
@@ -147,9 +151,9 @@ async function main() {
   ok("createPlan trae Desayuno…Cena 'Cambia cada día' y Colaciones con opciones");
 
   // 2. Plantilla nueva con las mismas comidas.
-  const newTemplate = await createTemplate({ title: "Plantilla prueba HU-018b", notes: null });
+  const newTemplate = await createTemplate({ title: "Plantilla prueba HU-018b", notes: null }, T.tenantId);
   created.templateId = newTemplate.id;
-  const template0 = await getTemplate(newTemplate.id);
+  const template0 = await getTemplate(newTemplate.id, T.tenantId);
   assert.equal(template0?.meals.length, 5);
   assert.equal(template0?.meals[4]?.isOptions, true);
   ok("createTemplate trae las mismas 5 comidas");
@@ -173,14 +177,14 @@ async function main() {
 
   // 4. Copiar lunes a martes y miércoles, y deshacer.
   const mondayKcal = totals.days.MON.macros.kcal;
-  const copyUndo = await copyDay("plan", plan.id, { from: "MON", to: ["TUE", "WED"] });
+  const copyUndo = await copyDay("plan", plan.id, { from: "MON", to: ["TUE", "WED"] }, T.tenantId);
   plan = await loadPlan(plan.id);
   totals = computeWeeklyTotals(toWeekly(plan.meals));
   assert.deepEqual(totals.loadedDays, ["MON", "TUE", "WED"]);
   assert.equal(totals.days.TUE.macros.kcal, mondayKcal);
   assert.equal(itemsOn(mealNamed(plan, "Desayuno"), "WED").length, 2);
   assert.equal(copyUndo.length, 4, "una foto por comida PER_DAY");
-  await restoreMealSnapshots("plan", plan.id, copyUndo);
+  await restoreMealSnapshots("plan", plan.id, copyUndo, T.tenantId);
   plan = await loadPlan(plan.id);
   totals = computeWeeklyTotals(toWeekly(plan.meals));
   assert.deepEqual(totals.loadedDays, ["MON"]);
@@ -188,7 +192,7 @@ async function main() {
   ok("copyDay MON → TUE, WED y Deshacer deja martes y miércoles vacíos");
 
   // 5. Repetir el desayuno del lunes en todos los días.
-  const repeatUndo = await repeatMealInAllDays("plan", plan.id, desayunoId, "MON");
+  const repeatUndo = await repeatMealInAllDays("plan", plan.id, desayunoId, "MON", T.tenantId);
   plan = await loadPlan(plan.id);
   const desayuno = mealNamed(plan, "Desayuno");
   assert.equal(desayuno.mode, "PER_DAY");
@@ -198,19 +202,19 @@ async function main() {
 
   // 6. Modo: PER_DAY → EVERY_DAY (conserva el miércoles) → PER_DAY, y deshacer.
   await addItem(desayunoId, "WED", f4.id, 30);
-  const toEveryUndo = await setMealMode("plan", plan.id, desayunoId, { mode: "EVERY_DAY", keepWeekday: "WED" });
+  const toEveryUndo = await setMealMode("plan", plan.id, desayunoId, { mode: "EVERY_DAY", keepWeekday: "WED" }, T.tenantId);
   plan = await loadPlan(plan.id);
   let d = mealNamed(plan, "Desayuno");
   assert.equal(d.mode, "EVERY_DAY");
   assert.equal(d.items.length, 3);
   assert.ok(d.items.every((i) => i.weekday === null));
-  const toPerUndo = await setMealMode("plan", plan.id, desayunoId, { mode: "PER_DAY" });
+  const toPerUndo = await setMealMode("plan", plan.id, desayunoId, { mode: "PER_DAY" }, T.tenantId);
   plan = await loadPlan(plan.id);
   d = mealNamed(plan, "Desayuno");
   assert.equal(d.mode, "PER_DAY");
   assert.equal(d.items.length, 21);
   assert.equal(toPerUndo.mode, "EVERY_DAY");
-  await restoreMealSnapshots("plan", plan.id, [toEveryUndo]);
+  await restoreMealSnapshots("plan", plan.id, [toEveryUndo], T.tenantId);
   plan = await loadPlan(plan.id);
   d = mealNamed(plan, "Desayuno");
   assert.equal(d.mode, "PER_DAY");
@@ -222,11 +226,11 @@ async function main() {
   await addItem(colacionesId, null, f1.id, 100);
   await addItem(colacionesId, null, f2.id, 100);
   await addItem(colacionesId, null, f3.id, 100);
-  await assert.rejects(setMealOptions("plan", plan.id, desayunoId, true), MealModeError);
-  await setMealOptions("plan", plan.id, colacionesId, false);
+  await assert.rejects(setMealOptions("plan", plan.id, desayunoId, true, T.tenantId), MealModeError);
+  await setMealOptions("plan", plan.id, colacionesId, false, T.tenantId);
   plan = await loadPlan(plan.id);
   const withoutOptions = computeWeeklyTotals(toWeekly(plan.meals)).days.THU.macros.kcal;
-  await setMealOptions("plan", plan.id, colacionesId, true);
+  await setMealOptions("plan", plan.id, colacionesId, true, T.tenantId);
   plan = await loadPlan(plan.id);
   totals = computeWeeklyTotals(toWeekly(plan.meals));
   const colacionesKcal = toWeekly(plan.meals)
@@ -239,31 +243,32 @@ async function main() {
   ok("setMealOptions: la comida de opciones suma el promedio al día");
 
   // 8. Renombrar y mover.
-  await renameMeal("plan", plan.id, almuerzoId, "  Almuerzo liviano  ");
-  await moveMeal("plan", plan.id, almuerzoId, "up");
+  await renameMeal("plan", plan.id, almuerzoId, "  Almuerzo liviano  ", T.tenantId);
+  await moveMeal("plan", plan.id, almuerzoId, "up", T.tenantId);
   plan = await loadPlan(plan.id);
   assert.deepEqual(plan.meals.slice(0, 2).map((m) => m.name), ["Almuerzo liviano", "Desayuno"]);
-  await moveMeal("plan", plan.id, plan.meals[0]!.id, "up"); // borde: no hace nada
+  await moveMeal("plan", plan.id, plan.meals[0]!.id, "up", T.tenantId); // borde: no hace nada
   plan = await loadPlan(plan.id);
   assert.equal(plan.meals[0]!.name, "Almuerzo liviano");
   ok("renameMeal (trim) y moveMeal, con el borde sin cambios");
 
   // 9. Comida nueva en un plan semanal hereda PER_DAY (12-D3).
-  const extra = await addMeal(plan.id, { name: "Pre entreno", order: plan.meals.length });
+  const extra = await addMeal(T, plan.id, { name: "Pre entreno", order: plan.meals.length });
   assert.equal(extra.mode, "PER_DAY");
   ok("addMeal en un plan semanal crea la comida 'Cambia cada día'");
 
   // 10. Plantilla semanal aplicada al paciente: copia modos, días e ítems.
-  const template = await getTemplate(newTemplate.id);
+  const template = await getTemplate(newTemplate.id, T.tenantId);
+  const tplScope = { templateId: newTemplate.id, tenantId: T.tenantId };
   const tDesayuno = template!.meals.find((m) => m.name === "Desayuno")!;
   const tColaciones = template!.meals.find((m) => m.name === "Colaciones")!;
-  await addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 120, order: 0, weekday: "TUE" });
-  await addTemplateMealItem(tColaciones.id, { foodId: f2.id, quantityGrams: 80, order: 0, weekday: null });
+  await addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 120, order: 0, weekday: "TUE" }, tplScope);
+  await addTemplateMealItem(tColaciones.id, { foodId: f2.id, quantityGrams: 80, order: 0, weekday: null }, tplScope);
   await assert.rejects(
-    addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 1, order: 1, weekday: null }),
+    addTemplateMealItem(tDesayuno.id, { foodId: f1.id, quantityGrams: 1, order: 1, weekday: null }, tplScope),
     MealWeekdayMismatchError,
   );
-  const applied = await applyTemplateToPatient(newTemplate.id, patient.id);
+  const applied = await getPlan(T, (await applyTemplateToPatient(newTemplate.id, patient.id, T.tenantId)).id);
   assert.ok(applied);
   created.planIds.push(applied.id);
   assert.deepEqual(
@@ -277,7 +282,7 @@ async function main() {
   ok("applyTemplateToPatient copia modos, opciones, días e ítems");
 
   // 11. Objetivo: el paciente de prueba no tiene consultas.
-  assert.equal(await getPlanTarget(plan.id), null);
+  assert.equal(await getPlanTarget(T, plan.id), null);
   ok("getPlanTarget = null (sin prescripción)");
 
   // 12. Totales finales sobre lo leído.

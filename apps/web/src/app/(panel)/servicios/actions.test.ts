@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createService: vi.fn(),
   updateService: vi.fn(),
   setServiceActive: vi.fn(),
+  requireTenantContext: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -16,7 +17,11 @@ vi.mock("@/lib/services", () => ({
   setServiceActive: mocks.setServiceActive,
 }));
 
+vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: mocks.requireTenantContext }));
+
 import { saveServiceAction, toggleServiceAction } from "./actions";
+
+const CTX = { userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1, access: { kind: "member", tenantId: "legacy-tenant", role: "OWNER" } };
 
 function form(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -40,6 +45,7 @@ beforeEach(() => {
   mocks.updateService.mockResolvedValue({});
   mocks.createService.mockResolvedValue({});
   mocks.setServiceActive.mockResolvedValue({});
+  mocks.requireTenantContext.mockResolvedValue(CTX);
 });
 
 describe("saveServiceAction", () => {
@@ -47,19 +53,20 @@ describe("saveServiceAction", () => {
     const r = await saveServiceAction(prev, form({ ...BASE, id: "srv-1" }));
     expect(r).toEqual({ ok: true });
     expect(mocks.updateService).toHaveBeenCalledTimes(1);
-    const [id, data] = mocks.updateService.mock.calls[0]!;
+    const [t, id, data] = mocks.updateService.mock.calls[0]!;
+    expect(t).toBe(CTX);
     expect(id).toBe("srv-1");
     expect(data).not.toHaveProperty("active");
   });
 
   it("aunque un cliente viejo mande active=true, no se reactiva", async () => {
     await saveServiceAction(prev, form({ ...BASE, id: "srv-1", active: "true" }));
-    expect(mocks.updateService.mock.calls[0]![1]).not.toHaveProperty("active");
+    expect(mocks.updateService.mock.calls[0]![2]).not.toHaveProperty("active");
   });
 
   it("crear tampoco manda `active` (queda el default de la base)", async () => {
     await saveServiceAction(prev, form(BASE));
-    expect(mocks.createService.mock.calls[0]![0]).not.toHaveProperty("active");
+    expect(mocks.createService.mock.calls[0]![1]).not.toHaveProperty("active");
   });
 
   it('requiresDeposit "0" → sin seña (z.coerce.boolean() daba true)', async () => {
@@ -67,7 +74,7 @@ describe("saveServiceAction", () => {
       prev,
       form({ ...BASE, id: "srv-1", requiresDeposit: "0", depositKind: "PERCENT", depositValue: "50" }),
     );
-    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({
+    expect(mocks.updateService.mock.calls[0]![2]).toMatchObject({
       requiresDeposit: false,
       depositKind: null,
       depositValue: null,
@@ -79,7 +86,7 @@ describe("saveServiceAction", () => {
       prev,
       form({ ...BASE, id: "srv-1", requiresDeposit: "1", depositKind: "PERCENT", depositValue: "50" }),
     );
-    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({
+    expect(mocks.updateService.mock.calls[0]![2]).toMatchObject({
       requiresDeposit: true,
       depositKind: "PERCENT",
       depositValue: 50,
@@ -94,29 +101,50 @@ describe("saveServiceAction", () => {
 
   it('asksReason "0" → no pide motivo', async () => {
     await saveServiceAction(prev, form({ ...BASE, id: "srv-1", asksReason: "0" }));
-    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ asksReason: false });
+    expect(mocks.updateService.mock.calls[0]![2]).toMatchObject({ asksReason: false });
   });
 
   it("recomendaciones apagadas (texto vacío) → sin recomendaciones ni horas", async () => {
     await saveServiceAction(prev, form({ ...BASE, id: "srv-1", prepInstructions: "", prepLeadHours: "24" }));
-    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ prepInstructions: null, prepLeadHours: null });
+    expect(mocks.updateService.mock.calls[0]![2]).toMatchObject({ prepInstructions: null, prepLeadHours: null });
   });
 });
 
 describe("toggleServiceAction", () => {
   it("pausar devuelve ok", async () => {
     await expect(toggleServiceAction("srv-1", false)).resolves.toEqual({ ok: true });
-    expect(mocks.setServiceActive).toHaveBeenCalledWith("srv-1", false);
+    expect(mocks.setServiceActive).toHaveBeenCalledWith(CTX, "srv-1", false);
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/servicios");
   });
 
   it("Deshacer = la misma action con true", async () => {
     await expect(toggleServiceAction("srv-1", true)).resolves.toEqual({ ok: true });
-    expect(mocks.setServiceActive).toHaveBeenCalledWith("srv-1", true);
+    expect(mocks.setServiceActive).toHaveBeenCalledWith(CTX, "srv-1", true);
   });
 
   it("si falla devuelve el error", async () => {
     mocks.setServiceActive.mockRejectedValue(new Error("db down"));
     await expect(toggleServiceAction("srv-1", false)).resolves.toMatchObject({ ok: false });
+  });
+});
+
+describe("HU-025: consultorio de la sesión", () => {
+  it("un tenantId del formulario no llega al payload: se usa el contexto", async () => {
+    await saveServiceAction(prev, form({ ...BASE, tenantId: "tenant-b", agendaId: "agenda-b", professionalId: "9" }));
+    const [t, data] = mocks.createService.mock.calls[0]!;
+    expect(t).toBe(CTX);
+    expect(data).not.toHaveProperty("tenantId");
+    expect(data).not.toHaveProperty("agendaId");
+    expect(data).not.toHaveProperty("professionalId");
+  });
+
+  it("sin contexto → error genérico sin escribir", async () => {
+    mocks.requireTenantContext.mockRejectedValue(new Error("tenant_access:no_context"));
+    const res = await saveServiceAction(prev, form(BASE));
+    expect(res).toEqual({ ok: false, error: "No se pudo guardar el servicio" });
+    expect(mocks.createService).not.toHaveBeenCalled();
+    const toggled = await toggleServiceAction("srv-1", false);
+    expect(toggled.ok).toBe(false);
+    expect(mocks.setServiceActive).not.toHaveBeenCalled();
   });
 });

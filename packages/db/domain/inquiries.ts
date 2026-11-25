@@ -6,7 +6,7 @@ import {
   type AfterHoursConfig,
 } from "@nutri-bot/core";
 import { prisma } from "../index";
-import { resolveLegacyDigestScope } from "./legacySchedulingScope";
+import { resolveTenantDigestContext, type TenantRef } from "./tenantScope";
 
 /** Tope por mensaje: lo que exceda se recorta (sin aviso al paciente). */
 export const INQUIRY_MESSAGE_MAX = 4000;
@@ -15,23 +15,28 @@ export const INQUIRY_MESSAGE_MAX = 4000;
  * Agrega `text` al final de una consulta PENDING, de forma atómica (sin leer y reescribir el body).
  * El UPDATE crudo no dispara @updatedAt: por eso va explícito. Devuelve las filas afectadas.
  */
-async function appendToInquiry(id: string, patientId: string, text: string, at: Date): Promise<number> {
+async function appendToInquiry(tenantId: string, id: string, patientId: string, text: string, at: Date): Promise<number> {
   return prisma.$executeRaw`
     UPDATE "PatientInquiry"
     SET "body" = "body" || ${"\n" + text}, "lastMessageAt" = ${at}, "updatedAt" = ${new Date()}
-    WHERE "id" = ${id} AND "patientId" = ${patientId} AND "status" = 'PENDING'::"InquiryStatus"`;
+    WHERE "id" = ${id} AND "patientId" = ${patientId} AND "status" = 'PENDING'::"InquiryStatus"
+      AND EXISTS (SELECT 1 FROM "Patient" WHERE "Patient"."id" = ${patientId} AND "Patient"."tenantId" = ${tenantId})`;
 }
 
 async function appendAndLoad(
+  tenantId: string,
   id: string,
   patientId: string,
   text: string,
   at: Date,
 ): Promise<PatientInquiry | null> {
-  const affected = await appendToInquiry(id, patientId, text, at);
+  const affected = await appendToInquiry(tenantId, id, patientId, text, at);
   if (affected === 0) return null;
-  return prisma.patientInquiry.findUnique({ where: { id } });
+  return prisma.patientInquiry.findFirst({ where: { id, patient: { tenantId } } });
 }
+
+/** HU-025: una consulta es del consultorio de su paciente (PatientInquiry no tiene tenantId propio). */
+const tenantInquiryWhere = (t: TenantRef) => ({ patient: { tenantId: t.tenantId } }) as const;
 
 /**
  * BOT. Registra un mensaje de consulta.
@@ -42,7 +47,7 @@ async function appendAndLoad(
  * Si el UPDATE afecta 0 filas (la marcaron respondida en el medio), sigue con el paso 2/3.
  * `text` se recorta (trim) y se corta a INQUIRY_MESSAGE_MAX. Texto vacío → lanza Error.
  */
-export async function recordInquiryMessage(params: {
+export async function recordInquiryMessage(t: TenantRef, params: {
   patientId: string;
   text: string;
   at: Date;
@@ -52,21 +57,25 @@ export async function recordInquiryMessage(params: {
   const text = params.text.trim().slice(0, INQUIRY_MESSAGE_MAX);
   if (!text) throw new Error("recordInquiryMessage: el texto de la consulta está vacío");
   const { patientId, at, afterHours } = params;
+  const { tenantId } = t;
+  // HU-025: el paciente tiene que ser del consultorio de la conversación.
+  const owned = await prisma.patient.findFirst({ where: { id: patientId, tenantId }, select: { id: true } });
+  if (!owned) throw new Error("recordInquiryMessage: paciente no encontrado");
 
   // 1. La consulta de esta sesión.
   if (params.inquiryId) {
-    const inquiry = await appendAndLoad(params.inquiryId, patientId, text, at);
+    const inquiry = await appendAndLoad(tenantId, params.inquiryId, patientId, text, at);
     if (inquiry) return { inquiry, created: false };
   }
 
   // 2. La consulta nocturna sin resumir de este paciente (misma noche, sesión nueva).
   if (afterHours) {
     const tonight = await prisma.patientInquiry.findFirst({
-      where: { patientId, status: "PENDING", receivedAfterHours: true, digestedAt: null },
+      where: { patientId, status: "PENDING", receivedAfterHours: true, digestedAt: null, patient: { tenantId } },
       orderBy: { receivedAt: "desc" },
     });
     if (tonight) {
-      const inquiry = await appendAndLoad(tonight.id, patientId, text, at);
+      const inquiry = await appendAndLoad(tenantId, tonight.id, patientId, text, at);
       if (inquiry) return { inquiry, created: false };
     }
   }
@@ -105,16 +114,16 @@ const LIST_SELECT = {
  * WEB. Todas las PENDING + las últimas `answeredLimit` ANSWERED (por answeredAt desc), devueltas
  * juntas ordenadas por receivedAt ASC (de la más vieja a la más nueva).
  */
-export async function listInquiries(opts: { answeredLimit?: number } = {}): Promise<InquiryListItem[]> {
+export async function listInquiries(t: TenantRef, opts: { answeredLimit?: number } = {}): Promise<InquiryListItem[]> {
   const answeredLimit = opts.answeredLimit ?? 100;
   const [pending, answered] = await Promise.all([
     prisma.patientInquiry.findMany({
-      where: { status: "PENDING" },
+      where: { status: "PENDING", ...tenantInquiryWhere(t) },
       select: LIST_SELECT,
       orderBy: { receivedAt: "asc" },
     }),
     prisma.patientInquiry.findMany({
-      where: { status: "ANSWERED" },
+      where: { status: "ANSWERED", ...tenantInquiryWhere(t) },
       select: LIST_SELECT,
       orderBy: { answeredAt: "desc" },
       take: answeredLimit,
@@ -124,29 +133,31 @@ export async function listInquiries(opts: { answeredLimit?: number } = {}): Prom
 }
 
 /** WEB. Conteo por estado (para los chips del filtro). */
-export async function countInquiriesByStatus(): Promise<{ PENDING: number; ANSWERED: number }> {
-  const groups = await prisma.patientInquiry.groupBy({ by: ["status"], _count: { _all: true } });
+export async function countInquiriesByStatus(t: TenantRef): Promise<{ PENDING: number; ANSWERED: number }> {
+  const groups = await prisma.patientInquiry.groupBy({ by: ["status"], where: tenantInquiryWhere(t), _count: { _all: true } });
   const out = { PENDING: 0, ANSWERED: 0 };
   for (const g of groups) out[g.status] = g._count._all;
   return out;
 }
 
 /** WEB (shell). Cantidad de PENDING. */
-export async function countPendingInquiries(): Promise<number> {
-  return prisma.patientInquiry.count({ where: { status: "PENDING" } });
+export async function countPendingInquiries(t: TenantRef): Promise<number> {
+  return prisma.patientInquiry.count({ where: { status: "PENDING", ...tenantInquiryWhere(t) } });
 }
 
 /** WEB. Marca como respondida (status ANSWERED, answeredAt = at). Idempotente. */
 export async function markInquiryAnswered(
+  t: TenantRef,
   id: string,
   at: Date = new Date(),
 ): Promise<"answered" | "already_answered" | "not_found"> {
+  // HU-025: una consulta de otro consultorio da lo mismo que una inexistente.
   const { count } = await prisma.patientInquiry.updateMany({
-    where: { id, status: "PENDING" },
+    where: { id, status: "PENDING", ...tenantInquiryWhere(t) },
     data: { status: "ANSWERED", answeredAt: at },
   });
   if (count > 0) return "answered";
-  const existing = await prisma.patientInquiry.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.patientInquiry.findFirst({ where: { id, ...tenantInquiryWhere(t) }, select: { id: true } });
   return existing ? "already_answered" : "not_found";
 }
 
@@ -157,6 +168,7 @@ export async function markInquiryAnswered(
  * `scope`, `config` y `alertJid` son SOLO para el script de prueba.
  */
 export async function enqueueAfterHoursDigest(
+  t: TenantRef,
   opts: {
     now?: Date;
     scope?: { patientIds: string[] };
@@ -164,7 +176,7 @@ export async function enqueueAfterHoursDigest(
     alertJid?: string | null;
   } = {},
 ): Promise<{ digested: number; outboundId: string | null }> {
-  const { scope: { tenantId }, professional: pro } = await resolveLegacyDigestScope();
+  const { scope: { tenantId }, professional: pro } = await resolveTenantDigestContext(prisma, t.tenantId);
   const config = opts.config ?? afterHoursConfigFrom(pro);
   const now = opts.now ?? new Date();
 

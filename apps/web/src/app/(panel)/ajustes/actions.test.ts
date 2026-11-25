@@ -6,6 +6,8 @@ import { PHONE_INPUT_TEXT, SETTINGS_TEXT } from "@nutri-bot/core";
 const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   update: vi.fn(),
+  ctx: vi.fn(),
+  updateLogo: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { professional: { update: mocks.update } } }));
@@ -14,11 +16,12 @@ vi.mock("@/lib/bot-ai", () => ({ getBotAiKeyStatus: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
 vi.mock("@nutri-bot/db/domain", () => ({}));
 // HU-025a2: la acción que inicia el OAuth de Mercado Pago exige el contexto de consultorio.
-vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: vi.fn(), TenantAccessError: class extends Error {} }));
+vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: mocks.ctx, TenantAccessError: class extends Error {} }));
 
 import { saveGeneralSettingsAction, savePdfStyleAction, saveSignatureIdentityAction } from "./actions";
 
 const INITIAL = { ok: false };
+const CTX = { userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1, access: { kind: "member", tenantId: "legacy-tenant", role: "OWNER" } };
 
 function form(fields: Record<string, string>): FormData {
   const fd = new FormData();
@@ -36,13 +39,15 @@ const GENERAL = {
 function lastData() {
   expect(mocks.update).toHaveBeenCalledTimes(1);
   const arg = mocks.update.mock.calls[0]![0] as { where: unknown; data: Record<string, unknown> };
-  expect(arg.where).toEqual({ id: 1 });
+  // HU-025: la profesional de la agenda principal del contexto (clave compuesta), nunca id 1 fijo.
+  expect(arg.where).toEqual({ id_tenantId: { id: 1, tenantId: "legacy-tenant" } });
   return arg.data;
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.update.mockResolvedValue({ id: 1 });
+  mocks.ctx.mockResolvedValue(CTX);
 });
 
 describe("saveGeneralSettingsAction", () => {
@@ -167,6 +172,26 @@ describe("saveSignatureIdentityAction", () => {
       ok: false,
       error: SETTINGS_TEXT.titleTooLong,
     });
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("HU-025: Ajustes sobre el consultorio del contexto", () => {
+  it("guarda en la profesional del contexto aunque el form mande tenant, agenda o profesional de otro", async () => {
+    mocks.ctx.mockResolvedValue({ ...CTX, tenantId: "tenant-b", agendaId: "agenda-b", professionalId: 7 });
+    const res = await saveGeneralSettingsAction(
+      INITIAL,
+      form({ ...GENERAL, tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: "1" }),
+    );
+    expect(res).toEqual({ ok: true });
+    expect(mocks.ctx).toHaveBeenCalledWith("write");
+    expect(mocks.update.mock.calls[0]![0].where).toEqual({ id_tenantId: { id: 7, tenantId: "tenant-b" } });
+  });
+
+  it("sin contexto (membresía revocada) → error genérico y no escribe", async () => {
+    mocks.ctx.mockRejectedValue(new Error("tenant_access:no_context"));
+    const res = await savePdfStyleAction(INITIAL, form({ pdfAccentColor: "#112233", pdfFooterText: "" }));
+    expect(res).toMatchObject({ ok: false, error: SETTINGS_TEXT.saveError });
     expect(mocks.update).not.toHaveBeenCalled();
   });
 });

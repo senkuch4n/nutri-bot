@@ -21,6 +21,10 @@ import {
   saveAnthropometricReportPdf,
   saveAnthropometricReportTexts,
 } from "../domain";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
+
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const CASE_A: IsakMeasures = {
   weightKg: 61, heightCm: 164, sittingHeightCm: 83, armSpanCm: 166.7,
@@ -59,33 +63,33 @@ async function main() {
 
   try {
     const patient = await prisma.patient.create({
-      data: { whatsappJid: jid, phone: "000", name: "Prueba HU-007 (TEST)", sex: "MALE", birthDate: new Date("2004-01-15") },
+      data: { tenantId: T.tenantId, whatsappJid: jid, phone: "000", name: "Prueba HU-007 (TEST)", sex: "MALE", birthDate: new Date("2004-01-15") },
     });
     patientIds.push(patient.id);
-    const c08 = await createManualConsultation({ patientId: patient.id, dayKey: "2026-05-08" });
+    const c08 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-05-08" });
     consultationIds.push(c08.id);
-    const study = await createIsakStudy({ consultationId: c08.id, measures: CASE_A });
+    const study = await createIsakStudy(T, { consultationId: c08.id, measures: CASE_A });
     entryIds.push(study.id);
 
     await step("sin informe → null", async () => {
-      assert.equal(await getAnthropometricReportMeta(study.id), null);
-      assert.equal(await getAnthropometricReportPdf(study.id), null);
+      assert.equal(await getAnthropometricReportMeta(T, study.id), null);
+      assert.equal(await getAnthropometricReportPdf(T, study.id), null);
     });
 
     let reportId = "";
     await step("guardar textos crea y actualiza la misma fila", async () => {
-      const first = await saveAnthropometricReportTexts({ isakEntryId: study.id, texts: TEXTS });
+      const first = await saveAnthropometricReportTexts(T, { isakEntryId: study.id, texts: TEXTS });
       reportId = first.id;
       reportIds.push(first.id);
       assert.deepEqual(first.texts, TEXTS);
       assert.equal(first.pdfGeneratedAt, null);
-      const second = await saveAnthropometricReportTexts({
+      const second = await saveAnthropometricReportTexts(T, {
         isakEntryId: study.id,
         texts: { ...TEXTS, somatotype: "Editado", conclusions: "Otras conclusiones" },
       });
       assert.equal(second.id, first.id);
       assert.equal(await prisma.anthropometricReport.count({ where: { isakEntryId: study.id } }), 1);
-      const meta = await getAnthropometricReportMeta(study.id);
+      const meta = await getAnthropometricReportMeta(T, study.id);
       assert.ok(meta);
       assert.equal(meta.texts.distribution, "");
       assert.equal(meta.texts.somatotype, "Editado");
@@ -94,30 +98,30 @@ async function main() {
 
     await step("guardar y leer el PDF", async () => {
       const bytes = Buffer.from("%PDF-test");
-      const saved = await saveAnthropometricReportPdf({
+      const saved = await saveAnthropometricReportPdf(T, {
         isakEntryId: study.id,
         data: bytes,
         fileName: "informe-antropometrico-2026-05-08.pdf",
         sourceKey: "abcd1234",
       });
       assert.equal(saved.id, reportId);
-      const pdf = await getAnthropometricReportPdf(study.id);
+      const pdf = await getAnthropometricReportPdf(T, study.id);
       assert.ok(pdf);
       assert.ok(pdf.data.equals(bytes));
       assert.equal(pdf.fileName, "informe-antropometrico-2026-05-08.pdf");
-      const meta = await getAnthropometricReportMeta(study.id);
+      const meta = await getAnthropometricReportMeta(T, study.id);
       assert.ok(meta?.pdfGeneratedAt instanceof Date);
       assert.equal(meta?.pdfSourceKey, "abcd1234");
       // Guardar textos no toca el PDF.
-      await saveAnthropometricReportTexts({ isakEntryId: study.id, texts: TEXTS });
-      assert.ok((await getAnthropometricReportPdf(study.id))?.data.equals(bytes));
+      await saveAnthropometricReportTexts(T, { isakEntryId: study.id, texts: TEXTS });
+      assert.ok((await getAnthropometricReportPdf(T, study.id))?.data.equals(bytes));
     });
 
     await step("borrar el estudio borra el informe (cascada)", async () => {
-      await deleteIsakStudy({ consultationId: c08.id, entryId: study.id });
-      assert.equal(await getIsakStudy(c08.id), null);
+      await deleteIsakStudy(T, { consultationId: c08.id, entryId: study.id });
+      assert.equal(await getIsakStudy(T, c08.id), null);
       assert.equal(await prisma.anthropometricReport.findUnique({ where: { id: reportId } }), null);
-      assert.equal(await getAnthropometricReportMeta(study.id), null);
+      assert.equal(await getAnthropometricReportMeta(T, study.id), null);
     });
 
     await step("sin mensajes encolados", async () => {

@@ -3,6 +3,8 @@ import {
   MERCADOPAGO_TEXT as MP,
   PROFESSIONAL_TEXT,
   SETTINGS_TEXT as T,
+  TEAM_TEXT,
+  formatInTimeZone,
   formatPhone,
   professionalLogoNotice,
   professionalSignatureLines,
@@ -10,15 +12,17 @@ import {
   type MercadoPagoConnectionStatus,
 } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
-import { getMercadoPagoConnectionView } from "@nutri-bot/db/domain";
+import { getMercadoPagoConnectionView, listTenantMembers } from "@nutri-bot/db/domain";
 import { signIn } from "@/auth";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { Alert, Button, ButtonLink } from "@/components/ui";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
-import { getProfessional } from "@/lib/professional";
+import { getTenantProfessional } from "@/lib/professional";
+import { tenantProfessionalWhere } from "@/lib/tenant-professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { DetailDisclosure } from "../pacientes/[id]/detail-disclosure";
 import { AfterHoursForm } from "./after-hours-form";
-import { AjustesTabs } from "./ajustes-tabs";
+import { AjustesTabs, type AjustesTabValue } from "./ajustes-tabs";
 import { BotAiForm } from "./bot-ai-form";
 import { BotToggle } from "./bot-toggle";
 import { GeneralForm } from "./general-form";
@@ -32,6 +36,7 @@ import {
 import { PdfStyleForm } from "./pdf-style-form";
 import { SignatureForm } from "./signature-form";
 import { SignatureIdentityForm } from "./signature-identity-form";
+import { TeamSection } from "./team-section";
 
 export const dynamic = "force-dynamic";
 
@@ -67,11 +72,16 @@ function formatConnectedAt(date: Date, tz: string): string {
 }
 
 export default async function AjustesPage() {
-  const [pro, botStatus, logo, mp] = await Promise.all([
-    getProfessional(),
-    prisma.botStatus.findUnique({ where: { id: 1 } }),
-    prisma.professional.findUnique({ where: { id: 1 }, select: { logoData: true } }),
-    getMercadoPagoConnectionView(),
+  const ctx = await requirePageContext();
+  // HU-025 (7.2.1, D4): Equipo solo para la responsable; soporte (025d) nunca.
+  const isOwner = ctx.access.kind === "member" && ctx.access.role === "OWNER";
+  const [pro, botStatus, logo, mp, members] = await Promise.all([
+    getTenantProfessional(ctx.tenantId),
+    // HU-025: el estado de WhatsApp y el logo son los del consultorio de la sesión.
+    prisma.botStatus.findUnique({ where: { tenantId: ctx.tenantId } }),
+    prisma.professional.findUnique({ where: tenantProfessionalWhere(ctx), select: { logoData: true } }),
+    getMercadoPagoConnectionView(ctx),
+    isOwner ? listTenantMembers(ctx.tenantId) : Promise.resolve(null),
   ]);
   const googleConnected = Boolean(pro.googleRefreshToken);
   const botConnected = botStatus?.connected ?? false;
@@ -282,13 +292,29 @@ export default async function AjustesPage() {
     </>
   );
 
+  const equipo = members ? (
+    <TeamSection
+      members={members.map((m) => ({
+        userId: m.userId,
+        email: m.email,
+        role: m.role,
+        sinceLabel: formatInTimeZone(m.createdAt, pro.timezone, "dd/MM/yyyy"),
+        isSelf: m.userId === ctx.userId,
+      }))}
+    />
+  ) : undefined;
+  // Lista literal: AJUSTES_TABS vive en un módulo "use client" y no se puede leer desde el servidor.
+  const tabs: AjustesTabValue[] = ["general", "whatsapp", "google", "mercadopago", "pdf", ...(equipo ? (["equipo"] as const) : [])];
+
   return (
     <AjustesTabs
-      panels={{ general, whatsapp, google, mercadopago, pdf }}
+      tabs={tabs}
+      panels={{ general, whatsapp, google, mercadopago, pdf, ...(equipo ? { equipo } : {}) }}
       summaries={{
         whatsapp: botConnected ? T.connected : T.disconnected,
         google: googleConnected ? T.googleConnected : T.googleNotConnected,
         mercadopago: mercadoPagoStatusLabel(mp.status),
+        ...(members ? { equipo: TEAM_TEXT.summary(members.length) } : {}),
       }}
       banner={banner}
       mercadoPagoBanner={mercadoPagoBanner}

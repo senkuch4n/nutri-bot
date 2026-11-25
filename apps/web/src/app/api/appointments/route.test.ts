@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 
-const { auth, resolveScope, findMany } = vi.hoisted(() => ({
-  auth: vi.fn(),
-  resolveScope: vi.fn(),
+const { getTenantContext, findMany } = vi.hoisted(() => ({
+  getTenantContext: vi.fn(),
   findMany: vi.fn(),
 }));
-vi.mock("@/auth", () => ({ auth }));
+vi.mock("@/lib/tenant-context", () => ({ getTenantContext }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { appointment: { findMany } } }));
-vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: resolveScope }));
 
 const scope = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
+const ctxA = { userId: "u-a", ...scope, professionalId: 1, access: { kind: "member", tenantId: "legacy-tenant", role: "OWNER" } };
 const start = "2026-11-20T00:00:00Z";
 const end = "2026-11-21T00:00:00Z";
 const range = `start=${start}&end=${end}`;
@@ -35,17 +34,17 @@ function appt(id: string, patient: { name: string | null; phone: string; whatsap
 
 beforeEach(() => {
   vi.resetAllMocks();
-  auth.mockResolvedValue({ user: {} });
-  resolveScope.mockResolvedValue({ scope });
+  getTenantContext.mockResolvedValue(ctxA);
   findMany.mockResolvedValue([]);
 });
 
 describe("GET /api/appointments", () => {
-  it("reads only the verified legacy tenant and agenda, preserving range, status, and order", async () => {
+  it("reads only the session tenant and its primary agenda, preserving range, status, and order", async () => {
     const response = await GET(request(range));
     expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual([]);
-    expect(resolveScope).toHaveBeenCalledTimes(1);
+    expect(getTenantContext).toHaveBeenCalledTimes(1);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: {
         ...scope,
@@ -56,11 +55,18 @@ describe("GET /api/appointments", () => {
     }));
   });
 
-  it("fails closed if the legacy agenda cannot be verified", async () => {
-    resolveScope.mockRejectedValue(new Error("No se pudo verificar la agenda de la instalación original."));
+  it("HU-025: otro consultorio en el contexto → solo su agenda; tenantId/agendaId de la query se ignoran", async () => {
+    getTenantContext.mockResolvedValue({ ...ctxA, tenantId: "tenant-b", agendaId: "agenda-b" });
+    const response = await GET(request(`${range}&tenantId=legacy-tenant&agendaId=legacy-agenda`));
+    expect(response.status).toBe(200);
+    expect(findMany.mock.calls[0]![0].where).toMatchObject({ tenantId: "tenant-b", agendaId: "agenda-b" });
+  });
+
+  it("HU-025: sin contexto de consultorio → 401 sin consultar turnos", async () => {
+    getTenantContext.mockResolvedValue(null);
     const response = await GET(request(range));
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: "unconfigured" });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "unauthorized" });
     expect(findMany).not.toHaveBeenCalled();
   });
 
@@ -115,14 +121,13 @@ describe("GET /api/appointments", () => {
   });
 
   it("preserves unauthenticated and invalid-range responses without querying appointments", async () => {
-    auth.mockResolvedValueOnce(null);
+    getTenantContext.mockResolvedValueOnce(null);
     const unauthorized = await GET(request(range));
     expect(unauthorized.status).toBe(401);
     expect(await unauthorized.json()).toEqual({ error: "unauthorized" });
     const invalid = await GET(request("start=invalid"));
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toEqual({ error: "rango inválido" });
-    expect(resolveScope).not.toHaveBeenCalled();
     expect(findMany).not.toHaveBeenCalled();
   });
 });

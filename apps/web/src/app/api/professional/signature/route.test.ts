@@ -2,11 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), getImage: vi.fn() }));
-vi.mock("@/auth", () => ({ auth: mocks.auth }));
+// HU-025: `auth` es el mock de getTenantContext (contexto del consultorio).
+vi.mock("@/lib/tenant-context", () => ({ getTenantContext: mocks.auth }));
 vi.mock("@nutri-bot/db/domain", () => ({ getProfessionalSignatureImage: mocks.getImage }));
 
 import { GET } from "./route";
 
+const CTX = { userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1, access: { kind: "member", tenantId: "legacy-tenant", role: "OWNER" } };
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x46, 0x49, 0x52, 0x4d, 0x41]);
 
 describe("GET /api/professional/signature", () => {
@@ -30,17 +32,18 @@ describe("GET /api/professional/signature", () => {
     expect(mocks.getImage).not.toHaveBeenCalled();
   });
 
-  it("sesión sin user → 401", async () => {
-    mocks.auth.mockResolvedValue({ expires: "2099-01-01" });
+  it("sesión sin membresía vigente (sin contexto) → 401", async () => {
+    mocks.auth.mockResolvedValue(null);
     expect((await GET()).status).toBe(401);
     expect(mocks.getImage).not.toHaveBeenCalled();
   });
 
   it("con sesión y firma → 200 con los bytes y headers privados", async () => {
-    mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" } });
+    mocks.auth.mockResolvedValue(CTX);
     mocks.getImage.mockResolvedValue({ data: PNG, mimeType: "image/png" });
     const res = await GET();
     expect(res.status).toBe(200);
+    expect(mocks.getImage).toHaveBeenCalledWith(CTX);
     expect(res.headers.get("Content-Type")).toBe("image/png");
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -48,7 +51,7 @@ describe("GET /api/professional/signature", () => {
   });
 
   it("con sesión y sin firma → 404", async () => {
-    mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" } });
+    mocks.auth.mockResolvedValue(CTX);
     mocks.getImage.mockResolvedValue(null);
     const res = await GET();
     expect(res.status).toBe(404);
