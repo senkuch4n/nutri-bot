@@ -1,4 +1,4 @@
-import { canonicalEmail, type AccessFacts, type MembershipRole } from "@nutri-bot/core";
+import { canRemoveMember, canonicalEmail, type AccessFacts, type MembershipRole, type RemoveMemberCheck } from "@nutri-bot/core";
 import { prisma, type Prisma, type PrismaClient } from "../index";
 
 // HU-025: identidad de Google verificada y hechos de acceso a un consultorio.
@@ -89,6 +89,58 @@ export async function loadAccessFacts(
     platformOperator: false,
     activeSupportGrants: [],
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Equipo (025b-2, 7.2.1 de la SDD). Consume: web (Ajustes → Equipo). Solo lee y borra membresías del
+// tenant recibido; el tenant sale siempre del contexto de la sesión de quien llama.
+// ---------------------------------------------------------------------------------------------
+
+export type TenantMember = { userId: string; email: string; role: MembershipRole; createdAt: Date };
+
+/** Miembros del consultorio, responsables primero y después por fecha de alta. */
+export async function listTenantMembers(tenantId: string, db: Pick<Prisma.TransactionClient, "tenantMembership"> = prisma): Promise<TenantMember[]> {
+  const rows = await db.tenantMembership.findMany({
+    where: { tenantId },
+    select: { userId: true, role: true, createdAt: true, user: { select: { email: true } } },
+    orderBy: [{ role: "asc" }, { createdAt: "asc" }, { userId: "asc" }],
+  });
+  return rows.map((r) => ({ userId: r.userId, email: r.user.email, role: r.role as MembershipRole, createdAt: r.createdAt }));
+}
+
+export type RemoveTenantMemberClient = Pick<PrismaClient, "$transaction">;
+
+/** "Quitar acceso" (7.2.1). En una transacción ReadCommitted bloquea con FOR UPDATE TODAS las membresías del
+ *  tenant (R12: dos OWNER quitándose a la vez quedan serializadas y la segunda ve ownerCount = 1), decide con
+ *  canRemoveMember y, si corresponde, borra solo esa membresía (el User queda como identidad pendiente).
+ *  Un objetivo de otro consultorio o inventado → not_member, sin distinguirlo. La persona quitada pierde el
+ *  acceso en su siguiente request (la membresía se lee por request). */
+export async function removeTenantMember(
+  p: { tenantId: string; actorUserId: string; targetUserId: string },
+  db: RemoveTenantMemberClient = prisma,
+): Promise<RemoveMemberCheck> {
+  const { tenantId, actorUserId, targetUserId } = p;
+  if (!tenantId || !actorUserId || !targetUserId) return { ok: false, reason: "not_member" };
+  return db.$transaction(
+    async (tx) => {
+      const rows = await tx.$queryRaw<{ userId: string; role: string }[]>`
+        SELECT "userId", role::text AS role FROM "TenantMembership" WHERE "tenantId" = ${tenantId} FOR UPDATE`;
+      const roleOf = (userId: string): MembershipRole | null => {
+        const role = rows.find((r) => r.userId === userId)?.role;
+        return role === "OWNER" || role === "STAFF" ? role : null;
+      };
+      const targetRole = roleOf(targetUserId);
+      const check = canRemoveMember({
+        actor: { userId: actorUserId, role: roleOf(actorUserId) },
+        target: targetRole ? { userId: targetUserId, role: targetRole } : null,
+        ownerCount: rows.filter((r) => r.role === "OWNER").length,
+      });
+      if (!check.ok) return check;
+      const { count } = await tx.tenantMembership.deleteMany({ where: { tenantId, userId: targetUserId } });
+      return count === 1 ? check : ({ ok: false, reason: "not_member" } as const);
+    },
+    { isolationLevel: "ReadCommitted" },
+  );
 }
 
 function isUniqueViolation(error: unknown): boolean {

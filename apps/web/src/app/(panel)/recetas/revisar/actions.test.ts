@@ -36,7 +36,17 @@ const mocks = vi.hoisted(() => {
   };
 });
 vi.mock("@/auth", () => ({ auth: mocks.auth }));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `access`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.access(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.access()) ?? null, TenantAccessError };
+});
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound, redirect: mocks.redirect }));
 vi.mock("@/components/ui", () => ({ ButtonLink: () => null, EmptyState: () => null, PageHeader: () => null }));
@@ -123,10 +133,10 @@ describe("páginas de revisión", () => {
   const searchParams = Promise.resolve({ archivo: "X.pdf", tenantId: "tenant-b" });
   const detail = (id: string) => ReviewDraftPage({ params: Promise.resolve({ id }), searchParams });
 
-  it("sin pertenencia oculta ambas páginas antes de consultar datos", async () => {
+  it("sin contexto ambas páginas salen por requirePageContext (→ /inicio) antes de consultar datos", async () => {
     mocks.access.mockResolvedValue(null);
-    await expect(ReviewQueuePage({ searchParams })).rejects.toThrow("notFound");
-    await expect(detail("foreign")).rejects.toThrow("notFound");
+    await expect(ReviewQueuePage({ searchParams })).rejects.toThrow("no_context");
+    await expect(detail("foreign")).rejects.toThrow("no_context");
     expect(mocks.recipeReviewForTenant).not.toHaveBeenCalled();
     expect(mocks.recipesForTenant).not.toHaveBeenCalled();
     expect(mocks.listDraftQueue).not.toHaveBeenCalled();

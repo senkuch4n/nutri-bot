@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { ISAK_REPORT_TEXT } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAnthropometricReportMessage } from "@nutri-bot/db/domain";
+import { enqueueAnthropometricReportMessage, LEGACY_TENANT_ID } from "@nutri-bot/db/domain";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "../src/outbound-payload";
 
 class Rollback extends Error {
@@ -27,15 +27,16 @@ async function main() {
   try {
     await prisma.$transaction(async (tx) => {
       const patient = await tx.patient.create({
-        data: { whatsappJid: toJid, phone: "000", name: "Prueba HU-007 outbox (TEST)", sex: "MALE" },
+        data: { tenantId: LEGACY_TENANT_ID, whatsappJid: toJid, phone: "000", name: "Prueba HU-007 outbox (TEST)", sex: "MALE" },
       });
       patientId = patient.id;
       const consultation = await tx.consultation.create({
-        data: { patientId: patient.id, consultedAt: new Date("2026-05-08T15:00:00Z") },
+        data: { patientId: patient.id, tenantId: LEGACY_TENANT_ID, consultedAt: new Date("2026-05-08T15:00:00Z") },
       });
       const entry = await tx.evolutionEntry.create({
         data: {
           patientId: patient.id,
+          tenantId: LEGACY_TENANT_ID,
           consultationId: consultation.id,
           recordedAt: new Date("2026-05-08T15:00:00Z"),
           study: "ISAK",
@@ -45,11 +46,12 @@ async function main() {
       });
       const bytes = Buffer.from("%PDF-1.4 prueba");
       const report = await tx.anthropometricReport.create({
-        data: { isakEntryId: entry.id, pdfData: bytes, pdfFileName: "informe-antropometrico-2026-05-08.pdf" },
+        data: { isakEntryId: entry.id, tenantId: LEGACY_TENANT_ID, pdfData: bytes, pdfFileName: "informe-antropometrico-2026-05-08.pdf" },
       });
 
       // 1) Encolar.
       const msg = await enqueueAnthropometricReportMessage(
+        { tenantId: LEGACY_TENANT_ID },
         { reportId: report.id, toJid, caption: ISAK_REPORT_TEXT.whatsappCaption("08/05/2026") },
         tx,
       );

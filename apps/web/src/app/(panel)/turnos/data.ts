@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma, type Prisma } from "@nutri-bot/db";
+import type { TenantScope } from "@nutri-bot/db/domain/tenantScope";
 import {
   computeDepositAmount,
   isConsultationEmpty,
@@ -38,15 +39,21 @@ export interface TurnosAppointment {
 }
 
 /** Turnos con startsAt ∈ monthRangeInTz(month, tz) = [from, to), TODOS los estados. */
-export async function loadTurnosMonth(month: string, tz: string): Promise<TurnosAppointment[]> {
+export async function loadTurnosMonth(t: TenantScope, month: string, tz: string): Promise<TurnosAppointment[]> {
   const { from, to } = monthRangeInTz(month, tz);
-  return loadTurnos({ startsAt: { gte: from, lt: to } });
+  return loadTurnos(t, { startsAt: { gte: from, lt: to } });
 }
 
-/** Turnos con cualquier filtro (lo usa también el Inicio), en orden de inicio; `take` limita la cantidad. */
-export async function loadTurnos(where: Prisma.AppointmentWhereInput, take?: number): Promise<TurnosAppointment[]> {
+/** Turnos con cualquier filtro (lo usa también el Inicio), en orden de inicio; `take` limita la cantidad.
+ *  HU-025: siempre acotado a la agenda principal del consultorio del contexto (`t`); el filtro de quien
+ *  llama no puede reemplazar el tenant ni la agenda. */
+export async function loadTurnos(
+  t: TenantScope,
+  where: Prisma.AppointmentWhereInput,
+  take?: number,
+): Promise<TurnosAppointment[]> {
   const rows = await prisma.appointment.findMany({
-    where,
+    where: { ...where, tenantId: t.tenantId, agendaId: t.agendaId },
     take,
     select: {
       id: true,

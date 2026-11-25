@@ -7,13 +7,14 @@ import { touchTemplate } from "./touch-template";
 // HU-018c: revalidación de las páginas de un plan o una plantilla después de cambiar sus comidas. La
 // comparten las actions del editor semanal (018b) y las del buscador de recetas (018c).
 
-export async function revalidateMenuOwner(kind: MealOwnerKind, ownerId: string): Promise<void> {
+/** HU-025b-1: `tenantId` del contexto de la sesión; el plan se busca solo dentro de ese consultorio. */
+export async function revalidateMenuOwner(kind: MealOwnerKind, ownerId: string, tenantId: string): Promise<void> {
   if (kind === "template") {
     // HU-020 (T10): un cambio en un borrador importado lo marca revisado.
-    await touchTemplate(ownerId);
+    await touchTemplate(ownerId, tenantId);
     return;
   }
-  const plan = await prisma.nutritionPlan.findUnique({ where: { id: ownerId }, select: { patientId: true } });
+  const plan = await prisma.nutritionPlan.findUnique({ where: { id: ownerId, tenantId }, select: { patientId: true } });
   if (!plan) return;
   revalidatePath(`/pacientes/${plan.patientId}`);
   revalidatePath(`/pacientes/${plan.patientId}/planes/${ownerId}`);

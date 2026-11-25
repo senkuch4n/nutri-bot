@@ -12,8 +12,16 @@ const mocks = vi.hoisted(() => {
     start: vi.fn(),
     disconnect: vi.fn(),
     MercadoPagoConfigError,
+    requireTenantContext: vi.fn(),
+    TenantAccessError: class TenantAccessError extends Error {
+      constructor(readonly code: string) { super(code); }
+    },
   };
 });
+vi.mock("@/lib/tenant-context", () => ({
+  requireTenantContext: mocks.requireTenantContext,
+  TenantAccessError: mocks.TenantAccessError,
+}));
 vi.mock("@/auth", () => ({ auth: mocks.auth }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -39,11 +47,25 @@ describe("connectMercadoPagoAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" } });
+    mocks.requireTenantContext.mockResolvedValue({ userId: "u", tenantId: "legacy-tenant" });
   });
 
-  it("sin sesión → /inicio, sin iniciar el OAuth", async () => {
+  it("sin contexto de consultorio → /inicio, sin iniciar el OAuth", async () => {
+    mocks.requireTenantContext.mockRejectedValue(new mocks.TenantAccessError("no_context"));
+    expect(await redirectedTo(connectMercadoPagoAction)).toBe("/inicio");
+    expect(mocks.requireTenantContext).toHaveBeenCalledWith("write");
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it("con contexto pero sin email en la sesión → /inicio, sin iniciar el OAuth", async () => {
     mocks.auth.mockResolvedValue(null);
     expect(await redirectedTo(connectMercadoPagoAction)).toBe("/inicio");
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it("un error que no es de acceso se propaga sin iniciar el OAuth", async () => {
+    mocks.requireTenantContext.mockRejectedValue(new Error("db down"));
+    await expect(connectMercadoPagoAction()).rejects.toThrow("db down");
     expect(mocks.start).not.toHaveBeenCalled();
   });
 
@@ -55,7 +77,7 @@ describe("connectMercadoPagoAction", () => {
   it("OK → redirige a la URL de autorización de Mercado Pago", async () => {
     mocks.start.mockResolvedValue({ url: "https://auth.mercadopago.com/authorization?client_id=1" });
     expect(await redirectedTo(connectMercadoPagoAction)).toBe("https://auth.mercadopago.com/authorization?client_id=1");
-    expect(mocks.start).toHaveBeenCalledWith("pro@example.test");
+    expect(mocks.start).toHaveBeenCalledWith({ userId: "u", tenantId: "legacy-tenant" }, "pro@example.test");
   });
 
   it("otro error no se disfraza de configuración", async () => {
@@ -69,18 +91,21 @@ describe("disconnectMercadoPagoAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" } });
+    mocks.requireTenantContext.mockResolvedValue({ userId: "u", tenantId: "legacy-tenant" });
   });
 
-  it("desconecta y revalida Ajustes y Servicios", async () => {
+  it("desconecta la cuenta del consultorio del contexto y revalida Ajustes y Servicios", async () => {
     mocks.disconnect.mockResolvedValue({ cancelledDeposits: 1 });
     await disconnectMercadoPagoAction();
+    expect(mocks.requireTenantContext).toHaveBeenCalledWith("write");
     expect(mocks.disconnect).toHaveBeenCalledTimes(1);
+    expect(mocks.disconnect).toHaveBeenCalledWith({ userId: "u", tenantId: "legacy-tenant" });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/ajustes");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/servicios");
   });
 
-  it("sin sesión no desconecta", async () => {
-    mocks.auth.mockResolvedValue(null);
+  it("sin contexto de consultorio no desconecta", async () => {
+    mocks.requireTenantContext.mockRejectedValue(new mocks.TenantAccessError("no_context"));
     expect(await redirectedTo(disconnectMercadoPagoAction)).toBe("/inicio");
     expect(mocks.disconnect).not.toHaveBeenCalled();
   });

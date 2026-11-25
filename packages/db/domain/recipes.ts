@@ -14,6 +14,8 @@ import {
 } from "@nutri-bot/core";
 import { prisma, type Prisma } from "../index";
 import { FOOD_REFERENCE_UNAVAILABLE, unavailableFoodReferences } from "./foodReferenceOwnership";
+import { activeForTenant, tenantFoodWhere, tenantVisibleFoodWhere, visibilityFor } from "./foods";
+import type { TenantRef } from "./tenantScope";
 
 // HU-018a: recetario. Los macros no se guardan: se calculan con computeRecipeMacros (core) desde
 // los ingredientes cada vez que se leen (D4, D10). Ninguna función devuelve bytes, salvo
@@ -348,15 +350,24 @@ export async function listFoodsForRecipes(includeIds: readonly string[] = []): P
 }
 
 async function readFoodsForRecipes(includeIds: readonly string[], tenantId?: string): Promise<RecipeCatalogFood[]> {
-  const activeOrIncluded = includeIds.length > 0 ? { OR: [{ active: true }, { id: { in: [...includeIds] } }] } : { active: true };
+  if (tenantId === undefined) {
+    // Camino legacy (scripts): columna global `active`.
+    const activeOrIncluded = includeIds.length > 0 ? { OR: [{ active: true }, { id: { in: [...includeIds] } }] } : { active: true };
+    const rows = await prisma.food.findMany({ where: activeOrIncluded, select: MACRO_FOOD_SELECT, orderBy: { name: "asc" } });
+    return rows.map(toCatalogFood);
+  }
+  // HU-025 (4.4): visibles para el consultorio (misma regla que /alimentos y tenant_visible_foods) + los
+  // que ya usa la receta, siempre dentro de lo que el consultorio puede leer. `active` = visible para el tenant.
+  const t = { tenantId };
+  const visible = tenantVisibleFoodWhere(t);
   const rows = await prisma.food.findMany({
-    where: tenantId === undefined ? activeOrIncluded : {
-      AND: [activeOrIncluded, { OR: [{ source: "SARA2" }, { source: "PROPIO", tenantId }] }],
-    },
-    select: MACRO_FOOD_SELECT,
+    where: includeIds.length > 0 ? { AND: [tenantFoodWhere(t), { OR: [visible, { id: { in: [...includeIds] } }] }] } : visible,
+    select: { ...MACRO_FOOD_SELECT, catalogActive: true, visibility: visibilityFor(t) },
     orderBy: { name: "asc" },
   });
-  return rows.map(toCatalogFood);
+  return rows.map(({ catalogActive, visibility, ...f }) =>
+    toCatalogFood({ ...f, active: activeForTenant({ ...f, catalogActive, visibility }) }),
+  );
 }
 
 /** Planes y plantillas DISTINTOS con al menos un ítem de esta receta (D10). */
@@ -487,9 +498,15 @@ export async function getRecipePreview(recipeId: string, tenantId?: string): Pro
 }
 
 /** Las recetas DISTINTAS usadas en ítems del plan (cualquier estado salvo DRAFT), en orden de nombre. */
-export async function listPlanRecipePreviews(planId: string): Promise<RecipePreview[]> {
+/** HU-025b-1: recetas del consultorio usadas en un plan del consultorio (`t`). */
+export async function listPlanRecipePreviews(t: TenantRef, planId: string): Promise<RecipePreview[]> {
+  const { tenantId } = t;
   const rows = await prisma.recipe.findMany({
-    where: { status: { not: "DRAFT" }, planItems: { some: { meal: { planId } } } },
+    where: {
+      tenantId,
+      status: { not: "DRAFT" },
+      planItems: { some: { meal: { planId, plan: { tenantId, patient: { tenantId } } } } },
+    },
     select: RECIPE_PREVIEW_SELECT,
     orderBy: { name: "asc" },
   });

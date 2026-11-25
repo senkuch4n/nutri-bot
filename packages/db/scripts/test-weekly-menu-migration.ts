@@ -29,6 +29,10 @@ import {
 import { prisma } from "../index";
 import { getPlan } from "../domain/nutritionPlans";
 import { getTemplate } from "../domain/planTemplates";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
+
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const PATIENT = { birthDate: new Date("1990-01-01T12:00:00Z"), sex: "FEMALE" as const };
 const AT = new Date("2026-10-03T15:00:00Z");
@@ -148,7 +152,7 @@ async function compare(file: string) {
   const added = [...planIds, ...templateIds].filter((o) => !known.has(o.id)).map((o) => o.id);
 
   for (const owner of owners) {
-    const loaded = owner.kind === "plan" ? await getPlan(owner.id) : await getTemplate(owner.id);
+    const loaded = owner.kind === "plan" ? await getPlan(T, owner.id) : await getTemplate(owner.id);
     if (!loaded) { diffs.push(`${owner.kind} ${owner.id}: ya no existe`); continue; }
     const meals = [...loaded.meals].sort(byOrder);
 

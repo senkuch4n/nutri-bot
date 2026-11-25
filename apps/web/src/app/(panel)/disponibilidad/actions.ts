@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { AVAILABILITY_TEXT, exceptionFields, findOverlap } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 // HU-017b-2 (SDD 4.3 de 017b-2). Solo se leen, validan y tocan las reglas ACTIVAS (Q16): las inactivas
 // que vienen de cargas viejas no se muestran, no se borran ni se reactivan, igual que las ignora el bot.
@@ -50,8 +50,10 @@ function parseRule(fd: FormData): { ok: true; data: RuleInput } | { ok: false; s
   return { ok: true, data: parsed.data };
 }
 
+/** HU-025: agenda principal del consultorio de la sesión (nunca un agendaId del formulario).
+ *  Sin contexto tira TenantAccessError, que cada acción convierte en su error genérico. */
 async function originalAgendaWhere() {
-  const { scope: { agendaId, tenantId } } = await resolveLegacySchedulingScope();
+  const { agendaId, tenantId } = await requireTenantContext("write");
   return { agendaId, agenda: { tenantId } };
 }
 

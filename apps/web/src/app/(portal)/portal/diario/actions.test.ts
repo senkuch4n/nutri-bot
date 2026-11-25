@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 vi.mock("@/lib/patient-session", () => ({ getPortalPatient: mocks.getPortalPatient }));
-vi.mock("@nutri-bot/db", () => ({ prisma: { diaryEntry: { findUnique: mocks.findUnique } } }));
+vi.mock("@nutri-bot/db", () => ({ prisma: { diaryEntry: { findFirst: mocks.findUnique } } }));
 vi.mock("@nutri-bot/db/domain", () => ({
   addDiaryEntry: mocks.addDiaryEntry,
   deleteDiaryEntry: mocks.deleteDiaryEntry,
@@ -31,7 +31,7 @@ const errors: string[] = [];
 describe("addDiaryEntryAction", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getPortalPatient.mockResolvedValue({ id: "pat1" });
+    mocks.getPortalPatient.mockResolvedValue({ id: "pat1", tenantId: "tenant-a" });
     mocks.addDiaryEntry.mockResolvedValue({ id: "d1" });
   });
 
@@ -65,7 +65,7 @@ describe("addDiaryEntryAction", () => {
   it("solo texto → guarda sin foto y revalida el diario y el inicio", async () => {
     const r = await add({ note: "  Almuerzo: milanesa  " });
     expect(r).toEqual({ ok: true });
-    expect(mocks.addDiaryEntry).toHaveBeenCalledWith("pat1", {
+    expect(mocks.addDiaryEntry).toHaveBeenCalledWith({ tenantId: "tenant-a" }, "pat1", {
       note: "Almuerzo: milanesa",
       photoData: null,
       photoMimeType: null,
@@ -77,7 +77,7 @@ describe("addDiaryEntryAction", () => {
   it("con foto jpeg → guarda los bytes y el tipo", async () => {
     const r = await add({ photo: photo("image/jpeg", 1234) });
     expect(r).toEqual({ ok: true });
-    const [, data] = mocks.addDiaryEntry.mock.calls[0]!;
+    const [, , data] = mocks.addDiaryEntry.mock.calls[0]!;
     expect(data.note).toBeNull();
     expect(data.photoMimeType).toBe("image/jpeg");
     expect(Buffer.isBuffer(data.photoData)).toBe(true);
@@ -96,7 +96,7 @@ describe("addDiaryEntryAction", () => {
 describe("deleteDiaryEntryAction", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getPortalPatient.mockResolvedValue({ id: "pat1" });
+    mocks.getPortalPatient.mockResolvedValue({ id: "pat1", tenantId: "tenant-a" });
     mocks.deleteDiaryEntry.mockResolvedValue({});
   });
 
@@ -117,8 +117,8 @@ describe("deleteDiaryEntryAction", () => {
   it("propio → borra, revalida y ok", async () => {
     mocks.findUnique.mockResolvedValue({ patientId: "pat1" });
     expect(await deleteDiaryEntryAction("d1")).toEqual({ ok: true });
-    expect(mocks.findUnique).toHaveBeenCalledWith({ where: { id: "d1" }, select: { patientId: true } });
-    expect(mocks.deleteDiaryEntry).toHaveBeenCalledWith("d1");
+    expect(mocks.findUnique).toHaveBeenCalledWith({ where: { id: "d1", patient: { tenantId: "tenant-a" } }, select: { patientId: true } });
+    expect(mocks.deleteDiaryEntry).toHaveBeenCalledWith({ tenantId: "tenant-a" }, "d1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/portal/diario");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/portal");
   });
@@ -156,5 +156,18 @@ describe("lenguaje de los errores", () => {
       expect(e.toLowerCase()).not.toContain("sesión");
       expect(e.toLowerCase()).not.toContain("inválido");
     }
+  });
+});
+
+describe("HU-025b-1: el diario del portal usa el consultorio del paciente", () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it("paciente sin consultorio (tenantId null) → sin acceso, sin escribir ni borrar", async () => {
+    mocks.getPortalPatient.mockResolvedValue({ id: "pat1", tenantId: null });
+    expect(await add({ note: "x" })).toEqual({ ok: false, error: T.errorNoAccess });
+    expect(await deleteDiaryEntryAction("d1")).toEqual({ ok: false, error: T.errorNoAccess });
+    expect(mocks.addDiaryEntry).not.toHaveBeenCalled();
+    expect(mocks.deleteDiaryEntry).not.toHaveBeenCalled();
+    expect(mocks.findUnique).not.toHaveBeenCalled();
   });
 });

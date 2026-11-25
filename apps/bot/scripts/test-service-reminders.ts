@@ -28,6 +28,10 @@ import {
 import { findLegacyConversationState } from "@nutri-bot/db/domain/conversationState";
 import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { dayKeyInTz, reminderStatusText, wallTimeToUtc, type ServiceReminder } from "@nutri-bot/core";
+import { LEGACY_TENANT_ID } from "@nutri-bot/db/domain/tenantAccess";
+
+// HU-025b-1: la simulación opera el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 const runId = randomUUID();
 const JID_A = `reminder-fixture-${runId}-a@invalid`;
@@ -177,14 +181,14 @@ async function main(): Promise<void> {
     }
   };
   const run = async (now: Date, patientId: string) => {
-    const res = await enqueueServiceReminders({ now, scope: { patientIds: [patientId] } });
+    const res = await enqueueServiceReminders(T, { now, scope: { patientIds: [patientId] } });
     await stamp(now, patientId);
     return res;
   };
   const runA = (now: Date) => run(now, A.id);
   const runB = (now: Date) => run(now, B.id);
   const manualA = async (id: string, now: Date) => {
-    const r = await enqueueReminderNow(id, { now });
+    const r = await enqueueReminderNow(T, id, { now });
     await stamp(now, A.id);
     return r;
   };
@@ -362,13 +366,13 @@ async function main(): Promise<void> {
       await prisma.outboundMessage.update({ where: { id: conf[0]!.id }, data: { status: "SENT", sentAt: now } });
     });
     await step("13. Estado a mitad de camino", async () => {
-      const items = await getAppointmentReminderStatus(a.id, { now: at(startsAt, -2 * DAY) });
+      const items = await getAppointmentReminderStatus(T, a.id, { now: at(startsAt, -2 * DAY) });
       assert.equal(reminderStatusText(items), "3 días antes, pide confirmar (enviado) · 24 h antes (pendiente)");
     });
     await step("10b. Después sale el de 24 h", async () => {
       assert.deepEqual(await runB(at(startsAt, -DAY + MIN)), { reminders: 1, confirmations: 0 });
       assert.deepEqual((await rows(a.id)).map((m) => m.dedupeKey), ["auto:24h"]);
-      const items = await getAppointmentReminderStatus(a.id, { now: at(startsAt, -DAY + 2 * MIN) });
+      const items = await getAppointmentReminderStatus(T, a.id, { now: at(startsAt, -DAY + 2 * MIN) });
       assert.equal(reminderStatusText(items), "3 días antes, pide confirmar (enviado) · 24 h antes (en cola)");
     });
     await dropScenario([a.id]);
@@ -413,7 +417,7 @@ async function main(): Promise<void> {
       assert.deepEqual(await runB(at(startsAt, -20 * H)), { reminders: 0, confirmations: 0 });
       assert.deepEqual(await runB(at(startsAt, -3 * H)), { reminders: 0, confirmations: 0 });
       assert.deepEqual((await rows(a.id)).map((m) => m.dedupeKey), ["auto:24h"]);
-      const text = reminderStatusText(await getAppointmentReminderStatus(a.id, { now: at(startsAt, -20 * H) }));
+      const text = reminderStatusText(await getAppointmentReminderStatus(T, a.id, { now: at(startsAt, -20 * H) }));
       assert.ok(!text.includes("pendiente"), text);
     });
     await dropScenario([a.id]);
@@ -439,7 +443,7 @@ async function main(): Promise<void> {
       assert.deepEqual(await runA(at(startsAt, -DAY)), { reminders: 0, confirmations: 0 });
       assert.deepEqual(await runA(at(startsAt, -3 * DAY + MIN)), { reminders: 0, confirmations: 0 });
       assert.equal((await rows(a.id)).length, 0);
-      assert.equal(reminderStatusText(await getAppointmentReminderStatus(a.id, { now: at(startsAt, -DAY) })), "Sin recordatorios");
+      assert.equal(reminderStatusText(await getAppointmentReminderStatus(T, a.id, { now: at(startsAt, -DAY) })), "Sin recordatorios");
     });
     await dropScenario([a.id]);
   }

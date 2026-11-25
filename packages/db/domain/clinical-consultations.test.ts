@@ -2,7 +2,7 @@ import { CONSULTATION_TEXT } from "@nutri-bot/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
-  agenda: { findUnique: vi.fn() },
+  agenda: { findFirst: vi.fn() },
   professional: { findUnique: vi.fn() },
   patient: { findUniqueOrThrow: vi.fn() },
   consultation: { findMany: vi.fn(), findUniqueOrThrow: vi.fn(), create: vi.fn() },
@@ -14,6 +14,8 @@ vi.mock("../index", () => ({ prisma: db }));
 import { addEvolutionEntryOnDay, addEvolutionEntryToConsultation } from "./clinical";
 import { createManualConsultation, FutureConsultationDateError, listConsultationsOnDay } from "./consultations";
 
+const T = { tenantId: "legacy-tenant" };
+
 const tenantId = "legacy-tenant";
 const patientId = "p1";
 const dayKey = "2020-09-12";
@@ -21,15 +23,15 @@ const noon = new Date("2020-09-12T15:00:00Z");
 const consultation = { id: "c1", tenantId, patientId, consultedAt: noon, createdAt: noon, appointmentId: null };
 const measures = { weightKg: 70 };
 const professional = { timezone: "America/Argentina/Buenos_Aires" };
-const manual = (day = dayKey) => createManualConsultation({ patientId, dayKey: day });
-const onDay = (day = dayKey) => addEvolutionEntryOnDay(patientId, day, measures);
-const inConsultation = () => addEvolutionEntryToConsultation(consultation.id, measures);
+const manual = (day = dayKey) => createManualConsultation(T, { patientId, dayKey: day });
+const onDay = (day = dayKey) => addEvolutionEntryOnDay(T, patientId, day, measures);
+const inConsultation = () => addEvolutionEntryToConsultation(T, consultation.id, measures);
 const entry = { id: "e1", tenantId, patientId, recordedAt: noon, consultationId: consultation.id, ...measures };
 
 beforeEach(() => {
   vi.resetAllMocks();
   db.$transaction.mockImplementation((run) => run(db));
-  db.agenda.findUnique.mockResolvedValue({ professional });
+  db.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional });
   db.professional.findUnique.mockResolvedValue(professional);
   db.patient.findUniqueOrThrow.mockResolvedValue({ id: patientId });
   db.consultation.findMany.mockResolvedValue([]);
@@ -54,8 +56,8 @@ function expectOwnedConsultation() {
 
 describe("clinical consultation writes in the original installation", () => {
   it.each([manual, onDay, inConsultation])("fails closed without the verified agenda (%#)", async (run) => {
-    db.agenda.findUnique.mockResolvedValue(null);
-    await expect(run()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    db.agenda.findFirst.mockResolvedValue(null);
+    await expect(run()).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expectNoWrites();
   });
 
@@ -80,14 +82,14 @@ describe("clinical consultation writes in the original installation", () => {
       { ...consultation, id: "unowned", tenantId: null }];
     db.consultation.findMany.mockImplementation(async ({ where }) =>
       rows.filter((row) => !where.tenantId || row.tenantId === where.tenantId));
-    await expect(listConsultationsOnDay(patientId, dayKey)).resolves.toEqual([consultation]);
+    await expect(listConsultationsOnDay(T, patientId, dayKey)).resolves.toEqual([consultation]);
     expect(db.consultation.findMany).toHaveBeenCalledWith({
       where: { patientId, tenantId, consultedAt: { gte: new Date("2020-09-12T03:00:00Z"), lt: new Date("2020-09-13T03:00:00Z") } },
       orderBy: [{ consultedAt: "desc" }, { createdAt: "desc" }],
     });
     db.consultation.findMany.mockClear();
-    db.agenda.findUnique.mockResolvedValue(null);
-    await expect(listConsultationsOnDay(patientId, dayKey)).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    db.agenda.findFirst.mockResolvedValue(null);
+    await expect(listConsultationsOnDay(T, patientId, dayKey)).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(db.consultation.findMany).not.toHaveBeenCalled();
     expectNoWrites();
   });
@@ -134,7 +136,7 @@ describe("clinical consultation writes in the original installation", () => {
   it("preserves invalid and future date errors without writes", async () => {
     await expect(manual("2020-02-30")).rejects.toThrow("Fecha inválida");
     await expect(onDay("2020-02-30")).rejects.toThrow("Fecha inválida");
-    expect(db.agenda.findUnique).not.toHaveBeenCalled();
+    expect(db.agenda.findFirst).not.toHaveBeenCalled();
     await expect(manual("2099-01-01")).rejects.toThrow(new FutureConsultationDateError(CONSULTATION_TEXT.futureDate));
     await expect(onDay("2099-01-01")).rejects.toThrow(new FutureConsultationDateError(CONSULTATION_TEXT.futureMeasurementDate));
     expectNoWrites();

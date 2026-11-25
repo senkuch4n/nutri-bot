@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from "../index";
 import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveTenantSchedulingContext, type SchedulingContext, type TenantRef } from "./tenantScope";
 
 // Historical rows without a tenant are inactive, even for the original installation.
 function ownedStateKey(tenantId: string, patientJid: string) {
@@ -11,10 +12,11 @@ export async function findLegacyConversationState(patientJid: string) {
   return prisma.conversationState.findUnique({ where: ownedStateKey(tenantId, patientJid) });
 }
 
-// Directory reads do not include first-contact sessions or archived patients.
-export async function listLegacyPatientLastContacts(patientJids: string[]) {
+/** HU-025 (M5): último contacto por JID de los pacientes activos del consultorio `t`. El directorio
+ *  no incluye sesiones de primer contacto ni pacientes archivados. Reemplaza listLegacyPatientLastContacts. */
+export async function listPatientLastContacts(t: TenantRef, patientJids: string[]) {
   if (patientJids.length === 0) return [];
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  const { tenantId } = t;
   const patients = await prisma.patient.findMany({
     where: { tenantId, archivedAt: null, whatsappJid: { in: patientJids } },
     select: { whatsappJid: true },
@@ -65,7 +67,16 @@ export async function saveLegacyConversationState(patientJid: string, step: stri
 // Verify the original installation on the same transaction that owns the appointment write.
 // Callers obtain the JID and appointment ID from an appointment verified in this scope.
 export async function bindLegacyAppointmentConversationState(tx: Prisma.TransactionClient) {
-  const binding = await resolveLegacySchedulingScope(tx);
+  return bindConversationStateTo(tx, await resolveLegacySchedulingScope(tx));
+}
+
+/** HU-025 (025b-1): same binding for the tenant of the caller's context (web session or bot conversation).
+ *  Resolves the tenant's primary agenda on the transaction that owns the appointment write. */
+export async function bindAppointmentConversationState(tx: Prisma.TransactionClient, tenantId: string) {
+  return bindConversationStateTo(tx, await resolveTenantSchedulingContext(tx, tenantId));
+}
+
+function bindConversationStateTo(tx: Prisma.TransactionClient, binding: SchedulingContext) {
   const { tenantId } = binding.scope;
   return {
     ...binding,

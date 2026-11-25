@@ -20,7 +20,7 @@ import type {
 import { errorCode } from "@/lib/error-code";
 import { toRecipeCardView } from "@/lib/recipe-view";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 import { touchTemplate } from "@/lib/touch-template";
 
 // HU-018c (SDD 6.1): actions del buscador de recetas. Este archivo es "use server": exporta SOLO
@@ -55,13 +55,13 @@ function logError(err: unknown): void {
 
 async function refreshPickerOwner(kind: MealOwnerKind, ownerId: string, tenantId: string): Promise<void> {
   if (kind === "template") await touchTemplate(ownerId, tenantId);
-  else await revalidateMenuOwner(kind, ownerId);
+  else await revalidateMenuOwner(kind, ownerId, tenantId);
 }
 
 /** Recetas publicadas para la grilla del buscador (se llama cada vez que se abre). */
 export async function listPickerRecipesAction(): Promise<ListPickerRecipesResult> {
   try {
-    const access = await resolvePrivateContentAccess();
+    const access = await requireTenantContext("read").catch(() => null);
     if (!access) return SESSION_EXPIRED;
     const cards = await recipesForTenant(access.tenantId).list("PUBLISHED");
     return { ok: true, cards: cards.map((c) => toRecipeCardView(c, "panel")) };
@@ -74,7 +74,7 @@ export async function listPickerRecipesAction(): Promise<ListPickerRecipesResult
 /** HU-018c-2: detalle de la receta (diálogo del buscador). Un borrador o una receta que no existe → notPublished. */
 export async function getRecipePreviewAction(recipeId: string): Promise<RecipePreviewResult> {
   try {
-    const access = await resolvePrivateContentAccess();
+    const access = await requireTenantContext("read").catch(() => null);
     if (!access) return SESSION_EXPIRED;
     const parsed = idSchema.safeParse(recipeId);
     if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.notPublished };
@@ -96,7 +96,7 @@ export async function addRecipeToMealAction(input: {
   weekdays: Weekday[] | null;
 }): Promise<AddRecipeResult> {
   try {
-    const access = await resolvePrivateContentAccess();
+    const access = await requireTenantContext("write").catch(() => null);
     if (!access) return SESSION_EXPIRED;
     const parsed = addSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.addError };
@@ -124,7 +124,7 @@ export async function setRecipeItemPortionsAction(input: {
   portions: number;
 }): Promise<PickerMutationResult> {
   try {
-    const access = await resolvePrivateContentAccess();
+    const access = await requireTenantContext("write").catch(() => null);
     if (!access) return SESSION_EXPIRED;
     const parsed = portionsSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.portionsError };
@@ -145,7 +145,7 @@ export async function removeRecipeItemsAction(input: {
   itemIds: string[];
 }): Promise<PickerMutationResult> {
   try {
-    const access = await resolvePrivateContentAccess();
+    const access = await requireTenantContext("write").catch(() => null);
     if (!access) return SESSION_EXPIRED;
     const parsed = removeSchema.safeParse(input);
     if (!parsed.success) return { ok: false, error: RECIPE_PICKER_TEXT.removeError };

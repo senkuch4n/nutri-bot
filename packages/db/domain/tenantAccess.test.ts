@@ -5,16 +5,18 @@ const { tx, db } = vi.hoisted(() => {
     $executeRaw: vi.fn(),
     $queryRaw: vi.fn(),
     user: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+    tenantMembership: { deleteMany: vi.fn() },
   };
   const db = {
     $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
     user: { findUnique: vi.fn() },
+    tenantMembership: { findMany: vi.fn() },
   };
   return { tx, db };
 });
 vi.mock("../index", () => ({ prisma: db }));
 
-import { LEGACY_TENANT_ID, loadAccessFacts, registerGoogleIdentity } from "./tenantAccess";
+import { LEGACY_TENANT_ID, listTenantMembers, loadAccessFacts, registerGoogleIdentity, removeTenantMember } from "./tenantAccess";
 
 const now = new Date("2026-11-21T12:00:00Z");
 const identity = { subject: "google-sub-1", email: "daiana@example.test" };
@@ -141,5 +143,62 @@ describe("loadAccessFacts", () => {
     await loadAccessFacts("u", now, other as never);
     expect(other.user.findUnique).toHaveBeenCalledOnce();
     expect(db.user.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe("Equipo (025b-2, 7.2.1)", () => {
+  const T = "tenant-a";
+  const members = [
+    { userId: "u-owner", role: "OWNER" },
+    { userId: "u-owner-2", role: "OWNER" },
+    { userId: "u-staff", role: "STAFF" },
+  ];
+  beforeEach(() => {
+    tx.$queryRaw.mockResolvedValue(members);
+    tx.tenantMembership.deleteMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("listTenantMembers lee solo el tenant recibido y devuelve email, rol y alta", async () => {
+    const createdAt = new Date("2026-11-01T12:00:00Z");
+    db.tenantMembership.findMany.mockResolvedValue([{ userId: "u1", role: "OWNER", createdAt, user: { email: "a@example.test" } }]);
+    await expect(listTenantMembers(T)).resolves.toEqual([{ userId: "u1", email: "a@example.test", role: "OWNER", createdAt }]);
+    expect(db.tenantMembership.findMany.mock.calls[0]![0].where).toEqual({ tenantId: T });
+  });
+
+  it("bloquea con FOR UPDATE las membresías del tenant en ReadCommitted antes de decidir y borra solo esa", async () => {
+    await expect(removeTenantMember({ tenantId: T, actorUserId: "u-owner", targetUserId: "u-staff" })).resolves.toEqual({ ok: true });
+    expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "ReadCommitted" });
+    const [lock] = tx.$queryRaw.mock.calls;
+    expect(sqlText(lock!)).toMatch(/FROM "TenantMembership" WHERE "tenantId" = \? FOR UPDATE/);
+    expect(lock![1]).toBe(T);
+    expect(tx.tenantMembership.deleteMany).toHaveBeenCalledWith({ where: { tenantId: T, userId: "u-staff" } });
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.tenantMembership.deleteMany.mock.invocationCallOrder[0]!);
+  });
+
+  it("una OWNER puede quitar a otra OWNER (C5)", async () => {
+    await expect(removeTenantMember({ tenantId: T, actorUserId: "u-owner", targetUserId: "u-owner-2" })).resolves.toEqual({ ok: true });
+  });
+
+  it.each([
+    ["quitarse a sí misma", "u-owner", "u-owner", "self"],
+    ["STAFF no quita", "u-staff", "u-owner", "not_owner"],
+    ["actor de otro consultorio (no está en las filas bloqueadas)", "u-de-b", "u-staff", "not_owner"],
+    ["objetivo de otro consultorio o inventado", "u-owner", "u-de-b", "not_member"],
+  ])("%s → %s sin borrar", async (_name, actor, target, reason) => {
+    await expect(removeTenantMember({ tenantId: T, actorUserId: actor, targetUserId: target })).resolves.toEqual({ ok: false, reason });
+    expect(tx.tenantMembership.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("dos OWNER quitándose a la vez: el lock serializa y la segunda ya no es miembro → not_owner sin borrar", async () => {
+    // La primera transacción ya borró a u-owner-2; la segunda (de u-owner-2) relee las filas bloqueadas.
+    tx.$queryRaw.mockResolvedValue([{ userId: "u-owner", role: "OWNER" }]);
+    await expect(removeTenantMember({ tenantId: T, actorUserId: "u-owner-2", targetUserId: "u-owner" }))
+      .resolves.toEqual({ ok: false, reason: "not_owner" });
+    expect(tx.tenantMembership.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("ids vacíos → not_member sin abrir transacción", async () => {
+    await expect(removeTenantMember({ tenantId: T, actorUserId: "u-owner", targetUserId: "" })).resolves.toEqual({ ok: false, reason: "not_member" });
+    expect(db.$transaction).not.toHaveBeenCalled();
   });
 });

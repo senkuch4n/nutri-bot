@@ -34,23 +34,23 @@ beforeEach(() => {
 });
 
 describe("addSection", () => {
-  it("plantilla: crea con templateId y order = max + 1", async () => {
+  it("plantilla: crea conectada a la plantilla del tenant y order = max + 1", async () => {
     p().planTemplateSection.aggregate.mockResolvedValue({ _max: { order: 2 } });
-    await addSection("template", "t1", { title: " Recomendaciones ", body: "a\nb" });
+    await addSection("template", "t1", { title: " Recomendaciones ", body: "a\nb" }, "legacy-tenant");
     expect(p().planTemplateSection.create).toHaveBeenCalledWith({
-      data: { templateId: "t1", title: "Recomendaciones", body: "a\nb", order: 3 },
+      data: { template: { connect: { id: "t1", tenantId: "legacy-tenant" } }, title: "Recomendaciones", body: "a\nb", order: 3 },
       select: { id: true },
     });
     expect(p().planSection.create).not.toHaveBeenCalled();
   });
 
   it("plan: usa planSection con planId; sin secciones order 0", async () => {
-    await addSection("plan", "p1", { title: "T", body: "x" });
-    expect(p().planSection.create.mock.calls[0][0].data).toEqual({ planId: "p1", title: "T", body: "x", order: 0 });
+    await addSection("plan", "p1", { title: "T", body: "x" }, "legacy-tenant");
+    expect(p().planSection.create.mock.calls[0][0].data).toEqual({ plan: { connect: { id: "p1", tenantId: "legacy-tenant" } }, title: "T", body: "x", order: 0 });
   });
 
   it("entrada inválida → PlanSectionInvalidError con el código, sin escribir", async () => {
-    const err = await addSection("plan", "p1", { title: "a".repeat(81), body: "x" }).catch((e) => e);
+    const err = await addSection("plan", "p1", { title: "a".repeat(81), body: "x" }, "legacy-tenant").catch((e) => e);
     expect(err).toBeInstanceOf(PlanSectionInvalidError);
     expect(err.code).toBe("TITLE_TOO_LONG");
     expect(p().planSection.create).not.toHaveBeenCalled();
@@ -58,35 +58,35 @@ describe("addSection", () => {
 
   it("preserva el filtro por plan al contar secciones y calcular el orden", async () => {
     p().planSection.aggregate.mockResolvedValue({ _max: { order: 3 } });
-    await addSection("plan", "p1", { title: "T", body: "x" });
-    expect(p().planSection.count).toHaveBeenCalledWith({ where: { planId: "p1" } });
-    expect(p().planSection.aggregate).toHaveBeenCalledWith({ where: { planId: "p1" }, _max: { order: true } });
-    expect(p().planSection.create).toHaveBeenCalledWith({ data: { planId: "p1", title: "T", body: "x", order: 4 }, select: { id: true } });
+    await addSection("plan", "p1", { title: "T", body: "x" }, "legacy-tenant");
+    expect(p().planSection.count).toHaveBeenCalledWith({ where: { planId: "p1", plan: { tenantId: "legacy-tenant" } } });
+    expect(p().planSection.aggregate).toHaveBeenCalledWith({ where: { planId: "p1", plan: { tenantId: "legacy-tenant" } }, _max: { order: true } });
+    expect(p().planSection.create).toHaveBeenCalledWith({ data: { plan: { connect: { id: "p1", tenantId: "legacy-tenant" } }, title: "T", body: "x", order: 4 }, select: { id: true } });
   });
 
   it("con 30 → PlanSectionLimitError", async () => {
     p().planSection.count.mockResolvedValue(30);
-    await expect(addSection("plan", "p1", { title: "T", body: "x" })).rejects.toBeInstanceOf(PlanSectionLimitError);
+    await expect(addSection("plan", "p1", { title: "T", body: "x" }, "legacy-tenant")).rejects.toBeInstanceOf(PlanSectionLimitError);
     expect(p().planSection.create).not.toHaveBeenCalled();
   });
 });
 
 describe("updateSection / deleteSection", () => {
-  it("filtran por { id, templateId }", async () => {
-    await updateSection("template", "t1", "s1", { title: "T", body: "b" });
+  it("filtran por { id, templateId } y el tenant de la plantilla", async () => {
+    await updateSection("template", "t1", "s1", { title: "T", body: "b" }, "legacy-tenant");
     expect(p().planTemplateSection.updateMany).toHaveBeenCalledWith({
-      where: { id: "s1", templateId: "t1" },
+      where: { id: "s1", templateId: "t1", template: { tenantId: "legacy-tenant" } },
       data: { title: "T", body: "b" },
     });
-    await deleteSection("template", "t1", "s1");
-    expect(p().planTemplateSection.deleteMany).toHaveBeenCalledWith({ where: { id: "s1", templateId: "t1" } });
+    await deleteSection("template", "t1", "s1", "legacy-tenant");
+    expect(p().planTemplateSection.deleteMany).toHaveBeenCalledWith({ where: { id: "s1", templateId: "t1", template: { tenantId: "legacy-tenant" } } });
   });
 
   it("count 0 → PlanSectionNotFoundError", async () => {
     p().planSection.updateMany.mockResolvedValue({ count: 0 });
     p().planSection.deleteMany.mockResolvedValue({ count: 0 });
-    await expect(updateSection("plan", "p1", "x", { title: "T", body: "b" })).rejects.toBeInstanceOf(PlanSectionNotFoundError);
-    await expect(deleteSection("plan", "p1", "x")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(updateSection("plan", "p1", "x", { title: "T", body: "b" }, "legacy-tenant")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(deleteSection("plan", "p1", "x", "legacy-tenant")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
   });
 });
 
@@ -98,16 +98,16 @@ describe("moveSection", () => {
   ];
   it("intercambia order con la vecina", async () => {
     p().planSection.findMany.mockResolvedValue(rows);
-    await moveSection("plan", "p1", "b", -1);
+    await moveSection("plan", "p1", "b", -1, "legacy-tenant");
     expect(p().planSection.updateMany.mock.calls).toEqual([
-      [{ where: { id: "b", planId: "p1" }, data: { order: 0 } }],
-      [{ where: { id: "a", planId: "p1" }, data: { order: 1 } }],
+      [{ where: { id: "b", planId: "p1", plan: { tenantId: "legacy-tenant" } }, data: { order: 0 } }],
+      [{ where: { id: "a", planId: "p1", plan: { tenantId: "legacy-tenant" } }, data: { order: 1 } }],
     ]);
   });
   it("en el borde no escribe", async () => {
     p().planSection.findMany.mockResolvedValue(rows);
-    await moveSection("plan", "p1", "c", 1);
-    await moveSection("plan", "p1", "a", -1);
+    await moveSection("plan", "p1", "c", 1, "legacy-tenant");
+    await moveSection("plan", "p1", "a", -1, "legacy-tenant");
     expect(p().planSection.updateMany).not.toHaveBeenCalled();
   });
 });
@@ -158,21 +158,45 @@ describe("scoped template section edits", () => {
 
 describe("appendToSection", () => {
   it("sectionId null → crea 'Texto importado'", async () => {
-    await appendToSection(mocks.prisma as any, "template", "t1", null, "x");
-    expect(p().planTemplateSection.create.mock.calls[0][0].data).toMatchObject({ templateId: "t1", title: "Texto importado", body: "x" });
+    await appendToSection(mocks.prisma as any, "template", "t1", null, "x", "legacy-tenant");
+    expect(p().planTemplateSection.create.mock.calls[0][0].data).toMatchObject({
+      template: { connect: { id: "t1", tenantId: "legacy-tenant", status: "DRAFT" } }, title: "Texto importado", body: "x",
+    });
   });
   it("con id → agrega '\\n\\nx' al cuerpo", async () => {
     p().planTemplateSection.findFirst.mockResolvedValue({ id: "s1", title: "Recomendaciones", body: "a" });
-    await appendToSection(mocks.prisma as any, "template", "t1", "s1", "x");
+    await appendToSection(mocks.prisma as any, "template", "t1", "s1", "x", "legacy-tenant");
     expect(p().planTemplateSection.updateMany).toHaveBeenCalledWith({
-      where: { id: "s1", templateId: "t1" },
+      where: { id: "s1", templateId: "t1", template: { tenantId: "legacy-tenant", status: "DRAFT" } },
       data: { body: "a\n\nx" },
     });
   });
   it("si no entra → BODY_TOO_LONG", async () => {
     p().planTemplateSection.findFirst.mockResolvedValue({ id: "s1", title: "T", body: "a".repeat(19999) });
-    const err = await appendToSection(mocks.prisma as any, "template", "t1", "s1", "xyz").catch((e) => e);
+    const err = await appendToSection(mocks.prisma as any, "template", "t1", "s1", "xyz", "legacy-tenant").catch((e) => e);
     expect(err).toBeInstanceOf(PlanSectionInvalidError);
     expect(err.code).toBe("BODY_TOO_LONG");
+  });
+});
+
+describe("HU-025: secciones siempre con el tenant (obligatorio por tipo desde 025b-2)", () => {
+  // Un llamador JS que omite el tenant: el cast simula lo que el tipo ya impide.
+  const unscoped = <F>(fn: F) => fn as unknown as (...args: unknown[]) => Promise<unknown>;
+  it.each(["plan", "template"])("sin tenant un %s no se lee ni se escribe (PlanSectionNotFoundError)", async (kind) => {
+    await expect(unscoped(addSection)(kind, "p1", { title: "T", body: "x" })).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(unscoped(updateSection)(kind, "p1", "s", { title: "T", body: "x" })).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(unscoped(deleteSection)(kind, "p1", "s")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(unscoped(moveSection)(kind, "p1", "s", 1)).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    await expect(unscoped(appendToSection)(mocks.prisma, kind, "p1", null, "x")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    expect(p().planTemplateSection.create).not.toHaveBeenCalled();
+    expect(p().planSection.create).not.toHaveBeenCalled();
+    expect(p().planSection.updateMany).not.toHaveBeenCalled();
+    expect(p().planSection.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("un plan de otro consultorio: el filtro por tenant no lo encuentra", async () => {
+    p().planSection.updateMany.mockResolvedValue({ count: 0 });
+    await expect(updateSection("plan", "plan-de-b", "s", { title: "T", body: "x" }, "tenant-a")).rejects.toBeInstanceOf(PlanSectionNotFoundError);
+    expect(p().planSection.updateMany.mock.calls[0][0].where).toEqual({ id: "s", planId: "plan-de-b", plan: { tenantId: "tenant-a" } });
   });
 });

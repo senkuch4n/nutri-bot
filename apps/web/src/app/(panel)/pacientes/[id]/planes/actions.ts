@@ -8,7 +8,7 @@ import {
   TemplateContainsHistoricalFoodError,
 } from "@nutri-bot/db/domain";
 import { PLAN_IMPORT_TEXT } from "@nutri-bot/core";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 export type PlanListState = { ok: boolean; error?: string };
 
@@ -23,7 +23,15 @@ export async function createPlanAction(
 ): Promise<PlanListState> {
   const parsed = newPlanSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  const plan = await createPlan(parsed.data.patientId, { title: parsed.data.title });
+  // HU-025: paciente del consultorio de la sesión (uno de otro consultorio no se encuentra).
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return { ok: false, error: "Datos inválidos" };
+  let plan: Awaited<ReturnType<typeof createPlan>>;
+  try {
+    plan = await createPlan(ctx, parsed.data.patientId, { title: parsed.data.title });
+  } catch {
+    return { ok: false, error: "Datos inválidos" };
+  }
   revalidatePath(`/pacientes/${parsed.data.patientId}`);
   redirect(`/pacientes/${parsed.data.patientId}/planes/${plan.id}`);
 }
@@ -39,7 +47,7 @@ export async function applyTemplateAction(
 ): Promise<PlanListState> {
   const parsed = applyTemplateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Elegí una plantilla" };
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, error: "Plantilla no encontrada" };
   let plan: Awaited<ReturnType<typeof applyTemplateToPatient>>;
   try {

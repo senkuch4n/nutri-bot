@@ -2,6 +2,7 @@ import { prisma } from "@nutri-bot/db";
 import { getAvailableSlotsForService, getProfessional } from "@nutri-bot/db/domain";
 import { dayKeyInTz, formatInTimeZone, fromZonedTime } from "@nutri-bot/core";
 import { es } from "date-fns/locale";
+import { getConversationTenant } from "./tenant";
 
 const HORIZON_DAYS = 21;
 
@@ -23,7 +24,7 @@ export async function nextAvailableDays(serviceId: string, count = 6): Promise<D
   const pro = await getProfessional();
   const from = new Date();
   const to = new Date(from.getTime() + HORIZON_DAYS * 86_400_000);
-  const slots = await getAvailableSlotsForService({ serviceId, from, to });
+  const slots = await getAvailableSlotsForService(await getConversationTenant(), { serviceId, from, to });
 
   const seen: string[] = [];
   for (const s of slots) {
@@ -45,7 +46,7 @@ export async function slotsForDay(serviceId: string, dayKey: string): Promise<Da
   const pro = await getProfessional();
   const from = fromZonedTime(`${dayKey}T00:00:00`, pro.timezone);
   const to = fromZonedTime(`${dayKey}T23:59:59`, pro.timezone);
-  return getAvailableSlotsForService({ serviceId, from, to });
+  return getAvailableSlotsForService(await getConversationTenant(), { serviceId, from, to });
 }
 
 export function cancelableAppointments(patientId: string) {

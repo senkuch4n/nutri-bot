@@ -16,19 +16,21 @@ import {
   savePlanPdf,
   enqueuePlanPdfMessage,
   nextItemOrder,
+  getTenantProfessional,
+  type TenantRef,
 } from "@nutri-bot/db/domain";
 import { MEASURE_TEXT, isWeekday } from "@nutri-bot/core";
 import { readMeasureFields, resolveFormMeasure } from "@/lib/measure-form";
 import type { AddMealItemResult } from "@/components/food-measures/types";
-import { getProfessional } from "@/lib/professional";
+import { requireTenantContext } from "@/lib/tenant-context";
 import { toMealView } from "@/lib/meal-view";
 import { renderPlanPdf } from "@/lib/plan-pdf";
 
 export type PlanState = { ok: boolean; error?: string };
 
-async function revalidatePlanPaths(planId: string): Promise<void> {
+async function revalidatePlanPaths(t: TenantRef, planId: string): Promise<void> {
   const plan = await prisma.nutritionPlan.findUnique({
-    where: { id: planId },
+    where: { id: planId, tenantId: t.tenantId },
     select: { patientId: true },
   });
   if (!plan) return;
@@ -49,17 +51,24 @@ export async function updatePlanMetaAction(
 ): Promise<PlanState> {
   const parsed = metaSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  await updatePlan(parsed.data.planId, {
-    title: parsed.data.title,
-    notes: parsed.data.notes || null,
-    status: parsed.data.status,
-  });
-  await revalidatePlanPaths(parsed.data.planId);
+  try {
+    // HU-025: plan del consultorio de la sesión; uno de otro consultorio no se encuentra (P2025).
+    const ctx = await requireTenantContext("write");
+    await updatePlan(ctx, parsed.data.planId, {
+      title: parsed.data.title,
+      notes: parsed.data.notes || null,
+      status: parsed.data.status,
+    });
+    await revalidatePlanPaths(ctx, parsed.data.planId);
+  } catch {
+    return { ok: false, error: "No se pudo guardar el plan." };
+  }
   return { ok: true };
 }
 
 export async function deletePlanAction(planId: string, patientId: string): Promise<void> {
-  await deletePlan(planId);
+  const ctx = await requireTenantContext("write");
+  await deletePlan(ctx, planId);
   revalidatePath(`/pacientes/${patientId}`);
   redirect(`/pacientes/${patientId}`);
 }
@@ -68,24 +77,27 @@ export async function addPlanMealAction(formData: FormData): Promise<void> {
   const planId = String(formData.get("planId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   if (!planId || !name) return;
-  const plan = await getPlan(planId);
-  const order = plan?.meals.length ?? 0;
-  await addMeal(planId, { name, order });
-  await revalidatePlanPaths(planId);
+  const ctx = await requireTenantContext("write");
+  const plan = await getPlan(ctx, planId);
+  if (!plan) return;
+  await addMeal(ctx, planId, { name, order: plan.meals.length });
+  await revalidatePlanPaths(ctx, planId);
 }
 
 export async function deletePlanMealAction(formData: FormData): Promise<void> {
   const planId = String(formData.get("planId") ?? "");
   const mealId = String(formData.get("mealId") ?? "");
   if (!mealId) return;
-  await deleteMeal(mealId);
-  await revalidatePlanPaths(planId);
+  const ctx = await requireTenantContext("write");
+  await deleteMeal(ctx, mealId);
+  await revalidatePlanPaths(ctx, planId);
 }
 
 export async function addPlanMealItemAction(formData: FormData): Promise<AddMealItemResult | void> {
   const planId = String(formData.get("planId") ?? "");
   const mealId = String(formData.get("mealId") ?? "");
   if (!mealId) return;
+  const ctx = await requireTenantContext("write");
   const foodId = String(formData.get("foodId") ?? "").trim();
   const customLabel = String(formData.get("customLabel") ?? "").trim();
   const quantityRaw = String(formData.get("quantityGrams") ?? "").trim();
@@ -96,7 +108,7 @@ export async function addPlanMealItemAction(formData: FormData): Promise<AddMeal
   const weekday = isWeekday(weekdayRaw) ? weekdayRaw : null;
   if (!foodId && !customLabel) return;
   if (foodId) {
-    const food = await getFood(foodId);
+    const food = await getFood(ctx, foodId);
     if (!food || !food.active || food.source !== "SARA2") {
       throw new Error("Solo se pueden agregar alimentos activos de SARA 2.");
     }
@@ -106,17 +118,17 @@ export async function addPlanMealItemAction(formData: FormData): Promise<AddMeal
   // del formulario se ignora) y el ítem no lleva descripción libre.
   const measureFields = readMeasureFields(formData, foodId);
   if (measureFields === "invalid") return;
-  const measure = measureFields ? await resolveFormMeasure(foodId, measureFields) : null;
+  const measure = measureFields ? await resolveFormMeasure(ctx, foodId, measureFields) : null;
   if (measure === "gone") {
     // 018d-1b (R4): la medida se borró con el editor abierto. Se revalida para que el editor traiga
     // las medidas actuales y se avisa, sin pasar por el error boundary.
-    await revalidatePlanPaths(planId);
+    await revalidatePlanPaths(ctx, planId);
     return { ok: false, error: MEASURE_TEXT.measureGone };
   }
 
-  const order = await nextItemOrder("plan", mealId, weekday);
+  const order = await nextItemOrder("plan", mealId, weekday, ctx);
 
-  await addMealItem(mealId, measure
+  await addMealItem(ctx, mealId, measure
     ? { foodId, customLabel: null, notes: notes || null, order, weekday, ...measure }
     : {
         foodId: foodId || null,
@@ -126,26 +138,28 @@ export async function addPlanMealItemAction(formData: FormData): Promise<AddMeal
         order,
         weekday,
       });
-  await revalidatePlanPaths(planId);
+  await revalidatePlanPaths(ctx, planId);
 }
 
 export async function deletePlanMealItemAction(formData: FormData): Promise<void> {
   const planId = String(formData.get("planId") ?? "");
   const itemId = String(formData.get("itemId") ?? "");
   if (!itemId) return;
-  await deleteMealItem(itemId);
-  await revalidatePlanPaths(planId);
+  const ctx = await requireTenantContext("write");
+  await deleteMealItem(ctx, itemId);
+  await revalidatePlanPaths(ctx, planId);
 }
 
-async function buildAndSavePdf(planId: string) {
-  const plan = await getPlan(planId);
+async function buildAndSavePdf(t: TenantRef, planId: string) {
+  const plan = await getPlan(t, planId);
   if (!plan) throw new Error("Plan no encontrado");
   const [patient, pro] = await Promise.all([
-    prisma.patient.findUniqueOrThrow({ where: { id: plan.patientId } }),
-    getProfessional(),
+    prisma.patient.findUniqueOrThrow({ where: { id_tenantId: { id: plan.patientId, tenantId: t.tenantId } } }),
+    getTenantProfessional(t.tenantId),
   ]);
+  // HU-025b-1: el logo es el de la profesional del consultorio (antes Professional(1)).
   const logoRow = await prisma.professional.findUnique({
-    where: { id: 1 },
+    where: { id_tenantId: { id: pro.id, tenantId: t.tenantId } },
     select: { logoData: true, logoMimeType: true },
   });
 
@@ -164,14 +178,15 @@ async function buildAndSavePdf(planId: string) {
   });
 
   const fileName = `plan-${plan.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}.pdf`;
-  await savePlanPdf(planId, { data: buffer, fileName });
+  await savePlanPdf(t, planId, { data: buffer, fileName });
   return { patient, fileName };
 }
 
 export async function generatePlanPdfAction(planId: string): Promise<PlanState> {
   try {
-    await buildAndSavePdf(planId);
-    await revalidatePlanPaths(planId);
+    const ctx = await requireTenantContext("write");
+    await buildAndSavePdf(ctx, planId);
+    await revalidatePlanPaths(ctx, planId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Error generando el PDF" };
@@ -180,13 +195,14 @@ export async function generatePlanPdfAction(planId: string): Promise<PlanState> 
 
 export async function sendPlanWhatsAppAction(planId: string): Promise<PlanState> {
   try {
-    const { patient } = await buildAndSavePdf(planId);
-    await enqueuePlanPdfMessage({
+    const ctx = await requireTenantContext("write");
+    const { patient } = await buildAndSavePdf(ctx, planId);
+    await enqueuePlanPdfMessage(ctx, {
       planId,
       toJid: patient.whatsappJid,
       caption: "📄 Te comparto tu plan alimentario actualizado.",
     });
-    await revalidatePlanPaths(planId);
+    await revalidatePlanPaths(ctx, planId);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Error enviando el plan" };

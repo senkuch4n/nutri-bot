@@ -5,10 +5,10 @@ import { z } from "zod";
 import { prisma } from "@nutri-bot/db";
 import {
   archivePatient,
-  getLegacySchedulingTenantId,
-  getProfessional,
+  getTenantProfessional,
   unarchivePatient,
   updatePatientFormulaData,
+  type TenantRef,
 } from "@nutri-bot/db/domain";
 import {
   ACTIVITY_LEVEL_VALUES,
@@ -25,6 +25,7 @@ import {
   patientDisplayName,
 } from "@nutri-bot/core";
 import { findOrCreatePatient, phoneToJid } from "@/lib/patients";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 export type PatientState = { ok: boolean; error?: string };
 
@@ -47,12 +48,17 @@ export async function updateFormulaDataAction(
   const parsed = formulaDataSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
   const { id, sex, activityLevel, nutritionGoal, bodyFrame } = parsed.data;
-  await updatePatientFormulaData(id, {
-    sex: sex || null,
-    activityLevel: activityLevel || null,
-    nutritionGoal: nutritionGoal || null,
-    bodyFrame: bodyFrame || null,
-  });
+  try {
+    // HU-025: paciente del consultorio de la sesión; uno de otro consultorio no se encuentra.
+    await updatePatientFormulaData(await requireTenantContext("write"), id, {
+      sex: sex || null,
+      activityLevel: activityLevel || null,
+      nutritionGoal: nutritionGoal || null,
+      bodyFrame: bodyFrame || null,
+    });
+  } catch {
+    return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
+  }
   revalidatePath(`/pacientes/${id}`);
   // "layout" también refresca el detalle de la consulta, desde donde se completa con el Sheet (HU-004).
   revalidatePath(`/pacientes/${id}`, "layout");
@@ -87,6 +93,12 @@ export async function updatePatientDataAction(
 ): Promise<PatientDataState> {
   const id = formText(formData, "id");
   if (id === "") return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
+  let tenantId: string;
+  try {
+    ({ tenantId } = await requireTenantContext("write"));
+  } catch {
+    return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
+  }
 
   const name = formText(formData, "name");
   const birthDate = formText(formData, "birthDate");
@@ -101,7 +113,7 @@ export async function updatePatientDataAction(
   if (background.length > 4000) fieldErrors.background = PATIENT_DATA_TEXT.textTooLong;
   if (goals.length > 4000) fieldErrors.goals = PATIENT_DATA_TEXT.textTooLong;
   if (!fieldErrors.birthDate && birthDate !== "") {
-    const pro = await getProfessional();
+    const pro = await getTenantProfessional(tenantId);
     if (isFutureDayKey(birthDate, new Date(), pro.timezone)) fieldErrors.birthDate = PATIENT_DATA_TEXT.birthDateFuture;
   }
   if (Object.keys(fieldErrors).length > 0) return { ok: false, fieldErrors };
@@ -129,7 +141,7 @@ export async function updatePatientDataAction(
   try {
     await prisma.$transaction([
       prisma.patient.update({
-        where: { id },
+        where: { id_tenantId: { id, tenantId } },
         data: {
           name: name || null,
           // Columna @db.Date: medianoche UTC del día elegido (computeAgeYears lee el día en UTC).
@@ -141,10 +153,11 @@ export async function updatePatientDataAction(
           bodyFrame: enums.data.bodyFrame || null,
         },
       }),
+      // ClinicalRecord no tiene tenantId: las dos ramas siguen al paciente del consultorio.
       prisma.clinicalRecord.upsert({
-        where: { patientId: id },
+        where: { patientId: id, patient: { tenantId } },
         update: clinical,
-        create: { patientId: id, ...clinical },
+        create: { ...clinical, patient: { connect: { id_tenantId: { id, tenantId } } } },
       }),
     ]);
   } catch {
@@ -185,7 +198,8 @@ export async function createPatientAction(
   if (Object.keys(fieldErrors).length > 0 || !phone.ok) return { ok: false, fieldErrors };
 
   try {
-    const tenantId = await getLegacySchedulingTenantId();
+    const ctx = await requireTenantContext("write");
+    const { tenantId } = ctx;
     const taken = await prisma.patient.findUnique({
       where: { tenantId_whatsappJid: { tenantId, whatsappJid: phoneToJid(phone.digits) } },
       select: { id: true, name: true, phone: true, whatsappJid: true, archivedAt: true },
@@ -206,7 +220,7 @@ export async function createPatientAction(
       };
     }
     try {
-      const created = await findOrCreatePatient({ phone: phone.digits, name });
+      const created = await findOrCreatePatient(ctx, { phone: phone.digits, name });
       revalidatePath("/pacientes");
       return { ok: true, id: created.id, name };
     } catch (err) {
@@ -235,7 +249,8 @@ export async function setPatientNameAction(
   if (name === "") return { ok: false, error: PATIENT_DIRECTORY_TEXT.nameRequired };
   if (name.length > 120) return { ok: false, error: PATIENT_DIRECTORY_TEXT.nameTooLong };
   try {
-    await prisma.patient.update({ where: { id }, data: { name } });
+    const { tenantId } = await requireTenantContext("write");
+    await prisma.patient.update({ where: { id_tenantId: { id, tenantId } }, data: { name } });
   } catch {
     return { ok: false, error: PATIENT_DIRECTORY_TEXT.saveError };
   }
@@ -258,8 +273,11 @@ function revalidateArchive(patientId: string) {
   revalidatePath("/avisos");
 }
 
-async function patientName(patientId: string): Promise<string | null> {
-  const p = await prisma.patient.findUnique({ where: { id: patientId }, select: { name: true } });
+async function patientName(t: TenantRef, patientId: string): Promise<string | null> {
+  const p = await prisma.patient.findUnique({
+    where: { id_tenantId: { id: patientId, tenantId: t.tenantId } },
+    select: { name: true },
+  });
   return p?.name?.trim() || null;
 }
 
@@ -271,11 +289,12 @@ export async function archivePatientAction(patientId: string): Promise<ArchivePa
     return { ok: false, error: PATIENT_ARCHIVE_TEXT.archiveError };
   }
   try {
+    const ctx = await requireTenantContext("write");
     const now = new Date();
-    const result = await archivePatient(patientId, now);
+    const result = await archivePatient(ctx, patientId, now);
     if (!result.ok) {
       if (result.reason === "not_found") return { ok: false, error: PATIENT_ARCHIVE_TEXT.archiveError };
-      const [name, pro] = await Promise.all([patientName(patientId), getProfessional()]);
+      const [name, pro] = await Promise.all([patientName(ctx, patientId), getTenantProfessional(ctx.tenantId)]);
       return {
         ok: false,
         blocked: true,
@@ -288,7 +307,7 @@ export async function archivePatientAction(patientId: string): Promise<ArchivePa
         }),
       };
     }
-    const name = await patientName(patientId);
+    const name = await patientName(ctx, patientId);
     revalidateArchive(patientId);
     return { ok: true, name };
   } catch {
@@ -305,9 +324,10 @@ export async function unarchivePatientAction(
     return { ok: false, error: PATIENT_ARCHIVE_TEXT.unarchiveError };
   }
   try {
-    const result = await unarchivePatient(patientId);
+    const ctx = await requireTenantContext("write");
+    const result = await unarchivePatient(ctx, patientId);
     if (!result.ok) return { ok: false, error: PATIENT_ARCHIVE_TEXT.unarchiveError };
-    const name = await patientName(patientId);
+    const name = await patientName(ctx, patientId);
     revalidateArchive(patientId);
     return { ok: true, name };
   } catch {

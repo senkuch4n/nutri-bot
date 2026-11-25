@@ -11,10 +11,9 @@ import {
 import { prisma, type Prisma } from "../index";
 import { PROFESSIONAL_SELECT } from "./professionalSelect";
 
-import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveTenantSchedulingContext, type SchedulingContext, type TenantRef } from "./tenantScope";
 
 type AvailabilityClient = Pick<Prisma.TransactionClient, "agenda" | "service" | "availabilityRule" | "availabilityException" | "appointment">;
-type LegacyScheduling = Awaited<ReturnType<typeof resolveLegacySchedulingScope>>;
 
 function minLeadMinutes(): number {
   return Number(process.env.MIN_LEAD_MINUTES ?? 120);
@@ -28,7 +27,7 @@ export async function getProfessional() {
   return pro;
 }
 
-async function loadRulesAndExceptions({ tenantId, agendaId }: LegacyScheduling["scope"], db: AvailabilityClient = prisma) {
+async function loadRulesAndExceptions({ tenantId, agendaId }: SchedulingContext["scope"], db: AvailabilityClient = prisma) {
   const where = { agendaId, agenda: { tenantId } };
   const [rules, exceptions] = await Promise.all([
     db.availabilityRule.findMany({ where: { ...where, active: true } }),
@@ -53,7 +52,7 @@ async function loadRulesAndExceptions({ tenantId, agendaId }: LegacyScheduling["
 }
 
 async function loadBusy(
-  scope: LegacyScheduling["scope"],
+  scope: SchedulingContext["scope"],
   from: Date,
   to: Date,
   excludeAppointmentId?: string,
@@ -81,11 +80,11 @@ type AvailableSlotsParams = {
   excludeAppointmentId?: string;
 };
 
-export async function getAvailableSlotsForService(params: AvailableSlotsParams): Promise<Date[]> {
-  return listSlots(params, await resolveLegacySchedulingScope());
+export async function getAvailableSlotsForService(t: TenantRef, params: AvailableSlotsParams): Promise<Date[]> {
+  return listSlots(params, await resolveTenantSchedulingContext(prisma, t.tenantId));
 }
 
-async function listSlots(params: AvailableSlotsParams, { scope, professional: pro }: LegacyScheduling) {
+async function listSlots(params: AvailableSlotsParams, { scope, professional: pro }: SchedulingContext) {
   const now = params.now ?? new Date();
   const service = await prisma.service.findUnique({ where: { id: params.serviceId, tenantId: scope.tenantId } });
   if (!service || !service.active) return [];
@@ -124,14 +123,14 @@ export function canRescheduleAppointment(
  * mínima. Turno inexistente o que no se puede reprogramar → []. Día inválido → tira.
  * Consumidor: web (getRescheduleSlotsAction).
  */
-export async function getRescheduleSlots(params: {
+export async function getRescheduleSlots(t: TenantRef, params: {
   appointmentId: string;
   dayKey: string;
   now?: Date;
 }): Promise<Date[]> {
   if (!isValidDayKey(params.dayKey)) throw new Error("Fecha inválida");
   const now = params.now ?? new Date();
-  const binding = await resolveLegacySchedulingScope();
+  const binding = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const appt = await prisma.appointment.findUnique({
     where: { id: params.appointmentId, ...binding.scope },
     select: { id: true, serviceId: true, status: true, startsAt: true },
@@ -150,14 +149,14 @@ export async function getRescheduleSlots(params: {
   return slots.filter((s) => s < end);
 }
 
-export async function checkSlotAvailable(params: {
+export async function checkSlotAvailable(t: TenantRef, params: {
   serviceId: string;
   startsAt: Date;
   now?: Date;
   excludeAppointmentId?: string;
 }, db: AvailabilityClient = prisma): Promise<boolean> {
   const now = params.now ?? new Date();
-  const { scope, professional: pro } = await resolveLegacySchedulingScope(db);
+  const { scope, professional: pro } = await resolveTenantSchedulingContext(db, t.tenantId);
   const service = await db.service.findUnique({ where: { id: params.serviceId, tenantId: scope.tenantId } });
   if (!service || !service.active) return false;
 

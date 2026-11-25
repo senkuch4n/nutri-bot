@@ -5,6 +5,7 @@ import { Alert, Badge, Card, PageHeader } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
 import { FoodMeasuresCard } from "@/components/food-measures/food-measures-card";
 import { foodGroupLabel } from "@/lib/food-groups";
+import { requirePageContext } from "@/lib/tenant-context";
 import { FoodEnergyCard } from "../food-energy-card";
 import { FoodMainNutrientsCard, FoodMoreNutrients } from "../food-nutrients";
 import { OwnFoodForm } from "../own-food-form";
@@ -24,7 +25,9 @@ function usageText(u: { plans: number; templates: number }): string {
 
 export default async function AlimentoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [food, usage, measures] = await Promise.all([getFood(id), getFoodUsage(id), listFoodMeasures(id)]);
+  // HU-025: un propio de otro consultorio → notFound(), igual que uno inexistente.
+  const ctx = await requirePageContext();
+  const [food, usage, measures] = await Promise.all([getFood(ctx, id), getFoodUsage(ctx, id), listFoodMeasures(ctx, id)]);
   if (!food) notFound();
 
   const isSara = food.source === "SARA2";

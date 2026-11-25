@@ -1,13 +1,13 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
 import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken, syncGoogleCalendar } from "@nutri-bot/db/domain";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { outboxOwnershipWhere } from "@nutri-bot/db/domain/outbox";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
 import { logger } from "./logger";
 import { getBotAiConfig } from "./ai/runtime";
+import { getConversationTenant } from "./tenant";
 
 const MAX_ATTEMPTS = 5;
 let outboxRunning = false;
@@ -17,12 +17,13 @@ async function reconcilePayments(): Promise<void> {
   if (paymentsRunning) return;
   paymentsRunning = true;
   try {
-    const result = await reconcilePendingPayments((paymentId) => {
+    const tenant = await getConversationTenant();
+    const result = await reconcilePendingPayments(tenant, (paymentId) => {
       logger.warn({ paymentId }, "Error conciliando pago de Mercado Pago");
     });
     if (result.processed || result.failed || result.skipped) logger.info(result, "Conciliación Mercado Pago");
     // Do not expire reservations when the provider could not be consulted.
-    if (result.failed === 0) await expireStalePendingPayments();
+    if (result.failed === 0) await expireStalePendingPayments(tenant);
   } catch {
     logger.error("Error en conciliación Mercado Pago");
   } finally {
@@ -39,7 +40,8 @@ async function tick(): Promise<void> {
   if (outboxRunning) return;
   outboxRunning = true;
   try {
-    const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+    // HU-025: el consultorio de la instalación de WhatsApp (único punto, getConversationTenant).
+    const { tenantId } = await getConversationTenant();
     const pendingWhere = { ...outboxOwnershipWhere(tenantId), status: "PENDING" as const };
     const pending = await prisma.outboundMessage.findMany({
       where: pendingWhere,
@@ -101,7 +103,7 @@ export function startCron(): void {
 
   cron.schedule("*/15 * * * *", async () => {
     try {
-      const n = await enqueuePrepInstructions();
+      const n = await enqueuePrepInstructions(await getConversationTenant());
       if (n > 0) logger.info({ n }, "Instrucciones previas encoladas");
     } catch (err) {
       logger.error({ err }, "Error encolando instrucciones previas");
@@ -132,7 +134,7 @@ export function startCron(): void {
  *  crudo (puede traer headers con el token). */
 export async function runMercadoPagoRefresh(): Promise<void> {
   try {
-    const result = await refreshMercadoPagoAccountToken();
+    const result = await refreshMercadoPagoAccountToken(await getConversationTenant());
     if (result !== "not_needed" && result !== "not_connected") logger.info({ result }, "Renovación Mercado Pago");
   } catch {
     logger.error("Error renovando Mercado Pago");
@@ -144,7 +146,7 @@ export async function runStartupJobs(): Promise<void> {
   await reconcilePayments();
   try {
     await runServiceReminders();
-    await enqueuePrepInstructions();
+    await enqueuePrepInstructions(await getConversationTenant());
     await syncGoogleCalendar();
   } catch (err) {
     logger.error({ err }, "Error en tareas de arranque");
@@ -170,7 +172,7 @@ export async function runServiceReminders(): Promise<void> {
   if (remindersRunning) return;
   remindersRunning = true;
   try {
-    const { reminders, confirmations } = await enqueueServiceReminders();
+    const { reminders, confirmations } = await enqueueServiceReminders(await getConversationTenant());
     if (reminders > 0) logger.info({ n: reminders }, "Recordatorios encolados");
     if (confirmations > 0) logger.info({ n: confirmations }, "Confirmaciones de asistencia encoladas");
   } catch (err) {
@@ -187,7 +189,7 @@ export async function runAfterHoursDigest(): Promise<void> {
   if (digestRunning) return;
   digestRunning = true;
   try {
-    const { digested, outboundId } = await enqueueAfterHoursDigest();
+    const { digested, outboundId } = await enqueueAfterHoursDigest(await getConversationTenant());
     if (digested > 0) logger.info({ digested, outboundId }, "Resumen de consultas fuera de horario");
   } catch (err) {
     logger.error({ err }, "Error en el resumen de consultas fuera de horario");

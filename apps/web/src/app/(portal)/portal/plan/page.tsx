@@ -13,10 +13,12 @@ export const dynamic = "force-dynamic";
 
 export default async function PortalPlanPage() {
   const patient = await getPortalPatient();
-  if (!patient) return null;
+  // HU-025b-1: el plan es del consultorio del paciente; un paciente sin consultorio no ve planes.
+  if (!patient?.tenantId) return null;
+  const tenant = { tenantId: patient.tenantId };
 
   const plan = await prisma.nutritionPlan.findFirst({
-    where: { patientId: patient.id, status: "ACTIVE" },
+    where: { patientId: patient.id, tenantId: tenant.tenantId, status: "ACTIVE" },
     orderBy: { updatedAt: "desc" },
     include: {
       meals: {
@@ -56,7 +58,7 @@ export default async function PortalPlanPage() {
 
   // HU-018c-2 (SDD 7.6): el detalle de las recetas del plan ACTIVE del paciente (solo esas: el plan se
   // buscó por patientId y status ACTIVE), sin macros. Los ítems de receta viajan sin macros.
-  const recipes = toPortalRecipeMap(await listPlanRecipePreviews(plan.id));
+  const recipes = toPortalRecipeMap(await listPlanRecipePreviews(tenant, plan.id));
 
   return (
     <PortalPlanView

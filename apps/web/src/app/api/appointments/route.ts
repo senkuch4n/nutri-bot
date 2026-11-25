@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@nutri-bot/db";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
 import { appointmentEventTitle, isConsultationEmpty, patientDisplayName } from "@nutri-bot/core";
-import { auth } from "@/auth";
+import { getTenantContext } from "@/lib/tenant-context";
+
+const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // HU-025: agenda principal del consultorio de la sesión; nada de la query elige el tenant.
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "unauthorized" }, { status: 401, headers: NO_STORE });
 
   const { searchParams } = new URL(req.url);
   // FullCalendar envía `start` / `end`; aceptamos también `from` / `to`.
@@ -16,12 +18,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "rango inválido" }, { status: 400 });
   }
 
-  const binding = await resolveLegacySchedulingScope().catch(() => null);
-  if (!binding) return NextResponse.json({ error: "unconfigured" }, { status: 503 });
-
+  const scope = { tenantId: ctx.tenantId, agendaId: ctx.agendaId };
   const appts = await prisma.appointment.findMany({
     where: {
-      ...binding.scope,
+      ...scope,
       startsAt: { gte: from, lt: to },
       status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] },
     },
@@ -77,5 +77,5 @@ export async function GET(req: Request) {
     },
   }));
 
-  return NextResponse.json(events);
+  return NextResponse.json(events, { headers: NO_STORE });
 }

@@ -266,7 +266,7 @@ export async function resolveUnplacedHint(
   templateId: string,
   hintId: string,
   target: { kind: "meal"; mealId: string; weekday: Weekday | null } | { kind: "section"; sectionId: string | null },
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const { hints, hint } = await loadDraftHint(tx, templateId, hintId, tenantId);

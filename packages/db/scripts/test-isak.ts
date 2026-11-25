@@ -25,6 +25,10 @@ import {
   toIsakMeasures,
   updateIsakStudy,
 } from "../domain";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
+
+// HU-025b-1: los scripts CLI operan el consultorio original de forma explícita.
+const T = { tenantId: LEGACY_TENANT_ID };
 
 // Casos de la HU-006 (solo números).
 const CASE_A: IsakMeasures = {
@@ -61,14 +65,14 @@ async function main() {
   try {
     // 1) Paciente propio.
     const patient = await prisma.patient.create({
-      data: { whatsappJid: jid, phone: "000", name: "Prueba HU-006 (TEST)", sex: "MALE", birthDate: new Date("2004-01-15") },
+      data: { tenantId: T.tenantId, whatsappJid: jid, phone: "000", name: "Prueba HU-006 (TEST)", sex: "MALE", birthDate: new Date("2004-01-15") },
     });
     patientIds.push(patient.id);
 
     // 2) Dos consultas "Sin turno".
-    const c05 = await createManualConsultation({ patientId: patient.id, dayKey: "2025-11-05" });
+    const c05 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2025-11-05" });
     consultationIds.push(c05.id);
-    const c08 = await createManualConsultation({ patientId: patient.id, dayKey: "2026-05-08" });
+    const c08 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-05-08" });
     consultationIds.push(c08.id);
     const pro = await getProfessional();
 
@@ -76,13 +80,13 @@ async function main() {
     let bioId = "";
     let studyA = "";
     await step("alta del estudio A y bioimpedancia en la misma consulta", async () => {
-      const bio = await addEvolutionEntryToConsultation(c08.id, { weightKg: 61, bodyFatPercent: 17 });
+      const bio = await addEvolutionEntryToConsultation(T, c08.id, { weightKg: 61, bodyFatPercent: 17 });
       bioId = bio.id;
       entryIds.push(bio.id);
-      const created = await createIsakStudy({ consultationId: c08.id, measures: CASE_A });
+      const created = await createIsakStudy(T, { consultationId: c08.id, measures: CASE_A });
       studyA = created.id;
       entryIds.push(created.id);
-      const got = await getIsakStudy(c08.id);
+      const got = await getIsakStudy(T, c08.id);
       assert.ok(got);
       assert.equal(got.id, created.id);
       assert.equal(got.study, "ISAK");
@@ -97,52 +101,52 @@ async function main() {
 
     // 4) Un solo estudio por consulta.
     await step("segundo estudio en la misma consulta → IsakStudyExistsError", async () => {
-      await assert.rejects(createIsakStudy({ consultationId: c08.id, measures: CASE_B }), IsakStudyExistsError);
+      await assert.rejects(createIsakStudy(T, { consultationId: c08.id, measures: CASE_B }), IsakStudyExistsError);
     });
 
     // 5) Estudio B en la del 05/11 y estudio anterior.
     await step("getPreviousIsakStudy", async () => {
-      const b = await createIsakStudy({ consultationId: c05.id, measures: CASE_B });
+      const b = await createIsakStudy(T, { consultationId: c05.id, measures: CASE_B });
       entryIds.push(b.id);
-      const prev = await getPreviousIsakStudy({ patientId: patient.id, before: c08.consultedAt });
+      const prev = await getPreviousIsakStudy(T, { patientId: patient.id, before: c08.consultedAt });
       assert.ok(prev);
       assert.equal(prev.id, b.id);
       assert.equal(prev.consultation?.id, c05.id);
       assert.deepEqual(toIsakMeasures(prev), CASE_B);
-      assert.equal(await getPreviousIsakStudy({ patientId: patient.id, before: c05.consultedAt }), null);
+      assert.equal(await getPreviousIsakStudy(T, { patientId: patient.id, before: c05.consultedAt }), null);
     });
 
     // 6) Edición.
     await step("updateIsakStudy", async () => {
-      await updateIsakStudy({ consultationId: c08.id, entryId: studyA, measures: { ...CASE_A, tricepsSkinfoldMm: 12, femurBreadthCm: null } });
-      const got = await getIsakStudy(c08.id);
+      await updateIsakStudy(T, { consultationId: c08.id, entryId: studyA, measures: { ...CASE_A, tricepsSkinfoldMm: 12, femurBreadthCm: null } });
+      const got = await getIsakStudy(T, c08.id);
       assert.equal(Number(got?.tricepsSkinfoldMm), 12);
       assert.equal(got?.femurBreadthCm, null);
       const bioBefore = await prisma.evolutionEntry.findUniqueOrThrow({ where: { id: bioId } });
       await assert.rejects(
-        updateIsakStudy({ consultationId: c08.id, entryId: bioId, measures: CASE_B }),
+        updateIsakStudy(T, { consultationId: c08.id, entryId: bioId, measures: CASE_B }),
         IsakStudyNotFoundError,
       );
       const bioAfter = await prisma.evolutionEntry.findUniqueOrThrow({ where: { id: bioId } });
       assert.deepEqual(bioAfter, bioBefore);
       // Otra consulta: tampoco.
       await assert.rejects(
-        updateIsakStudy({ consultationId: c05.id, entryId: studyA, measures: CASE_B }),
+        updateIsakStudy(T, { consultationId: c05.id, entryId: studyA, measures: CASE_B }),
         IsakStudyNotFoundError,
       );
     });
 
     // 7) Borrado: solo la fila ISAK.
     await step("deleteIsakStudy no borra la bioimpedancia", async () => {
-      await assert.rejects(deleteIsakStudy({ consultationId: c08.id, entryId: bioId }), IsakStudyNotFoundError);
-      await deleteIsakStudy({ consultationId: c08.id, entryId: studyA });
-      assert.equal(await getIsakStudy(c08.id), null);
+      await assert.rejects(deleteIsakStudy(T, { consultationId: c08.id, entryId: bioId }), IsakStudyNotFoundError);
+      await deleteIsakStudy(T, { consultationId: c08.id, entryId: studyA });
+      assert.equal(await getIsakStudy(T, c08.id), null);
       assert.ok(await prisma.evolutionEntry.findUnique({ where: { id: bioId } }));
     });
 
     // 8) La consulta con la bioimpedancia no se puede borrar.
     await step("deleteConsultation → ConsultationNotDeletableError", async () => {
-      await assert.rejects(deleteConsultation(c08.id), ConsultationNotDeletableError);
+      await assert.rejects(deleteConsultation(T, c08.id), ConsultationNotDeletableError);
     });
 
     // 9) Nada encolado.

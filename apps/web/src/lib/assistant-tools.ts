@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@nutri-bot/db";
-import { getLatestFormulaMeasurements, listApprovedPaymentsInRange } from "@nutri-bot/db/domain";
+import { getLatestFormulaMeasurements, getTenantProfessional, listApprovedPaymentsInRange, type TenantRef } from "@nutri-bot/db/domain";
 import {
   activityLevelOption,
   computeAgeYears,
@@ -11,14 +11,17 @@ import {
   nutritionGoalLabel,
   sexLabel,
 } from "@nutri-bot/core";
-import { getProfessional } from "./professional";
 
-export async function buscarPaciente(query: string) {
+// HU-025 (025b-2 M8): cada herramienta recibe el consultorio del contexto (`t`) y TODAS sus consultas
+// llevan `tenantId` (o `patient: { tenantId }` para los hijos clínicos). El asistente manda a DeepSeek
+// solo datos de ese consultorio; un id de paciente de otro consultorio da "Paciente no encontrado".
+
+export async function buscarPaciente(t: TenantRef, query: string) {
   const q = query.trim();
   if (!q) return { error: "Falta el término de búsqueda" };
   const n = normalize(q);
   const digits = q.replace(/\D/g, "");
-  const patients = await prisma.patient.findMany({ take: 300 });
+  const patients = await prisma.patient.findMany({ where: { tenantId: t.tenantId }, take: 300 });
   const matches = patients.filter(
     (p) => normalize(p.name ?? "").includes(n) || (digits.length > 0 && p.phone.includes(digits)),
   );
@@ -28,22 +31,25 @@ export async function buscarPaciente(query: string) {
     .map((p) => ({ id: p.id, nombre: p.name, telefono: p.phone, archivada: p.archivedAt !== null }));
 }
 
-export async function resumenPaciente(patientId: string) {
-  const pro = await getProfessional();
-  const [patient, record, lastEntry, m, plansCount, activePlan, nextAppt] = await Promise.all([
-    prisma.patient.findUnique({ where: { id: patientId } }),
-    prisma.clinicalRecord.findUnique({ where: { patientId } }),
-    prisma.evolutionEntry.findFirst({ where: { patientId }, orderBy: { recordedAt: "desc" } }),
-    getLatestFormulaMeasurements(patientId),
-    prisma.nutritionPlan.count({ where: { patientId } }),
-    prisma.nutritionPlan.findFirst({ where: { patientId, status: "ACTIVE" } }),
+export async function resumenPaciente(t: TenantRef, patientId: string) {
+  const { tenantId } = t;
+  // Primero el paciente del consultorio: con un id ajeno no se lee nada más.
+  const patient = await prisma.patient.findUnique({ where: { id_tenantId: { id: patientId, tenantId } } });
+  if (!patient) return { error: "Paciente no encontrado" };
+  const ownPatient = { patientId, patient: { tenantId } };
+  const [pro, record, lastEntry, m, plansCount, activePlan, nextAppt] = await Promise.all([
+    getTenantProfessional(tenantId),
+    prisma.clinicalRecord.findUnique({ where: ownPatient }),
+    prisma.evolutionEntry.findFirst({ where: ownPatient, orderBy: { recordedAt: "desc" } }),
+    getLatestFormulaMeasurements(t, patientId),
+    prisma.nutritionPlan.count({ where: { patientId, tenantId } }),
+    prisma.nutritionPlan.findFirst({ where: { patientId, tenantId, status: "ACTIVE" } }),
     prisma.appointment.findFirst({
-      where: { patientId, status: "CONFIRMED", startsAt: { gte: new Date() } },
+      where: { patientId, tenantId, status: "CONFIRMED", startsAt: { gte: new Date() } },
       include: { service: true },
       orderBy: { startsAt: "asc" },
     }),
   ]);
-  if (!patient) return { error: "Paciente no encontrado" };
 
   const act = activityLevelOption(patient.activityLevel);
   return {
@@ -70,19 +76,25 @@ export async function resumenPaciente(patientId: string) {
   };
 }
 
-export async function turnosAgenda(desdeISO: string, hastaISO: string) {
-  const pro = await getProfessional();
+export async function turnosAgenda(t: TenantRef, desdeISO: string, hastaISO: string) {
   const desde = new Date(desdeISO);
   const hasta = new Date(hastaISO);
   if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
     return { error: "Fechas inválidas, usá formato ISO 8601" };
   }
-  const appts = await prisma.appointment.findMany({
-    where: { startsAt: { gte: desde, lte: hasta }, status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] } },
-    include: { patient: true, service: true },
-    orderBy: { startsAt: "asc" },
-    take: 50,
-  });
+  const [pro, appts] = await Promise.all([
+    getTenantProfessional(t.tenantId),
+    prisma.appointment.findMany({
+      where: {
+        tenantId: t.tenantId,
+        startsAt: { gte: desde, lte: hasta },
+        status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] },
+      },
+      include: { patient: true, service: true },
+      orderBy: { startsAt: "asc" },
+      take: 50,
+    }),
+  ]);
   return appts.map((a) => ({
     paciente: a.patient.name ?? a.patient.phone,
     servicio: a.service.name,
@@ -91,14 +103,16 @@ export async function turnosAgenda(desdeISO: string, hastaISO: string) {
   }));
 }
 
-export async function resumenFacturacion(desdeISO: string, hastaISO: string) {
-  const pro = await getProfessional();
+export async function resumenFacturacion(t: TenantRef, desdeISO: string, hastaISO: string) {
   const desde = new Date(desdeISO);
   const hasta = new Date(hastaISO);
   if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
     return { error: "Fechas inválidas, usá formato ISO 8601" };
   }
-  const payments = await listApprovedPaymentsInRange(desde, hasta);
+  const [pro, payments] = await Promise.all([
+    getTenantProfessional(t.tenantId),
+    listApprovedPaymentsInRange(t, desde, hasta),
+  ]);
   const total = payments.reduce((sum, p) => sum + Number(p.amount), 0);
   return { total: formatPrice(total, pro.currency), cantidad_pagos: payments.length };
 }

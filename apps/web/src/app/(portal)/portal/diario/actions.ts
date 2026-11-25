@@ -21,7 +21,9 @@ function revalidateDiary() {
 
 export async function addDiaryEntryAction(_prev: DiaryState, formData: FormData): Promise<DiaryState> {
   const patient = await getPortalPatient();
-  if (!patient) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
+  // HU-025b-1: el diario se escribe en el consultorio del paciente; sin dueño no hay acceso.
+  if (!patient?.tenantId) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
+  const tenant = { tenantId: patient.tenantId };
 
   const note = String(formData.get("note") ?? "").trim();
   const photo = formData.get("photo");
@@ -39,7 +41,7 @@ export async function addDiaryEntryAction(_prev: DiaryState, formData: FormData)
   if (!note && !photoData) return { ok: false, error: PORTAL_DIARY_TEXT.errorEmpty };
 
   try {
-    await addDiaryEntry(patient.id, { note: note || null, photoData, photoMimeType });
+    await addDiaryEntry(tenant, patient.id, { note: note || null, photoData, photoMimeType });
   } catch {
     return { ok: false, error: PORTAL_DIARY_TEXT.errorSave };
   }
@@ -49,15 +51,19 @@ export async function addDiaryEntryAction(_prev: DiaryState, formData: FormData)
 
 export async function deleteDiaryEntryAction(id: string): Promise<DiaryDeleteResult> {
   const patient = await getPortalPatient();
-  if (!patient) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
+  if (!patient?.tenantId) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
   if (typeof id !== "string" || !id) return { ok: false };
+  const tenant = { tenantId: patient.tenantId };
 
   try {
-    const entry = await prisma.diaryEntry.findUnique({ where: { id }, select: { patientId: true } });
+    const entry = await prisma.diaryEntry.findFirst({
+      where: { id, patient: { tenantId: tenant.tenantId } },
+      select: { patientId: true },
+    });
     // Ya no está: el borrado es idempotente (un segundo commit o un registro borrado en otra pestaña).
     if (!entry) return { ok: true };
     if (entry.patientId !== patient.id) return { ok: false, error: PORTAL_DIARY_TEXT.deleteError };
-    await deleteDiaryEntry(id);
+    await deleteDiaryEntry(tenant, id);
   } catch (error) {
     // Se borró entre la consulta y el delete (otra pestaña): también es "ya no está".
     if ((error as { code?: unknown } | null)?.code === "P2025") return { ok: true };

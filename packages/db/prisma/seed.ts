@@ -179,13 +179,19 @@ export async function seedBase(
   }
 }
 
+/** Email de la ficha de la profesional del seed. HU-025: ya no sale de la lista de acceso al panel
+ *  (el acceso es por membresía); `SEED_PROFESSIONAL_EMAIL` opcional. */
+export function seedProfessionalEmail(env: Record<string, string | undefined>): string {
+  return env.SEED_PROFESSIONAL_EMAIL?.trim() || "nutricionista@example.com";
+}
+
 async function main(prisma: PrismaClient) {
   const timezone = process.env.PROFESSIONAL_TZ ?? "America/Argentina/Buenos_Aires";
   const currency = process.env.CURRENCY ?? "ARS";
   const reminderLeadHours = Number(process.env.REMINDER_LEAD_HOURS ?? 24);
   await seedBase(prisma, { timezone, currency, reminderLeadHours }, {
     name: "Nutricionista",
-    email: process.env.ALLOWED_EMAILS?.split(",")[0]?.trim() ?? "nutricionista@example.com",
+    email: seedProfessionalEmail(process.env),
     phoneJid: process.env.PROFESSIONAL_JID ?? null,
   });
   console.log("Seed completado.");

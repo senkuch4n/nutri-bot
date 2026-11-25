@@ -1,10 +1,8 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
-import { LoginScreen } from "@/components/login-screen";
+import { AccessGateScreen } from "@/components/access-gate-screen";
 
-export default async function LoginPage() {
-  const session = await auth();
-  if (session?.user) redirect("/");
+export const dynamic = "force-dynamic";
 
-  return <LoginScreen />;
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string | string[] }> }) {
+  const { error } = await searchParams;
+  return <AccessGateScreen signInError={error} />;
 }

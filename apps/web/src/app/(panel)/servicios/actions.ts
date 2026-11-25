@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { SERVICE_REMINDERS_TEXT, validateServiceReminders, type ServiceReminder, type ServiceReminderError } from "@nutri-bot/core";
 import { createService, setServiceActive, updateService } from "@/lib/services";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 const schema = z
   .object({
@@ -87,11 +88,13 @@ export async function saveServiceAction(
   };
 
   try {
+    // HU-025: servicio del consultorio de la sesión; un tenantId del formulario no llega al payload.
+    const ctx = await requireTenantContext("write");
     if (id) {
       // Sin `active`: en edición no se toca (Q17).
-      await updateService(id, payload);
+      await updateService(ctx, id, payload);
     } else {
-      await createService(payload);
+      await createService(ctx, payload);
     }
   } catch {
     return { ok: false, error: "No se pudo guardar el servicio" };
@@ -104,7 +107,7 @@ export async function saveServiceAction(
 /** Switch "Lo ofrece el bot" de la tarjeta. "Deshacer" llama a la misma action con `true`. */
 export async function toggleServiceAction(id: string, active: boolean): Promise<{ ok: boolean; error?: string }> {
   try {
-    await setServiceActive(id, active);
+    await setServiceActive(await requireTenantContext("write"), id, active);
   } catch {
     return { ok: false, error: "No se pudo cambiar. Probá de nuevo." };
   }

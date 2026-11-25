@@ -1,11 +1,14 @@
 import { listFoods } from "@nutri-bot/db/domain";
 import { PageHeader } from "@/components/ui";
+import { requirePageContext } from "@/lib/tenant-context";
 import { FoodsList } from "./foods-list";
 
 export const dynamic = "force-dynamic";
 
 export default async function AlimentosPage() {
-  const foods = await listFoods({ activeOnly: false, source: "SARA2" });
+  const ctx = await requirePageContext();
+  // HU-025: "activo" es la visibilidad para este consultorio (su preferencia sobre SARA 2).
+  const foods = await listFoods(ctx, { activeOnly: false, source: "SARA2" });
 
   return (
     <div>

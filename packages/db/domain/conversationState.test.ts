@@ -10,7 +10,7 @@ vi.mock("../index", () => ({ prisma: db }));
 import {
   clearExpiredLegacyConversationText,
   findLegacyConversationState,
-  listLegacyPatientLastContacts,
+  listPatientLastContacts,
   loadOrInitializeLegacyConversationState,
   saveLegacyConversationState,
 } from "./conversationState";
@@ -36,7 +36,7 @@ it("reads only scoped timestamps for requested JIDs belonging to active original
   const contacts = [{ patientJid: jid, updatedAt: row.updatedAt }];
   state.findMany.mockResolvedValue(contacts);
 
-  await expect(listLegacyPatientLastContacts(requested)).resolves.toEqual(contacts);
+  await expect(listPatientLastContacts(owner, requested)).resolves.toEqual(contacts);
   expect(db.patient.findMany.mock.calls).toEqual([[{
     where: { tenantId, archivedAt: null, whatsappJid: { in: requested } },
     select: { whatsappJid: true },
@@ -48,15 +48,14 @@ it("reads only scoped timestamps for requested JIDs belonging to active original
 
 it("does not read conversation state if no requested patient is eligible", async () => {
   db.patient.findMany.mockResolvedValue([]);
-  await expect(listLegacyPatientLastContacts([])).resolves.toEqual([]);
+  await expect(listPatientLastContacts(owner, [])).resolves.toEqual([]);
   expect(db.patient.findMany).not.toHaveBeenCalled();
-  await expect(listLegacyPatientLastContacts(["foreign@lid"])).resolves.toEqual([]);
+  await expect(listPatientLastContacts(owner, ["foreign@lid"])).resolves.toEqual([]);
   expect(state.findMany).not.toHaveBeenCalled();
 });
 
 it.each([
   ["read", () => findLegacyConversationState(jid)],
-  ["list", () => listLegacyPatientLastContacts([jid])],
   ["initialize", () => loadOrInitializeLegacyConversationState(jid, initial.step)],
   ["save", () => saveLegacyConversationState(jid, active.step, active.context)],
   ["purge", () => clearExpiredLegacyConversationText(insertedAt)],

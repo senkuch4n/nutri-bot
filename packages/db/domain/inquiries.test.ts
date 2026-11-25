@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => ({
       count: vi.fn(),
     },
     outboundMessage: { create: vi.fn() },
-    agenda: { findUnique: vi.fn() },
+    agenda: { findFirst: vi.fn() },
+    patient: { findFirst: vi.fn() },
   },
 }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
@@ -22,11 +23,15 @@ vi.mock("../index", () => ({ prisma: mocks.prisma }));
 import {
   INQUIRY_MESSAGE_MAX,
   countInquiriesByStatus,
+  countPendingInquiries,
   enqueueAfterHoursDigest,
+  listInquiries,
   markInquiryAnswered,
   recordInquiryMessage,
 } from "./inquiries";
 
+const T = { tenantId: "legacy-tenant" };
+const primaryAgenda = (professional: unknown) => ({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional });
 const TZ = "America/Argentina/Buenos_Aires";
 const PRO = {
   id: 1,
@@ -45,13 +50,14 @@ function row(id: string, name: string | null, phone: string, receivedAt: Date) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: PRO });
+  mocks.prisma.agenda.findFirst.mockResolvedValue(primaryAgenda(PRO));
+  mocks.prisma.patient.findFirst.mockResolvedValue({ id: "p1" });
   mocks.prisma.$transaction.mockImplementation((fn: (tx: typeof mocks.prisma) => unknown) => fn(mocks.prisma));
 });
 
 describe("enqueueAfterHoursDigest", () => {
   it("dentro de la franja no hace nada", async () => {
-    await expect(enqueueAfterHoursDigest({ now: NIGHT_NOW })).resolves.toEqual({ digested: 0, outboundId: null });
+    await expect(enqueueAfterHoursDigest(T, { now: NIGHT_NOW })).resolves.toEqual({ digested: 0, outboundId: null });
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -63,7 +69,7 @@ describe("enqueueAfterHoursDigest", () => {
     mocks.prisma.outboundMessage.create.mockResolvedValue({ id: "out1" });
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 2 });
 
-    await expect(enqueueAfterHoursDigest({ now: DAY_NOW })).resolves.toEqual({ digested: 2, outboundId: "out1" });
+    await expect(enqueueAfterHoursDigest(T, { now: DAY_NOW })).resolves.toEqual({ digested: 2, outboundId: "out1" });
 
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledTimes(1);
     const data = mocks.prisma.outboundMessage.create.mock.calls[0]![0].data;
@@ -84,8 +90,8 @@ describe("enqueueAfterHoursDigest", () => {
   });
 
   it("sin agenda original no lee ni modifica consultas ni encola", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
-    await expect(enqueueAfterHoursDigest({ now: DAY_NOW })).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    mocks.prisma.agenda.findFirst.mockResolvedValue(null);
+    await expect(enqueueAfterHoursDigest(T, { now: DAY_NOW })).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(mocks.prisma.patientInquiry.findMany).not.toHaveBeenCalled();
     expect(mocks.prisma.patientInquiry.updateMany).not.toHaveBeenCalled();
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
@@ -93,16 +99,16 @@ describe("enqueueAfterHoursDigest", () => {
 
   it("sin consultas no crea ni marca nada", async () => {
     mocks.prisma.patientInquiry.findMany.mockResolvedValue([]);
-    await expect(enqueueAfterHoursDigest({ now: DAY_NOW })).resolves.toEqual({ digested: 0, outboundId: null });
+    await expect(enqueueAfterHoursDigest(T, { now: DAY_NOW })).resolves.toEqual({ digested: 0, outboundId: null });
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
     expect(mocks.prisma.patientInquiry.updateMany).not.toHaveBeenCalled();
   });
 
   it("con phoneJid nulo no encola, pero las marca como resumidas", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { ...PRO, phoneJid: null } });
+    mocks.prisma.agenda.findFirst.mockResolvedValue(primaryAgenda({ ...PRO, phoneJid: null }));
     mocks.prisma.patientInquiry.findMany.mockResolvedValue([row("i1", "Ana", "549", NIGHT_NOW)]);
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 1 });
-    await expect(enqueueAfterHoursDigest({ now: DAY_NOW })).resolves.toEqual({ digested: 1, outboundId: null });
+    await expect(enqueueAfterHoursDigest(T, { now: DAY_NOW })).resolves.toEqual({ digested: 1, outboundId: null });
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
     expect(mocks.prisma.patientInquiry.updateMany).toHaveBeenCalledTimes(1);
   });
@@ -112,21 +118,21 @@ describe("enqueueAfterHoursDigest", () => {
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 1 });
     mocks.prisma.outboundMessage.create.mockResolvedValue({ id: "out9" });
 
-    await enqueueAfterHoursDigest({ now: DAY_NOW, alertJid: "5490000000099@s.whatsapp.net" });
+    await enqueueAfterHoursDigest(T, { now: DAY_NOW, alertJid: "5490000000099@s.whatsapp.net" });
     expect(mocks.prisma.outboundMessage.create.mock.calls[0]![0].data.toJid).toBe("5490000000099@s.whatsapp.net");
 
     mocks.prisma.outboundMessage.create.mockClear();
-    await expect(enqueueAfterHoursDigest({ now: DAY_NOW, alertJid: null })).resolves.toEqual({ digested: 1, outboundId: null });
+    await expect(enqueueAfterHoursDigest(T, { now: DAY_NOW, alertJid: null })).resolves.toEqual({ digested: 1, outboundId: null });
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
 
   it("scope.patientIds llega al where y config reemplaza la franja", async () => {
     mocks.prisma.patientInquiry.findMany.mockResolvedValue([]);
     // Con config 08:00→10:00, las 09:05 son "de noche" → no consulta nada.
-    await enqueueAfterHoursDigest({ now: DAY_NOW, config: { enabled: true, start: "08:00", end: "10:00" } });
+    await enqueueAfterHoursDigest(T, { now: DAY_NOW, config: { enabled: true, start: "08:00", end: "10:00" } });
     expect(mocks.prisma.patientInquiry.findMany).not.toHaveBeenCalled();
 
-    await enqueueAfterHoursDigest({ now: DAY_NOW, scope: { patientIds: ["p1", "p2"] } });
+    await enqueueAfterHoursDigest(T, { now: DAY_NOW, scope: { patientIds: ["p1", "p2"] } });
     expect(mocks.prisma.patientInquiry.findMany.mock.calls[0]![0].where.patientId).toEqual({ in: ["p1", "p2"] });
   });
 
@@ -137,7 +143,7 @@ describe("enqueueAfterHoursDigest", () => {
     ]);
     mocks.prisma.outboundMessage.create.mockResolvedValue({ id: "out1" });
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 1 });
-    await expect(enqueueAfterHoursDigest({ now: DAY_NOW })).rejects.toThrow();
+    await expect(enqueueAfterHoursDigest(T, { now: DAY_NOW })).rejects.toThrow();
   });
 });
 
@@ -146,8 +152,8 @@ describe("recordInquiryMessage", () => {
 
   it("con inquiryId de la sesión y UPDATE = 1 la agrega, sin crear", async () => {
     mocks.prisma.$executeRaw.mockResolvedValue(1);
-    mocks.prisma.patientInquiry.findUnique.mockResolvedValue({ id: "i1", body: "a\nb" });
-    const r = await recordInquiryMessage({ patientId: "p1", text: " b ", at, afterHours: true, inquiryId: "i1" });
+    mocks.prisma.patientInquiry.findFirst.mockResolvedValue({ id: "i1", body: "a\nb" });
+    const r = await recordInquiryMessage(T, { patientId: "p1", text: " b ", at, afterHours: true, inquiryId: "i1" });
     expect(r).toEqual({ inquiry: { id: "i1", body: "a\nb" }, created: false });
     expect(mocks.prisma.patientInquiry.create).not.toHaveBeenCalled();
     // El texto viaja como parámetro, con el salto de línea adelante y ya recortado.
@@ -160,8 +166,8 @@ describe("recordInquiryMessage", () => {
   it("sin inquiryId, de noche, agrega a la consulta nocturna sin resumir", async () => {
     mocks.prisma.patientInquiry.findFirst.mockResolvedValue({ id: "tonight" });
     mocks.prisma.$executeRaw.mockResolvedValue(1);
-    mocks.prisma.patientInquiry.findUnique.mockResolvedValue({ id: "tonight" });
-    const r = await recordInquiryMessage({ patientId: "p1", text: "otra", at, afterHours: true });
+    mocks.prisma.patientInquiry.findFirst.mockResolvedValue({ id: "tonight" });
+    const r = await recordInquiryMessage(T, { patientId: "p1", text: "otra", at, afterHours: true });
     expect(r.created).toBe(false);
     expect(r.inquiry.id).toBe("tonight");
     expect(mocks.prisma.patientInquiry.findFirst.mock.calls[0]![0].where).toEqual({
@@ -169,15 +175,17 @@ describe("recordInquiryMessage", () => {
       status: "PENDING",
       receivedAfterHours: true,
       digestedAt: null,
+      patient: { tenantId: "legacy-tenant" },
     });
     expect(mocks.prisma.patientInquiry.create).not.toHaveBeenCalled();
   });
 
   it("de día crea una nueva con receivedAfterHours false y las dos fechas = at", async () => {
     mocks.prisma.patientInquiry.create.mockResolvedValue({ id: "new" });
-    const r = await recordInquiryMessage({ patientId: "p1", text: "hola", at, afterHours: false });
+    const r = await recordInquiryMessage(T, { patientId: "p1", text: "hola", at, afterHours: false });
     expect(r).toEqual({ inquiry: { id: "new" }, created: true });
     expect(mocks.prisma.patientInquiry.findFirst).not.toHaveBeenCalled();
+    expect(mocks.prisma.patient.findFirst).toHaveBeenCalledWith({ where: { id: "p1", tenantId: "legacy-tenant" }, select: { id: true } });
     expect(mocks.prisma.patientInquiry.create).toHaveBeenCalledWith({
       data: { patientId: "p1", body: "hola", receivedAt: at, lastMessageAt: at, receivedAfterHours: false },
     });
@@ -186,20 +194,20 @@ describe("recordInquiryMessage", () => {
   it("si la de la sesión ya se respondió (UPDATE = 0) crea una nueva", async () => {
     mocks.prisma.$executeRaw.mockResolvedValue(0);
     mocks.prisma.patientInquiry.create.mockResolvedValue({ id: "new" });
-    const r = await recordInquiryMessage({ patientId: "p1", text: "hola", at, afterHours: false, inquiryId: "old" });
+    const r = await recordInquiryMessage(T, { patientId: "p1", text: "hola", at, afterHours: false, inquiryId: "old" });
     expect(r.created).toBe(true);
     expect(mocks.prisma.patientInquiry.create).toHaveBeenCalledTimes(1);
   });
 
   it("recorta a INQUIRY_MESSAGE_MAX", async () => {
     mocks.prisma.patientInquiry.create.mockResolvedValue({ id: "new" });
-    await recordInquiryMessage({ patientId: "p1", text: "x".repeat(5000), at, afterHours: false });
+    await recordInquiryMessage(T, { patientId: "p1", text: "x".repeat(5000), at, afterHours: false });
     expect(INQUIRY_MESSAGE_MAX).toBe(4000);
     expect(mocks.prisma.patientInquiry.create.mock.calls[0]![0].data.body).toHaveLength(4000);
   });
 
   it("texto vacío lanza", async () => {
-    await expect(recordInquiryMessage({ patientId: "p1", text: "   ", at, afterHours: false })).rejects.toThrow();
+    await expect(recordInquiryMessage(T, { patientId: "p1", text: "   ", at, afterHours: false })).rejects.toThrow();
   });
 });
 
@@ -207,27 +215,63 @@ describe("markInquiryAnswered", () => {
   it("count 1 → answered", async () => {
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 1 });
     const at = new Date();
-    await expect(markInquiryAnswered("i1", at)).resolves.toBe("answered");
+    await expect(markInquiryAnswered(T, "i1", at)).resolves.toBe("answered");
     expect(mocks.prisma.patientInquiry.updateMany).toHaveBeenCalledWith({
-      where: { id: "i1", status: "PENDING" },
+      where: { id: "i1", status: "PENDING", patient: { tenantId: "legacy-tenant" } },
       data: { status: "ANSWERED", answeredAt: at },
     });
   });
   it("count 0 con fila → already_answered", async () => {
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 0 });
-    mocks.prisma.patientInquiry.findUnique.mockResolvedValue({ id: "i1" });
-    await expect(markInquiryAnswered("i1")).resolves.toBe("already_answered");
+    mocks.prisma.patientInquiry.findFirst.mockResolvedValue({ id: "i1" });
+    await expect(markInquiryAnswered(T, "i1")).resolves.toBe("already_answered");
   });
   it("count 0 sin fila → not_found", async () => {
     mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 0 });
-    mocks.prisma.patientInquiry.findUnique.mockResolvedValue(null);
-    await expect(markInquiryAnswered("i1")).resolves.toBe("not_found");
+    mocks.prisma.patientInquiry.findFirst.mockResolvedValue(null);
+    await expect(markInquiryAnswered(T, "i1")).resolves.toBe("not_found");
   });
 });
 
 describe("countInquiriesByStatus", () => {
   it("completa con 0 los estados sin filas", async () => {
     mocks.prisma.patientInquiry.groupBy.mockResolvedValue([{ status: "PENDING", _count: { _all: 3 } }]);
-    await expect(countInquiriesByStatus()).resolves.toEqual({ PENDING: 3, ANSWERED: 0 });
+    await expect(countInquiriesByStatus(T)).resolves.toEqual({ PENDING: 3, ANSWERED: 0 });
+  });
+});
+
+describe("HU-025: consultas del consultorio del contexto", () => {
+  const B = { tenantId: "tenant-b" };
+  it("un paciente de otro consultorio no registra consulta ni toca filas", async () => {
+    mocks.prisma.patient.findFirst.mockResolvedValue(null);
+    await expect(recordInquiryMessage(B, { patientId: "p-a", text: "hola", at: DAY_NOW, afterHours: false, inquiryId: "i-a" }))
+      .rejects.toThrow("paciente no encontrado");
+    expect(mocks.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(mocks.prisma.patientInquiry.create).not.toHaveBeenCalled();
+  });
+  it("el UPDATE de agregado exige que el paciente sea del consultorio", async () => {
+    mocks.prisma.$executeRaw.mockResolvedValue(0);
+    mocks.prisma.patientInquiry.create.mockResolvedValue({ id: "new" });
+    await recordInquiryMessage(B, { patientId: "p1", text: "x", at: DAY_NOW, afterHours: false, inquiryId: "i1" });
+    const [strings, ...values] = mocks.prisma.$executeRaw.mock.calls[0]!;
+    expect((strings as string[]).join("?")).toContain('"Patient"."tenantId" = ?');
+    expect(values).toContain("tenant-b");
+  });
+  it("listados y conteos filtran por el paciente del tenant", async () => {
+    mocks.prisma.patientInquiry.findMany.mockResolvedValue([]);
+    mocks.prisma.patientInquiry.groupBy.mockResolvedValue([]);
+    mocks.prisma.patientInquiry.count.mockResolvedValue(0);
+    await listInquiries(B);
+    await countInquiriesByStatus(B);
+    await countPendingInquiries(B);
+    for (const [arg] of mocks.prisma.patientInquiry.findMany.mock.calls) expect(arg.where.patient).toEqual({ tenantId: "tenant-b" });
+    expect(mocks.prisma.patientInquiry.groupBy.mock.calls[0]![0].where).toEqual({ patient: { tenantId: "tenant-b" } });
+    expect(mocks.prisma.patientInquiry.count.mock.calls[0]![0].where).toEqual({ status: "PENDING", patient: { tenantId: "tenant-b" } });
+  });
+  it("marcar respondida una consulta de otro consultorio da not_found", async () => {
+    mocks.prisma.patientInquiry.updateMany.mockResolvedValue({ count: 0 });
+    mocks.prisma.patientInquiry.findFirst.mockResolvedValue(null);
+    await expect(markInquiryAnswered(B, "i-a")).resolves.toBe("not_found");
+    expect(mocks.prisma.patientInquiry.findFirst).toHaveBeenCalledWith({ where: { id: "i-a", patient: { tenantId: "tenant-b" } }, select: { id: true } });
   });
 });

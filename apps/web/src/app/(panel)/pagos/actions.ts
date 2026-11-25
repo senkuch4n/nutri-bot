@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { registerManualPayment } from "@nutri-bot/db/domain";
+import { withReauth } from "@/lib/reauth";
+import { requireTenantContext } from "@/lib/tenant-context";
 
-export type PaymentFormState = { ok: boolean; error?: string; kind?: "DEPOSIT" | "FULL"; amount?: number };
+export type PaymentFormState = { ok: boolean; error?: string; kind?: "DEPOSIT" | "FULL"; amount?: number; reauth?: true };
 
 const manualPaymentSchema = z.object({
   appointmentId: z.string().min(1),
@@ -21,12 +23,14 @@ export async function registerManualPaymentAction(
   const parsed = manualPaymentSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
   try {
-    await registerManualPayment(parsed.data.appointmentId, {
+    // HU-025: el consultorio sale del contexto; un turno de otro consultorio falla igual que uno inexistente.
+    const ctx = await requireTenantContext("write");
+    await registerManualPayment(ctx, parsed.data.appointmentId, {
       kind: parsed.data.kind,
       amount: parsed.data.amount,
     });
-  } catch {
-    return { ok: false, error: "No se pudo registrar el pago. Probá de nuevo." };
+  } catch (error) {
+    return withReauth(error, { ok: false, error: "No se pudo registrar el pago. Probá de nuevo." });
   }
   revalidatePath("/pagos");
   revalidatePath("/");

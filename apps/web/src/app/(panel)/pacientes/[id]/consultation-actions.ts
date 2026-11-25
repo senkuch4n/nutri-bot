@@ -26,6 +26,7 @@ import {
   updateManualConsultationDate,
 } from "@nutri-bot/db/domain";
 import { belongsToPatient } from "@/lib/consultation-guard";
+import { requireTenantContext } from "@/lib/tenant-context";
 import type { ActionState } from "./clinical-actions";
 import { parseMeasuresFromForm } from "./measure-form-data";
 
@@ -65,18 +66,24 @@ export async function createConsultationAction(
   const { patientId, day, force } = parsed.data;
   if (!isValidDayKey(day)) return { ok: false, error: "Fecha inválida" };
 
-  const patient = await prisma.patient.findUnique({ where: { id: patientId }, select: { id: true } });
+  // HU-025: paciente del consultorio de la sesión; uno de otro consultorio es como inexistente.
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return INVALID;
+  const patient = await prisma.patient.findUnique({
+    where: { id_tenantId: { id: patientId, tenantId: ctx.tenantId } },
+    select: { id: true },
+  });
   if (!patient) return INVALID;
 
   try {
     if (force !== "1") {
-      const sameDay = await listConsultationsOnDay(patientId, day);
+      const sameDay = await listConsultationsOnDay(ctx, patientId, day);
       const existing = pickConsultationForDay(sameDay);
       if (existing) {
         return { ok: false, error: CONSULTATION_TEXT.sameDayExists, existingConsultationId: existing.id };
       }
     }
-    const consultation = await createManualConsultation({ patientId, dayKey: day });
+    const consultation = await createManualConsultation(ctx, { patientId, dayKey: day });
     revalidateConsultation(patientId, consultation.id);
     return { ok: true, consultationId: consultation.id };
   } catch (err) {
@@ -99,10 +106,11 @@ export async function updateConsultationDateAction(
   if (!parsed.success) return INVALID;
   const { patientId, consultationId, day } = parsed.data;
   if (!isValidDayKey(day)) return { ok: false, error: "Fecha inválida" };
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
 
   try {
-    await updateManualConsultationDate({ consultationId, dayKey: day });
+    await updateManualConsultationDate(ctx, { consultationId, dayKey: day });
   } catch (err) {
     if (err instanceof FutureConsultationDateError || err instanceof AppointmentConsultationDateError) {
       return { ok: false, error: err.message };
@@ -128,9 +136,10 @@ export async function saveConsultationNotesAction(
   const parsed = notesSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "No se pudieron guardar las notas." };
   const { patientId, consultationId, notes } = parsed.data;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
   try {
-    await saveConsultationNotes({ consultationId, notes: notes ?? null });
+    await saveConsultationNotes(ctx, { consultationId, notes: notes ?? null });
   } catch {
     return { ok: false, error: "No se pudieron guardar las notas." };
   }
@@ -153,9 +162,10 @@ export async function setConsultationPlanAction(
   const parsed = setPlanSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Elegí un plan" };
   const { patientId, consultationId, planId } = parsed.data;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
   try {
-    await setConsultationPlan({ consultationId, planId });
+    await setConsultationPlan(ctx, { consultationId, planId });
   } catch (err) {
     if (err instanceof ConsultationPlanMismatchError) return INVALID;
     return { ok: false, error: "No se pudo indicar el plan." };
@@ -169,9 +179,10 @@ export async function clearConsultationPlanAction(
   consultationId: string,
 ): Promise<ActionState> {
   if (!idSchema.safeParse(patientId).success || !idSchema.safeParse(consultationId).success) return INVALID;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
   try {
-    await setConsultationPlan({ consultationId, planId: null });
+    await setConsultationPlan(ctx, { consultationId, planId: null });
   } catch {
     return { ok: false, error: "No se pudo quitar el plan." };
   }
@@ -181,8 +192,9 @@ export async function clearConsultationPlanAction(
 
 export async function createPlanForConsultationAction(patientId: string, consultationId: string): Promise<void> {
   if (!idSchema.safeParse(patientId).success || !idSchema.safeParse(consultationId).success) return;
-  if (!(await belongsToPatient(patientId, consultationId))) return;
-  const plan = await createPlanForConsultation({ consultationId });
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return;
+  const plan = await createPlanForConsultation(ctx, { consultationId });
   revalidateConsultation(patientId, consultationId);
   redirect(`/pacientes/${patientId}/planes/${plan.id}`);
 }
@@ -197,13 +209,14 @@ export async function addConsultationMeasurementAction(
   const ids = z.object({ patientId: idSchema, consultationId: idSchema }).safeParse(raw);
   if (!ids.success) return INVALID;
   const { patientId, consultationId } = ids.data;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
 
   const measures = parseMeasuresFromForm(raw);
   if (!measures.ok) return { ok: false, error: measures.error };
 
   try {
-    await addEvolutionEntryToConsultation(consultationId, measures.measures);
+    await addEvolutionEntryToConsultation(ctx, consultationId, measures.measures);
   } catch {
     return { ok: false, error: "No se pudo agregar la medición." };
   }
@@ -217,11 +230,15 @@ export async function deleteConsultationMeasurementAction(
   entryId: string,
 ): Promise<ActionState> {
   if (![patientId, consultationId, entryId].every((v) => idSchema.safeParse(v).success)) return INVALID;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
-  const entry = await prisma.evolutionEntry.findUnique({ where: { id: entryId }, select: { consultationId: true } });
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
+  const entry = await prisma.evolutionEntry.findFirst({
+    where: { id: entryId, tenantId: ctx.tenantId, patient: { tenantId: ctx.tenantId } },
+    select: { consultationId: true },
+  });
   if (!entry || entry.consultationId !== consultationId) return INVALID;
   try {
-    await deleteEvolutionEntry(entryId);
+    await deleteEvolutionEntry(ctx, entryId);
   } catch {
     return { ok: false, error: "No se pudo borrar la medición." };
   }
@@ -238,9 +255,10 @@ export async function deleteConsultationMeasurementAction(
  */
 export async function deleteConsultationAction(patientId: string, consultationId: string): Promise<ActionState> {
   if (!idSchema.safeParse(patientId).success || !idSchema.safeParse(consultationId).success) return INVALID;
-  if (!(await belongsToPatient(patientId, consultationId))) return INVALID;
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx || !(await belongsToPatient(ctx, patientId, consultationId))) return INVALID;
   try {
-    await deleteConsultation(consultationId);
+    await deleteConsultation(ctx, consultationId);
   } catch (err) {
     if (err instanceof ConsultationNotDeletableError) return { ok: false, error: CONSULTATION_TEXT.notDeletable };
     return { ok: false, error: "No se pudo eliminar la consulta." };

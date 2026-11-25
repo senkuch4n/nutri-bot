@@ -6,8 +6,9 @@ import {
   type PatientDirectoryInput,
 } from "@nutri-bot/core";
 import { PageHeader } from "@/components/ui";
-import { listLegacyPatientLastContacts } from "@nutri-bot/db/domain/conversationState";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { listPatientLastContacts } from "@nutri-bot/db/domain/conversationState";
+import { getTenantProfessional } from "@nutri-bot/db/domain";
+import { requirePageContext } from "@/lib/tenant-context";
 import { ArchivedPatientList } from "../archived-patient-list";
 import { NewPatientDialog } from "../new-patient-dialog";
 import { PatientDirectory } from "../patient-directory";
@@ -27,7 +28,10 @@ export default async function PacientesPage({
   searchParams: Promise<{ vista?: string | string[] }>;
 }) {
   const { vista } = await searchParams;
-  const { scope: { tenantId, agendaId }, professional: { timezone } } = await resolveLegacySchedulingScope();
+  // HU-025: pacientes del consultorio de la sesión y su agenda principal.
+  const ctx = await requirePageContext();
+  const { tenantId, agendaId } = ctx;
+  const { timezone } = await getTenantProfessional(tenantId);
   if (vista === "archivadas") return archivedView(await listArchivedPatients(tenantId), timezone);
 
   const now = new Date();
@@ -55,7 +59,7 @@ export default async function PacientesPage({
     listArchivedPatients(tenantId),
   ]);
 
-  const conversations = await listLegacyPatientLastContacts(patients.map((patient) => patient.whatsappJid));
+  const conversations = await listPatientLastContacts(ctx, patients.map((patient) => patient.whatsappJid));
   const lastContactByJid = new Map(conversations.map((c) => [c.patientJid, c.updatedAt]));
   const inputs: PatientDirectoryInput[] = patients.map((p) => {
     const next = p.appointments[0];

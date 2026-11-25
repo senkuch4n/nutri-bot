@@ -28,11 +28,12 @@ import {
   getConsultation,
   getIsakStudy,
   getPreviousIsakStudy,
+  getTenantProfessional,
   toIsakMeasures,
 } from "@nutri-bot/db/domain";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/primitives/table";
 import { Alert, Badge, Button, ButtonLink, Card, PageHeader, StatTile } from "@/components/ui";
-import { getProfessional } from "@/lib/professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { FormulaDataForm } from "../../../formula-data-form";
 import { FormulaDataSheet } from "../../../formula-data-sheet";
 import { IsakStudyMoreMenu } from "../delete-isak-study-button";
@@ -76,10 +77,12 @@ function classifiedValue<K extends string>(v: IsakClassified<K>): IsakValue {
 /** Estudio antropométrico ISAK completo de la consulta (HU-006, épicas 44 y 45). */
 export default async function IsakStudyPage({ params }: { params: Promise<{ id: string; consultationId: string }> }) {
   const { id, consultationId } = await params;
+  // HU-025: consulta y estudio del consultorio de la sesión; de otro consultorio → notFound().
+  const tenant = await requirePageContext();
   const [consultation, pro, entry] = await Promise.all([
-    getConsultation(consultationId),
-    getProfessional(),
-    getIsakStudy(consultationId),
+    getConsultation(tenant, consultationId),
+    getTenantProfessional(tenant.tenantId),
+    getIsakStudy(tenant, consultationId),
   ]);
   if (!consultation || consultation.patientId !== id) notFound();
   const consultationHref = `/pacientes/${id}/consultas/${consultationId}`;
@@ -99,8 +102,8 @@ export default async function IsakStudyPage({ params }: { params: Promise<{ id: 
   });
 
   const [previousEntry, report] = await Promise.all([
-    getPreviousIsakStudy({ patientId: id, before: consultation.consultedAt }),
-    getAnthropometricReportMeta(entry.id),
+    getPreviousIsakStudy(tenant, { patientId: id, before: consultation.consultedAt }),
+    getAnthropometricReportMeta(tenant, entry.id),
   ]);
   const previousAt = previousEntry?.consultation?.consultedAt ?? null;
   const previous: IsakStudyResult | null =

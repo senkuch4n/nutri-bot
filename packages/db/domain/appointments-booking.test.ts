@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   enqueue: vi.fn(),
   prisma: {
     $transaction: vi.fn(), $queryRaw: vi.fn(),
-    agenda: { findUnique: vi.fn() },
+    agenda: { findFirst: vi.fn() },
     service: { findUnique: vi.fn() },
     patient: { findUnique: vi.fn(), updateMany: vi.fn() },
     availabilityRule: { findMany: vi.fn() }, availabilityException: { findMany: vi.fn() },
@@ -15,6 +15,8 @@ vi.mock("../index", () => ({ prisma: mocks.prisma, Prisma: {} }));
 vi.mock("./outbox", () => ({ enqueueMessage: mocks.enqueue }));
 import { createAppointment, SlotUnavailableError } from "./appointments";
 import { checkSlotAvailable } from "./availability";
+
+const T = { tenantId: "legacy-tenant" };
 
 describe("booking with the existing availability domain", () => {
   let service: any;
@@ -30,7 +32,7 @@ describe("booking with the existing availability domain", () => {
     patient = { tenantId: "legacy-tenant", whatsappJid: "fake-patient", name: "Test", phone: "fake" };
     appointments = [];
     const pro = { timezone: "America/Argentina/Buenos_Aires", phoneJid: "fake-pro" };
-    mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: pro });
+    mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: pro });
     mocks.prisma.service.findUnique.mockImplementation(async ({ where }) => where.id === service.id && where.tenantId === service.tenantId ? service : null);
     mocks.prisma.patient.findUnique.mockImplementation(async ({ where }) => where.tenantId === patient.tenantId ? patient : null);
     mocks.prisma.availabilityRule.findMany.mockResolvedValue([{ weekday: 1, startTime: "09:00", endTime: "18:00", active: true }]);
@@ -52,7 +54,7 @@ describe("booking with the existing availability domain", () => {
   afterEach(() => vi.useRealTimers());
 
   it("confirms a service without a deposit and enqueues normal notifications", async () => {
-    const appointment = await createAppointment(params);
+    const appointment = await createAppointment(T, params);
     expect(appointment).toMatchObject({ tenantId: "legacy-tenant", agendaId: "legacy-agenda", status: "CONFIRMED" });
     expect(mocks.prisma.patient.findUnique).toHaveBeenCalledWith({ where: { id: "patient", tenantId: "legacy-tenant" } });
     expect(mocks.prisma.service.findUnique).toHaveBeenCalledWith({ where: { id: "service", tenantId: "legacy-tenant" } });
@@ -60,14 +62,14 @@ describe("booking with the existing availability domain", () => {
     expect(mocks.enqueue).toHaveBeenCalledTimes(2);
     // HU-019 (T4): reservar desarchiva a la paciente.
     expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith({
-      where: { id: "patient", archivedAt: { not: null } },
+      where: { id: "patient", tenantId: "legacy-tenant", archivedAt: { not: null } },
       data: { archivedAt: null },
     });
   });
 
   it("fails closed without the original primary agenda before touching booking data", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValue(null);
-    await expect(createAppointment(params)).rejects.toThrow(/^No se pudo verificar la agenda de la instalación original\.$/);
+    mocks.prisma.agenda.findFirst.mockResolvedValue(null);
+    await expect(createAppointment(T, params)).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(mocks.prisma.appointment.create).not.toHaveBeenCalled();
     expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
     expect(mocks.enqueue).not.toHaveBeenCalled();
@@ -76,10 +78,10 @@ describe("booking with the existing availability domain", () => {
 
   it.each(["other-tenant", null])("rejects a patient or service owned by %s without writes", async (tenantId) => {
     patient.tenantId = tenantId;
-    await expect(createAppointment(params)).rejects.toThrow(/^La paciente no pertenece a la instalación original\.$/);
+    await expect(createAppointment(T, params)).rejects.toThrow(/^La paciente no pertenece al consultorio\.$/);
     patient.tenantId = "legacy-tenant";
     service.tenantId = tenantId;
-    await expect(createAppointment(params)).rejects.toThrow(/^El servicio no pertenece a la instalación original\.$/);
+    await expect(createAppointment(T, params)).rejects.toThrow(/^El servicio no pertenece al consultorio\.$/);
     expect(mocks.prisma.appointment.create).not.toHaveBeenCalled();
     expect(mocks.prisma.patient.updateMany).not.toHaveBeenCalled();
     expect(mocks.enqueue).not.toHaveBeenCalled();
@@ -88,15 +90,15 @@ describe("booking with the existing availability domain", () => {
 
   it("holds a deposit reservation without confirming or syncing Google", async () => {
     Object.assign(service, { requiresDeposit: true, depositKind: "PERCENT", depositValue: 30 });
-    const appointment = await createAppointment(params);
+    const appointment = await createAppointment(T, params);
     expect(appointment.status).toBe("AWAITING_PAYMENT");
     expect(appointment.needsGoogleSync).toBe(false);
     expect(mocks.enqueue).not.toHaveBeenCalled();
     expect(mocks.prisma.patient.updateMany).toHaveBeenCalledWith({
-      where: { id: "patient", archivedAt: { not: null } },
+      where: { id: "patient", tenantId: "legacy-tenant", archivedAt: { not: null } },
       data: { archivedAt: null },
     });
-    expect(await checkSlotAvailable(params)).toBe(false);
+    expect(await checkSlotAvailable(T, params)).toBe(false);
     expect(mocks.prisma.appointment.findMany).toHaveBeenLastCalledWith({
       where: {
         tenantId: "legacy-tenant", agendaId: "legacy-agenda",
@@ -106,30 +108,30 @@ describe("booking with the existing availability domain", () => {
       select: { startsAt: true, endsAt: true },
     });
     appointment.status = "CANCELLED";
-    expect(await checkSlotAvailable(params)).toBe(true);
+    expect(await checkSlotAvailable(T, params)).toBe(true);
   });
 
   it.each([null, 0, NaN, 101])("rejects invalid percent value %s before creating an appointment", async (depositValue) => {
     Object.assign(service, { requiresDeposit: true, depositKind: "PERCENT", depositValue });
-    await expect(createAppointment(params)).rejects.toThrow("seña válida");
+    await expect(createAppointment(T, params)).rejects.toThrow("seña válida");
     expect(mocks.prisma.appointment.create).not.toHaveBeenCalled();
   });
 
   it("rejects a missing deposit kind", async () => {
     Object.assign(service, { requiresDeposit: true, depositValue: 30 });
-    await expect(createAppointment(params)).rejects.toThrow("seña válida");
+    await expect(createAppointment(T, params)).rejects.toThrow("seña válida");
     expect(mocks.prisma.appointment.create).not.toHaveBeenCalled();
   });
 
   it("allows only one of two patients competing for the same slot", async () => {
-    const results = await Promise.allSettled([createAppointment(params), createAppointment({ ...params, patientId: "other-patient" })]);
+    const results = await Promise.allSettled([createAppointment(T, params), createAppointment(T, { ...params, patientId: "other-patient" })]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(results.find((r) => r.status === "rejected")).toMatchObject({ reason: expect.any(SlotUnavailableError) });
     expect(mocks.prisma.appointment.create).toHaveBeenCalledTimes(1);
     // HU-019: solo la reserva que entró desarchiva; la rechazada no escribe.
     expect(mocks.prisma.patient.updateMany).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.$queryRaw).toHaveBeenCalledTimes(2);
-    expect(mocks.prisma.$queryRaw.mock.calls[0]?.[0].join("")).toContain('FROM "Professional" WHERE id = 1 FOR UPDATE');
+    expect(mocks.prisma.$queryRaw.mock.calls[0]?.[0].join("")).toContain("FOR UPDATE OF p");
     expect(mocks.prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(mocks.prisma.appointment.findMany.mock.invocationCallOrder[0]!);
   });
 });

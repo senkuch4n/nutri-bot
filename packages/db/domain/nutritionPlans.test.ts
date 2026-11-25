@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   $transaction: vi.fn(),
-  agenda: { findUnique: vi.fn() },
+  agenda: { findFirst: vi.fn() },
   patient: { findUniqueOrThrow: vi.fn() },
   nutritionPlan: { create: vi.fn() },
   planMeal: { createMany: vi.fn() },
@@ -10,6 +10,8 @@ const db = vi.hoisted(() => ({
 vi.mock("../index", () => ({ prisma: db }));
 
 import { createPlan } from "./nutritionPlans";
+
+const T = { tenantId: "legacy-tenant" };
 
 const tenantId = "legacy-tenant";
 const patientId = "p1";
@@ -32,7 +34,7 @@ function expectNoWrites() {
 beforeEach(() => {
   vi.resetAllMocks();
   db.$transaction.mockImplementation((run) => run(db));
-  db.agenda.findUnique.mockResolvedValue({ professional: { timezone: "America/Argentina/Buenos_Aires" } });
+  db.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId, professionalId: 1, professional: { timezone: "America/Argentina/Buenos_Aires" } });
   db.nutritionPlan.create.mockImplementation(async ({ data }) => ({ id: "new-plan", ...data }));
 });
 
@@ -41,7 +43,7 @@ describe("createPlan", () => {
     mockPatient(tenantId);
     const input = { ...data, tenantId: "other-tenant", patientId: "other-patient", status: "ACTIVE" };
     const created = { ...data, patientId, tenantId, status: "DRAFT" };
-    await expect(createPlan(patientId, input)).resolves.toEqual({ id: "new-plan", ...created });
+    await expect(createPlan(T, patientId, input)).resolves.toEqual({ id: "new-plan", ...created });
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(db.patient.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { id_tenantId: { id: patientId, tenantId } }, select: { id: true },
@@ -60,13 +62,13 @@ describe("createPlan", () => {
 
   it.each(["other-tenant", null, undefined])("rejects a foreign, unowned, or missing patient (%s)", async (owner) => {
     mockPatient(owner);
-    await expect(createPlan(patientId, data)).rejects.toThrow("Record not found");
+    await expect(createPlan(T, patientId, data)).rejects.toThrow("Record not found");
     expectNoWrites();
   });
 
   it("fails closed when the original agenda cannot be verified", async () => {
-    db.agenda.findUnique.mockResolvedValue(null);
-    await expect(createPlan(patientId, data)).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    db.agenda.findFirst.mockResolvedValue(null);
+    await expect(createPlan(T, patientId, data)).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(db.patient.findUniqueOrThrow).not.toHaveBeenCalled();
     expectNoWrites();
   });

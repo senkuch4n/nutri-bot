@@ -5,7 +5,7 @@ import { AVAILABILITY_TEXT } from "@nutri-bot/core";
 
 const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
-  agendaFindUnique: vi.fn(),
+  requireTenantContext: vi.fn(),
   ruleFindMany: vi.fn(),
   ruleFindFirst: vi.fn(),
   ruleCreate: vi.fn(),
@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({
   prisma: {
-    agenda: { findUnique: mocks.agendaFindUnique },
     availabilityRule: {
       findMany: mocks.ruleFindMany,
       findFirst: mocks.ruleFindFirst,
@@ -29,6 +28,8 @@ vi.mock("@nutri-bot/db", () => ({
     availabilityException: { create: mocks.excCreate, deleteMany: mocks.excDeleteMany },
   },
 }));
+
+vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: mocks.requireTenantContext }));
 
 import {
   addExceptionAction,
@@ -53,7 +54,7 @@ const MONDAY = [
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.agendaFindUnique.mockResolvedValue({ professional: { timezone: "UTC", phoneJid: null } });
+  mocks.requireTenantContext.mockResolvedValue({ userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1 });
   mocks.ruleFindMany.mockResolvedValue(MONDAY);
   mocks.ruleFindFirst.mockResolvedValue({ id: "pm" });
 });
@@ -234,11 +235,31 @@ describe("aislamiento de la agenda original", () => {
     ["borrado de horario", () => deleteRuleAction("pm"), "borrar"],
     ["alta de excepción", () => addExceptionAction(prev, exception()), "guardar"],
     ["borrado de excepción", () => deleteExceptionAction("e1"), "borrar"],
-  ] as const)("rechaza %s sin una agenda original verificada", async (_label, call, verb) => {
-    mocks.agendaFindUnique.mockResolvedValue(null);
+  ] as const)("rechaza %s sin contexto de consultorio", async (_label, call, verb) => {
+    mocks.requireTenantContext.mockRejectedValue(new Error("tenant_access:no_context"));
     await expect(call()).resolves.toEqual({ ok: false, error: `No se pudo ${verb}. Probá de nuevo.` });
     for (const mock of [mocks.ruleFindMany, mocks.ruleFindFirst, mocks.ruleCreate, mocks.ruleUpdate, mocks.ruleDeleteMany, mocks.excCreate, mocks.excDeleteMany, mocks.revalidatePath]) {
       expect(mock).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("HU-025: agenda del contexto, nunca del formulario", () => {
+  it("un agendaId/tenantId del formulario se ignora al crear horarios y excepciones", async () => {
+    mocks.requireTenantContext.mockResolvedValue({ userId: "u", tenantId: "tenant-a", agendaId: "agenda-a", professionalId: 3 });
+    mocks.ruleFindMany.mockResolvedValue([]);
+    const fd = form({ weekday: "1", startTime: "08:00", endTime: "09:00", agendaId: "agenda-b", tenantId: "tenant-b" });
+    await expect(addRuleAction(prev, fd)).resolves.toEqual({ ok: true });
+    expect(mocks.ruleCreate.mock.calls[0]![0].data.agendaId).toBe("agenda-a");
+    const ex = form({ date: "2026-12-01", kind: "closed_day", agendaId: "agenda-b" });
+    await expect(addExceptionAction(prev, ex)).resolves.toEqual({ ok: true });
+    expect(mocks.excCreate.mock.calls[0]![0].data.agendaId).toBe("agenda-a");
+  });
+
+  it("borrar un horario de otro consultorio no toca filas de B (filtro por agenda del contexto)", async () => {
+    mocks.requireTenantContext.mockResolvedValue({ userId: "u", tenantId: "tenant-a", agendaId: "agenda-a", professionalId: 3 });
+    mocks.ruleDeleteMany.mockResolvedValue({ count: 0 });
+    await expect(deleteRuleAction("regla-de-b")).resolves.toEqual({ ok: true });
+    expect(mocks.ruleDeleteMany.mock.calls[0]![0].where).toEqual({ id: "regla-de-b", agendaId: "agenda-a", agenda: { tenantId: "tenant-a" }, active: true });
   });
 });

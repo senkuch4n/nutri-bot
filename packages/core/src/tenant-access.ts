@@ -60,3 +60,38 @@ export function decideTenantAccess(
 export function canonicalEmail(email: string): string {
   return email.trim().toLowerCase();
 }
+
+/** GET que escriben aunque sean navegación (lista cerrada). */
+const MUTATING_GET_PATHS: readonly string[] = ["/api/mercadopago/oauth/callback"];
+
+/** 025a: ¿la request modifica algo? Server action (header next-action), método distinto de GET/HEAD,
+ *  o una ruta GET que escribe (lista cerrada: "/api/mercadopago/oauth/callback"). */
+export function isMutatingPanelRequest(r: { method: string; pathname: string; isServerAction: boolean }): boolean {
+  if (r.isServerAction) return true;
+  const method = r.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return true;
+  const path = r.pathname.length > 1 ? r.pathname.replace(/\/+$/, "") : r.pathname;
+  return MUTATING_GET_PATHS.includes(path);
+}
+
+/** 025b (7.2.1): resultado de "Quitar acceso" en Ajustes → Equipo. */
+export type RemoveMemberCheck = { ok: true } | { ok: false; reason: "not_owner" | "self" | "last_owner" | "not_member" };
+
+/** 025b (7.2.1, D4, C5): reglas de "Quitar acceso".
+ *  - Solo una OWNER quita (STAFF o soporte, `role: null` → not_owner).
+ *  - El objetivo tiene que ser miembro de este consultorio (null = otro consultorio o inventado → not_member).
+ *  - Nadie se quita a sí misma (self).
+ *  - No se quita a la última OWNER (last_owner), aunque la UI no lo permita: defensa en profundidad para el
+ *    script y para dos OWNER quitándose a la vez (el lock de la transacción serializa).
+ *  - Una OWNER puede quitar a otra OWNER (C5). */
+export function canRemoveMember(p: {
+  actor: { userId: string; role: MembershipRole | null };
+  target: { userId: string; role: MembershipRole } | null;
+  ownerCount: number;
+}): RemoveMemberCheck {
+  if (p.actor.role !== "OWNER") return { ok: false, reason: "not_owner" };
+  if (!p.target) return { ok: false, reason: "not_member" };
+  if (p.target.userId === p.actor.userId) return { ok: false, reason: "self" };
+  if (p.target.role === "OWNER" && p.ownerCount <= 1) return { ok: false, reason: "last_owner" };
+  return { ok: true };
+}
