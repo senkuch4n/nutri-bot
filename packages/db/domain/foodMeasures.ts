@@ -13,6 +13,12 @@ import {
   type MeasureIssue,
 } from "@nutri-bot/core";
 import { prisma, type Prisma } from "../index";
+import { tenantFoodWhere, tenantVisibleFoodWhere } from "./foods";
+import type { TenantRef } from "./tenantScope";
+
+// HU-025 (4.4): las medidas son por consultorio (FoodMeasure.tenantId). Toda lectura y escritura filtra
+// por el tenant `t`; una medida de otro consultorio es inexistente (FoodMeasureNotFoundError). Solo se
+// cargan medidas en alimentos que el consultorio puede leer (SARA 2 o propios suyos).
 
 export const FOOD_MEASURE_SELECT = {
   id: true,
@@ -61,19 +67,20 @@ function toRow(r: SelectedRow): FoodMeasureRow {
 const isUniqueViolation = (err: unknown) => (err as { code?: string } | null)?.code === "P2002";
 
 /** Medidas de un alimento por `order` asc (ficha). */
-export async function listFoodMeasures(foodId: string): Promise<FoodMeasureRow[]> {
+export async function listFoodMeasures(t: TenantRef, foodId: string): Promise<FoodMeasureRow[]> {
   const rows = await prisma.foodMeasure.findMany({
-    where: { foodId },
+    where: { foodId, tenantId: t.tenantId },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     select: FOOD_MEASURE_SELECT,
   });
   return rows.map(toRow);
 }
 
-/** Medidas de los alimentos SARA 2 ACTIVOS, agrupadas por foodId y ordenadas (editor). Solo trae los que tienen medidas. */
-export async function listMeasuresForPicker(): Promise<Record<string, FoodMeasureRow[]>> {
+/** Medidas del consultorio de los alimentos SARA 2 visibles para él, agrupadas por foodId y ordenadas
+ *  (editor). Solo trae los que tienen medidas. */
+export async function listMeasuresForPicker(t: TenantRef): Promise<Record<string, FoodMeasureRow[]>> {
   const rows = await prisma.foodMeasure.findMany({
-    where: { food: { source: "SARA2", active: true } },
+    where: { tenantId: t.tenantId, food: { AND: [{ source: "SARA2" }, tenantVisibleFoodWhere(t)] } },
     orderBy: [{ foodId: "asc" }, { order: "asc" }, { createdAt: "asc" }],
     select: FOOD_MEASURE_SELECT,
   });
@@ -93,79 +100,83 @@ function validated(input: MeasureInput) {
  * transacción. Duplicado por (foodId, nameKey) → DuplicateFoodMeasureError(existente.name); también
  * traduce el P2002 de la base al mismo error. Alimento inexistente → FoodMeasureNotFoundError.
  */
-export async function createFoodMeasure(foodId: string, input: MeasureInput): Promise<FoodMeasureRow> {
+export async function createFoodMeasure(t: TenantRef, foodId: string, input: MeasureInput): Promise<FoodMeasureRow> {
   const data = validated(input);
+  const { tenantId } = t;
   try {
     return await prisma.$transaction(async (tx) => {
-      const food = await tx.food.findUnique({ where: { id: foodId }, select: { id: true } });
+      const food = await tx.food.findUnique({ where: { id: foodId, ...tenantFoodWhere(t) }, select: { id: true } });
       if (!food) throw new FoodMeasureNotFoundError("El alimento no existe.");
-      const dup = await tx.foodMeasure.findFirst({ where: { foodId, nameKey: data.nameKey }, select: { name: true } });
+      const dup = await tx.foodMeasure.findFirst({ where: { tenantId, foodId, nameKey: data.nameKey }, select: { name: true } });
       if (dup) throw new DuplicateFoodMeasureError(dup.name);
-      const last = await tx.foodMeasure.aggregate({ where: { foodId }, _max: { order: true } });
+      const last = await tx.foodMeasure.aggregate({ where: { tenantId, foodId }, _max: { order: true } });
       const order = last._max.order === null ? 0 : last._max.order + 1;
       const created = await tx.foodMeasure.create({
-        data: { foodId, name: data.name, nameKey: data.nameKey, plural: data.plural, grams: data.grams, order },
+        data: { tenantId, foodId, name: data.name, nameKey: data.nameKey, plural: data.plural, grams: data.grams, order },
         select: FOOD_MEASURE_SELECT,
       });
       return toRow(created);
     });
   } catch (err) {
-    if (isUniqueViolation(err)) throw await duplicateFromBase(foodId, data.nameKey, data.name);
+    if (isUniqueViolation(err)) throw await duplicateFromBase(t, foodId, data.nameKey, data.name);
     throw err;
   }
 }
 
-async function duplicateFromBase(foodId: string, nameKey: string, fallback: string): Promise<DuplicateFoodMeasureError> {
+async function duplicateFromBase(t: TenantRef, foodId: string, nameKey: string, fallback: string): Promise<DuplicateFoodMeasureError> {
   const existing = await prisma.foodMeasure
-    .findFirst({ where: { foodId, nameKey }, select: { name: true } })
+    .findFirst({ where: { tenantId: t.tenantId, foodId, nameKey }, select: { name: true } })
     .catch(() => null);
   return new DuplicateFoodMeasureError(existing?.name ?? fallback);
 }
 
 /** Igual que create, excluyéndose de la unicidad. No toca ningún ítem (D4). */
-export async function updateFoodMeasure(measureId: string, input: MeasureInput): Promise<FoodMeasureRow> {
+export async function updateFoodMeasure(t: TenantRef, measureId: string, input: MeasureInput): Promise<FoodMeasureRow> {
   const data = validated(input);
+  const { tenantId } = t;
   let foodId: string | null = null;
   try {
     return await prisma.$transaction(async (tx) => {
-      const current = await tx.foodMeasure.findUnique({ where: { id: measureId }, select: { foodId: true } });
+      const current = await tx.foodMeasure.findUnique({ where: { id: measureId, tenantId }, select: { foodId: true } });
       if (!current) throw new FoodMeasureNotFoundError();
       foodId = current.foodId;
       const dup = await tx.foodMeasure.findFirst({
-        where: { foodId: current.foodId, nameKey: data.nameKey, NOT: { id: measureId } },
+        where: { tenantId, foodId: current.foodId, nameKey: data.nameKey, NOT: { id: measureId } },
         select: { name: true },
       });
       if (dup) throw new DuplicateFoodMeasureError(dup.name);
       const updated = await tx.foodMeasure.update({
-        where: { id: measureId },
+        where: { id: measureId, tenantId },
         data: { name: data.name, nameKey: data.nameKey, plural: data.plural, grams: data.grams },
         select: FOOD_MEASURE_SELECT,
       });
       return toRow(updated);
     });
   } catch (err) {
-    if (isUniqueViolation(err) && foodId !== null) throw await duplicateFromBase(foodId, data.nameKey, data.name);
+    if (isUniqueViolation(err) && foodId !== null) throw await duplicateFromBase(t, foodId, data.nameKey, data.name);
     throw err;
   }
 }
 
 /** Borra solo esa medida. No toca ningún ítem (D4). Inexistente → FoodMeasureNotFoundError. Devuelve el foodId (para revalidar). */
-export async function deleteFoodMeasure(measureId: string): Promise<{ foodId: string }> {
+export async function deleteFoodMeasure(t: TenantRef, measureId: string): Promise<{ foodId: string }> {
+  const { tenantId } = t;
   return prisma.$transaction(async (tx) => {
-    const current = await tx.foodMeasure.findUnique({ where: { id: measureId }, select: { foodId: true } });
+    const current = await tx.foodMeasure.findUnique({ where: { id: measureId, tenantId }, select: { foodId: true } });
     if (!current) throw new FoodMeasureNotFoundError();
-    await tx.foodMeasure.delete({ where: { id: measureId } });
+    await tx.foodMeasure.delete({ where: { id: measureId, tenantId } });
     return { foodId: current.foodId };
   });
 }
 
 /** Intercambia `order` con la vecina dentro del alimento. En el borde no hace nada. */
-export async function moveFoodMeasure(measureId: string, direction: "up" | "down"): Promise<{ foodId: string }> {
+export async function moveFoodMeasure(t: TenantRef, measureId: string, direction: "up" | "down"): Promise<{ foodId: string }> {
+  const { tenantId } = t;
   return prisma.$transaction(async (tx) => {
-    const current = await tx.foodMeasure.findUnique({ where: { id: measureId }, select: { foodId: true } });
+    const current = await tx.foodMeasure.findUnique({ where: { id: measureId, tenantId }, select: { foodId: true } });
     if (!current) throw new FoodMeasureNotFoundError();
     const list = await tx.foodMeasure.findMany({
-      where: { foodId: current.foodId },
+      where: { tenantId, foodId: current.foodId },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       select: { id: true, order: true },
     });
@@ -177,8 +188,8 @@ export async function moveFoodMeasure(measureId: string, direction: "up" | "down
     // Con órdenes repetidos (no debería pasar) se usan las posiciones: quedan correlativos.
     const orderA = a.order === b.order ? target : b.order;
     const orderB = a.order === b.order ? index : a.order;
-    await tx.foodMeasure.update({ where: { id: a.id }, data: { order: orderA } });
-    await tx.foodMeasure.update({ where: { id: b.id }, data: { order: orderB } });
+    await tx.foodMeasure.update({ where: { id: a.id, tenantId }, data: { order: orderA } });
+    await tx.foodMeasure.update({ where: { id: b.id, tenantId }, data: { order: orderB } });
     return { foodId: current.foodId };
   });
 }
@@ -197,8 +208,9 @@ export interface MeasureItemFields {
  * normalizeMeasureQty (si no → RangeError) y arma la copia: name, resolvedMeasurePlural, grams y
  * quantityGrams = measureItemGrams(qty, grams).
  */
-export async function resolveMeasureItem(foodId: string, measureId: string, qty: number): Promise<MeasureItemFields> {
-  const measure = await prisma.foodMeasure.findUnique({ where: { id: measureId }, select: FOOD_MEASURE_SELECT });
+export async function resolveMeasureItem(t: TenantRef, foodId: string, measureId: string, qty: number): Promise<MeasureItemFields> {
+  // HU-025: una medida de otro consultorio es inexistente (no se copia su nombre ni sus gramos).
+  const measure = await prisma.foodMeasure.findUnique({ where: { id: measureId, tenantId: t.tenantId }, select: FOOD_MEASURE_SELECT });
   if (!measure || measure.foodId !== foodId) throw new FoodMeasureNotFoundError();
   const normalized = normalizeMeasureQty(qty);
   if (normalized === null) throw new RangeError("Cantidad de medida casera inválida.");

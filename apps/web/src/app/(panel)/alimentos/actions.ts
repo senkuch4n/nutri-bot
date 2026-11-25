@@ -6,6 +6,7 @@ import { FOOD_GROUP_VALUES, OWN_FOOD_ISSUE_MESSAGES, validateOwnFoodMacros } fro
 import {
   DuplicateOwnFoodNameError,
   FoodNotEditableError,
+  FoodNotFoundError,
   InvalidOwnFoodError,
   applyAtwaterKcal,
   findFoodNameConflicts,
@@ -14,6 +15,7 @@ import {
   updateOwnFood,
   type OwnFoodInput,
 } from "@nutri-bot/db/domain";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 export type OwnFoodState = {
   ok: boolean;
@@ -21,6 +23,7 @@ export type OwnFoodState = {
   /** Advertencia no bloqueante (nombre igual a un SARA 2, D12): el form muestra "Guardar igual". */
   saraDuplicate?: { id: string; name: string };
   foodId?: string;
+  reauth?: true;
 };
 
 /** Vacío → null; si no, número en [0, max]. */
@@ -54,6 +57,8 @@ const ownFoodSchema = z.object({
 });
 
 const OUT_OF_RANGE = "Revisá los datos: hay valores fuera de rango.";
+const NOT_FOUND = "El alimento ya no existe.";
+const SAVE_ERROR = "No se pudo guardar el alimento. Probá de nuevo.";
 
 type Parsed =
   | { ok: true; input: OwnFoodInput; confirmSaraDuplicate: boolean }
@@ -94,6 +99,7 @@ function parseOwnFood(formData: FormData): Parsed {
 
 function errorState(err: unknown): OwnFoodState {
   if (err instanceof DuplicateOwnFoodNameError) return { ok: false, error: "Ya tenés un alimento propio con ese nombre." };
+  if (err instanceof FoodNotFoundError) return { ok: false, error: NOT_FOUND };
   if (err instanceof FoodNotEditableError) {
     return { ok: false, error: "Los alimentos de SARA 2 no se editan." };
   }
@@ -105,6 +111,8 @@ function errorState(err: unknown): OwnFoodState {
 }
 
 export async function createOwnFoodAction(): Promise<OwnFoodState> {
+  // Sin escritura: igual exige contexto, como toda server action del panel (guard-coverage).
+  await requireTenantContext("read").catch(() => null);
   return { ok: false, error: "La creación de alimentos propios ya no está disponible. Usá la base SARA 2." };
 }
 
@@ -115,14 +123,21 @@ export async function updateOwnFoodAction(
 ): Promise<OwnFoodState> {
   const parsed = parseOwnFood(formData);
   if (!parsed.ok) return parsed.state;
+  let ctx: Awaited<ReturnType<typeof requireTenantContext>>;
+  try {
+    ctx = await requireTenantContext("write");
+  } catch {
+    return { ok: false, error: SAVE_ERROR, reauth: true };
+  }
   if (!parsed.confirmSaraDuplicate) {
-    const [{ own, sara }, current] = await Promise.all([findFoodNameConflicts(parsed.input.name, id), getFood(id)]);
+    const [{ own, sara }, current] = await Promise.all([findFoodNameConflicts(ctx, parsed.input.name, id), getFood(ctx, id)]);
+    if (!current) return { ok: false, error: NOT_FOUND };
     if (own) return { ok: false, error: "Ya tenés un alimento propio con ese nombre." };
     // Solo se advierte si cambió el nombre: un propio viejo homónimo de un SARA 2 no pregunta cada vez.
     if (sara && current?.name.trim() !== parsed.input.name) return { ok: false, saraDuplicate: sara };
   }
   try {
-    await updateOwnFood(id, parsed.input);
+    await updateOwnFood(ctx, id, parsed.input);
   } catch (err) {
     return errorState(err);
   }
@@ -132,13 +147,15 @@ export async function updateOwnFoodAction(
 }
 
 export async function setFoodActiveAction(id: string, active: boolean): Promise<void> {
-  await setFoodActive(id, active);
+  const ctx = await requireTenantContext("write");
+  await setFoodActive(ctx, id, active === true);
   revalidatePath("/alimentos");
   revalidatePath(`/alimentos/${id}`);
 }
 
 export async function applyAtwaterKcalAction(id: string): Promise<void> {
-  await applyAtwaterKcal(id);
+  const ctx = await requireTenantContext("write");
+  await applyAtwaterKcal(ctx, id);
   revalidatePath("/alimentos");
   revalidatePath(`/alimentos/${id}`);
 }

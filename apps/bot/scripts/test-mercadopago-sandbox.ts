@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { prisma } from "@nutri-bot/db";
 import { allowsMercadoPagoEnvToken } from "@nutri-bot/core";
 import {
+  LEGACY_TENANT_ID,
   createDepositCheckout,
   getMercadoPagoConnectionView,
   reconcilePendingPayments,
@@ -12,6 +13,7 @@ import {
 } from "@nutri-bot/db/domain";
 
 // Run with the bot stopped: this script never imports Baileys or consumes outbox.
+const TENANT = { tenantId: LEGACY_TENANT_ID };
 const input = createInterface({ input: stdin, output: stdout });
 const abort = new AbortController();
 const interrupt = () => abort.abort();
@@ -30,7 +32,7 @@ try {
     "MERCADOPAGO_SANDBOX=true is required to run this sandbox test.",
   );
   // HU-023: the checkout uses the Mercado Pago account linked in Ajustes (a test seller in dev).
-  const view = await getMercadoPagoConnectionView();
+  const view = await getMercadoPagoConnectionView(TENANT);
   if (view.status !== "connected" && !allowsMercadoPagoEnvToken(process.env)) {
     throw new Error(
       "Conectá un usuario de prueba vendedor en Ajustes → Mercado Pago (o habilitá MERCADOPAGO_ALLOW_ENV_TOKEN en dev)",
@@ -77,7 +79,7 @@ try {
     },
   });
   appointmentId = appointment.id;
-  const checkout = await createDepositCheckout(appointmentId);
+  const checkout = await createDepositCheckout(TENANT, appointmentId);
   console.log(
     "Open this checkout using a test buyer and test card:",
     checkout.checkoutUrl,
@@ -87,6 +89,7 @@ try {
     "Complete the sandbox payment, then press Enter to reconcile: ",
   );
   const result = await reconcilePendingPayments(
+    TENANT,
     () => console.error("Sandbox reconciliation failed."),
     [checkout.paymentId],
   );
@@ -117,7 +120,7 @@ try {
     before.filter((message) => message.kind === "CONFIRMATION").length,
     1,
   );
-  await syncMercadoPagoPayment(payment.externalId, checkout.paymentId);
+  await syncMercadoPagoPayment(TENANT, payment.externalId, checkout.paymentId);
   const after = await prisma.outboundMessage.findMany({
     where: { appointmentId },
   });

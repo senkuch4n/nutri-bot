@@ -513,3 +513,8 @@
 ## HU-023 · Conectar la cuenta de Mercado Pago de la profesional (OAuth) — aprobada 2026-11-12 (senkuch4n)
 - La profesional vincula su cuenta de MP desde Ajustes → Mercado Pago (app "Numa", OAuth + PKCE S256). Tokens cifrados AES-256-GCM (`MERCADOPAGO_TOKEN_KEY`) en `MercadoPagoAccount`; renovación diaria del bot con lock de fila; sin cuenta no se cobra seña (D3); cambiar/desconectar cancela las señas de la cuenta anterior (D6).
 - Migración aditiva `mercadopago_oauth`. Implementer Opus, reviewer Opus (APPROVED 1ª ronda). Docs: docs/hu-mercadopago-oauth.md, Refactorizaciones/mercadopago-oauth.md, progress/impl_HU-023.md, progress/review_HU-023.md. Issue #53.
+
+## HU-025 · Autenticación, permisos y aislamiento entre consultorios — aprobada 2026-11-25 (senkuch4n)
+- Cuatro entregas: 025a-1 (registro e identidad), 025a-2 (acceso por membresía, sin ALLOWED_EMAILS), 025b-1 (agenda, pacientes, clínica y planes sobre el contexto del consultorio), 025b-2 (pagos, ajustes, asistente y equipo).
+- 025b-2: implementer Opus; reviewer Opus CHANGES_REQUESTED en la 1ª ronda (recetas sin visibilidad por consultorio, SQL de prod incompleto), APPROVED en la 2ª. Docs: docs/hu-autenticacion-permisos-tenant.md, Refactorizaciones/autenticacion-permisos-tenant.md, progress/impl_HU-025b2.md, progress/review_HU-025b2.md (+ -ronda1). Issue #68.
+- Antes de publicar en prod: fases 2/3 (Daiana + `tenant-access.ts pending/grant`), SQL de la decisión 7, y chequeos de solo lectura de `BotStatus` y `MercadoPagoAccount` (tenantId).

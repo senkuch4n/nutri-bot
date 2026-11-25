@@ -242,9 +242,9 @@ async function main(): Promise<void> {
   });
 
   await scenario("9. Resumen: no sale de noche; de día sale una vez y es idempotente", async () => {
-    const night = await enqueueAfterHoursDigest({ now: base, config: NIGHT, scope, alertJid: ALERT_JID });
+    const night = await enqueueAfterHoursDigest({ tenantId: fixtureTenantId! }, { now: base, config: NIGHT, scope, alertJid: ALERT_JID });
     assert.deepEqual(night, { digested: 0, outboundId: null });
-    const day = await enqueueAfterHoursDigest({ now: at(4), config: DAY, scope, alertJid: ALERT_JID });
+    const day = await enqueueAfterHoursDigest({ tenantId: fixtureTenantId! }, { now: at(4), config: DAY, scope, alertJid: ALERT_JID });
     assert.equal(day.digested, 1);
     assert.ok(day.outboundId);
     const alerts = await takeNewAlerts();
@@ -255,21 +255,21 @@ async function main(): Promise<void> {
     assert.ok(!alerts[0]!.body.includes("merienda"));
     const row = await prisma.patientInquiry.findUniqueOrThrow({ where: { id: anaNightId } });
     assert.ok(row.digestedAt);
-    const again = await enqueueAfterHoursDigest({ now: at(5), config: DAY, scope, alertJid: ALERT_JID });
+    const again = await enqueueAfterHoursDigest({ tenantId: fixtureTenantId! }, { now: at(5), config: DAY, scope, alertJid: ALERT_JID });
     assert.deepEqual(again, { digested: 0, outboundId: null });
     assert.equal((await takeNewAlerts()).length, 0);
   });
 
   await scenario("10. Noche sin consultas nocturnas: el resumen no encola nada", async () => {
-    const r = await enqueueAfterHoursDigest({ now: at(5), config: DAY, scope: { patientIds: [bruno.id] }, alertJid: ALERT_JID });
+    const r = await enqueueAfterHoursDigest({ tenantId: fixtureTenantId! }, { now: at(5), config: DAY, scope: { patientIds: [bruno.id] }, alertJid: ALERT_JID });
     assert.deepEqual(r, { digested: 0, outboundId: null });
     assert.equal((await takeNewAlerts()).length, 0);
   });
 
   await scenario("11. Sin WhatsApp de alertas: se marca resumida sin encolar", async () => {
-    const { inquiry, created } = await recordInquiryMessage({ patientId: bruno.id, text: "Consulta nocturna", at: base, afterHours: true });
+    const { inquiry, created } = await recordInquiryMessage({ tenantId: fixtureTenantId! }, { patientId: bruno.id, text: "Consulta nocturna", at: base, afterHours: true });
     assert.equal(created, true);
-    const r = await enqueueAfterHoursDigest({ now: at(5), config: DAY, scope: { patientIds: [bruno.id] }, alertJid: null });
+    const r = await enqueueAfterHoursDigest({ tenantId: fixtureTenantId! }, { now: at(5), config: DAY, scope: { patientIds: [bruno.id] }, alertJid: null });
     assert.deepEqual(r, { digested: 1, outboundId: null });
     const row = await prisma.patientInquiry.findUniqueOrThrow({ where: { id: inquiry.id } });
     assert.ok(row.digestedAt);
@@ -277,13 +277,13 @@ async function main(): Promise<void> {
   });
 
   await scenario("12. Marcar respondida: baja el conteo y es idempotente", async () => {
-    const before = await countPendingInquiries();
-    assert.equal(await markInquiryAnswered(anaNightId), "answered");
-    assert.equal(await countPendingInquiries(), before - 1);
+    const before = await countPendingInquiries({ tenantId: fixtureTenantId! });
+    assert.equal(await markInquiryAnswered({ tenantId: fixtureTenantId! }, anaNightId), "answered");
+    assert.equal(await countPendingInquiries({ tenantId: fixtureTenantId! }), before - 1);
     const row = await prisma.patientInquiry.findUniqueOrThrow({ where: { id: anaNightId } });
     assert.equal(row.status, "ANSWERED");
     assert.ok(row.answeredAt);
-    assert.equal(await markInquiryAnswered(anaNightId), "already_answered");
+    assert.equal(await markInquiryAnswered({ tenantId: fixtureTenantId! }, anaNightId), "already_answered");
   });
 
   console.log(`\n${ok}/12 escenarios OK`);

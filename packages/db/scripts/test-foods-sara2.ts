@@ -24,6 +24,9 @@ import {
   updateOwnFood,
   type OwnFoodInput,
 } from "../domain";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
+
+const FOOD_T = { tenantId: LEGACY_TENANT_ID };
 
 class Rollback extends Error {}
 
@@ -152,7 +155,7 @@ async function main() {
   try {
     let id = "";
     await step("createOwnFood calcula kcal por Atwater", async () => {
-      const food = await createOwnFood(baseInput);
+      const food = await createOwnFood(FOOD_T, baseInput);
       createdIds.push(food.id);
       id = food.id;
       assert.equal(Number(food.kcalPer100), 415);
@@ -164,7 +167,7 @@ async function main() {
     });
 
     await step("nombre repetido de otro propio → DuplicateOwnFoodNameError", async () => {
-      await assert.rejects(createOwnFood({ ...baseInput, name: "prueba hu-005  BARRITA" }), (err) => {
+      await assert.rejects(createOwnFood(FOOD_T, { ...baseInput, name: "prueba hu-005  BARRITA" }), (err) => {
         assert.ok(err instanceof DuplicateOwnFoodNameError);
         assert.equal(err.existingId, id);
         return true;
@@ -177,14 +180,14 @@ async function main() {
         console.log("    (se saltea: SARA 2 todavía no está cargada)");
         return;
       }
-      const c = await findFoodNameConflicts("acelga  cruda");
+      const c = await findFoodNameConflicts(FOOD_T, "acelga  cruda");
       assert.ok(c.sara, "encuentra el SARA 2");
       assert.equal(c.sara.name, "Acelga, cruda");
     });
 
     await step("updateOwnFood recalcula kcal y apaga groupAutoAssigned", async () => {
       await prisma.food.update({ where: { id }, data: { groupAutoAssigned: true } });
-      const food = await updateOwnFood(id, { ...baseInput, proteinPer100: 20 });
+      const food = await updateOwnFood(FOOD_T, id, { ...baseInput, proteinPer100: 20 });
       assert.equal(Number(food.kcalPer100), 455);
       assert.equal(food.groupAutoAssigned, false);
     });
@@ -195,15 +198,15 @@ async function main() {
         console.log("    (se saltea: SARA 2 todavía no está cargada)");
         return;
       }
-      await assert.rejects(updateOwnFood(sara.id, baseInput), FoodNotEditableError);
-      await assert.rejects(applyAtwaterKcal(sara.id), FoodNotEditableError);
+      await assert.rejects(updateOwnFood(FOOD_T, sara.id, baseInput), FoodNotEditableError);
+      await assert.rejects(applyAtwaterKcal(FOOD_T, sara.id), FoodNotEditableError);
       const after = await prisma.food.findUniqueOrThrow({ where: { id: sara.id }, select: { updatedAt: true } });
       assert.equal(after.updatedAt.getTime(), sara.updatedAt.getTime());
     });
 
     await step("macros que suman más de 100 g → InvalidOwnFoodError", async () => {
       await assert.rejects(
-        createOwnFood({ ...baseInput, name: "Prueba HU-005 inválido", proteinPer100: 50, carbsPer100: 40, fatPer100: 15, fiberPer100: null }),
+        createOwnFood(FOOD_T, { ...baseInput, name: "Prueba HU-005 inválido", proteinPer100: 50, carbsPer100: 40, fatPer100: 15, fiberPer100: null }),
         (err) => {
           assert.ok(err instanceof InvalidOwnFoodError);
           assert.deepEqual(err.issues, ["MACROS_OVER_100"]);
@@ -215,12 +218,12 @@ async function main() {
 
     await step("applyAtwaterKcal vuelve a las kcal por macros", async () => {
       await prisma.food.update({ where: { id }, data: { kcalPer100: 999 } });
-      const food = await applyAtwaterKcal(id);
+      const food = await applyAtwaterKcal(FOOD_T, id);
       assert.equal(Number(food.kcalPer100), 455);
     });
 
     await step("getFoodUsage de un alimento sin planes", async () => {
-      assert.deepEqual(await getFoodUsage(id), { plans: 0, templates: 0 });
+      assert.deepEqual(await getFoodUsage(FOOD_T, id), { plans: 0, templates: 0 });
     });
   } finally {
     if (createdIds.length > 0) {

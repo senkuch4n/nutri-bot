@@ -45,17 +45,21 @@ vi.mock("@/app/(panel)/plan-section-actions", () => ({}));
 vi.mock("@/app/(panel)/plantillas/import-actions", () => ({}));
 vi.mock("server-only", () => ({})); // lib/revalidate-menu-owner (HU-018c)
 vi.mock("next/navigation", () => ({ notFound: vi.fn(), redirect: vi.fn() }));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `access`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.access(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.access()) ?? null, TenantAccessError };
+});
 // HU-025b-1: las páginas y acciones toman el consultorio del contexto de la sesión.
 const TENANT_CTX = vi.hoisted(() => ({
-  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
-  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
-}));
-vi.mock("@/lib/tenant-context", () => ({
-  requirePageContext: async () => TENANT_CTX,
-  requireTenantContext: async () => TENANT_CTX,
-  getTenantContext: async () => TENANT_CTX,
-  TenantAccessError: class TenantAccessError extends Error {},
+  userId: "u", tenantId: "tenant", agendaId: "agenda", professionalId: 1,
+  access: { kind: "member" as const, tenantId: "tenant", role: "OWNER" as const },
 }));
 vi.mock("@/lib/professional", () => ({ getProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
 vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
@@ -77,6 +81,8 @@ import { createOwnFoodAction } from "../app/(panel)/alimentos/actions";
 import NewFoodPage from "../app/(panel)/alimentos/nuevo/page";
 import { notFound, redirect } from "next/navigation";
 
+// HU-025: las funciones de alimentos reciben el consultorio (del contexto o del acceso).
+const ANY_TENANT = expect.objectContaining({ tenantId: expect.any(String) });
 const sara = { id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", active: true, kcalPer100: 100, proteinPer100: 1, carbsPer100: 20, fatPer100: 1 };
 const own = { ...sara, id: "own", name: "Historical food", source: "PROPIO" };
 
@@ -95,8 +101,8 @@ function form(values: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.access.mockResolvedValue({ tenantId: "tenant", role: "OWNER" });
-  mocks.listFoods.mockImplementation(async (params) => {
+  mocks.access.mockResolvedValue(TENANT_CTX);
+  mocks.listFoods.mockImplementation(async (_t, params) => {
     const foods = [sara, own];
     return params.source ? foods.filter((food) => food.source === params.source) : foods;
   });
@@ -129,13 +135,18 @@ describe("patient record template picker", () => {
     expect(mocks.listTemplates).toHaveBeenCalledWith({ status: "PUBLISHED", tenantId: "tenant" });
   });
 
-  it.each([null, { tenantId: "other", role: "OWNER" }])("preserves unrelated patient views but hides the picker for membership %j", async (access) => {
-    mocks.access.mockResolvedValue(access);
-    expect(await planPanel()).toMatchObject({ patientId: "patient", plans: [], templates: null });
-    expect(mocks.listTemplates).not.toHaveBeenCalled();
+  it("HU-025b-2: planes, consultas y plantillas salen del mismo contexto de la sesión", async () => {
+    expect(await planPanel()).toMatchObject({ patientId: "patient", plans: [] });
     expect(mocks.listPatientPlans).toHaveBeenCalledWith(TENANT_CTX, "patient");
     expect(mocks.listPatientConsultations).toHaveBeenCalledWith(TENANT_CTX, "patient");
-    expect(notFound).not.toHaveBeenCalled();
+    expect(mocks.listTemplates).toHaveBeenCalledWith({ status: "PUBLISHED", tenantId: "tenant" });
+  });
+
+  it("sin contexto la ficha no se arma ni lista plantillas", async () => {
+    mocks.access.mockResolvedValue(null);
+    await expect(PatientRecord({ id: "patient", variant: "page" })).rejects.toThrow("no_context");
+    expect(mocks.listTemplates).not.toHaveBeenCalled();
+    expect(mocks.listPatientPlans).not.toHaveBeenCalled();
   });
 });
 
@@ -145,12 +156,10 @@ describe("private template pages", () => {
     expect(mocks.listTemplates).toHaveBeenCalledWith({ tenantId: "tenant" });
   });
 
-  it("does not query templates without membership", async () => {
+  it("does not query templates without a tenant context (requirePageContext → /inicio)", async () => {
     mocks.access.mockResolvedValue(null);
-    vi.mocked(notFound).mockImplementationOnce(() => { throw new Error("404"); });
-    await expect(TemplatesPage()).rejects.toThrow("404");
-    vi.mocked(notFound).mockImplementationOnce(() => { throw new Error("404"); });
-    await expect(TemplatePage({ params: Promise.resolve({ id: "other" }) })).rejects.toThrow("404");
+    await expect(TemplatesPage()).rejects.toThrow("no_context");
+    await expect(TemplatePage({ params: Promise.resolve({ id: "other" }) })).rejects.toThrow("no_context");
     expect(mocks.listTemplates).not.toHaveBeenCalled();
     expect(mocks.getTemplate).not.toHaveBeenCalled();
   });
@@ -175,7 +184,7 @@ describe("SARA2-only new food selections", () => {
     expect(isValidElement(pageEl) && pageEl.type).toBe(PlanDetail);
     expect(isValidElement(pageEl) && pageEl.props).toMatchObject({ id: "patient", planId: "plan", variant: "page" });
     const page = await PlanDetail({ id: "patient", planId: "plan", dia: undefined, variant: "page" });
-    expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
+    expect(mocks.listFoods).toHaveBeenCalledWith(ANY_TENANT, { activeOnly: true, source: "SARA2" });
     const editor = propsWith(page, "ownerField")[0]!;
     expect(editor.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);
     expect(editor.meals).toMatchObject([{ items: [{ foodId: "own", foodName: "Historical food", macros: { kcal: 100 } }] }]);
@@ -190,20 +199,20 @@ describe("SARA2-only new food selections", () => {
     }] });
     const page = await TemplatePage({ params: Promise.resolve({ id: "template" }) });
     expect(mocks.getTemplate).toHaveBeenCalledWith("template", "tenant");
-    expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
+    expect(mocks.listFoods).toHaveBeenCalledWith(ANY_TENANT, { activeOnly: true, source: "SARA2" });
     expect(propsWith(page, "ownerField")[0]?.foods).toEqual([{ id: "sara", name: "SARA food", group: "FRUTAS", source: "SARA2", kcalPer100: 100 }]);
     expect(propsWith(page, "ownerField")[0]?.meals).toMatchObject([{ items: [{ foodId: "own", foodName: "Historical food" }] }]);
   });
 
   it("limits the main food catalog to SARA2, including inactive records", async () => {
     const page = await FoodsPage();
-    expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: false, source: "SARA2" });
+    expect(mocks.listFoods).toHaveBeenCalledWith(ANY_TENANT, { activeOnly: false, source: "SARA2" });
     expect(propsWith(page, "foods")[0]?.foods).toMatchObject([{ id: "sara", source: "SARA2" }]);
   });
 
   it("sends only SARA2 to AI and resolves refs to the corresponding foodId", async () => {
     expect(await generateAiPlanAction({ ok: false }, form({ planId: "plan", patientId: "patient" }))).toEqual({ ok: true });
-    expect(mocks.listFoods).toHaveBeenCalledWith({ activeOnly: true, source: "SARA2" });
+    expect(mocks.listFoods).toHaveBeenCalledWith(ANY_TENANT, { activeOnly: true, source: "SARA2" });
     const payload = JSON.parse(mocks.completion.mock.calls[0]![0].messages[1].content);
     expect(payload.alimentos).toContain("SARA food");
     expect(payload.alimentos).not.toContain("Historical food");
@@ -211,7 +220,7 @@ describe("SARA2-only new food selections", () => {
   });
 
   it("returns an actionable AI error without calling AI when only PROPIO exists", async () => {
-    mocks.listFoods.mockImplementation(async (params) => params.source === "SARA2" ? [] : [own]);
+    mocks.listFoods.mockImplementation(async (_t, params) => params.source === "SARA2" ? [] : [own]);
     expect(await generateAiPlanAction({ ok: false }, form({ planId: "plan", patientId: "patient" }))).toEqual({
       ok: false, error: "No hay alimentos SARA 2 disponibles. Cargá la base SARA 2 antes de generar un plan.",
     });
@@ -259,7 +268,7 @@ describe("SARA2-only new food selections", () => {
       planId: "plan", templateId: "template", mealId: "meal", foodId: "sara", quantityGrams: "999",
       customLabel: "ignorada", measureId: "m1", measureQty: "1,5", weekday: "TUE",
     }));
-    expect(mocks.resolveMeasureItem).toHaveBeenCalledWith("sara", "m1", 1.5);
+    expect(mocks.resolveMeasureItem).toHaveBeenCalledWith(ANY_TENANT, "sara", "m1", 1.5);
     const write = action === addPlanMealItemAction ? mocks.addMealItem : mocks.addTemplateMealItem;
     const data = {
       foodId: "sara", customLabel: null, notes: null, order: 0, weekday: "TUE",

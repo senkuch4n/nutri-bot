@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   createAppointment: vi.fn(), checkout: vi.fn(), professional: vi.fn(), patient: vi.fn(), error: vi.fn(),
   available: vi.fn(), notifyMissing: vi.fn(), scopedPatient: vi.fn(), token: vi.fn(), cancelable: vi.fn(),
   MercadoPagoUnavailableError: class MercadoPagoUnavailableError extends Error {},
-  prisma: { agenda: { findUnique: vi.fn() }, service: { findUniqueOrThrow: vi.fn() }, conversationState: { findUnique: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() }, patient: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() }, outboundMessage: { create: vi.fn() } },
+  prisma: { agenda: { findUnique: vi.fn(), findFirst: vi.fn() }, service: { findUniqueOrThrow: vi.fn() }, conversationState: { findUnique: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() }, patient: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() }, outboundMessage: { create: vi.fn() } },
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: mocks.prisma }));
 vi.mock("../../../packages/db/index", () => ({ prisma: mocks.prisma }));
@@ -34,6 +34,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { phoneJid: "bound-alert" } });
+    mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { phoneJid: "bound-alert" } });
     mocks.professional.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires", currency: "ARS", botPaused: false, botAiEnabled: false });
     mocks.patient.mockResolvedValue({ id: "patient", name: "Test" });
     mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ name: "Consulta nutricional" });
@@ -139,7 +140,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     const send = vi.fn();
     await handleIncoming("fake-patient", "sí", send);
     expect(mocks.createAppointment).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, { patientId: "patient", serviceId: "service", startsAt, createdBy: "PATIENT", notifyPatient: false, reason: null, professionalAlertJid: undefined });
-    expect(mocks.checkout).toHaveBeenCalledWith("appointment");
+    expect(mocks.checkout).toHaveBeenCalledWith(owner, "appointment");
     const message = send.mock.calls[0]?.[0];
     for (const text of ["Consulta nutricional", "lunes 5 de octubre", "12:00", "3.000", "https://checkout.example.test/deposit", "15 minutos"]) expect(message).toContain(text);
     expect(message).not.toContain("Turno confirmado");
@@ -172,7 +173,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
       expect(send).toHaveBeenCalledTimes(1);
       expect(send).toHaveBeenCalledWith(messages.DEPOSIT_UNAVAILABLE);
       expect(mocks.prisma.patient.findUnique).toHaveBeenCalledWith({ where: { id: "patient", tenantId: "legacy-tenant" }, select: { name: true, phone: true } });
-      expect(mocks.notifyMissing).toHaveBeenCalledWith({ patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
+      expect(mocks.notifyMissing).toHaveBeenCalledWith(owner, { patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
       expect(state.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { step: "MENU", context: {} } }));
     });
 
@@ -182,7 +183,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
       mocks.checkout.mockResolvedValue({ amount: 3000, checkoutUrl: "https://checkout.example.test/deposit" });
       const send = vi.fn();
       await handleIncoming("fake-patient", "sí", send);
-      expect(mocks.checkout).toHaveBeenCalledWith("appointment");
+      expect(mocks.checkout).toHaveBeenCalledWith(owner, "appointment");
       expect(send.mock.calls[0]?.[0]).toContain("https://checkout.example.test/deposit");
       expect(mocks.notifyMissing).not.toHaveBeenCalled();
     });
@@ -195,7 +196,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
       await handleIncoming("fake-patient", "sí", send);
       expect(send).toHaveBeenCalledWith(messages.DEPOSIT_UNAVAILABLE);
       expect(send).not.toHaveBeenCalledWith(expect.stringContaining("Hubo un problema"));
-      expect(mocks.notifyMissing).toHaveBeenCalledWith({ patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
+      expect(mocks.notifyMissing).toHaveBeenCalledWith(owner, { patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Consulta nutricional" });
     });
 
     it("un error al encolar el aviso no cambia lo que ve el paciente", async () => {

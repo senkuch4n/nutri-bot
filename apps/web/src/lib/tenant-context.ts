@@ -3,7 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { decideTenantAccess, type AccessDenial, type AccessGrant } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
-import { LEGACY_TENANT_ID, loadAccessFacts } from "@nutri-bot/db/domain";
+import { LEGACY_TENANT_ID, TenantScopeError, loadAccessFacts, resolvePrimaryAgenda } from "@nutri-bot/db/domain";
 import { auth } from "@/auth";
 
 // HU-025 (4.5 de la SDD): el consultorio de cada request de servidor sale de acá, nunca del cliente.
@@ -42,12 +42,14 @@ export const getTenantAccess: () => Promise<TenantAccessResult> = cache(async ()
   if (!decision.ok) return { ok: false, reason: decision.reason, email };
 
   const { tenantId } = decision.grant;
-  // Índice parcial único: a lo sumo una agenda principal por tenant; su profesional es del mismo tenant (FK compuesta).
-  const agenda = await prisma.agenda.findFirst({
-    where: { tenantId, isPrimary: true },
-    select: { id: true, professionalId: true },
-  });
-  if (!agenda) {
+  // HU-025b-2: la misma resolución de agenda principal que usa el dominio (tenantScope.resolvePrimaryAgenda,
+  // la base de resolveTenantSchedulingContext): índice parcial único y profesional del mismo tenant por FK
+  // compuesta. Se usa la primitiva porque el contexto necesita también professionalId.
+  let primary: { scope: { agendaId: string }; professionalId: number };
+  try {
+    primary = await resolvePrimaryAgenda(prisma, tenantId, { id: true } as const);
+  } catch (error) {
+    if (!(error instanceof TenantScopeError)) throw error;
     // Un consultorio sin agenda principal no se puede operar: sin contexto, como un tenant no habilitado.
     console.error("[auth] tenant_scope_missing");
     return { ok: false, reason: "tenant_not_enabled", email };
@@ -55,7 +57,7 @@ export const getTenantAccess: () => Promise<TenantAccessResult> = cache(async ()
 
   return {
     ok: true,
-    ctx: { userId, tenantId, agendaId: agenda.id, professionalId: agenda.professionalId, access: decision.grant },
+    ctx: { userId, tenantId, agendaId: primary.scope.agendaId, professionalId: primary.professionalId, access: decision.grant },
   };
 });
 

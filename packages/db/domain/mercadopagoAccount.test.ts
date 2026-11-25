@@ -104,7 +104,10 @@ const mocks = vi.hoisted(() => {
       )),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    agenda: { findUnique: vi.fn(async () => ({ professional: db.pro })) },
+    agenda: {
+      findFirst: vi.fn(async ({ where }: { where: Row }) => (where.tenantId === "legacy-tenant"
+        ? { id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: db.pro } : null)),
+    },
     professional: { findUnique: vi.fn(async ({ select }: { select?: Record<string, boolean> }) => project(db.pro, select)) },
     outboundMessage: { create: vi.fn(async () => ({})), createMany: vi.fn(async () => ({ count: 1 })) },
   };
@@ -123,10 +126,12 @@ import {
   markMercadoPagoAccountError,
   notifyMercadoPagoMissingForBooking,
   refreshMercadoPagoAccountToken,
+  resolveMercadoPagoWebhookTenant,
   startMercadoPagoOAuth,
 } from "./mercadopagoAccount";
 import { SECRET_AAD, openSecret, sealSecret } from "./secretBox";
 
+const T = { tenantId: "legacy-tenant" };
 const KEY = randomBytes(32);
 const NOW = new Date("2026-11-12T12:00:00.000Z");
 const DAY = 24 * 60 * 60_000;
@@ -190,7 +195,7 @@ function stalePending(id = "appt-1") {
 }
 
 async function startAndGetState(fetch = makeFetch()) {
-  const { url } = await startMercadoPagoOAuth("Pro@Example.com", { env: ENV, now: () => NOW, fetch });
+  const { url } = await startMercadoPagoOAuth(T, "Pro@Example.com", { env: ENV, now: () => NOW, fetch });
   return new URL(url).searchParams;
 }
 
@@ -227,7 +232,7 @@ describe("startMercadoPagoOAuth", () => {
   });
 
   it("sin configuración → MercadoPagoConfigError", async () => {
-    await expect(startMercadoPagoOAuth("pro@example.com", { env: { ...ENV, MERCADOPAGO_CLIENT_ID: "" } })).rejects.toBeInstanceOf(
+    await expect(startMercadoPagoOAuth(T, "pro@example.com", { env: { ...ENV, MERCADOPAGO_CLIENT_ID: "" } })).rejects.toBeInstanceOf(
       MercadoPagoConfigError,
     );
     expect(mocks.prisma.mercadoPagoOAuthState.create).not.toHaveBeenCalled();
@@ -243,7 +248,7 @@ describe("completeMercadoPagoOAuth", () => {
     const states = [...db.states];
     for (const [name, value] of [["code", "c"], ["error", "access_denied"]]) {
       const query = new URLSearchParams([[name!, value!], ["state", params.get("state")!]]);
-      await expect(completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).resolves.toBe("rejected");
+      await expect(completeMercadoPagoOAuth(T, { sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).resolves.toBe("rejected");
     }
     expect(db.states).toEqual(states);
     expect(db.account).toEqual(account);
@@ -255,9 +260,9 @@ describe("completeMercadoPagoOAuth", () => {
     const fetch = makeFetch();
     const params = await startAndGetState(fetch);
     const states = [...db.states];
-    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
+    mocks.prisma.agenda.findFirst.mockResolvedValueOnce(null);
     const query = new URLSearchParams({ code: "c", state: params.get("state")! });
-    await expect(completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    await expect(completeMercadoPagoOAuth(T, { sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(db.states).toEqual(states);
     expect(db.account).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
@@ -272,7 +277,7 @@ describe("completeMercadoPagoOAuth", () => {
       return json(200, TOKEN_RESPONSE);
     });
     const query = new URLSearchParams({ code: "c", state: params.get("state")! });
-    await expect(completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(completeMercadoPagoOAuth(T, { sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
     expect(db.states).toEqual([]);
     expect(db.account).toEqual(foreign);
     expect(mocks.prisma.mercadoPagoAccount.update).not.toHaveBeenCalled();
@@ -282,7 +287,7 @@ describe("completeMercadoPagoOAuth", () => {
     const fetch = makeFetch();
     const params = await startAndGetState(fetch);
     db.account = connectedAccount({ userId: "555", errorCode: "revoked", errorAt: NOW, errorNotifiedAt: NOW });
-    const result = await completeMercadoPagoOAuth(
+    const result = await completeMercadoPagoOAuth(T, 
       { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "TG-code", state: params.get("state")! }) },
       { env: ENV, now: () => NOW, fetch },
     );
@@ -310,13 +315,13 @@ describe("completeMercadoPagoOAuth", () => {
     const params = await startAndGetState(fetch);
     const state = params.get("state")!;
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "otra@example.com", query: new URLSearchParams({ code: "c", state }) },
         { env: ENV, now: () => NOW, fetch },
       ),
     ).toBe("invalid_state");
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: "inventado" }) },
         { env: ENV, now: () => NOW, fetch },
       ),
@@ -330,7 +335,7 @@ describe("completeMercadoPagoOAuth", () => {
     const params = await startAndGetState(fetch);
     const later = new Date(NOW.getTime() + 11 * 60_000);
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: params.get("state")! }) },
         { env: ENV, now: () => later, fetch },
       ),
@@ -342,10 +347,10 @@ describe("completeMercadoPagoOAuth", () => {
     const fetch = makeFetch();
     const params = await startAndGetState(fetch);
     const query = new URLSearchParams({ code: "TG-code", state: params.get("state")! });
-    expect(await completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).toBe(
+    expect(await completeMercadoPagoOAuth(T, { sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).toBe(
       "connected",
     );
-    expect(await completeMercadoPagoOAuth({ sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).toBe(
+    expect(await completeMercadoPagoOAuth(T, { sessionEmail: "pro@example.com", query }, { env: ENV, now: () => NOW, fetch })).toBe(
       "invalid_state",
     );
   });
@@ -354,7 +359,7 @@ describe("completeMercadoPagoOAuth", () => {
     const fetch = makeFetch();
     const params = await startAndGetState(fetch);
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ error: "access_denied", state: params.get("state")! }) },
         { env: ENV, now: () => NOW, fetch },
       ),
@@ -366,7 +371,7 @@ describe("completeMercadoPagoOAuth", () => {
 
   it("code sin state → invalid_state", async () => {
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c" }) },
         { env: ENV, now: () => NOW, fetch: makeFetch() },
       ),
@@ -375,7 +380,7 @@ describe("completeMercadoPagoOAuth", () => {
 
   it("sin configuración → not_configured", async () => {
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: "s" }) },
         { env: { ...ENV, MERCADOPAGO_CLIENT_SECRET: undefined } },
       ),
@@ -386,7 +391,7 @@ describe("completeMercadoPagoOAuth", () => {
     const fetch = makeFetch({ status: 400, body: { error: "invalid_grant", message: "TG-code SECRETO-APP" } });
     const params = await startAndGetState(fetch);
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "TG-code", state: params.get("state")! }) },
         { env: ENV, now: () => NOW, fetch },
       ),
@@ -399,9 +404,9 @@ describe("completeMercadoPagoOAuth", () => {
   it("producción + live_mode false → wrong_environment sin escribir", async () => {
     const env = { ...ENV, NODE_ENV: "production" };
     const fetch = makeFetch({ status: 200, body: { ...TOKEN_RESPONSE, live_mode: false } });
-    const { url } = await startMercadoPagoOAuth("pro@example.com", { env, now: () => NOW, fetch });
+    const { url } = await startMercadoPagoOAuth(T, "pro@example.com", { env, now: () => NOW, fetch });
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: new URL(url).searchParams.get("state")! }) },
         { env, now: () => NOW, fetch },
       ),
@@ -413,7 +418,7 @@ describe("completeMercadoPagoOAuth", () => {
     const fetch = makeFetch(undefined, { status: 500, body: {} });
     const params = await startAndGetState(fetch);
     expect(
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: params.get("state")! }) },
         { env: ENV, now: () => NOW, fetch },
       ),
@@ -429,7 +434,7 @@ describe("completeMercadoPagoOAuth", () => {
       db.stalePendingAppointments = [stalePending()];
       const fetch = makeFetch();
       const params = await startAndGetState(fetch);
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: params.get("state")! }) },
         { env: ENV, now: () => NOW, fetch },
       );
@@ -469,7 +474,7 @@ describe("completeMercadoPagoOAuth", () => {
       db.stalePendingAppointments = [];
       const fetch = makeFetch();
       const params = await startAndGetState(fetch);
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: params.get("state")! }) },
         { env: ENV, now: () => NOW, fetch },
       );
@@ -487,7 +492,7 @@ describe("completeMercadoPagoOAuth", () => {
       mocks.prisma.appointment.updateMany.mockResolvedValueOnce({ count: 0 });
       const fetch = makeFetch();
       const params = await startAndGetState(fetch);
-      await completeMercadoPagoOAuth(
+      await completeMercadoPagoOAuth(T, 
         { sessionEmail: "pro@example.com", query: new URLSearchParams({ code: "c", state: params.get("state")! }) },
         { env: ENV, now: () => NOW, fetch },
       );
@@ -507,7 +512,7 @@ describe("disconnectMercadoPagoAccount", () => {
       { ...stalePending("other-agenda"), agendaId: "other-agenda" },
       { ...stalePending("unknown"), tenantId: null, agendaId: null },
     ];
-    expect(await disconnectMercadoPagoAccount()).toEqual({ cancelledDeposits: 2 });
+    expect(await disconnectMercadoPagoAccount(T)).toEqual({ cancelledDeposits: 2 });
     const acc = db.account!;
     for (const k of ["userId", "nickname", "email", "liveMode", "accessTokenEnc", "refreshTokenEnc", "scope", "expiresAt", "connectedAt", "refreshedAt", "errorCode", "errorAt", "errorNotifiedAt"]) {
       expect(acc[k], k).toBeNull();
@@ -521,13 +526,13 @@ describe("disconnectMercadoPagoAccount", () => {
   });
 
   it("provisiona la cuenta nueva con el dueño verificado", async () => {
-    expect(await disconnectMercadoPagoAccount()).toEqual({ cancelledDeposits: 0 });
+    expect(await disconnectMercadoPagoAccount(T)).toEqual({ cancelledDeposits: 0 });
     expect(db.account?.tenantId).toBe("legacy-tenant");
   });
 
   it("sin agenda legacy verificada no provisiona ni cancela", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
-    await expect(disconnectMercadoPagoAccount()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    mocks.prisma.agenda.findFirst.mockResolvedValueOnce(null);
+    await expect(disconnectMercadoPagoAccount(T)).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(db.account).toBeNull();
     expect(mocks.prisma.$executeRaw).not.toHaveBeenCalled();
     expect(mocks.prisma.appointment.findMany).not.toHaveBeenCalled();
@@ -537,9 +542,9 @@ describe("disconnectMercadoPagoAccount", () => {
     const account = connectedAccount({ tenantId, expiresAt: NOW });
     db.account = { ...account };
     const fetch = makeFetch();
-    await expect(refreshMercadoPagoAccountToken({}, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
-    await expect(disconnectMercadoPagoAccount()).rejects.toThrow("No hay cuenta de Mercado Pago usable");
-    await expect(markMercadoPagoAccountError("revoked")).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(refreshMercadoPagoAccountToken(T, {}, { env: ENV, now: () => NOW, fetch })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(disconnectMercadoPagoAccount(T)).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(markMercadoPagoAccountError(T, "revoked")).rejects.toThrow("No hay cuenta de Mercado Pago usable");
     expect(db.account).toEqual(account);
     expect(fetch).not.toHaveBeenCalled();
     expect(mocks.prisma.mercadoPagoAccount.update).not.toHaveBeenCalled();
@@ -561,9 +566,9 @@ describe("getMercadoPagoCredentials", () => {
     for (const expiresAt of [NOW, new Date(NOW.getTime() + DAY)]) {
       const account = connectedAccount({ tenantId, expiresAt });
       db.account = { ...account };
-      await expect(getMercadoPagoCredentials({ kind: "current" }, config)).resolves.toBeNull();
-      await expect(getMercadoPagoCredentials({ kind: "payment", sellerUserId: "555" }, config)).resolves.toBeNull();
-      await expect(getMercadoPagoCredentials({ kind: "payment", sellerUserId: null }, config)).resolves.toBeNull();
+      await expect(getMercadoPagoCredentials(T, { kind: "current" }, config)).resolves.toBeNull();
+      await expect(getMercadoPagoCredentials(T, { kind: "payment", sellerUserId: "555" }, config)).resolves.toBeNull();
+      await expect(getMercadoPagoCredentials(T, { kind: "payment", sellerUserId: null }, config)).resolves.toBeNull();
       expect(db.account).toEqual(account);
     }
     expect(fetch).not.toHaveBeenCalled();
@@ -573,44 +578,44 @@ describe("getMercadoPagoCredentials", () => {
   });
 
   it("sin agenda verificada no lee la cuenta ni usa respaldo", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
+    mocks.prisma.agenda.findFirst.mockResolvedValueOnce(null);
     db.account = connectedAccount();
     const fetch = makeFetch();
     const config = deps({ MERCADOPAGO_ALLOW_ENV_TOKEN: "true", MERCADOPAGO_ACCESS_TOKEN: "TEST-env", NODE_ENV: "development" }, fetch);
-    await expect(getMercadoPagoCredentials({ kind: "current" }, config)).resolves.toBeNull();
+    await expect(getMercadoPagoCredentials(T, { kind: "current" }, config)).resolves.toBeNull();
     expect(mocks.prisma.mercadoPagoAccount.findUnique).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it("conectada → token descifrado y sellerUserId", async () => {
     db.account = connectedAccount();
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps())).toEqual({
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps())).toEqual({
       accessToken: "APP_USR-access-guardado",
       sellerUserId: "555",
       source: "account",
     });
-    expect(await isMercadoPagoCheckoutAvailable(deps())).toBe(true);
+    expect(await isMercadoPagoCheckoutAvailable(T, deps())).toBe(true);
   });
 
   it("sin cuenta y sin respaldo → null", async () => {
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps())).toBeNull();
-    expect(await isMercadoPagoCheckoutAvailable(deps())).toBe(false);
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps())).toBeNull();
+    expect(await isMercadoPagoCheckoutAvailable(T, deps())).toBe(false);
   });
 
   it("con errorCode → null", async () => {
     db.account = connectedAccount({ errorCode: "revoked" });
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps())).toBeNull();
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps())).toBeNull();
   });
 
   it("scope payment: misma cuenta → token; otra cuenta → null", async () => {
     db.account = connectedAccount();
-    expect(await getMercadoPagoCredentials({ kind: "payment", sellerUserId: "555" }, deps())).toMatchObject({ sellerUserId: "555" });
-    expect(await getMercadoPagoCredentials({ kind: "payment", sellerUserId: "111" }, deps())).toBeNull();
+    expect(await getMercadoPagoCredentials(T, { kind: "payment", sellerUserId: "555" }, deps())).toMatchObject({ sellerUserId: "555" });
+    expect(await getMercadoPagoCredentials(T, { kind: "payment", sellerUserId: "111" }, deps())).toBeNull();
   });
 
   it("no se puede descifrar → marca decrypt_failed, avisa y devuelve null", async () => {
     db.account = connectedAccount({ accessTokenEnc: sealSecret("x", randomBytes(32), SECRET_AAD.accessToken) });
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps())).toBeNull();
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps())).toBeNull();
     expect(db.account!.errorCode).toBe("decrypt_failed");
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledWith({
       data: { tenantId: "legacy-tenant", toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
@@ -620,7 +625,7 @@ describe("getMercadoPagoCredentials", () => {
   it("vencido → renueva (force) y devuelve el token nuevo", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() - 1000) });
     const fetch = makeFetch();
-    const creds = await getMercadoPagoCredentials({ kind: "current" }, deps({}, fetch));
+    const creds = await getMercadoPagoCredentials(T, { kind: "current" }, deps({}, fetch));
     expect(creds).toEqual({ accessToken: "APP_USR-access-claro", sellerUserId: "555", source: "account" });
     expect(JSON.parse(String(fetch.mock.calls[0]![1]!.body)).grant_type).toBe("refresh_token");
     const tokenReads = mocks.prisma.mercadoPagoAccount.findUnique.mock.calls.filter(([{ select }]: [Row]) => select.accessTokenEnc);
@@ -631,33 +636,33 @@ describe("getMercadoPagoCredentials", () => {
 
   it("vencido y la renovación falla por red → null sin marcar", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() - 1000) });
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps({}, makeFetch({ status: 503, body: {} })))).toBeNull();
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps({}, makeFetch({ status: 503, body: {} })))).toBeNull();
     expect(db.account!.errorCode).toBeNull();
   });
 
   it("respaldo de dev (flag + token + no producción) → env_fallback", async () => {
     const env = { MERCADOPAGO_ALLOW_ENV_TOKEN: "true", MERCADOPAGO_ACCESS_TOKEN: "TEST-env", NODE_ENV: "development" };
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps(env))).toEqual({
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps(env))).toEqual({
       accessToken: "TEST-env",
       sellerUserId: null,
       source: "env_fallback",
     });
     db.account = connectedAccount();
-    expect(await getMercadoPagoCredentials({ kind: "payment", sellerUserId: null }, deps(env))).toMatchObject({
+    expect(await getMercadoPagoCredentials(T, { kind: "payment", sellerUserId: null }, deps(env))).toMatchObject({
       source: "env_fallback",
     });
   });
 
   it("mismo respaldo con NODE_ENV=production → null", async () => {
     const env = { MERCADOPAGO_ALLOW_ENV_TOKEN: "true", MERCADOPAGO_ACCESS_TOKEN: "TEST-env", NODE_ENV: "production" };
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps(env))).toBeNull();
-    expect(await getMercadoPagoCredentials({ kind: "payment", sellerUserId: null }, deps(env))).toBeNull();
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps(env))).toBeNull();
+    expect(await getMercadoPagoCredentials(T, { kind: "payment", sellerUserId: null }, deps(env))).toBeNull();
   });
 
   it("cuenta conectada: el respaldo de dev no la pisa", async () => {
     db.account = connectedAccount();
     const env = { MERCADOPAGO_ALLOW_ENV_TOKEN: "true", MERCADOPAGO_ACCESS_TOKEN: "TEST-env", NODE_ENV: "development" };
-    expect(await getMercadoPagoCredentials({ kind: "current" }, deps(env))).toMatchObject({ source: "account" });
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, deps(env))).toMatchObject({ source: "account" });
   });
 });
 
@@ -667,13 +672,13 @@ describe("refreshMercadoPagoAccountToken", () => {
   it("faltan más de 30 días → not_needed sin llamar a MP", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 31 * DAY) });
     const fetch = makeFetch();
-    expect(await refreshMercadoPagoAccountToken({}, deps(fetch))).toBe("not_needed");
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps(fetch))).toBe("not_needed");
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it("faltan menos de 30 días → bloquea la fila, guarda el refresh NUEVO y el vencimiento", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 29 * DAY) });
-    expect(await refreshMercadoPagoAccountToken({}, deps())).toBe("refreshed");
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps())).toBe("refreshed");
     const lockCall = mocks.prisma.$queryRaw.mock.calls.find((c: any[]) => c[0].join("?").includes("FOR UPDATE"));
     expect(lockCall).toBeDefined();
     expect(openSecret(db.account!.refreshTokenEnc, KEY, SECRET_AAD.refreshToken)).toBe("TG-refresh-claro");
@@ -686,14 +691,14 @@ describe("refreshMercadoPagoAccountToken", () => {
   it("force: si otro proceso ya renovó (no vencido) → not_needed", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 10 * DAY) });
     const fetch = makeFetch();
-    expect(await refreshMercadoPagoAccountToken({ force: true }, deps(fetch))).toBe("not_needed");
+    expect(await refreshMercadoPagoAccountToken(T, { force: true }, deps(fetch))).toBe("not_needed");
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it("invalid_grant → revoked + un solo aviso por incidente", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 5 * DAY) });
     const fetch = makeFetch({ status: 400, body: { error: "invalid_grant" } });
-    expect(await refreshMercadoPagoAccountToken({}, deps(fetch))).toBe("revoked");
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps(fetch))).toBe("revoked");
     expect(db.account!.errorCode).toBe("revoked");
     expect(db.account!.errorNotifiedAt).toEqual(NOW);
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledTimes(1);
@@ -701,14 +706,14 @@ describe("refreshMercadoPagoAccountToken", () => {
       data: { tenantId: "legacy-tenant", toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.MERCADOPAGO_DISCONNECTED_ALERT },
     });
     // Segundo intento con el error ya puesto: no hay cuenta usable y no se repite el aviso.
-    expect(await refreshMercadoPagoAccountToken({}, deps(fetch))).toBe("not_connected");
-    await markMercadoPagoAccountError("revoked");
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps(fetch))).toBe("not_connected");
+    await markMercadoPagoAccountError(T, "revoked");
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledTimes(1);
   });
 
   it("400 invalid_client → refresh_failed", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 5 * DAY) });
-    expect(await refreshMercadoPagoAccountToken({}, deps(makeFetch({ status: 400, body: { error: "invalid_client" } })))).toBe(
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps(makeFetch({ status: 400, body: { error: "invalid_client" } })))).toBe(
       "refresh_failed",
     );
     expect(db.account!.errorCode).toBe("refresh_failed");
@@ -716,7 +721,7 @@ describe("refreshMercadoPagoAccountToken", () => {
 
   it("503 → transient_error sin marcar", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 5 * DAY) });
-    expect(await refreshMercadoPagoAccountToken({}, deps(makeFetch({ status: 503, body: {} })))).toBe("transient_error");
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps(makeFetch({ status: 503, body: {} })))).toBe("transient_error");
     expect(db.account!.errorCode).toBeNull();
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
@@ -724,21 +729,21 @@ describe("refreshMercadoPagoAccountToken", () => {
   it("sin phoneJid → marca sin mensaje", async () => {
     db.pro = { phoneJid: null, timezone: "America/Argentina/Buenos_Aires" };
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 5 * DAY) });
-    expect(await refreshMercadoPagoAccountToken({}, deps(makeFetch({ status: 401, body: {} })))).toBe("revoked");
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps(makeFetch({ status: 401, body: {} })))).toBe("revoked");
     expect(db.account!.errorCode).toBe("revoked");
     expect(db.account!.errorNotifiedAt).toBeNull();
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
 
   it("sin cuenta o sin configuración → not_connected", async () => {
-    expect(await refreshMercadoPagoAccountToken({}, deps())).toBe("not_connected");
+    expect(await refreshMercadoPagoAccountToken(T, {}, deps())).toBe("not_connected");
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 5 * DAY) });
-    expect(await refreshMercadoPagoAccountToken({}, { env: { ...ENV, MERCADOPAGO_CLIENT_ID: undefined } })).toBe("not_connected");
+    expect(await refreshMercadoPagoAccountToken(T, {}, { env: { ...ENV, MERCADOPAGO_CLIENT_ID: undefined } })).toBe("not_connected");
   });
 
   it("los logs no llevan tokens", async () => {
     db.account = connectedAccount({ expiresAt: new Date(NOW.getTime() + 5 * DAY) });
-    await refreshMercadoPagoAccountToken({}, deps(makeFetch({ status: 400, body: { error: "invalid_grant" } })));
+    await refreshMercadoPagoAccountToken(T, {}, deps(makeFetch({ status: 400, body: { error: "invalid_grant" } })));
     expect(console.error).toHaveBeenCalledWith("[mercadopago] refresh_failed", { status: 400, code: "invalid_grant" });
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toMatch(/TG-refresh|APP_USR|SECRETO-APP/);
   });
@@ -748,23 +753,23 @@ describe("notifyMercadoPagoMissingForBooking", () => {
   const input = { patientName: "Ana", patientPhone: "+5493515552345", serviceName: "Primera consulta" };
 
   it("primera vez → encola con el texto exacto; dentro de las 24 h → no", async () => {
-    expect(await notifyMercadoPagoMissingForBooking(input)).toBe(true);
+    expect(await notifyMercadoPagoMissingForBooking(T, input)).toBe(true);
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledWith({
       data: { tenantId: "legacy-tenant", toJid: "pro-jid", kind: "PROFESSIONAL_ALERT", body: messages.professionalDepositUnavailableAlert(input) },
     });
-    expect(await notifyMercadoPagoMissingForBooking(input)).toBe(false);
+    expect(await notifyMercadoPagoMissingForBooking(T, input)).toBe(false);
     expect(mocks.prisma.outboundMessage.create).toHaveBeenCalledTimes(1);
   });
 
   it("pasadas 24 h → vuelve a avisar", async () => {
     db.account = { ...mocks.emptyAccount(), tenantId: "legacy-tenant", missingAlertAt: new Date(Date.now() - 25 * 60 * 60_000) };
-    expect(await notifyMercadoPagoMissingForBooking(input)).toBe(true);
+    expect(await notifyMercadoPagoMissingForBooking(T, input)).toBe(true);
   });
 
   it.each([null, "foreign-tenant"])("no modifica una cuenta sin dueño confiable (%s)", async (tenantId) => {
     const account = { ...mocks.emptyAccount(), tenantId };
     db.account = { ...account };
-    expect(await notifyMercadoPagoMissingForBooking(input)).toBe(false);
+    expect(await notifyMercadoPagoMissingForBooking(T, input)).toBe(false);
     expect(db.account).toEqual(account);
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
     expect(mocks.prisma.mercadoPagoAccount.findUnique).not.toHaveBeenCalled();
@@ -772,7 +777,7 @@ describe("notifyMercadoPagoMissingForBooking", () => {
 
   it("sin phoneJid → no encola", async () => {
     db.pro = { phoneJid: null, timezone: "America/Argentina/Buenos_Aires" };
-    expect(await notifyMercadoPagoMissingForBooking(input)).toBe(false);
+    expect(await notifyMercadoPagoMissingForBooking(T, input)).toBe(false);
     expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
   });
 });
@@ -780,14 +785,14 @@ describe("notifyMercadoPagoMissingForBooking", () => {
 describe("getMercadoPagoConnectionView", () => {
   it("no muestra metadatos de una cuenta ajena", async () => {
     db.account = connectedAccount({ tenantId: "foreign-tenant" });
-    expect(await getMercadoPagoConnectionView()).toMatchObject({
+    expect(await getMercadoPagoConnectionView(T)).toMatchObject({
       userId: null, nickname: null, email: null, liveMode: null, connectedAt: null, errorCode: null,
     });
   });
 
   it("sin agenda verificada no lee metadatos ni cuenta señas o servicios", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValueOnce(null);
-    await expect(getMercadoPagoConnectionView()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
+    mocks.prisma.agenda.findFirst.mockResolvedValueOnce(null);
+    await expect(getMercadoPagoConnectionView(T)).rejects.toThrow("tenant_scope:tenant_scope_missing");
     expect(mocks.prisma.mercadoPagoAccount.findUnique).not.toHaveBeenCalled();
     expect(mocks.prisma.payment.count).not.toHaveBeenCalled();
     expect(mocks.prisma.service.count).not.toHaveBeenCalled();
@@ -802,7 +807,7 @@ describe("getMercadoPagoConnectionView", () => {
     vi.stubEnv("AUTH_URL", ENV.AUTH_URL);
     // Un prisma "descuidado" que devuelve la fila entera.
     mocks.prisma.mercadoPagoAccount.findUnique.mockResolvedValueOnce({ ...db.account });
-    const view = await getMercadoPagoConnectionView();
+    const view = await getMercadoPagoConnectionView(T);
     vi.unstubAllEnvs();
     expect(view).toEqual({
       status: "connected",
@@ -830,17 +835,53 @@ describe("getMercadoPagoConnectionView", () => {
 
   it("sin configuración → not_configured; con error → needs_reconnect", async () => {
     vi.stubEnv("MERCADOPAGO_CLIENT_ID", "");
-    expect((await getMercadoPagoConnectionView()).status).toBe("not_configured");
+    expect((await getMercadoPagoConnectionView(T)).status).toBe("not_configured");
     vi.unstubAllEnvs();
     vi.stubEnv("MERCADOPAGO_CLIENT_ID", ENV.MERCADOPAGO_CLIENT_ID);
     vi.stubEnv("MERCADOPAGO_CLIENT_SECRET", ENV.MERCADOPAGO_CLIENT_SECRET);
     vi.stubEnv("MERCADOPAGO_TOKEN_KEY", ENV.MERCADOPAGO_TOKEN_KEY);
     vi.stubEnv("AUTH_URL", ENV.AUTH_URL);
-    expect((await getMercadoPagoConnectionView()).status).toBe("not_connected");
+    expect((await getMercadoPagoConnectionView(T)).status).toBe("not_connected");
     db.account = connectedAccount({ errorCode: "refresh_failed" });
-    const view = await getMercadoPagoConnectionView();
+    const view = await getMercadoPagoConnectionView(T);
     vi.unstubAllEnvs();
     expect(view.status).toBe("needs_reconnect");
     expect(view.errorCode).toBe("refresh_failed");
+  });
+});
+
+describe("HU-025: la cuenta solo vale para su consultorio", () => {
+  const B = { tenantId: "tenant-b" };
+  const agendaB = () => mocks.prisma.agenda.findFirst.mockImplementation(async ({ where }: { where: Row }) => ({
+    id: where.tenantId === "tenant-b" ? "agenda-b" : "legacy-agenda", tenantId: where.tenantId, professionalId: 2, professional: db.pro,
+  }));
+
+  it("otro consultorio no ve ni usa la cuenta conectada del original", async () => {
+    agendaB();
+    db.account = connectedAccount();
+    expect(await getMercadoPagoConnectionView(B)).toMatchObject({ userId: null, nickname: null, email: null });
+    expect(await getMercadoPagoCredentials(B, { kind: "current" }, { env: ENV, now: () => NOW })).toBeNull();
+    expect(await isMercadoPagoCheckoutAvailable(B, { env: ENV, now: () => NOW })).toBe(false);
+    expect(await getMercadoPagoCredentials(T, { kind: "current" }, { env: ENV, now: () => NOW })).toMatchObject({ sellerUserId: "555" });
+  });
+
+  it("otro consultorio no puede desconectar ni marcar error en la cuenta del original", async () => {
+    agendaB();
+    db.account = connectedAccount();
+    const before = structuredClone(db.account);
+    await expect(disconnectMercadoPagoAccount(B)).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(markMercadoPagoAccountError(B, "revoked")).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    expect(db.account).toEqual(before);
+    expect(mocks.prisma.mercadoPagoAccount.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.outboundMessage.create).not.toHaveBeenCalled();
+  });
+
+  it("webhook: el consultorio sale de la fila de la cuenta", async () => {
+    db.account = null;
+    expect(await resolveMercadoPagoWebhookTenant()).toEqual({ tenantId: "legacy-tenant" });
+    db.account = connectedAccount({ tenantId: "tenant-b" });
+    expect(await resolveMercadoPagoWebhookTenant()).toEqual({ tenantId: "tenant-b" });
+    db.account = connectedAccount({ tenantId: null });
+    expect(await resolveMercadoPagoWebhookTenant()).toBeNull();
   });
 });

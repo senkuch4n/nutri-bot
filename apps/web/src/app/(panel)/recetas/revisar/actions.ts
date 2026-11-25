@@ -10,7 +10,7 @@ import {
   recipesForTenant,
 } from "@nutri-bot/db/domain";
 import { errorCode } from "@/lib/error-code";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 import {
   INVALID_PAYLOAD,
   NOT_FOUND,
@@ -58,7 +58,7 @@ async function saveDraft(
   formData: FormData,
   name: string,
 ): Promise<{ ok: true; id: string; photo: PhotoIntent; recipes: Recipes; review: Review } | { ok: false; state: RecipeActionState }> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, state: { ok: false, error: RECIPE_TEXT.sessionExpired } };
   const recipes = recipesForTenant(access.tenantId);
   const payload = parsePayload(formData.get("payload"));
@@ -147,7 +147,7 @@ export async function discardDraftAction(
   id: string,
   file?: string | null,
 ): Promise<{ ok: boolean; nextId: string | null; error?: string }> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, nextId: null, error: RECIPE_TEXT.sessionExpired };
   const nextId = await nextInQueue(recipeReviewForTenant(access.tenantId), id, file ?? null);
   try {

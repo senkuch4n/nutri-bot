@@ -13,9 +13,18 @@ const mocks = vi.hoisted(() => ({
   PlanSectionInvalidError: class extends Error { code = "BODY_TOO_LONG"; },
 }));
 vi.mock("@nutri-bot/db/domain", () => mocks);
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `access`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.access(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.access()) ?? null, TenantAccessError };
+});
 vi.mock("@/lib/touch-template", () => ({ touchTemplate: mocks.touch }));
-vi.mock("../recetas/recipe-save", () => ({ hasPanelSession: async () => true }));
 
 import * as actions from "./import-actions";
 

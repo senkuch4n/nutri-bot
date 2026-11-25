@@ -25,7 +25,7 @@ export default async function HomePage() {
   const todayEnd = fromZonedTime(`${todayKey}T23:59:59.999`, tz);
 
   const [name, services, today, awaiting, next] = await Promise.all([
-    getProfessionalDisplayName(),
+    getProfessionalDisplayName(ctx.tenantId),
     listServices(ctx, { activeOnly: true }),
     loadTurnos(ctx, { startsAt: { gte: todayStart, lte: todayEnd }, status: { in: ["CONFIRMED", "COMPLETED", "NO_SHOW"] } }),
     loadTurnos(ctx, { status: "AWAITING_PAYMENT", startsAt: { gte: now } }, AWAITING_LIMIT),

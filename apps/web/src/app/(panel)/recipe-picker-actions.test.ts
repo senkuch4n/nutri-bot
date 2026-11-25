@@ -16,23 +16,12 @@ const mocks = vi.hoisted(() => {
     removeMenuItems: vi.fn(),
     setRecipeItemPortions: vi.fn(),
     recipesForTenant: vi.fn(),
-    resolvePrivateContentAccess: vi.fn(),
+    ctx: vi.fn(),
     touchTemplate: vi.fn(),
     revalidateMenuOwner: vi.fn(),
   };
 });
 
-// HU-025b-1: el consultorio sale del contexto de la sesión.
-const TENANT_CTX = vi.hoisted(() => ({
-  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
-  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
-}));
-vi.mock("@/lib/tenant-context", () => ({
-  requireTenantContext: async () => TENANT_CTX,
-  requirePageContext: async () => TENANT_CTX,
-  getTenantContext: async () => TENANT_CTX,
-  TenantAccessError: class TenantAccessError extends Error {},
-}));
 vi.mock("@nutri-bot/db/domain", () => ({
   RecipeNotAvailableError: mocks.RecipeNotAvailableError,
   addRecipeItems: mocks.addRecipeItems,
@@ -42,7 +31,17 @@ vi.mock("@nutri-bot/db/domain", () => ({
   setRecipeItemPortions: mocks.setRecipeItemPortions,
 }));
 vi.mock("@/lib/revalidate-menu-owner", () => ({ revalidateMenuOwner: mocks.revalidateMenuOwner }));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.resolvePrivateContentAccess }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `ctx`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.ctx(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.ctx()) ?? null, TenantAccessError };
+});
 vi.mock("@/lib/touch-template", () => ({ touchTemplate: mocks.touchTemplate }));
 
 import * as actions from "./recipe-picker-actions";
@@ -67,7 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
   mocks.recipesForTenant.mockReturnValue({ list: mocks.listRecipeCards });
-  mocks.resolvePrivateContentAccess.mockResolvedValue({ tenantId: "tenant-a" });
+  mocks.ctx.mockResolvedValue({ tenantId: "tenant-a" });
 });
 
 describe("recipe-picker-actions", () => {
@@ -81,7 +80,7 @@ describe("recipe-picker-actions", () => {
   });
 
   it("sin sesión → sessionExpired y no toca el dominio", async () => {
-    mocks.resolvePrivateContentAccess.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     const results = await Promise.all([
       listPickerRecipesAction(),
       addRecipeToMealAction(add),
@@ -94,7 +93,7 @@ describe("recipe-picker-actions", () => {
   });
 
   it("una sesión sin pertenencia no autoriza ninguno de los cinco endpoints", async () => {
-    mocks.resolvePrivateContentAccess.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     const results = await Promise.all([
       listPickerRecipesAction(), getRecipePreviewAction("r1"), addRecipeToMealAction(add),
       setRecipeItemPortionsAction({ kind: "plan", ownerId: "plan1", itemId: "i1", portions: 1.5 }),
@@ -174,7 +173,7 @@ describe("recipe-picker-actions", () => {
 
 describe("getRecipePreviewAction (018c-2)", () => {
   it("sin sesión → sessionExpired y no lee la receta", async () => {
-    mocks.resolvePrivateContentAccess.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     expect(await getRecipePreviewAction("r1")).toEqual({ ok: false, error: SESSION });
     expect(mocks.getRecipePreview).not.toHaveBeenCalled();
   });

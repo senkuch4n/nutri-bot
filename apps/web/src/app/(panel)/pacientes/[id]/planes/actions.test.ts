@@ -21,12 +21,6 @@ const TENANT_CTX = vi.hoisted(() => ({
   userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
   access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
 }));
-vi.mock("@/lib/tenant-context", () => ({
-  requireTenantContext: async () => TENANT_CTX,
-  requirePageContext: async () => TENANT_CTX,
-  getTenantContext: async () => TENANT_CTX,
-  TenantAccessError: class TenantAccessError extends Error {},
-}));
 vi.mock("@nutri-bot/db/domain", () => ({
   TemplateNotPublishedError: mocks.TemplateNotPublishedError,
   TemplateApplicationUnavailableError: mocks.TemplateApplicationUnavailableError,
@@ -37,7 +31,17 @@ vi.mock("@nutri-bot/db/domain", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.access }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `access`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.access(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.access()) ?? null, TenantAccessError };
+});
 
 import { applyTemplateAction, createPlanAction } from "./actions";
 
@@ -92,14 +96,24 @@ describe("applyTemplateAction", () => {
   });
 });
 
-it("preserves manual plan creation without private-content membership", async () => {
-  mocks.access.mockResolvedValue(null);
+it("crea el plan manual con el contexto de la sesión (ignora tenant del form)", async () => {
+  mocks.access.mockResolvedValue(TENANT_CTX);
   mocks.createPlan.mockResolvedValue({ id: "plan1" });
   const data = form();
   data.set("title", "Manual plan");
+  data.set("tenantId", "tenantB");
   await createPlanAction({ ok: false }, data);
-  expect(mocks.access).not.toHaveBeenCalled();
+  expect(mocks.access).toHaveBeenCalledWith("write");
   expect(mocks.createPlan).toHaveBeenCalledWith(TENANT_CTX, "pat1", { title: "Manual plan" });
   expect(mocks.revalidatePath).toHaveBeenCalledWith("/pacientes/pat1");
   expect(mocks.redirect).toHaveBeenCalledWith("/pacientes/pat1/planes/plan1");
+});
+
+it("sin contexto el plan manual no se crea", async () => {
+  mocks.access.mockResolvedValue(null);
+  const data = form();
+  data.set("title", "Manual plan");
+  expect(await createPlanAction({ ok: false }, data)).toEqual({ ok: false, error: "Datos inválidos" });
+  expect(mocks.createPlan).not.toHaveBeenCalled();
+  expect(mocks.redirect).not.toHaveBeenCalled();
 });

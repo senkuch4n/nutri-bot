@@ -20,7 +20,7 @@ import { MEASURE_TEXT, isWeekday } from "@nutri-bot/core";
 import { readMeasureFields, resolveFormMeasure } from "@/lib/measure-form";
 import type { AddMealItemResult } from "@/components/food-measures/types";
 import { touchTemplate } from "@/lib/touch-template";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 
 export type TemplateState = { ok: boolean; error?: string };
 
@@ -35,7 +35,7 @@ export async function createTemplateAction(
 ): Promise<TemplateState> {
   const parsed = templateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, error: "Acceso no autorizado" };
   const template = await createTemplate({ title: parsed.data.title, notes: parsed.data.notes || null }, access.tenantId);
   revalidatePath("/plantillas");
@@ -49,7 +49,7 @@ export async function updateTemplateAction(
 ): Promise<TemplateState> {
   const parsed = templateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, error: "Acceso no autorizado" };
   await updateTemplate(id, { title: parsed.data.title, notes: parsed.data.notes || null }, access.tenantId);
   await touchTemplate(id, access.tenantId);
@@ -57,7 +57,7 @@ export async function updateTemplateAction(
 }
 
 async function requireTemplateTenant() {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) notFound();
   return access.tenantId;
 }
@@ -105,7 +105,7 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<Add
   if (!foodId && !customLabel) return;
   if (!(await getTemplateMeal(mealId, scope))) notFound();
   if (foodId) {
-    const food = await getFood(foodId);
+    const food = await getFood({ tenantId }, foodId);
     if (!food || !food.active || food.source !== "SARA2") {
       throw new Error("Solo se pueden agregar alimentos activos de SARA 2.");
     }
@@ -115,7 +115,7 @@ export async function addTemplateMealItemAction(formData: FormData): Promise<Add
   // del formulario se ignora) y el ítem no lleva descripción libre.
   const measureFields = readMeasureFields(formData, foodId);
   if (measureFields === "invalid") return;
-  const measure = measureFields ? await resolveFormMeasure(foodId, measureFields) : null;
+  const measure = measureFields ? await resolveFormMeasure({ tenantId }, foodId, measureFields) : null;
   if (measure === "gone") {
     // 018d-1b (R4): la medida se borró con el editor abierto. Se revalida para que el editor traiga
     // las medidas actuales y se avisa, sin pasar por el error boundary.

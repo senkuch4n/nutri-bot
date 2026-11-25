@@ -61,7 +61,7 @@ const SECTION_SELECT = { id: true, title: true, body: true, order: true } as con
 export async function listSections(
   kind: MealOwnerKind,
   ownerId: string,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<{ id: string; title: string; body: string; order: number }[]> {
   const { section, ownerField } = sectionDb(kind, prisma);
   return (await section.findMany({
@@ -81,13 +81,10 @@ async function nextOrder(section: SectionDelegate, where: object): Promise<numbe
 /** HU-025: alcance del dueño. Plantilla: su tenant (y estado si se pide); plan: el tenant del plan. */
 type SectionScope = { tenantId: string; status?: "DRAFT" };
 
-/** Un plan exige tenant (sin él, PlanSectionNotFoundError, como un dueño inexistente). Una plantilla
- *  sin tenant conserva el camino legacy de HU-024 hasta 025b-2. */
-function sectionScope(kind: MealOwnerKind, tenantId: string | undefined): SectionScope | undefined {
-  if (tenantId === undefined) {
-    if (kind === "plan") throw new PlanSectionNotFoundError();
-    return undefined;
-  }
+/** HU-025: plan y plantilla exigen tenant (obligatorio por tipo desde 025b-2). Defensa para llamadores
+ *  JS: sin él, PlanSectionNotFoundError, como un dueño inexistente. */
+function sectionScope(_kind: MealOwnerKind, tenantId: string | undefined): SectionScope {
+  if (!tenantId) throw new PlanSectionNotFoundError();
   return { tenantId };
 }
 
@@ -123,7 +120,7 @@ export async function addSection(
   kind: MealOwnerKind,
   ownerId: string,
   input: { title: string; body: string },
-  tenantId?: string,
+  tenantId: string,
 ): Promise<{ id: string }> {
   const value = validated(input);
   const scope = sectionScope(kind, tenantId);
@@ -135,7 +132,7 @@ export async function updateSection(
   ownerId: string,
   sectionId: string,
   input: { title: string; body: string },
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const value = validated(input);
   const scope = sectionScope(kind, tenantId);
@@ -147,7 +144,7 @@ export async function updateSection(
   if (r.count === 0) throw new PlanSectionNotFoundError();
 }
 
-export async function deleteSection(kind: MealOwnerKind, ownerId: string, sectionId: string, tenantId?: string): Promise<void> {
+export async function deleteSection(kind: MealOwnerKind, ownerId: string, sectionId: string, tenantId: string): Promise<void> {
   const scope = sectionScope(kind, tenantId);
   const { section, ownerField } = sectionDb(kind, prisma);
   const r = await section.deleteMany({ where: { id: sectionId, [ownerField]: ownerId, ...ownerRelation(kind, scope) } });
@@ -160,7 +157,7 @@ export async function moveSection(
   ownerId: string,
   sectionId: string,
   direction: -1 | 1,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const scope = sectionScope(kind, tenantId);
   await prisma.$transaction(async (tx) => {
@@ -193,13 +190,11 @@ export async function appendToSection(
   ownerId: string,
   sectionId: string | null,
   text: string,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<{ id: string }> {
-  // Importación de plantillas: solo borradores. Un plan exige el tenant (HU-025b-1).
-  if (kind === "plan" && tenantId === undefined) throw new PlanSectionNotFoundError();
-  const scope: SectionScope | undefined = tenantId === undefined
-    ? undefined
-    : kind === "template" ? { tenantId, status: "DRAFT" } : { tenantId };
+  // Importación de plantillas: solo borradores. Plan y plantilla exigen el tenant (HU-025).
+  if (!tenantId) throw new PlanSectionNotFoundError();
+  const scope: SectionScope = kind === "template" ? { tenantId, status: "DRAFT" } : { tenantId };
   if (sectionId === null) {
     return createIn(tx, kind, ownerId, validated({ title: PLAN_IMPORT_TEXT.newSectionTitle, body: text }), scope);
   }

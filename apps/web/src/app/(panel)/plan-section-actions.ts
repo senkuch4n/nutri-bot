@@ -15,10 +15,8 @@ import {
 import type { PlanSectionActionResult } from "@/components/plan-sections/types";
 import { errorCode } from "@/lib/error-code";
 import { revalidateMenuOwner } from "@/lib/revalidate-menu-owner";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { requireTenantContext } from "@/lib/tenant-context";
 import { touchTemplate } from "@/lib/touch-template";
-import { hasPanelSession } from "./recetas/recipe-save";
 
 // HU-020 (D9, SDD 6.2): "Textos del plan" de un plan o una plantilla. Mismo patrón que
 // weekly-menu-actions.ts. Este archivo es "use server": exporta SOLO funciones async; los tipos viven
@@ -58,22 +56,20 @@ function toResult(err: unknown): PlanSectionActionResult {
 async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>>(
   schema: S,
   input: unknown,
-  fn: (data: z.infer<S>, ...scope: [] | [tenantId: string]) => Promise<{ id: string } | void>,
+  fn: (data: z.infer<S>, tenantId: string) => Promise<{ id: string } | void>,
 ): Promise<PlanSectionActionResult> {
-  if (!(await hasPanelSession())) return SESSION_EXPIRED;
+  // HU-025: plan o plantilla, siempre con el consultorio de la sesión (sin él, el dominio no lo toca).
+  const ctx = await requireTenantContext("write").catch(() => null);
+  if (!ctx) return SESSION_EXPIRED;
   const parsed = schema.safeParse(input);
   if (!parsed.success) return GENERIC;
   try {
     const { kind, ownerId } = parsed.data;
     let out: { id: string } | void;
     if (kind === "template") {
-      const access = await resolvePrivateContentAccess();
-      if (!access) return SESSION_EXPIRED;
-      out = await fn(parsed.data, access.tenantId);
-      await touchTemplate(ownerId, access.tenantId);
+      out = await fn(parsed.data, ctx.tenantId);
+      await touchTemplate(ownerId, ctx.tenantId);
     } else {
-      // HU-025b-1: un plan siempre va con el consultorio de la sesión (sin él, el dominio no lo toca).
-      const ctx = await requireTenantContext("write");
       out = await fn(parsed.data, ctx.tenantId);
       await revalidateMenuOwner(kind, ownerId, ctx.tenantId);
       revalidatePath("/portal/plan");
@@ -87,23 +83,23 @@ async function run<S extends z.ZodType<{ kind: MealOwnerKind; ownerId: string }>
 export async function addPlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; title: string; body: string;
 }): Promise<PlanSectionActionResult> {
-  return run(addSchema, input, (d, ...scope) => addSection(d.kind, d.ownerId, { title: d.title, body: d.body }, ...scope));
+  return run(addSchema, input, (d, tenantId) => addSection(d.kind, d.ownerId, { title: d.title, body: d.body }, tenantId));
 }
 
 export async function updatePlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; sectionId: string; title: string; body: string;
 }): Promise<PlanSectionActionResult> {
-  return run(updateSchema, input, (d, ...scope) => updateSection(d.kind, d.ownerId, d.sectionId, { title: d.title, body: d.body }, ...scope));
+  return run(updateSchema, input, (d, tenantId) => updateSection(d.kind, d.ownerId, d.sectionId, { title: d.title, body: d.body }, tenantId));
 }
 
 export async function deletePlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; sectionId: string;
 }): Promise<PlanSectionActionResult> {
-  return run(deleteSchema, input, (d, ...scope) => deleteSection(d.kind, d.ownerId, d.sectionId, ...scope));
+  return run(deleteSchema, input, (d, tenantId) => deleteSection(d.kind, d.ownerId, d.sectionId, tenantId));
 }
 
 export async function movePlanSectionAction(input: {
   kind: MealOwnerKind; ownerId: string; sectionId: string; direction: -1 | 1;
 }): Promise<PlanSectionActionResult> {
-  return run(moveSchema, input, (d, ...scope) => moveSection(d.kind, d.ownerId, d.sectionId, d.direction, ...scope));
+  return run(moveSchema, input, (d, tenantId) => moveSection(d.kind, d.ownerId, d.sectionId, d.direction, tenantId));
 }

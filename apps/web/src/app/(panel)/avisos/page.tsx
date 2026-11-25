@@ -1,5 +1,5 @@
 import { prisma, type MessageKind } from "@nutri-bot/db";
-import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { getTenantProfessional } from "@nutri-bot/db/domain";
 import {
   MESSAGE_KIND_TEXT,
   OUTBOX_TEXT,
@@ -10,6 +10,7 @@ import {
   outboxRecipientLabel,
 } from "@nutri-bot/core";
 import { PageHeader } from "@/components/ui";
+import { requirePageContext } from "@/lib/tenant-context";
 import { AvisosView, type MessageRow } from "./avisos-view";
 import { BroadcastForm } from "./broadcast-form";
 import { avisosOutboxWhere } from "./outbox-scope";
@@ -30,7 +31,8 @@ function whenText(at: Date, now: Date, tz: string): string {
 }
 
 export default async function AvisosPage() {
-  const { scope: { tenantId }, professional: pro } = await resolveLegacySchedulingScope();
+  const { tenantId } = await requirePageContext();
+  const pro = await getTenantProfessional(tenantId);
   const where = avisosOutboxWhere(tenantId);
   const [messages, grouped, patients] = await Promise.all([
     prisma.outboundMessage.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 }),

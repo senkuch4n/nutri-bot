@@ -108,7 +108,7 @@ export async function addPlanMealItemAction(formData: FormData): Promise<AddMeal
   const weekday = isWeekday(weekdayRaw) ? weekdayRaw : null;
   if (!foodId && !customLabel) return;
   if (foodId) {
-    const food = await getFood(foodId);
+    const food = await getFood(ctx, foodId);
     if (!food || !food.active || food.source !== "SARA2") {
       throw new Error("Solo se pueden agregar alimentos activos de SARA 2.");
     }
@@ -118,7 +118,7 @@ export async function addPlanMealItemAction(formData: FormData): Promise<AddMeal
   // del formulario se ignora) y el ítem no lleva descripción libre.
   const measureFields = readMeasureFields(formData, foodId);
   if (measureFields === "invalid") return;
-  const measure = measureFields ? await resolveFormMeasure(foodId, measureFields) : null;
+  const measure = measureFields ? await resolveFormMeasure(ctx, foodId, measureFields) : null;
   if (measure === "gone") {
     // 018d-1b (R4): la medida se borró con el editor abierto. Se revalida para que el editor traiga
     // las medidas actuales y se avisa, sin pasar por el error boundary.

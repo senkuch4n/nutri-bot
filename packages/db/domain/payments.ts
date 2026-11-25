@@ -1,11 +1,12 @@
 import { classifyMercadoPagoFailure, computeDepositAmount, DEPOSIT_AUTO_CANCEL_REASONS, mapMercadoPagoStatus, messages } from "@nutri-bot/core";
 import { MercadoPagoConfig, Payment as MercadoPagoPayment, Preference } from "mercadopago";
 import { prisma, type Payment as DbPayment, type Prisma } from "../index";
-import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveTenantSchedulingContext, type TenantRef, type TenantScope } from "./tenantScope";
 import {
   getMercadoPagoCredentials,
   markMercadoPagoAccountError,
   MercadoPagoUnavailableError,
+  resolveMercadoPagoWebhookTenant,
   type MercadoPagoCredentials,
 } from "./mercadopagoAccount";
 
@@ -16,23 +17,22 @@ function mercadoPagoClient(accessToken: string): MercadoPagoConfig {
 
 /** HU-023: si MP responde que el token ya no vale (401 / invalid_token), marca la cuenta como
  *  "Hay que reconectar" (uno por incidente) y re-tira el error original. */
-async function withRevocationGuard<T>(creds: MercadoPagoCredentials, call: () => Promise<T>): Promise<T> {
+async function withRevocationGuard<T>(t: TenantRef, creds: MercadoPagoCredentials, call: () => Promise<T>): Promise<T> {
   try {
     return await call();
   } catch (error) {
     const status = typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : undefined;
     const code = typeof (error as { error?: unknown })?.error === "string" ? (error as { error: string }).error : null;
     if (creds.source === "account" && classifyMercadoPagoFailure({ status, code }) === "revoked") {
-      await markMercadoPagoAccountError("revoked").catch(() => {});
+      await markMercadoPagoAccountError(t, "revoked").catch(() => {});
     }
     throw error;
   }
 }
 
-type LegacyPaymentScope = Awaited<ReturnType<typeof resolveLegacySchedulingScope>>["scope"];
-type PaymentReservation = LegacyPaymentScope & { id: string; patientId: string; serviceId: string };
+type PaymentReservation = TenantScope & { id: string; patientId: string; serviceId: string };
 const verifiedAppointmentLinks = { tenantPatient: { isNot: null }, tenantService: { isNot: null } } as const;
-const UNVERIFIED_CHECKOUT = "No se pudo verificar el turno de la instalación original.";
+const UNVERIFIED_CHECKOUT = "No se pudo verificar el turno del consultorio.";
 
 async function lockPaymentReservation(tx: Prisma.TransactionClient, reservation: PaymentReservation, awaitingOnly: boolean) {
   const { id, tenantId, agendaId, patientId, serviceId } = reservation;
@@ -55,9 +55,10 @@ async function lockReservationPayments(tx: Prisma.TransactionClient, reservation
 }
 
 export async function createDepositCheckout(
+  t: TenantRef,
   appointmentId: string,
 ): Promise<{ checkoutUrl: string; paymentId: string; amount: number }> {
-  const { scope } = await resolveLegacySchedulingScope();
+  const { scope } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId, ...scope, ...verifiedAppointmentLinks },
     include: {
@@ -76,7 +77,7 @@ export async function createDepositCheckout(
   try {
     const returnUrl = process.env.MERCADOPAGO_RETURN_URL?.trim();
     if (!returnUrl) throw new Error("Falta MERCADOPAGO_RETURN_URL. Configurá una URL pública de retorno para Mercado Pago.");
-    const creds = await getMercadoPagoCredentials({ kind: "current" });
+    const creds = await getMercadoPagoCredentials(t, { kind: "current" });
     if (!creds) throw new MercadoPagoUnavailableError("No hay cuenta de Mercado Pago usable");
     if (!service.requiresDeposit || !service.depositKind || service.depositValue == null) {
       throw new Error("El servicio no tiene una seña configurada.");
@@ -96,7 +97,7 @@ export async function createDepositCheckout(
       });
     });
     // Do not hold DB locks during the provider request. Recheck before saving or returning the link.
-    const preference = await withRevocationGuard(creds, () => new Preference(mercadoPagoClient(creds.accessToken)).create({
+    const preference = await withRevocationGuard(t, creds, () => new Preference(mercadoPagoClient(creds.accessToken)).create({
       body: {
         items: [{ id: service.id, title: service.name, quantity: 1, unit_price: amount, currency_id: currency }],
         external_reference: payment.id,
@@ -141,6 +142,8 @@ export async function createDepositCheckout(
   }
 }
 
+/** Webhook público (sin sesión): el consultorio sale de la cuenta de Mercado Pago que recibe el aviso,
+ *  nunca del payload. Después, syncMercadoPagoPayment solo toca pagos de turnos de ese consultorio. */
 export async function handleMercadoPagoWebhook(
   query: Record<string, string | string[] | undefined>,
 ): Promise<void> {
@@ -149,18 +152,21 @@ export async function handleMercadoPagoWebhook(
   const paymentId = Array.isArray(rawId) ? rawId[0] : rawId;
   if (!paymentId) return;
 
-  await syncMercadoPagoPayment(paymentId);
+  const tenant = await resolveMercadoPagoWebhookTenant();
+  if (!tenant) return;
+  await syncMercadoPagoPayment(tenant, paymentId);
 }
 
 export async function syncMercadoPagoPayment(
+  t: TenantRef,
   paymentId: string,
   expectedInternalId?: string,
   credentials?: MercadoPagoCredentials,
 ): Promise<void> {
-  const { scope, professional: pro } = await resolveLegacySchedulingScope();
-  const creds = credentials ?? (await getMercadoPagoCredentials({ kind: "current" }));
+  const { scope, professional: pro } = await resolveTenantSchedulingContext(prisma, t.tenantId);
+  const creds = credentials ?? (await getMercadoPagoCredentials(t, { kind: "current" }));
   if (!creds) throw new MercadoPagoUnavailableError("No hay cuenta de Mercado Pago usable");
-  const mpPayment = await withRevocationGuard(creds, () =>
+  const mpPayment = await withRevocationGuard(t, creds, () =>
     new MercadoPagoPayment(mercadoPagoClient(creds.accessToken)).get({ id: paymentId }),
   );
   const internalId = mpPayment.external_reference;
@@ -236,10 +242,11 @@ export async function syncMercadoPagoPayment(
 }
 
 export async function reconcilePendingPayments(
+  t: TenantRef,
   onError: (paymentId: string) => void = () => {},
   paymentIds?: string[],
 ): Promise<{ processed: number; failed: number; skipped: number }> {
-  const { scope } = await resolveLegacySchedulingScope();
+  const { scope } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const pending = await prisma.payment.findMany({
     where: {
       status: "PENDING",
@@ -259,7 +266,7 @@ export async function reconcilePendingPayments(
     try {
       const seller = payment.mercadopagoUserId ?? null;
       if (!credsBySeller.has(seller)) {
-        credsBySeller.set(seller, await getMercadoPagoCredentials({ kind: "payment", sellerUserId: seller }));
+        credsBySeller.set(seller, await getMercadoPagoCredentials(t, { kind: "payment", sellerUserId: seller }));
       }
       const creds = credsBySeller.get(seller) ?? null;
       if (!creds) {
@@ -269,16 +276,16 @@ export async function reconcilePendingPayments(
       }
       const api = new MercadoPagoPayment(mercadoPagoClient(creds.accessToken));
       if (payment.externalId) {
-        await syncMercadoPagoPayment(payment.externalId, payment.id, creds);
+        await syncMercadoPagoPayment(t, payment.externalId, payment.id, creds);
       }
       if (payment.preferenceId) {
         let offset = 0;
         while (true) {
-          const result = await withRevocationGuard(creds, () =>
+          const result = await withRevocationGuard(t, creds, () =>
             api.search({ options: { external_reference: payment.id, limit: 100, offset, sort: "date_created", criteria: "asc" } }),
           );
           for (const remote of result.results ?? []) {
-            if (remote.id != null) await syncMercadoPagoPayment(String(remote.id), payment.id, creds);
+            if (remote.id != null) await syncMercadoPagoPayment(t, String(remote.id), payment.id, creds);
           }
           offset += result.results?.length ?? 0;
           if (!result.results?.length || offset >= (result.paging?.total ?? offset)) break;
@@ -293,9 +300,9 @@ export async function reconcilePendingPayments(
   return { processed, failed, skipped };
 }
 
-export async function expireStalePendingPayments(olderThanMinutes = 15): Promise<number> {
+export async function expireStalePendingPayments(t: TenantRef, olderThanMinutes = 15): Promise<number> {
   const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
-  const { scope, professional: pro } = await resolveLegacySchedulingScope();
+  const { scope, professional: pro } = await resolveTenantSchedulingContext(prisma, t.tenantId);
   const stale = { status: "AWAITING_PAYMENT", createdAt: { lt: cutoff } } as const;
   const appointments = await prisma.appointment.findMany({
     where: { ...scope, ...verifiedAppointmentLinks, ...stale },
@@ -328,27 +335,38 @@ export async function expireStalePendingPayments(olderThanMinutes = 15): Promise
   return expired;
 }
 
-export function listPendingPayments() {
+/** Pagos del consultorio: el turno del pago tiene que ser del tenant (Payment no tiene tenantId propio). */
+const tenantPaymentWhere = (t: TenantRef) => ({ appointment: { tenantId: t.tenantId } }) as const;
+
+export function listPendingPayments(t: TenantRef) {
   return prisma.payment.findMany({
-    where: { status: "PENDING" },
+    where: { status: "PENDING", ...tenantPaymentWhere(t) },
     include: { appointment: { include: { patient: true, service: true } } },
     orderBy: { createdAt: "asc" },
   });
 }
 
-export function listApprovedPaymentsInRange(from: Date, to: Date) {
+export function listApprovedPaymentsInRange(t: TenantRef, from: Date, to: Date) {
   return prisma.payment.findMany({
-    where: { status: "APPROVED", paidAt: { gte: from, lte: to } },
+    where: { status: "APPROVED", paidAt: { gte: from, lte: to }, ...tenantPaymentWhere(t) },
     include: { appointment: { include: { patient: true, service: true } } },
     orderBy: { paidAt: "desc" },
   });
 }
 
-export function registerManualPayment(
+/** Pago manual. Un turno de otro consultorio se trata como inexistente (tira el mismo error). */
+export async function registerManualPayment(
+  t: TenantRef,
   appointmentId: string,
   data: { kind: "DEPOSIT" | "FULL"; amount: number },
 ): Promise<DbPayment> {
-  return prisma.payment.create({
-    data: { appointmentId, kind: data.kind, amount: data.amount, provider: "manual", status: "APPROVED", paidAt: new Date() },
+  return prisma.$transaction(async (tx) => {
+    // FOR KEY SHARE: el turno no se borra mientras se crea su pago; el tenant de un turno no cambia.
+    const owned = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Appointment"
+      WHERE id = ${appointmentId} AND "tenantId" = ${t.tenantId} FOR KEY SHARE`;
+    if (owned.length !== 1) throw new Error("Turno no encontrado");
+    return tx.payment.create({
+      data: { appointmentId, kind: data.kind, amount: data.amount, provider: "manual", status: "APPROVED", paidAt: new Date() },
+    });
   });
 }

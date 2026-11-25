@@ -1,6 +1,6 @@
 import "server-only";
 import { normalizeMeasureQty, parseEsArNumber } from "@nutri-bot/core";
-import { FoodMeasureNotFoundError, resolveMeasureItem, type MeasureItemFields } from "@nutri-bot/db/domain";
+import { FoodMeasureNotFoundError, resolveMeasureItem, type MeasureItemFields, type TenantRef } from "@nutri-bot/db/domain";
 
 /**
  * HU-018d (SDD 6.2): lee `measureId` y `measureQty` del formulario "Agregar alimento" (planes y
@@ -23,16 +23,17 @@ export function readMeasureFields(
 }
 
 /**
- * 018d-1b (R4): resolveMeasureItem para el alta desde el formulario. Si la medida ya no existe (se
+ * 018d-1b (R4): resolveMeasureItem para el alta desde el formulario (HU-025: medidas del consultorio `t`). Si la medida ya no existe (se
  * borró con el editor abierto) o la cantidad no vale, devuelve "gone" para que la action conteste un
  * error amable en vez de llegar al error boundary. Cualquier otro error sigue de largo.
  */
 export async function resolveFormMeasure(
+  t: TenantRef,
   foodId: string,
   fields: { measureId: string; qty: number },
 ): Promise<MeasureItemFields | "gone"> {
   try {
-    return await resolveMeasureItem(foodId, fields.measureId, fields.qty);
+    return await resolveMeasureItem(t, foodId, fields.measureId, fields.qty);
   } catch (err) {
     if (err instanceof FoodMeasureNotFoundError || err instanceof RangeError) return "gone";
     throw err;

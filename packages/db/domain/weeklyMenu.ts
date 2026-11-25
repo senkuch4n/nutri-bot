@@ -132,27 +132,28 @@ function delegates(kind: MealOwnerKind, tx: Client): {
     : { meal: tx.templateMeal as unknown as MealDelegate, item: tx.templateMealItem as unknown as ItemDelegate, ownerKey: "templateId" };
 }
 
-/** HU-025b-1: un plan siempre se acota por el tenant de quien llama; sin tenant no hay acceso
- *  (MealOwnershipError, igual que un dueño inexistente). Las plantillas sin tenant conservan el camino
- *  legacy de HU-024 hasta 025b-2. */
-function planTenant(kind: MealOwnerKind, tenantId: string | undefined): string | undefined {
-  if (kind === "plan" && tenantId === undefined) throw new MealOwnershipError();
+/** HU-025: plan y plantilla se acotan siempre por el tenant de quien llama (obligatorio por tipo desde
+ *  025b-2). Defensa para llamadores JS: sin tenant no hay acceso (MealOwnershipError, como un dueño
+ *  inexistente). */
+function planTenant(_kind: MealOwnerKind, tenantId: string | undefined): string {
+  if (!tenantId) throw new MealOwnershipError();
   return tenantId;
 }
 
-function ownedMealWhere(kind: MealOwnerKind, ownerId: string, tenantId?: string) {
+function ownedMealWhere(kind: MealOwnerKind, ownerId: string, tenantId: string) {
+  const owned = planTenant(kind, tenantId);
   return kind === "plan"
-    ? { planId: ownerId, plan: { tenantId: planTenant(kind, tenantId) } }
-    : tenantId === undefined ? { templateId: ownerId } : templateMealScope({ templateId: ownerId, tenantId });
+    ? { planId: ownerId, plan: { tenantId: owned } }
+    : templateMealScope({ templateId: ownerId, tenantId: owned });
 }
 
 /** Alcance de una comida suelta (sin el id del dueño): plantilla + tenant, o el tenant del plan. */
 export type MealScope = TemplateMealScope | { tenantId: string };
 
-function mealScopeWhere(kind: MealOwnerKind, scope: MealScope | undefined) {
-  if (kind === "plan") return { plan: { tenantId: planTenant(kind, scope?.tenantId) } };
-  if (!scope) return undefined;
-  return "templateId" in scope ? templateMealScope(scope) : { template: { tenantId: scope.tenantId } };
+function mealScopeWhere(kind: MealOwnerKind, scope: MealScope) {
+  const tenantId = planTenant(kind, scope?.tenantId);
+  if (kind === "plan") return { plan: { tenantId } };
+  return "templateId" in scope ? templateMealScope(scope) : { template: { tenantId } };
 }
 
 const itemsOrder = [{ weekday: "asc" as const }, { order: "asc" as const }];
@@ -195,7 +196,7 @@ function toSnapshot(meal: MealWithItems): MealSnapshot {
   };
 }
 
-async function loadOwnedMeal(kind: MealOwnerKind, tx: Client, ownerId: string, mealId: string, tenantId?: string): Promise<MealWithItems> {
+async function loadOwnedMeal(kind: MealOwnerKind, tx: Client, ownerId: string, mealId: string, tenantId: string): Promise<MealWithItems> {
   const { meal } = delegates(kind, tx);
   const found = (await meal.findFirst({
     where: { id: mealId, ...ownedMealWhere(kind, ownerId, tenantId) },
@@ -216,7 +217,7 @@ function assertValidCopyTargets(from: Weekday, to: readonly Weekday[]) {
   if (!valid) throw new MealModeError("Los días de destino no son válidos.");
 }
 
-function weeklyTemplateScope(kind: MealOwnerKind, templateId: string, tenantId?: string) {
+function weeklyTemplateScope(kind: MealOwnerKind, templateId: string, tenantId: string) {
   return kind === "template" && tenantId !== undefined ? { templateId, tenantId } : undefined;
 }
 
@@ -298,7 +299,7 @@ export function setMealMode(
   ownerId: string,
   mealId: string,
   params: { mode: MealMode; keepWeekday?: Weekday },
-  tenantId?: string,
+  tenantId: string,
 ): Promise<MealSnapshot> {
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
   return weeklyTransaction(scope, async (tx) => {
@@ -332,7 +333,7 @@ export function setMealOptions(
   ownerId: string,
   mealId: string,
   isOptions: boolean,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
   return weeklyTransaction(scope, async (tx) => {
@@ -352,7 +353,7 @@ export async function copyDay(
   kind: MealOwnerKind,
   ownerId: string,
   params: { from: Weekday; to: Weekday[] },
-  tenantId?: string,
+  tenantId: string,
 ): Promise<MealSnapshot[]> {
   assertValidCopyTargets(params.from, params.to);
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
@@ -387,7 +388,7 @@ export async function repeatMealInAllDays(
   ownerId: string,
   mealId: string,
   from: Weekday,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<MealSnapshot> {
   const to = WEEKDAYS.filter((d) => d !== from);
   assertValidCopyTargets(from, to);
@@ -458,7 +459,7 @@ export async function restoreMealSnapshots(
   kind: MealOwnerKind,
   ownerId: string,
   snapshots: MealSnapshot[],
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   snapshots.forEach(assertSnapshotInvariants);
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
@@ -479,7 +480,7 @@ export async function restoreMealSnapshots(
 }
 
 /** Renombrar una comida (1..60 caracteres, trim). */
-export async function renameMeal(kind: MealOwnerKind, ownerId: string, mealId: string, name: string, tenantId?: string): Promise<void> {
+export async function renameMeal(kind: MealOwnerKind, ownerId: string, mealId: string, name: string, tenantId: string): Promise<void> {
   const trimmed = name.trim();
   if (trimmed.length < 1 || trimmed.length > 60) throw new RangeError("El nombre tiene que tener entre 1 y 60 caracteres.");
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
@@ -495,7 +496,7 @@ export function moveMeal(
   ownerId: string,
   mealId: string,
   direction: "up" | "down",
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const scope = weeklyTemplateScope(kind, ownerId, tenantId);
   return weeklyTransaction(scope, async (tx) => {
@@ -513,7 +514,7 @@ export function moveMeal(
 
 /** Siguiente `order` libre dentro de (mealId, weekday). */
 export async function nextItemOrder(
-  kind: MealOwnerKind, mealId: string, weekday: Weekday | null, scope?: MealScope,
+  kind: MealOwnerKind, mealId: string, weekday: Weekday | null, scope: MealScope,
 ): Promise<number> {
   const meal = mealScopeWhere(kind, scope);
   const last = (await delegates(kind, prisma).item.findFirst({
@@ -532,7 +533,7 @@ export async function assertWeekdayMatchesMeal(
   kind: MealOwnerKind,
   mealId: string,
   weekday: Weekday | null,
-  scope?: MealScope,
+  scope: MealScope,
 ): Promise<void> {
   const found = (await delegates(kind, prisma).meal.findUnique({
     where: { id: mealId, ...mealScopeWhere(kind, scope) },
@@ -552,7 +553,7 @@ export async function resolveNewMealMode(
   kind: MealOwnerKind,
   ownerId: string,
   data: { mode?: MealMode; isOptions?: boolean },
-  tenantId?: string,
+  tenantId: string,
 ): Promise<{ mode: MealMode; isOptions: boolean }> {
   const { meal } = delegates(kind, prisma);
   const owner = ownedMealWhere(kind, ownerId, tenantId);
@@ -587,7 +588,7 @@ export async function addRecipeItems(
   kind: MealOwnerKind,
   ownerId: string,
   params: { mealId: string; recipeId: string; portions?: number; weekdays: Weekday[] | null },
-  tenantId?: string,
+  tenantId: string,
 ): Promise<{ itemIds: string[] }> {
   const portions = assertPortions(params.portions ?? 1);
   const recipeWhere = { id: params.recipeId, ...(tenantId !== undefined && { tenantId, status: "PUBLISHED" as const }) };
@@ -650,21 +651,13 @@ export async function setRecipeItemPortions(
   ownerId: string,
   itemId: string,
   portions: number,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const value = assertPortions(portions);
   const { item } = delegates(kind, prisma);
   const where = { id: itemId, recipeId: { not: null }, meal: ownedMealWhere(kind, ownerId, tenantId) };
-  if (tenantId !== undefined) {
-    const { count } = (await item.updateMany({ where, data: { portions: value } })) as { count: number };
-    if (count !== 0) return;
-  } else {
-    const found = await item.findFirst({ where, select: { id: true } });
-    if (found) {
-      await item.update({ where: { id: itemId }, data: { portions: value } });
-      return;
-    }
-  }
+  const { count } = (await item.updateMany({ where, data: { portions: value } })) as { count: number };
+  if (count !== 0) return;
   throw new MealOwnershipError("El ítem de receta no pertenece a este plan o plantilla.");
 }
 
@@ -677,7 +670,7 @@ export async function setMeasureItemQuantity(
   ownerId: string,
   itemId: string,
   qty: number,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<{ quantityGrams: number }> {
   const value = normalizeMeasureQty(qty);
   if (value === null) throw new RangeError("La cantidad va de ¼ a 20, de a ¼.");
@@ -702,7 +695,7 @@ export async function setMeasureItemQuantity(
 }
 
 /** "Deshacer" de "Agregar" y "Quitar" de la tarjeta: borra SOLO esos ids y solo si son del dueño. */
-export async function removeMenuItems(kind: MealOwnerKind, ownerId: string, itemIds: string[], tenantId?: string): Promise<number> {
+export async function removeMenuItems(kind: MealOwnerKind, ownerId: string, itemIds: string[], tenantId: string): Promise<number> {
   if (itemIds.length < 1 || itemIds.length > 50) throw new RangeError("Entre 1 y 50 ítems.");
   const { item } = delegates(kind, prisma);
   const result = (await item.deleteMany({

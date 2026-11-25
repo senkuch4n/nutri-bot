@@ -9,8 +9,7 @@ const mocks = vi.hoisted(() => {
   }
   class RecipeNotFoundError extends Error {}
   return {
-    auth: vi.fn(),
-    findUser: vi.fn(),
+    ctx: vi.fn(),
     recipesForTenant: vi.fn(),
     revalidatePath: vi.fn(),
     createRecipe: vi.fn(),
@@ -28,30 +27,22 @@ const mocks = vi.hoisted(() => {
     RecipeNotFoundError,
   };
 });
-vi.mock("@/auth", () => ({ auth: mocks.auth }));
 vi.mock("server-only", () => ({}));
-// HU-025a2: resolvePrivateContentAccess envuelve getTenantContext. Este mock reproduce su cadena
-// (sesión → userId → una sola membresía OWNER/STAFF) sobre `mocks.auth` y `mocks.findUser`; el candado
-// legacy y la agenda principal se prueban en lib/tenant-context.test.ts.
+// HU-025b-2: requireTenantContext mockeado directo (la cadena sesión → membresía → candado → agenda se
+// prueba en lib/tenant-context.test.ts). `ctx` = contexto de la sesión o null (sin contexto: tira).
 vi.mock("@/lib/tenant-context", () => ({
-  getTenantContext: async () => {
-    const session = await mocks.auth();
-    if (!session?.userId) return null;
-    const user = await mocks.findUser();
-    if (user?.memberships.length !== 1) return null;
-    const [m] = user.memberships;
-    if (m.role !== "OWNER" && m.role !== "STAFF") return null;
-    return {
-      userId: session.userId, tenantId: m.tenantId, agendaId: "agenda", professionalId: 1,
-      access: { kind: "member", tenantId: m.tenantId, role: m.role },
-    };
+  requireTenantContext: async (...args: unknown[]) => {
+    const ctx = await mocks.ctx(...args);
+    if (!ctx) throw new Error("tenant_access:no_context");
+    return ctx;
   },
 }));
 
 const tenantId = "tenant-a";
 function allowPanel() {
-  mocks.auth.mockResolvedValue({ user: { email: "pro@example.test" }, userId: "user-a" });
-  mocks.findUser.mockResolvedValue({ memberships: [{ tenantId, role: "STAFF" }] });
+  mocks.ctx.mockResolvedValue({
+    userId: "user-a", tenantId, agendaId: "agenda", professionalId: 1, access: { kind: "member", tenantId, role: "STAFF" },
+  });
   mocks.recipesForTenant.mockReturnValue({
     create: mocks.createRecipe, update: mocks.updateRecipe,
     archive: mocks.archiveRecipe, unarchive: mocks.unarchiveRecipe,
@@ -112,14 +103,14 @@ describe("saveRecipeAction", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("sin sesión → sesión vencida, sin guardar", async () => {
-    mocks.auth.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     expect(await saveRecipeAction(form())).toEqual({ ok: false, error: "Tu sesión venció. Volvé a entrar." });
     expect(mocks.createRecipe).not.toHaveBeenCalled();
   });
 
-  it.each([{ memberships: [] }, { memberships: [{ tenantId, role: "OWNER" }, { tenantId: "tenant-b", role: "STAFF" }] }])(
-    "denies authenticated sessions with missing or ambiguous membership (%j)", async (user) => {
-      mocks.findUser.mockResolvedValue(user);
+  it.each(["no_membership", "multiple_memberships", "revocada"])(
+    "sin contexto de consultorio (%s) no guarda, archiva ni revalida", async () => {
+      mocks.ctx.mockResolvedValue(null);
       const denied = { ok: false, error: "Tu sesión venció. Volvé a entrar." };
       expect(await Promise.all([
         saveRecipeAction(form()), saveRecipeAction(form({ payload: { ...payload, id: "r1" } })),
@@ -217,7 +208,7 @@ describe("archivar y volver a publicar", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("sin sesión no toca nada", async () => {
-    mocks.auth.mockResolvedValue(null);
+    mocks.ctx.mockResolvedValue(null);
     expect((await archiveRecipeAction("r1")).ok).toBe(false);
     expect(mocks.archiveRecipe).not.toHaveBeenCalled();
   });

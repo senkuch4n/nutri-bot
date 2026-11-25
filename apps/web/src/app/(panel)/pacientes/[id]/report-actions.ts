@@ -67,7 +67,7 @@ async function generateAndSave(tenant: TenantContext, ctx: IsakReportContext, te
   const savedTexts = { ...texts };
   for (const k of Object.keys(saved.texts) as IsakReportTextKey[]) savedTexts[k] = saved.texts[k] ?? "";
   // HU-016: nombre con título, pie, logo y bloque de firma salen de un único lugar.
-  const branding = await loadProfessionalPdfBranding();
+  const branding = await loadProfessionalPdfBranding(tenant);
   const data = await renderAnthropometricReportPdf({
     model: ctx.model,
     texts: savedTexts,

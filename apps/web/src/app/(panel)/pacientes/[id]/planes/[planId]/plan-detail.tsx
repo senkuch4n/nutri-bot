@@ -54,10 +54,10 @@ export async function PlanDetail({
   const ctx = await requirePageContext();
   const [plan, foods, pro, planTarget, measures] = await Promise.all([
     getPlan(ctx, planId),
-    listFoods({ activeOnly: true, source: "SARA2" }),
+    listFoods(ctx, { activeOnly: true, source: "SARA2" }),
     getTenantProfessional(ctx.tenantId),
     getPlanTarget(ctx, planId),
-    listMeasuresForPicker(),
+    listMeasuresForPicker(ctx),
   ]);
   if (!plan || plan.patientId !== id) notFound();
 

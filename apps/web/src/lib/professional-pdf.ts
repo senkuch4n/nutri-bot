@@ -5,7 +5,7 @@ import {
   professionalSignature,
   professionalSignatureLines,
 } from "@nutri-bot/core";
-import { getProfessionalPdfAssets } from "@nutri-bot/db/domain";
+import { getProfessionalPdfAssets, type TenantRef } from "@nutri-bot/db/domain";
 import type { PdfImage, PdfSignatureInput } from "@/lib/pdf-common";
 
 // HU-016: lo que pone cualquier PDF sobre la profesional (encabezado, pie, logo y bloque de firma).
@@ -26,8 +26,9 @@ function drawable(img: PdfImage | null): PdfImage | null {
   return img && isPdfDrawableImageMime(img.mimeType) ? img : null;
 }
 
-export async function loadProfessionalPdfBranding(): Promise<ProfessionalPdfBranding> {
-  const a = await getProfessionalPdfAssets();
+/** HU-025: el branding es el de la profesional del consultorio del contexto (`t`), nunca Professional(1). */
+export async function loadProfessionalPdfBranding(t: TenantRef): Promise<ProfessionalPdfBranding> {
+  const a = await getProfessionalPdfAssets(t);
   const identity = { title: a.title, name: a.name, licenseNumber: a.licenseNumber };
   const lines = professionalSignatureLines(identity);
   return {

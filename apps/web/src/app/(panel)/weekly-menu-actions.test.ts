@@ -9,22 +9,21 @@ const mocks = vi.hoisted(() => ({
   markTemplateReviewed: vi.fn(), resolveAccess: vi.fn(),
 }));
 
-// HU-025b-1: el consultorio sale del contexto de la sesión.
-const TENANT_CTX = vi.hoisted(() => ({
-  userId: "u", tenantId: "legacy-tenant", agendaId: "legacy-agenda", professionalId: 1,
-  access: { kind: "member" as const, tenantId: "legacy-tenant", role: "OWNER" as const },
-}));
-vi.mock("@/lib/tenant-context", () => ({
-  requireTenantContext: async () => TENANT_CTX,
-  requirePageContext: async () => TENANT_CTX,
-  getTenantContext: async () => TENANT_CTX,
-  TenantAccessError: class TenantAccessError extends Error {},
-}));
 vi.mock("@nutri-bot/db/domain", () => mocks);
 vi.mock("@nutri-bot/db", () => ({ prisma: { nutritionPlan: { findUnique: mocks.findPlan } } }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/private-content-access", () => ({ resolvePrivateContentAccess: mocks.resolveAccess }));
+// HU-025b-2: requireTenantContext, requirePageContext y getTenantContext mockeados directo. `resolveAccess`
+// devuelve el contexto de la sesión o null (sin contexto: requireTenantContext tira TenantAccessError).
+vi.mock("@/lib/tenant-context", () => {
+  class TenantAccessError extends Error {}
+  const required = async (...args: unknown[]) => {
+    const ctx = await mocks.resolveAccess(...args);
+    if (!ctx) throw new TenantAccessError("tenant_access:no_context");
+    return ctx;
+  };
+  return { requireTenantContext: required, requirePageContext: required, getTenantContext: async () => (await mocks.resolveAccess()) ?? null, TenantAccessError };
+});
 
 import { resolvedMeasurePlural } from "@nutri-bot/core";
 import {
@@ -76,7 +75,7 @@ describe("weekly-menu-actions", () => {
     mocks.copyDay.mockResolvedValue([snapshot]);
     const result = await copyDayAction({ kind: "plan", ownerId: "plan1", from: "MON", to: ["TUE", "WED"] });
     expect(result).toEqual({ ok: true, undo: [snapshot] });
-    expect(mocks.copyDay).toHaveBeenCalledWith("plan", "plan1", { from: "MON", to: ["TUE", "WED"] }, "legacy-tenant");
+    expect(mocks.copyDay).toHaveBeenCalledWith("plan", "plan1", { from: "MON", to: ["TUE", "WED"] }, "tenant-a");
     expect(mocks.revalidatePath.mock.calls).toEqual([["/pacientes/pat1"], ["/pacientes/pat1/planes/plan1"]]);
   });
 
@@ -118,7 +117,7 @@ describe("weekly-menu-actions", () => {
   it("restoreMealsAction acepta una foto válida y rechaza campos extra o gramos fuera de rango", async () => {
     mocks.restoreMealSnapshots.mockResolvedValue(undefined);
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [snapshot] })).toEqual({ ok: true });
-    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot], "legacy-tenant");
+    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot], "tenant-a");
 
     mocks.restoreMealSnapshots.mockClear();
     const extra = { ...snapshot, items: [{ ...snapshot.items[0], color: "rojo" }] };
@@ -133,7 +132,7 @@ describe("weekly-menu-actions", () => {
     const recipeItem = { foodId: null, customLabel: null, quantityGrams: null, notes: null, order: 1, weekday: null, recipeId: "rec1", portions: 1.5, measureQty: null, measureName: null, measurePlural: null, measureGrams: null };
     const withRecipe = { ...snapshot, items: [snapshot.items[0]!, recipeItem] };
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [withRecipe] })).toEqual({ ok: true });
-    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [withRecipe], "legacy-tenant");
+    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [withRecipe], "tenant-a");
 
     mocks.restoreMealSnapshots.mockClear();
     const bad = [
@@ -151,7 +150,7 @@ describe("weekly-menu-actions", () => {
     for (const key of ["recipeId", "portions", "measureQty", "measureName", "measurePlural", "measureGrams"]) delete legacyItem[key];
     const legacy = { ...snapshot, items: [legacyItem] };
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [legacy] as never })).toEqual({ ok: true });
-    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot], "legacy-tenant");
+    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot], "tenant-a");
   });
 
   it("HU-018d: una foto con medida pasa; medida sin alimento o con 3 de 4 campos no; foto vieja pasa con null", async () => {
@@ -161,7 +160,7 @@ describe("weekly-menu-actions", () => {
     };
     const withMeasure = { ...snapshot, items: [measureItem] };
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [withMeasure] })).toEqual({ ok: true });
-    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [withMeasure], "legacy-tenant");
+    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [withMeasure], "tenant-a");
 
     mocks.restoreMealSnapshots.mockClear();
     const bad = [
@@ -180,7 +179,7 @@ describe("weekly-menu-actions", () => {
     const legacyItem: Record<string, unknown> = { ...snapshot.items[0]! };
     for (const key of ["measureQty", "measureName", "measurePlural", "measureGrams"]) delete legacyItem[key];
     expect(await restoreMealsAction({ kind: "plan", ownerId: "plan1", snapshots: [{ ...snapshot, items: [legacyItem] }] as never })).toEqual({ ok: true });
-    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot], "legacy-tenant");
+    expect(mocks.restoreMealSnapshots).toHaveBeenCalledWith("plan", "plan1", [snapshot], "tenant-a");
   });
 
   it("018d-1b (R2): el Deshacer acepta el plural automático de un nombre largo (> 40, hasta 80)", async () => {

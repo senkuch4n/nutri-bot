@@ -39,7 +39,6 @@ import {
   getTenantProfessional,
   type LatestMeasurement,
 } from "@nutri-bot/db/domain";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
 import { toEvolutionRow } from "@/lib/evolution-rows";
 import { listServices } from "@/lib/services";
 import { requirePageContext } from "@/lib/tenant-context";
@@ -62,7 +61,7 @@ export type PatientRecordVariant = "page" | "modal";
  *  muestra el link "← Pacientes" y el encabezado se pega arriba del diálogo, no de la página. */
 export async function PatientRecord({ id, variant }: { id: string; variant: PatientRecordVariant }) {
   const ctx = await requirePageContext();
-  const [pro, patient, plans, access, diaryEntries, measurements, consultations, prescriptions, services] =
+  const [pro, patient, plans, diaryEntries, measurements, consultations, prescriptions, services] =
     await Promise.all([
       getTenantProfessional(ctx.tenantId),
       // HU-025: paciente del consultorio de la sesión; uno de otro consultorio → notFound().
@@ -84,7 +83,6 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
         },
       }),
       listPatientPlans(ctx, id),
-      resolvePrivateContentAccess(),
       listDiaryEntries(ctx, id),
       getLatestFormulaMeasurements(ctx, id),
       listPatientConsultations(ctx, id),
@@ -92,9 +90,8 @@ export async function PatientRecord({ id, variant }: { id: string; variant: Pati
       listServices(ctx, { activeOnly: true }),
     ]);
   if (!patient) notFound();
-  const templates = access && patient.tenantId === access.tenantId
-    ? await listTemplates({ status: "PUBLISHED", tenantId: access.tenantId })
-    : null;
+  // Plantillas del consultorio del contexto (el paciente ya es de ese consultorio).
+  const templates = await listTemplates({ status: "PUBLISHED", tenantId: ctx.tenantId });
 
   const tz = pro.timezone;
   const now = new Date();

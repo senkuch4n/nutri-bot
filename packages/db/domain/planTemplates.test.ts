@@ -151,11 +151,12 @@ describe("direct template ownership", () => {
     }, select: { id: true } });
   });
 
-  it("leaves legacy adds to the existing item create and database checks", async () => {
+  it("HU-025: sin alcance (llamador JS que lo omite) no escribe nada", async () => {
     p().templateMeal.findUnique.mockResolvedValue({ mode: "EVERY_DAY" });
-    await addTemplateMealItem("m1", { foodId: "unowned", order: 1 });
-    expect(p().templateMealItem.create).toHaveBeenCalledWith({ data: { mealId: "m1", foodId: "unowned", order: 1, weekday: null } });
-    expect(p().food.findMany).not.toHaveBeenCalled();
+    const unscoped = addTemplateMealItem as unknown as (...args: unknown[]) => Promise<unknown>;
+    await expect(unscoped("m1", { foodId: "unowned", order: 1 })).rejects.toThrow();
+    expect(p().templateMealItem.create).not.toHaveBeenCalled();
+    expect(p().templateMeal.update).not.toHaveBeenCalled();
   });
 
   it("scopes item order by meal, day, template and tenant", async () => {

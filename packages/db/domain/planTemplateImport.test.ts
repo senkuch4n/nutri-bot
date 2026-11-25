@@ -283,7 +283,7 @@ describe("resolveUnplacedHint", () => {
   });
   it("a comida PER_DAY sin día → MealWeekdayMismatchError", async () => {
     p().templateMeal.findFirst.mockResolvedValue({ id: "m1", mode: "PER_DAY" });
-    await expect(resolveUnplacedHint("t1", "h1", { kind: "meal", mealId: "m1", weekday: null })).rejects.toBeInstanceOf(
+    await expect(resolveUnplacedHint("t1", "h1", { kind: "meal", mealId: "m1", weekday: null }, "legacy-tenant")).rejects.toBeInstanceOf(
       MealWeekdayMismatchError,
     );
     expect(p().templateMealItem.create).not.toHaveBeenCalled();
@@ -291,14 +291,18 @@ describe("resolveUnplacedHint", () => {
   it("a comida OK → crea el ítem de texto al final y borra el aviso", async () => {
     p().templateMeal.findFirst.mockResolvedValue({ id: "m1", mode: "PER_DAY" });
     p().templateMealItem.findFirst.mockResolvedValue({ order: 4 });
-    await resolveUnplacedHint("t1", "h1", { kind: "meal", mealId: "m1", weekday: "WED" });
-    expect(p().templateMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "m1", templateId: "t1" });
-    expect(p().templateMealItem.create.mock.calls[0][0].data).toMatchObject({ mealId: "m1", customLabel: "texto h1", weekday: "WED", order: 5, foodId: null });
+    await resolveUnplacedHint("t1", "h1", { kind: "meal", mealId: "m1", weekday: "WED" }, "legacy-tenant");
+    expect(p().templateMeal.findFirst.mock.calls[0][0].where).toEqual({ id: "m1", templateId: "t1", template: { tenantId: "legacy-tenant", status: "DRAFT" } });
+    expect(p().templateMealItem.create.mock.calls[0][0].data).toMatchObject({
+      meal: { connect: { id: "m1", templateId: "t1", template: { tenantId: "legacy-tenant", status: "DRAFT" } } }, customLabel: "texto h1", weekday: "WED", order: 5,
+    });
     expect(p().planTemplate.update.mock.calls[0][0].data.importHints).toEqual([unplaced("h2")]);
   });
   it("a sección null → crea 'Texto importado'", async () => {
-    await resolveUnplacedHint("t1", "h1", { kind: "section", sectionId: null });
-    expect(p().planTemplateSection.create.mock.calls[0][0].data).toMatchObject({ templateId: "t1", title: "Texto importado", body: "texto h1" });
+    await resolveUnplacedHint("t1", "h1", { kind: "section", sectionId: null }, "legacy-tenant");
+    expect(p().planTemplateSection.create.mock.calls[0][0].data).toMatchObject({
+      template: { connect: { id: "t1", tenantId: "legacy-tenant", status: "DRAFT" } }, title: "Texto importado", body: "texto h1",
+    });
     expect(p().planTemplate.update.mock.calls[0][0].data.importHints).toEqual([unplaced("h2")]);
   });
 });

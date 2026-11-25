@@ -1,20 +1,17 @@
 import "server-only";
 import { portalDocumentTitle, professionalDisplayName, professionalWhatsappUrl } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
-import { countPendingInquiries } from "@nutri-bot/db/domain";
+import { countPendingInquiries, findTenantProfessionalSummary } from "@nutri-bot/db/domain";
 
 export type BotShellStatus = "connected" | "paused" | "disconnected";
 
-// El shell consulta prisma directo y tolera `null`: getProfessional() tira si falta la fila
-// y dejaría el layout inutilizable.
+// El shell tolera `null`: si falta la fila, el layout tiene que seguir usable.
+// HU-025: las funciones del panel reciben el tenant del contexto (las del portal, en 025c).
 
-export async function getProfessionalDisplayName(): Promise<string | null> {
-  try {
-    const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: { name: true } });
-    return pro?.name?.trim() || null;
-  } catch {
-    return null;
-  }
+/** Nombre de la profesional de la agenda principal del consultorio. Nunca tira. */
+export async function getProfessionalDisplayName(tenantId: string): Promise<string | null> {
+  const pro = await findTenantProfessionalSummary(tenantId);
+  return pro?.name?.trim() || null;
 }
 
 /** HU-016 (D6): "Lic. Daiana Ponce" para el portal. Igual que getProfessionalDisplayName: nunca tira. */
@@ -56,12 +53,12 @@ export async function getPortalDocumentTitle(): Promise<string> {
   }
 }
 
-/** Estado del bot para la sidebar. Si falta alguna fila → "disconnected". Nunca tira. */
-export async function getBotShellStatus(): Promise<BotShellStatus> {
+/** Estado del bot del consultorio para la sidebar. Si falta alguna fila → "disconnected". Nunca tira. */
+export async function getBotShellStatus(tenantId: string): Promise<BotShellStatus> {
   try {
     const [pro, bot] = await Promise.all([
-      prisma.professional.findUnique({ where: { id: 1 }, select: { botPaused: true } }),
-      prisma.botStatus.findUnique({ where: { id: 1 }, select: { connected: true } }),
+      findTenantProfessionalSummary(tenantId),
+      prisma.botStatus.findUnique({ where: { tenantId }, select: { connected: true } }),
     ]);
     if (pro?.botPaused) return "paused";
     if (bot?.connected) return "connected";
@@ -72,9 +69,9 @@ export async function getBotShellStatus(): Promise<BotShellStatus> {
 }
 
 /** HU-011: consultas pendientes para el badge de "Mensajes" en la sidebar. Nunca tira: ante error, 0. */
-export async function getPendingInquiryCount(): Promise<number> {
+export async function getPendingInquiryCount(tenantId: string): Promise<number> {
   try {
-    return await countPendingInquiries();
+    return await countPendingInquiries({ tenantId });
   } catch {
     return 0;
   }

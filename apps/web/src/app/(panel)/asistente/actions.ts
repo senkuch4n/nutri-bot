@@ -4,7 +4,9 @@ import type OpenAI from "openai";
 import { formatInTimeZone } from "@nutri-bot/core";
 import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
 import { buscarPaciente, resumenPaciente, turnosAgenda, resumenFacturacion } from "@/lib/assistant-tools";
-import { getProfessional } from "@/lib/professional";
+import { errorCode } from "@/lib/error-code";
+import { getTenantProfessional } from "@/lib/professional";
+import { requireTenantContext, type TenantContext } from "@/lib/tenant-context";
 
 export type AssistantMessage = { role: "user" | "assistant"; content: string };
 export type AssistantState = { ok: boolean; error?: string; messages: AssistantMessage[] };
@@ -67,20 +69,24 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-async function runTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+/** HU-025: el consultorio de cada herramienta es el del contexto de la sesión, nunca un argumento del
+ *  modelo (los `args` vienen de la IA y solo traen texto, ids y fechas). */
+async function runTool(ctx: TenantContext, name: string, args: Record<string, unknown>): Promise<unknown> {
   switch (name) {
     case "buscar_paciente":
-      return buscarPaciente(String(args.query ?? ""));
+      return buscarPaciente(ctx, String(args.query ?? ""));
     case "resumen_paciente":
-      return resumenPaciente(String(args.patientId ?? ""));
+      return resumenPaciente(ctx, String(args.patientId ?? ""));
     case "turnos_agenda":
-      return turnosAgenda(String(args.desde ?? ""), String(args.hasta ?? ""));
+      return turnosAgenda(ctx, String(args.desde ?? ""), String(args.hasta ?? ""));
     case "resumen_facturacion":
-      return resumenFacturacion(String(args.desde ?? ""), String(args.hasta ?? ""));
+      return resumenFacturacion(ctx, String(args.desde ?? ""), String(args.hasta ?? ""));
     default:
-      return { error: `Herramienta desconocida: ${name}` };
+      return { error: "Herramienta desconocida" };
   }
 }
+
+const ASSISTANT_ERROR = "Error consultando al asistente";
 
 export async function askAssistantAction(
   history: AssistantMessage[],
@@ -89,7 +95,13 @@ export async function askAssistantAction(
   const trimmed = question.trim();
   if (!trimmed) return { ok: false, error: "Escribí una pregunta", messages: history };
 
-  const pro = await getProfessional();
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext("read");
+  } catch {
+    return { ok: false, error: ASSISTANT_ERROR, messages: history };
+  }
+  const pro = await getTenantProfessional(ctx.tenantId);
   const now = formatInTimeZone(new Date(), pro.timezone, "EEEE d 'de' MMMM 'de' yyyy, HH:mm");
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -128,7 +140,7 @@ export async function askAssistantAction(
           } catch {
             args = {};
           }
-          const result = await runTool(call.function.name, args);
+          const result = await runTool(ctx, call.function.name, args);
           messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
         }
         continue;
@@ -142,10 +154,9 @@ export async function askAssistantAction(
     }
     return { ok: false, error: "El asistente no pudo resolver la consulta.", messages: history };
   } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Error consultando al asistente",
-      messages: history,
-    };
+    // D11: solo el código o la clase del error. Ni el prompt, ni la respuesta, ni el mensaje del
+    // proveedor (puede traer datos del pedido) van al log ni al cliente.
+    console.error("[assistant] provider_error", errorCode(err));
+    return { ok: false, error: ASSISTANT_ERROR, messages: history };
   }
 }

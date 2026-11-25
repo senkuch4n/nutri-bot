@@ -12,15 +12,8 @@ export async function findLegacyConversationState(patientJid: string) {
   return prisma.conversationState.findUnique({ where: ownedStateKey(tenantId, patientJid) });
 }
 
-// Directory reads do not include first-contact sessions or archived patients.
-export async function listLegacyPatientLastContacts(patientJids: string[]) {
-  if (patientJids.length === 0) return [];
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
-  return listPatientLastContacts({ tenantId }, patientJids);
-}
-
-/** HU-025 (adelantado de M5 para el directorio de pacientes, 025b-1): último contacto por JID de
- *  los pacientes activos del consultorio `t`. */
+/** HU-025 (M5): último contacto por JID de los pacientes activos del consultorio `t`. El directorio
+ *  no incluye sesiones de primer contacto ni pacientes archivados. Reemplaza listLegacyPatientLastContacts. */
 export async function listPatientLastContacts(t: TenantRef, patientJids: string[]) {
   if (patientJids.length === 0) return [];
   const { tenantId } = t;

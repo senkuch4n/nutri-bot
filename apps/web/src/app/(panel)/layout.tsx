@@ -13,15 +13,15 @@ import { requirePageContext } from "@/lib/tenant-context";
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
   // HU-025: sin contexto de consultorio (sin sesión, sin membresía, revocada) → /inicio.
-  await requirePageContext();
+  const ctx = await requirePageContext();
   const session = await auth();
 
   // El estado del bot se calcula en cada render del layout: en navegación cliente puede quedar
   // desactualizado hasta recargar (aceptado, ver SDD O3).
   const [professionalName, botStatus, pendingInquiries, cookieStore] = await Promise.all([
-    getProfessionalDisplayName(),
-    getBotShellStatus(),
-    getPendingInquiryCount(),
+    getProfessionalDisplayName(ctx.tenantId),
+    getBotShellStatus(ctx.tenantId),
+    getPendingInquiryCount(ctx.tenantId),
     cookies(),
   ]);
   const badges = { pendingInquiries };

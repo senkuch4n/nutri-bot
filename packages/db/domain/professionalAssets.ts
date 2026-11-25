@@ -1,12 +1,21 @@
 import { prisma } from "../index";
+import { resolvePrimaryAgenda, type TenantRef } from "./tenantScope";
 
-export function updateProfessionalLogo(data: { logoData: Buffer; logoMimeType: string }) {
-  return prisma.professional.update({ where: { id: 1 }, data, select: { id: true } });
+// HU-025 (4.4): los activos son de la profesional de la agenda principal del consultorio `t`
+// (antes, Professional(1)). Toda escritura va con la clave compuesta id + tenantId.
+
+async function tenantProfessionalKey(t: TenantRef) {
+  const { professionalId } = await resolvePrimaryAgenda(prisma, t.tenantId, { id: true } as const);
+  return { id_tenantId: { id: professionalId, tenantId: t.tenantId } };
 }
 
-export function removeProfessionalLogo() {
+export async function updateProfessionalLogo(t: TenantRef, data: { logoData: Buffer; logoMimeType: string }) {
+  return prisma.professional.update({ where: await tenantProfessionalKey(t), data, select: { id: true } });
+}
+
+export async function removeProfessionalLogo(t: TenantRef) {
   return prisma.professional.update({
-    where: { id: 1 },
+    where: await tenantProfessionalKey(t),
     data: { logoData: null, logoMimeType: null },
     select: { id: true },
   });
@@ -22,9 +31,9 @@ function toImage(data: Buffer | Uint8Array | null, mimeType: string | null): Pro
 }
 
 /** Solo la vista previa del panel. null si falta cualquiera de las dos columnas. */
-export async function getProfessionalSignatureImage(): Promise<ProfessionalImage | null> {
+export async function getProfessionalSignatureImage(t: TenantRef): Promise<ProfessionalImage | null> {
   const row = await prisma.professional.findUnique({
-    where: { id: 1 },
+    where: await tenantProfessionalKey(t),
     select: { signatureData: true, signatureMimeType: true },
   });
   if (!row) return null;
@@ -32,27 +41,27 @@ export async function getProfessionalSignatureImage(): Promise<ProfessionalImage
 }
 
 /** Reemplaza la firma (sin historial, D4). Devuelve void: select { id: true } para no traer bytes. */
-export async function updateProfessionalSignature(input: {
+export async function updateProfessionalSignature(t: TenantRef, input: {
   data: Buffer;
   mimeType: "image/png" | "image/jpeg";
 }): Promise<void> {
   await prisma.professional.update({
-    where: { id: 1 },
+    where: await tenantProfessionalKey(t),
     data: { signatureData: input.data, signatureMimeType: input.mimeType },
     select: { id: true },
   });
 }
 
-export async function removeProfessionalSignature(): Promise<void> {
+export async function removeProfessionalSignature(t: TenantRef): Promise<void> {
   await prisma.professional.update({
-    where: { id: 1 },
+    where: await tenantProfessionalKey(t),
     data: { signatureData: null, signatureMimeType: null },
     select: { id: true },
   });
 }
 
 /** Lo que necesita un PDF (informe hoy; plan después de la HU-015). Una sola consulta. */
-export async function getProfessionalPdfAssets(): Promise<{
+export async function getProfessionalPdfAssets(t: TenantRef): Promise<{
   name: string;
   title: string | null;
   licenseNumber: string | null;
@@ -62,7 +71,7 @@ export async function getProfessionalPdfAssets(): Promise<{
   signature: ProfessionalImage | null;
 }> {
   const row = await prisma.professional.findUniqueOrThrow({
-    where: { id: 1 },
+    where: await tenantProfessionalKey(t),
     select: {
       name: true,
       title: true,

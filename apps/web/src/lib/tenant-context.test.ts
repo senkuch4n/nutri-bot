@@ -10,16 +10,36 @@ const mocks = vi.hoisted(() => ({
   }),
   headers: vi.fn(),
   cookies: vi.fn(),
+  decide: null as null | ((...args: unknown[]) => unknown),
+  TenantScopeError: class TenantScopeError extends Error {},
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/auth", () => ({ auth: mocks.auth }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/headers", () => ({ headers: mocks.headers, cookies: mocks.cookies }));
-vi.mock("@nutri-bot/db", () => ({ prisma: { agenda: { findFirst: mocks.findAgenda } } }));
+const fakePrisma = vi.hoisted(() => ({ marker: "prisma" }));
+vi.mock("@nutri-bot/db", () => ({ prisma: fakePrisma }));
+// HU-025b-2: getTenantAccess usa resolvePrimaryAgenda (tenantScope). `findAgenda` devuelve la agenda
+// principal ({ id, professionalId }) o null; el doble tira TenantScopeError como el real.
 vi.mock("@nutri-bot/db/domain", () => ({
   LEGACY_TENANT_ID: "legacy-tenant",
   loadAccessFacts: mocks.loadAccessFacts,
+  TenantScopeError: mocks.TenantScopeError,
+  resolvePrimaryAgenda: async (db: unknown, tenantId: string, select: unknown) => {
+    const agenda = (await mocks.findAgenda(db, tenantId, select)) as { id: string; professionalId: number } | null;
+    if (!agenda) throw new mocks.TenantScopeError("tenant_scope:tenant_scope_missing");
+    return { scope: { tenantId, agendaId: agenda.id }, professionalId: agenda.professionalId, professional: {} };
+  },
 }));
+// decideTenantAccess real, salvo en los casos de soporte (025d todavía no lo implementa en core).
+vi.mock("@nutri-bot/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@nutri-bot/core")>();
+  return {
+    ...actual,
+    decideTenantAccess: (...args: Parameters<typeof actual.decideTenantAccess>) =>
+      (mocks.decide ? mocks.decide(...args) : actual.decideTenantAccess(...args)),
+  };
+});
 
 import {
   ENABLED_TENANT_IDS,
@@ -65,10 +85,7 @@ describe("getTenantAccess / getTenantContext", () => {
   it("miembro OWNER del consultorio original → contexto con su agenda principal", async () => {
     expect(await getTenantAccess()).toEqual({ ok: true, ctx: ownerCtx });
     expect(mocks.loadAccessFacts).toHaveBeenCalledWith("user-a", expect.any(Date));
-    expect(mocks.findAgenda).toHaveBeenCalledWith({
-      where: { tenantId: "legacy-tenant", isPrimary: true },
-      select: { id: true, professionalId: true },
-    });
+    expect(mocks.findAgenda).toHaveBeenCalledWith(fakePrisma, "legacy-tenant", { id: true });
   });
 
   it("STAFF también obtiene contexto (D3: mismos permisos sobre los datos)", async () => {
@@ -185,5 +202,42 @@ describe("requireTenantContext / requireOwnerContext / requirePageContext", () =
   it("requirePageContext con contexto → no redirige", async () => {
     expect(await requirePageContext()).toEqual(ownerCtx);
     expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+});
+
+// HU-025b-2 (M10): casos reubicados de private-content-access.test.ts (se borró el wrapper).
+describe("contexto para recetas y plantillas (antes resolvePrivateContentAccess)", () => {
+  const support = (mode: "READ_ONLY" | "READ_WRITE") => ({
+    ok: true,
+    grant: { kind: "support", tenantId: "legacy-tenant", grantId: "g", mode, expiresAt: new Date("2030-01-01") },
+  });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.decide = null;
+    mocks.auth.mockResolvedValue({ ...session, userId: "operator" });
+    mocks.loadAccessFacts.mockResolvedValue(facts([]));
+    mocks.findAgenda.mockResolvedValue(legacyAgenda);
+  });
+
+  it("soporte de solo lectura (025d): lee, no escribe y nunca es OWNER", async () => {
+    mocks.decide = () => support("READ_ONLY");
+    expect((await requireTenantContext("read")).access).toMatchObject({ kind: "support", mode: "READ_ONLY" });
+    expect(await codeOf(() => requireTenantContext("write"))).toBe("read_only");
+    expect(await codeOf(() => requireTenantContext())).toBe("read_only"); // default "write"
+    expect(await codeOf(() => requireOwnerContext())).toBe("owner_only");
+  });
+
+  it("soporte con permiso para editar (025d): lee y escribe, pero Equipo sigue vedado", async () => {
+    mocks.decide = () => support("READ_WRITE");
+    expect((await requireTenantContext("write")).tenantId).toBe("legacy-tenant");
+    expect(await codeOf(() => requireOwnerContext())).toBe("owner_only");
+  });
+
+  it("revalida en cada operación: membresía revocada sin sesión nueva → sin contexto", async () => {
+    mocks.loadAccessFacts
+      .mockResolvedValueOnce(facts([{ tenantId: "legacy-tenant", role: "STAFF" }]))
+      .mockResolvedValueOnce(facts([]));
+    expect((await requireTenantContext("write")).access).toMatchObject({ kind: "member", role: "STAFF" });
+    expect(await codeOf(() => requireTenantContext("write"))).toBe("no_context");
   });
 });

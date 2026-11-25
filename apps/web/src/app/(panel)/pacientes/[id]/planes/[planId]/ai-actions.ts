@@ -21,6 +21,7 @@ import {
   sexLabel,
 } from "@nutri-bot/core";
 import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
+import { errorCode } from "@/lib/error-code";
 import { requireTenantContext } from "@/lib/tenant-context";
 
 export type AiPlanState = { ok: boolean; error?: string };
@@ -82,7 +83,7 @@ export async function generateAiPlanAction(
     }),
     prisma.clinicalRecord.findUnique({ where: { patientId, patient: { tenantId: ctx.tenantId } } }),
     getLatestFormulaMeasurements(ctx, patientId),
-    listFoods({ activeOnly: true, source: "SARA2" }),
+    listFoods(ctx, { activeOnly: true, source: "SARA2" }),
   ]);
 
   if (foods.length === 0) {
@@ -138,7 +139,10 @@ export async function generateAiPlanAction(
     });
     raw = completion.choices[0]?.message?.content ?? null;
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Error consultando a la IA" };
+    // D11: solo el código o la clase del error. Ni el prompt (datos del paciente), ni la respuesta, ni el
+    // mensaje del proveedor (puede traer el pedido o la clave) van al log ni al cliente.
+    console.error("[plan-ai] provider_error", errorCode(err));
+    return { ok: false, error: "Error consultando a la IA" };
   }
 
   if (!raw) return { ok: false, error: "La IA no devolvió una respuesta" };

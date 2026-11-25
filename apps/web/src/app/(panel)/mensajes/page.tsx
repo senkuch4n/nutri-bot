@@ -1,5 +1,5 @@
 import { prisma } from "@nutri-bot/db";
-import { listInquiries } from "@nutri-bot/db/domain";
+import { getTenantProfessional, listInquiries } from "@nutri-bot/db/domain";
 import {
   HIDDEN_NUMBER_TEXT,
   calendarDaysBetween,
@@ -11,7 +11,7 @@ import {
   formatTimeAgo,
   whatsappChatUrl,
 } from "@nutri-bot/core";
-import { getProfessional } from "@/lib/professional";
+import { requirePageContext } from "@/lib/tenant-context";
 import { MensajesView, type InquiryRow } from "./mensajes-view";
 
 export const dynamic = "force-dynamic";
@@ -27,14 +27,15 @@ function receivedText(at: Date, now: Date, tz: string): string {
 
 /** HU-011 / HU-017b-3: bandeja de consultas que dejan los pacientes por WhatsApp (opción 0 del bot). */
 export default async function MensajesPage() {
-  const [pro, inquiries] = await Promise.all([getProfessional(), listInquiries()]);
+  const ctx = await requirePageContext();
+  const [pro, inquiries] = await Promise.all([getTenantProfessional(ctx.tenantId), listInquiries(ctx)]);
   const tz = pro.timezone;
   const now = new Date();
 
   // El JID dice si el contacto muestra el número (los @lid no): lectura solo de la web, sin tocar domain.
   const patientIds = [...new Set(inquiries.map((i) => i.patient.id))];
   const jids = patientIds.length
-    ? await prisma.patient.findMany({ where: { id: { in: patientIds } }, select: { id: true, whatsappJid: true } })
+    ? await prisma.patient.findMany({ where: { id: { in: patientIds }, tenantId: ctx.tenantId }, select: { id: true, whatsappJid: true } })
     : [];
   const jidById = new Map(jids.map((p) => [p.id, p.whatsappJid]));
 

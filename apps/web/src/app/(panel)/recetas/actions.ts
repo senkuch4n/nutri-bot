@@ -8,7 +8,7 @@ import {
   recipesForTenant,
 } from "@nutri-bot/db/domain";
 import { errorCode } from "@/lib/error-code";
-import { resolvePrivateContentAccess } from "@/lib/private-content-access";
+import { requireTenantContext } from "@/lib/tenant-context";
 import {
   NOT_FOUND,
   INVALID_PAYLOAD,
@@ -37,7 +37,7 @@ function revalidateRecipe(id: string) {
  * Si la receta se guardó y la foto falla → { ok:false, photoError, id }.
  */
 export async function saveRecipeAction(formData: FormData): Promise<RecipeActionState> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, error: RECIPE_TEXT.sessionExpired };
   const recipes = recipesForTenant(access.tenantId);
 
@@ -81,7 +81,7 @@ async function runTransition(
   id: string,
   transition: "archive" | "unarchive",
 ): Promise<{ ok: boolean; error?: string }> {
-  const access = await resolvePrivateContentAccess();
+  const access = await requireTenantContext("write").catch(() => null);
   if (!access) return { ok: false, error: RECIPE_TEXT.sessionExpired };
   try {
     await recipesForTenant(access.tenantId)[transition](id);
