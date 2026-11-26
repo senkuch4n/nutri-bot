@@ -16,7 +16,7 @@ import { prisma } from "@nutri-bot/db";
 import { getMercadoPagoConnectionView, listTenantMembers } from "@nutri-bot/db/domain";
 import { getGoogleCalendarConnectionView } from "@nutri-bot/db/domain/googleCalendar";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
-import { Alert, Button, ButtonLink } from "@/components/ui";
+import { Alert, ButtonLink } from "@/components/ui";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 import { getTenantProfessional } from "@/lib/professional";
 import { tenantProfessionalWhere } from "@/lib/tenant-professional";

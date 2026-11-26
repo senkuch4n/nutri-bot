@@ -32,7 +32,6 @@ const jwt = callbacks.jwt;
 const account = { provider: "google", providerAccountId: "google-123", type: "oidc" } as const;
 const profile = { sub: "google-123", email_verified: true, email: " Test@Example.invalid " };
 const login = { token: {}, user: {}, account, profile, trigger: "signIn" } as const;
-const calendarLogin = () => ({ ...login, token: {}, account: { ...account, refresh_token: "calendar-token" } });
 const facts = (memberships: { tenantId: string; role: "OWNER" | "STAFF" }[]) =>
   ({ linked: true, memberships, platformOperator: false, activeSupportGrants: [] });
 const legacyOwner = facts([{ tenantId: "legacy-tenant", role: "OWNER" }]);
