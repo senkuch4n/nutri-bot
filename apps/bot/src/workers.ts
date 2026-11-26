@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, listConnectedMercadoPagoTenants, listTenantsWithPendingMercadoPagoPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken, syncGoogleCalendar } from "@nutri-bot/db/domain";
 import { outboxOwnershipWhere } from "@nutri-bot/db/domain/outbox";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
@@ -13,17 +13,36 @@ const MAX_ATTEMPTS = 5;
 let outboxRunning = false;
 let paymentsRunning = false;
 
+/** Une listas de consultorios sin repetir, conservando el primer orden de aparición. */
+function uniqueTenants(tenants: { tenantId: string }[]): { tenantId: string }[] {
+  const seen = new Set<string>();
+  return tenants.filter(({ tenantId }) => (seen.has(tenantId) ? false : (seen.add(tenantId), true)));
+}
+
+/** HU-028a (D2a): conciliación y vencimiento de señas por consultorio (los que tienen cuenta conectada
+ *  o señas pendientes). Una falla en un consultorio no frena a los demás. Nunca loguea el error crudo. */
 async function reconcilePayments(): Promise<void> {
   if (paymentsRunning) return;
   paymentsRunning = true;
   try {
-    const tenant = await getConversationTenant();
-    const result = await reconcilePendingPayments(tenant, (paymentId) => {
-      logger.warn({ paymentId }, "Error conciliando pago de Mercado Pago");
-    });
-    if (result.processed || result.failed || result.skipped) logger.info(result, "Conciliación Mercado Pago");
-    // Do not expire reservations when the provider could not be consulted.
-    if (result.failed === 0) await expireStalePendingPayments(tenant);
+    const tenants = uniqueTenants([
+      ...(await listConnectedMercadoPagoTenants()),
+      ...(await listTenantsWithPendingMercadoPagoPayments()),
+    ]);
+    for (const tenant of tenants) {
+      try {
+        const result = await reconcilePendingPayments(tenant, (paymentId) => {
+          logger.warn({ tenantId: tenant.tenantId, paymentId }, "Error conciliando pago de Mercado Pago");
+        });
+        if (result.processed || result.failed || result.skipped) {
+          logger.info({ tenantId: tenant.tenantId, ...result }, "Conciliación Mercado Pago");
+        }
+        // Do not expire reservations when the provider could not be consulted.
+        if (result.failed === 0) await expireStalePendingPayments(tenant);
+      } catch {
+        logger.error({ tenantId: tenant.tenantId }, "Error en conciliación Mercado Pago");
+      }
+    }
   } catch {
     logger.error("Error en conciliación Mercado Pago");
   } finally {
@@ -130,14 +149,25 @@ export function startCron(): void {
   cron.schedule("* * * * *", () => runAfterHoursDigest());
 }
 
-/** HU-023 (D4): renueva el token de la cuenta de Mercado Pago vinculada. Nunca loguea el error
- *  crudo (puede traer headers con el token). */
+/** HU-023 (D4) / HU-028a: renueva el token de cada consultorio con cuenta de Mercado Pago vinculada,
+ *  aislando fallas por consultorio. Nunca loguea el error crudo (puede traer headers con el token). */
 export async function runMercadoPagoRefresh(): Promise<void> {
+  let tenants: { tenantId: string }[];
   try {
-    const result = await refreshMercadoPagoAccountToken(await getConversationTenant());
-    if (result !== "not_needed" && result !== "not_connected") logger.info({ result }, "Renovación Mercado Pago");
+    tenants = await listConnectedMercadoPagoTenants();
   } catch {
     logger.error("Error renovando Mercado Pago");
+    return;
+  }
+  for (const tenant of tenants) {
+    try {
+      const result = await refreshMercadoPagoAccountToken(tenant);
+      if (result !== "not_needed" && result !== "not_connected") {
+        logger.info({ tenantId: tenant.tenantId, result }, "Renovación Mercado Pago");
+      }
+    } catch {
+      logger.error({ tenantId: tenant.tenantId }, "Error renovando Mercado Pago");
+    }
   }
 }
 
