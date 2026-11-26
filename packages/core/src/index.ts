@@ -9,6 +9,7 @@ export * from "./deposits";
 export * from "./payment-status";
 export * from "./payment-methods";
 export * from "./mercadopago-oauth";
+export * from "./google-calendar-oauth";
 export * from "./patient-formula-data";
 export * from "./consultations";
 export * from "./formula-measurements";
