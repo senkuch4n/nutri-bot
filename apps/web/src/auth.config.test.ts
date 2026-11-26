@@ -8,6 +8,13 @@ type SignInArgs = Parameters<typeof authConfig.callbacks.signIn>[0];
 const signIn = (over: { account?: unknown; profile?: unknown }) =>
   authConfig.callbacks.signIn({ user: {}, account, profile, ...over } as unknown as SignInArgs);
 
+describe("HU-028b (D15): el login pide solo identidad básica", () => {
+  it("los params del proveedor Google son exactamente { scope: \"openid email profile\" }", () => {
+    const provider = authConfig.providers[0] as unknown as { options?: { authorization?: { params?: unknown } } };
+    expect(provider.options?.authorization?.params).toEqual({ scope: "openid email profile" });
+  });
+});
+
 describe("verifiedGoogleIdentity", () => {
   it("devuelve el sub y el email canónico", () => {
     expect(verifiedGoogleIdentity(account, profile)).toEqual({ subject: "google-123", email: "carla@example.invalid" });

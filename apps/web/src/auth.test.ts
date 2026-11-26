@@ -9,12 +9,14 @@ const mocks = vi.hoisted(() => ({
   findProfessional: vi.fn(),
   updateProfessional: vi.fn(),
   updateScopedProfessional: vi.fn(),
+  googleCalendarAccount: { upsert: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
 }));
 
 vi.mock("next-auth", () => ({ default: mocks.configure }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {
   agenda: { findUnique: mocks.findAgenda },
   professional: { findUnique: mocks.findProfessional, update: mocks.updateProfessional, updateMany: mocks.updateScopedProfessional },
+  googleCalendarAccount: mocks.googleCalendarAccount,
 } }));
 vi.mock("@nutri-bot/db/domain", () => ({
   LEGACY_TENANT_ID: "legacy-tenant",
@@ -31,7 +33,6 @@ const account = { provider: "google", providerAccountId: "google-123", type: "oi
 const profile = { sub: "google-123", email_verified: true, email: " Test@Example.invalid " };
 const login = { token: {}, user: {}, account, profile, trigger: "signIn" } as const;
 const calendarLogin = () => ({ ...login, token: {}, account: { ...account, refresh_token: "calendar-token" } });
-const verifiedAgenda = { professional: { googleRefreshToken: null, googleSyncError: null } };
 const facts = (memberships: { tenantId: string; role: "OWNER" | "STAFF" }[]) =>
   ({ linked: true, memberships, platformOperator: false, activeSupportGrants: [] });
 const legacyOwner = facts([{ tenantId: "legacy-tenant", role: "OWNER" }]);
@@ -42,7 +43,7 @@ describe("Auth.js: registro de identidad (HU-025a1)", () => {
     mocks.loadAccessFacts.mockReset().mockResolvedValue(legacyOwner);
     mocks.findProfessional.mockReset();
     mocks.updateProfessional.mockReset();
-    mocks.findAgenda.mockReset().mockResolvedValue(verifiedAgenda);
+    mocks.findAgenda.mockReset();
     mocks.updateScopedProfessional.mockReset().mockResolvedValue({ count: 1 });
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -113,70 +114,31 @@ describe("Auth.js: registro de identidad (HU-025a1)", () => {
       .toEqual(session);
   });
 
-  describe("D10: token del calendario solo para miembros del consultorio original", () => {
-    it.each([1, 0])("miembro de legacy y dueña del calendario → escribe la agenda legacy (updated %i)", async (count) => {
-      mocks.updateScopedProfessional.mockResolvedValue({ count });
+  describe("HU-028b (D15): el login no guarda ni pisa tokens de Google", () => {
+    it("un login con refresh_token solo registra la identidad: no escribe Professional ni GoogleCalendarAccount", async () => {
       vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", "test@example.invalid");
-      expect(await jwt(calendarLogin())).toEqual({ userId: "user-a" });
-      expect(mocks.loadAccessFacts).toHaveBeenCalledWith("user-a", expect.any(Date));
-      expect(mocks.findAgenda).toHaveBeenCalledWith(expect.objectContaining({
-        where: { id_tenantId: { id: "legacy-agenda", tenantId: "legacy-tenant" }, isPrimary: true, professionalId: 1 },
-      }));
-      expect(mocks.updateScopedProfessional).toHaveBeenCalledOnce();
-      expect(mocks.updateScopedProfessional).toHaveBeenCalledWith({
-        where: {
-          id: 1,
-          tenantId: "legacy-tenant",
-          agendas: { some: { id: "legacy-agenda", tenantId: "legacy-tenant", isPrimary: true } },
-        },
-        data: { googleRefreshToken: "calendar-token", googleSyncError: null },
-      });
+      const loginWithTokens = {
+        ...login,
+        token: {},
+        account: { ...account, refresh_token: "calendar-token", access_token: "access-token", id_token: "id-token" },
+      };
+      const token = await jwt(loginWithTokens);
+      expect(token).toEqual({ userId: "user-a" });
+      expect(mocks.registerGoogleIdentity).toHaveBeenCalledOnce();
+      expect(mocks.loadAccessFacts).not.toHaveBeenCalled();
+      expect(mocks.findAgenda).not.toHaveBeenCalled();
       expect(mocks.findProfessional).not.toHaveBeenCalled();
       expect(mocks.updateProfessional).not.toHaveBeenCalled();
-    });
-
-    it.each([
-      ["sin membresía (pendiente)", facts([])],
-      ["miembro de otro consultorio", facts([{ tenantId: "tenant-b", role: "OWNER" }])],
-      ["dos membresías", facts([{ tenantId: "legacy-tenant", role: "OWNER" }, { tenantId: "tenant-b", role: "STAFF" }])],
-      ["User inexistente", null],
-    ])("%s → no guarda el token aunque sea la dueña del calendario", async (_label, value) => {
-      mocks.loadAccessFacts.mockResolvedValue(value);
-      vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", "test@example.invalid");
-      expect(await jwt(calendarLogin())).toEqual({ userId: "user-a" });
-      expect(mocks.findAgenda).not.toHaveBeenCalled();
       expect(mocks.updateScopedProfessional).not.toHaveBeenCalled();
-    });
-
-    it("miembro de legacy pero no la dueña del calendario → no guarda", async () => {
-      vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", "otra@example.invalid");
-      expect(await jwt(calendarLogin())).toEqual({ userId: "user-a" });
-      expect(mocks.updateScopedProfessional).not.toHaveBeenCalled();
-    });
-
-    it("conflicto de identidad → no consulta membresía ni guarda token", async () => {
-      mocks.registerGoogleIdentity.mockResolvedValue({ status: "conflict" });
-      vi.spyOn(console, "warn").mockImplementation(() => {});
-      vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", "test@example.invalid");
-      expect(await jwt(calendarLogin())).toEqual({});
-      expect(mocks.loadAccessFacts).not.toHaveBeenCalled();
-      expect(mocks.updateScopedProfessional).not.toHaveBeenCalled();
-      vi.mocked(console.warn).mockRestore();
-    });
-
-    it("agenda original ausente → registra la identidad sin guardar el token", async () => {
-      mocks.findAgenda.mockResolvedValue(null);
-      vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", "test@example.invalid");
-      expect(await jwt(calendarLogin())).toEqual({ userId: "user-a" });
-      expect(mocks.findAgenda).toHaveBeenCalledOnce();
-      expect(mocks.updateScopedProfessional).not.toHaveBeenCalled();
-    });
-
-    it("un error de base al verificar la agenda no se trata como agenda ausente", async () => {
-      const error = new Error("database unavailable");
-      mocks.findAgenda.mockRejectedValue(error);
-      await expect(jwt(calendarLogin())).rejects.toBe(error);
-      expect(mocks.updateScopedProfessional).not.toHaveBeenCalled();
+      for (const fn of Object.values(mocks.googleCalendarAccount)) expect(fn).not.toHaveBeenCalled();
+      const session = await callbacks.session!({
+        session: { user: {}, expires: "2030-01-01" },
+        token: token!,
+      } as Parameters<NonNullable<typeof callbacks.session>>[0]);
+      for (const secret of ["calendar-token", "access-token", "id-token"]) {
+        expect(JSON.stringify(token)).not.toContain(secret);
+        expect(JSON.stringify(session)).not.toContain(secret);
+      }
     });
   });
 });

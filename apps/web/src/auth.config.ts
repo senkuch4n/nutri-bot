@@ -37,14 +37,9 @@ export const authConfig = {
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      authorization: {
-        params: {
-          access_type: "offline",
-          prompt: "consent",
-          scope:
-            "openid email profile https://www.googleapis.com/auth/calendar.events",
-        },
-      },
+      // HU-028b (D15): el login pide solo identidad básica. El permiso de Google Calendar se pide aparte,
+      // desde Ajustes, con su propio OAuth (apps/web/src/app/api/google-calendar/oauth/callback).
+      authorization: { params: { scope: "openid email profile" } },
     }),
   ],
   callbacks: {

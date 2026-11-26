@@ -23,8 +23,6 @@ const API_EXEMPT = [join(API, "auth"), join(API, "webhooks")];
 
 /** Excepciones de (c), cada una con su motivo y la entrega que la cierra. */
 const LEGACY_EXEMPT: Record<string, string> = {
-  // Google Calendar sigue escribiendo la agenda legacy hasta HU-028 (D10).
-  "auth.ts": "calendario legacy hasta HU-028",
   // Funciones del PORTAL (getProfessionalPortalName/Contact, getPortalDocumentTitle): 025c las pasa al tenant
   // del paciente. Las del panel (nombre, estado del bot, consultas) ya reciben tenantId.
   "lib/shell.ts": "funciones del portal hasta 025c",

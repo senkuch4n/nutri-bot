@@ -1,42 +1,6 @@
 import NextAuth from "next-auth";
-import { decideTenantAccess } from "@nutri-bot/core";
-import { prisma } from "@nutri-bot/db";
-import { LEGACY_TENANT_ID, loadAccessFacts, registerGoogleIdentity } from "@nutri-bot/db/domain";
-import { resolveLegacyCalendarScope } from "@nutri-bot/db/domain/legacySchedulingScope";
+import { registerGoogleIdentity } from "@nutri-bot/db/domain";
 import { authConfig, verifiedGoogleIdentity } from "./auth.config";
-import { shouldStoreCalendarToken } from "./lib/calendar-token-owner";
-
-/** D10: el refresh_token del calendario solo se guarda para quien es miembro del consultorio original
- *  (y, además, la dueña del calendario según `shouldStoreCalendarToken`). Hasta HU-028 escribe la agenda legacy. */
-async function maybeStoreCalendarToken(userId: string, email: string, refreshToken: string) {
-  const decision = decideTenantAccess(await loadAccessFacts(userId, new Date()));
-  if (!decision.ok || decision.grant.kind !== "member" || decision.grant.tenantId !== LEGACY_TENANT_ID) return;
-
-  const verified = await resolveLegacyCalendarScope(prisma).catch((error: unknown) => {
-    // El resolvedor no expone un error tipado para una agenda ausente.
-    if (error instanceof Error && error.message === "No se pudo verificar la agenda de la instalación original.") {
-      return null;
-    }
-    throw error;
-  });
-  if (!verified) return;
-  const { scope, agendaOwner, professional } = verified;
-  const store = shouldStoreCalendarToken({
-    email,
-    ownerEmail: process.env.GOOGLE_CALENDAR_OWNER_EMAIL,
-    hasToken: !!professional.googleRefreshToken,
-    hasSyncError: !!professional.googleSyncError,
-  });
-  if (!store) return;
-  await prisma.professional.updateMany({
-    where: {
-      id: agendaOwner.professionalId,
-      tenantId: scope.tenantId,
-      agendas: { some: { id: scope.agendaId, tenantId: scope.tenantId, isPrimary: true } },
-    },
-    data: { googleRefreshToken: refreshToken, googleSyncError: null },
-  });
-}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -58,11 +22,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         console.warn("[auth] identity_conflict");
         return token;
       }
+      // HU-028b (D15): el login no guarda ni pisa tokens de Google; nada de Google viaja en el JWT.
       token.userId = registration.userId;
-
-      if (account.refresh_token) {
-        await maybeStoreCalendarToken(registration.userId, identity.email, account.refresh_token);
-      }
       return token;
     },
     async session({ session, token }) {
