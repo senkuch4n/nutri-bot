@@ -2,10 +2,17 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ loadAccessFacts: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  loadAccessFacts: vi.fn(),
+  loadOnboardedClinic: vi.fn(),
+  getTenantSubscriptionGate: vi.fn(),
+}));
 // `auth(handler)` de Auth.js decodifica el JWT y deja la sesión en `req.auth`; acá se la pasa el test.
+vi.mock("server-only", () => ({}));
 vi.mock("@/auth", () => ({ auth: (handler: unknown) => handler }));
 vi.mock("@/lib/tenant-context", () => ({ ENABLED_TENANT_IDS: ["legacy-tenant"] }));
+vi.mock("@/lib/onboarding-server", () => ({ loadOnboardedClinic: mocks.loadOnboardedClinic }));
+vi.mock("@/lib/onboarding-subscription-gate", () => ({ getTenantSubscriptionGate: mocks.getTenantSubscriptionGate }));
 vi.mock("@nutri-bot/db/domain", () => ({ loadAccessFacts: mocks.loadAccessFacts }));
 
 import middleware, { config, panelGate } from "./middleware";
@@ -43,6 +50,8 @@ describe("middleware (opción A, runtime Node)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.loadAccessFacts.mockResolvedValue(legacyOwner);
+    mocks.loadOnboardedClinic.mockResolvedValue(null);
+    mocks.getTenantSubscriptionGate.mockResolvedValue("pending");
   });
 
   it("corre en Node y el default es la puerta envuelta por auth()", () => {
@@ -116,6 +125,46 @@ describe("middleware (opción A, runtime Node)", () => {
         headers: { "x-tenant-id": "legacy-tenant" },
       });
       expectRedirectToInicio(await panelGate(forged));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it.each(["not_required", "verified"] as const)("HU-026: consultorio nuevo completo con gate %s deja pasar página, API y action", async (gate) => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "OWNER" }]));
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", setupComplete: true });
+    mocks.getTenantSubscriptionGate.mockResolvedValue(gate);
+    passes(await panelGate(page()));
+    passes(await panelGate(api()));
+    passes(await panelGate(action()));
+  });
+
+  it.each(["pending", "error"] as const)("HU-026: titular con suscripción %s es bloqueada en página y API sin filtrar PII", async (state) => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "OWNER" }]));
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", setupComplete: true });
+    if (state === "error") mocks.getTenantSubscriptionGate.mockRejectedValue(new Error("provider down"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expectRedirectToInicio(await panelGate(page()));
+      await expectUnauthorized(await panelGate(api()));
+      passes(await panelGate(action()));
+      expect(warn.mock.calls).toEqual(Array(3).fill(["[auth] access_denied reason=onboarding_pending"]));
+      expect(JSON.stringify(warn.mock.calls)).not.toMatch(/ana@example|user-a|Consultorio/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("HU-026: titular con alta incompleta es bloqueada en página y API sin consultar suscripción", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "OWNER" }]));
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", setupComplete: false });
+    mocks.getTenantSubscriptionGate.mockResolvedValue("verified");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expectRedirectToInicio(await panelGate(page()));
+      await expectUnauthorized(await panelGate(api()));
+      expect(mocks.getTenantSubscriptionGate).not.toHaveBeenCalled();
+      expect(warn.mock.calls).toEqual(Array(2).fill(["[auth] access_denied reason=onboarding_setup"]));
     } finally {
       warn.mockRestore();
     }

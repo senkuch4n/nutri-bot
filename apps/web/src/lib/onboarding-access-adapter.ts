@@ -10,7 +10,7 @@ type OnboardingAccessDependencies = {
   getTenantSubscriptionGate: GetTenantSubscriptionGate;
 };
 
-type OnboardingAccess =
+export type OnboardingAccess =
   | { kind: "operational"; grant: AccessGrant }
   | { kind: "setup"; clinicName: string }
   | { kind: "onboarding"; clinicName: string }

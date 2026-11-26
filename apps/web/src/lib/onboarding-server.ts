@@ -14,6 +14,20 @@ type OnboardingServerConfiguration = {
   onComplete: () => void | Promise<void>;
 };
 
+// Public self-signup stays disabled by default until HU-029b and end-to-end verification are complete.
+export function isPublicOnboardingEnabled(): boolean {
+  return process.env.NUTRIBOT_PUBLIC_ONBOARDING_ENABLED === "true";
+}
+
+export async function loadOnboardedClinic(tenantId: string): Promise<{ name: string; setupComplete: boolean } | null> {
+  const clinic = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { name: true, timeZone: true, agendas: { where: { isPrimary: true }, select: { id: true }, take: 1 } },
+  });
+  if (!clinic?.name || !clinic.timeZone) return null;
+  return { name: clinic.name, setupComplete: clinic.agendas.length === 1 };
+}
+
 export function createOnboardingServer(configuration: OnboardingServerConfiguration) {
   const readSession = () => auth();
   const access = createOnboardingAccessAdapter({
@@ -21,14 +35,7 @@ export function createOnboardingServer(configuration: OnboardingServerConfigurat
     existingEnabledTenantIds: configuration.existingEnabledTenantIds,
     getTenantSubscriptionGate: configuration.getTenantSubscriptionGate,
     loadAccessFacts: (userId) => loadAccessFacts(userId, new Date()),
-    loadOnboardedClinic: async (tenantId) => {
-      const clinic = await prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { name: true, timeZone: true, agendas: { where: { isPrimary: true }, select: { id: true }, take: 1 } },
-      });
-      if (!clinic?.name || !clinic.timeZone) return null;
-      return { name: clinic.name, setupComplete: clinic.agendas.length === 1 };
-    },
+    loadOnboardedClinic,
   });
 
   return {
