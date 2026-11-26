@@ -116,7 +116,6 @@ describe("Auth.js: registro de identidad (HU-025a1)", () => {
 
   describe("HU-028b (D15): el login no guarda ni pisa tokens de Google", () => {
     it("un login con refresh_token solo registra la identidad: no escribe Professional ni GoogleCalendarAccount", async () => {
-      vi.stubEnv("GOOGLE_CALENDAR_OWNER_EMAIL", "test@example.invalid");
       const loginWithTokens = {
         ...login,
         token: {},
