@@ -128,7 +128,7 @@ export const SETTINGS_TEXT = {
   googleReconnect: "Reconectar",
   googleDisconnect: "Desconectar",
   googleDisconnectTitle: "¿Desconectar Google Calendar?",
-  googleDisconnectDescription: "Los turnos nuevos dejan de aparecer en tu calendario de Google.",
+  googleDisconnectDescription: "Los turnos nuevos dejan de aparecer en tu Google Calendar. Los eventos que ya están ahí no se borran.",
   googleSyncError: "Google dejó de aceptar la conexión. Reconectá para que los turnos sigan apareciendo.",
   googleCalendar: "Calendario",
   googleMainCalendar: "Tu calendario principal",

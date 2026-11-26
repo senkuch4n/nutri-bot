@@ -17,6 +17,10 @@ describe("PROFESSIONAL_SELECT", () => {
     expect(PROFESSIONAL_SELECT).not.toHaveProperty("tenantId");
   });
 
+  it("HU-028b (D15): no trae ninguna columna de Google", () => {
+    expect(Object.keys(PROFESSIONAL_SELECT).filter((k) => k.toLowerCase().startsWith("google"))).toEqual([]);
+  });
+
   it("cubre todas las demás columnas escalares de Professional", () => {
     const model = Prisma.dmmf.datamodel.models.find((m) => m.name === "Professional");
     expect(model).toBeDefined();
@@ -24,6 +28,8 @@ describe("PROFESSIONAL_SELECT", () => {
       .filter((f) => f.kind === "scalar")
       .map((f) => f.name)
       .filter((n) => n !== "signatureData" && n !== "logoData" && n !== "tenantId")
+      // HU-028b, se borran en 028b-2: la conexión de Google vive en GoogleCalendarAccount.
+      .filter((n) => n !== "googleRefreshToken" && n !== "googleCalendarId" && n !== "googleSyncError")
       .sort();
     expect(Object.keys(PROFESSIONAL_SELECT).sort()).toEqual(scalars);
     expect(Object.values(PROFESSIONAL_SELECT).every((v) => v === true)).toBe(true);

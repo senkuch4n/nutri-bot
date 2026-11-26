@@ -31,6 +31,7 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
 vi.mock("@/lib/bot-ai", () => ({ getBotAiKeyStatus: vi.fn() }));
+vi.mock("@nutri-bot/db/domain/googleCalendar", () => ({}));
 vi.mock("@nutri-bot/db/domain", () => ({
   startMercadoPagoOAuth: mocks.start,
   disconnectMercadoPagoAccount: mocks.disconnect,

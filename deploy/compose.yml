@@ -4,7 +4,7 @@
 # publicados, así que la base y la web quedan solo en la red interna.
 #
 #   docker compose up -d --build                 # levantar / actualizar
-#   docker compose run --rm migrate              # prisma migrate deploy
+#   docker compose run --rm migrate              # prisma migrate deploy + traslado de Google Calendar (HU-028b)
 
 services:
   db:
@@ -53,9 +53,12 @@ services:
   migrate:
     image: nutribot-bot
     profiles: ["tools"]
+    env_file: .env   # HU-028b: el traslado necesita INTEGRATION_TOKEN_KEY (se quita en 028b-2)
     environment:
       DATABASE_URL: postgresql://nutri:${POSTGRES_PASSWORD}@db:5432/nutribot
-    command: ["npx", "prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
+    # HU-028b: migraciones y después el traslado idempotente del token de Google Calendar (D6a).
+    # 028b-2 vuelve al comando de una sola línea.
+    command: ["sh", "-c", "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma && npx --no-install tsx packages/db/scripts/google-calendar-transfer.ts --apply"]
     depends_on:
       db: { condition: service_healthy }
 

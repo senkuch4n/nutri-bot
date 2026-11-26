@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, listConnectedMercadoPagoTenants, listTenantsWithPendingMercadoPagoPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken, syncGoogleCalendar } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, listConnectedMercadoPagoTenants, listTenantsWithPendingMercadoPagoPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken } from "@nutri-bot/db/domain";
+import { listConnectedGoogleCalendarTenants, syncGoogleCalendar } from "@nutri-bot/db/domain/googleCalendar";
 import { outboxOwnershipWhere } from "@nutri-bot/db/domain/outbox";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
@@ -129,14 +130,7 @@ export function startCron(): void {
     }
   });
 
-  cron.schedule("* * * * *", async () => {
-    try {
-      const res = await syncGoogleCalendar();
-      if (res.processed > 0 || res.error) logger.info(res, "Sync Google Calendar");
-    } catch (err) {
-      logger.error({ err }, "Error en sync de Google Calendar");
-    }
-  });
+  cron.schedule("* * * * *", () => runGoogleCalendarSync());
 
   // HU-023 (D4): renovación diaria del token de Mercado Pago (si faltan menos de 30 días).
   cron.schedule("0 6 * * *", () => runMercadoPagoRefresh());
@@ -147,6 +141,36 @@ export function startCron(): void {
   cron.schedule("30 4 * * *", () => runBotAiPurge());
   // HU-011: resumen de consultas fuera de horario (último cron: los tests miran calls[0]).
   cron.schedule("* * * * *", () => runAfterHoursDigest());
+}
+
+let calendarRunning = false;
+
+/** HU-028b (D2a): sync de Google Calendar por consultorio conectado; una falla no frena a los demás.
+ *  Nunca loguea el error crudo (un GaxiosError trae el header Authorization). */
+export async function runGoogleCalendarSync(): Promise<void> {
+  if (calendarRunning) return;
+  calendarRunning = true;
+  try {
+    let tenants: { tenantId: string }[];
+    try {
+      tenants = await listConnectedGoogleCalendarTenants();
+    } catch {
+      logger.error("Error en sync de Google Calendar");
+      return;
+    }
+    for (const tenant of tenants) {
+      try {
+        const res = await syncGoogleCalendar(tenant);
+        if (res.processed > 0 || res.error) {
+          logger.info({ tenantId: tenant.tenantId, processed: res.processed, error: res.error }, "Sync Google Calendar");
+        }
+      } catch {
+        logger.error({ tenantId: tenant.tenantId }, "Error en sync de Google Calendar");
+      }
+    }
+  } finally {
+    calendarRunning = false;
+  }
 }
 
 /** HU-023 (D4) / HU-028a: renueva el token de cada consultorio con cuenta de Mercado Pago vinculada,
@@ -177,7 +201,7 @@ export async function runStartupJobs(): Promise<void> {
   try {
     await runServiceReminders();
     await enqueuePrepInstructions(await getConversationTenant());
-    await syncGoogleCalendar();
+    await runGoogleCalendarSync();
   } catch (err) {
     logger.error({ err }, "Error en tareas de arranque");
   }

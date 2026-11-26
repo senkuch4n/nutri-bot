@@ -15,7 +15,7 @@ import {
   resolveTenantSchedulingContext,
   TenantScopeError,
 } from "./tenantScope";
-import { resolveLegacyCalendarScope, resolveLegacySchedulingScope } from "./legacySchedulingScope";
+import { resolveLegacySchedulingScope } from "./legacySchedulingScope";
 import { PROFESSIONAL_SELECT } from "./professionalSelect";
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -75,10 +75,13 @@ describe("digest y calendario", () => {
   });
 
   it("calendario devuelve agendaOwner con la profesional de la agenda", async () => {
-    mocks.prisma.agenda.findFirst.mockResolvedValue(agendaOf("t", "ag", 3, { timezone: TZ, googleRefreshToken: null }));
+    mocks.prisma.agenda.findFirst.mockResolvedValue(agendaOf("t", "ag", 3, { timezone: TZ }));
     const ctx = await resolveTenantCalendarContext(mocks.prisma as never, "t");
     expect(ctx.agendaOwner).toEqual({ isPrimary: true, professionalId: 3 });
     expect(ctx.scope).toEqual({ tenantId: "t", agendaId: "ag" });
+    expect(ctx.professional).toEqual({ timezone: TZ });
+    // HU-028b: la conexión de Google ya no se lee de la profesional.
+    expect(mocks.prisma.agenda.findFirst.mock.calls[0]![0].select.professional.select).toEqual({ timezone: true });
   });
 });
 
@@ -128,12 +131,6 @@ describe("fachada legacy", () => {
     expect(mocks.prisma.agenda.findUnique.mock.calls[0]![0].where).toEqual({
       id_tenantId: { id: "legacy-agenda", tenantId: "legacy-tenant" }, isPrimary: true, professionalId: 1,
     });
-  });
-
-  it("calendario legacy: agendaOwner fijo", async () => {
-    mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { timezone: TZ } });
-    const ctx = await resolveLegacyCalendarScope();
-    expect(ctx.agendaOwner).toEqual({ isPrimary: true, professionalId: 1 });
   });
 
   it("sin la agenda legacy → tira", async () => {

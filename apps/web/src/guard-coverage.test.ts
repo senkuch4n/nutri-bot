@@ -23,8 +23,6 @@ const API_EXEMPT = [join(API, "auth"), join(API, "webhooks")];
 
 /** Excepciones de (c), cada una con su motivo y la entrega que la cierra. */
 const LEGACY_EXEMPT: Record<string, string> = {
-  // Google Calendar sigue escribiendo la agenda legacy hasta HU-028 (D10).
-  "auth.ts": "calendario legacy hasta HU-028",
   // Funciones del PORTAL (getProfessionalPortalName/Contact, getPortalDocumentTitle): 025c las pasa al tenant
   // del paciente. Las del panel (nombre, estado del bot, consultas) ya reciben tenantId.
   "lib/shell.ts": "funciones del portal hasta 025c",
@@ -132,6 +130,7 @@ describe("guard-coverage (HU-025, 10.2)", () => {
       "app/api/professional/logo/route.ts",
       "app/api/professional/signature/route.ts",
       "app/api/mercadopago/oauth/callback/route.ts",
+      "app/api/google-calendar/oauth/callback/route.ts",
     ]));
   });
 
@@ -160,5 +159,25 @@ describe("guard-coverage (HU-025, 10.2)", () => {
       const source = readFileSync(join(SRC, name), "utf8");
       expect(FORBIDDEN.some(([, re]) => re.test(source)) || /getProfessional\b/.test(source), name).toBe(true);
     }
+  });
+
+  // HU-028b (D4b): conectar, desconectar y elegir el calendario de Google son solo del OWNER.
+  const exportedBody = (source: string, name: string) => {
+    const fn = topLevelFunctions(source).find((f) => f.name === name && f.exported);
+    expect(fn, name).toBeDefined();
+    return fn!.body;
+  };
+  it.each(["connectGoogleCalendarAction", "disconnectGoogleAction", "saveGoogleCalendarIdAction"])(
+    "HU-028b: %s usa requireOwnerContext y no requireTenantContext",
+    (name) => {
+      const body = exportedBody(readFileSync(join(PANEL, "ajustes", "actions.ts"), "utf8"), name);
+      expect(body).toContain("requireOwnerContext(");
+      expect(body).not.toContain("requireTenantContext(");
+    },
+  );
+  it("HU-028b: el callback de Google Calendar usa requireOwnerContext y no requireTenantContext", () => {
+    const source = readFileSync(join(API, "google-calendar", "oauth", "callback", "route.ts"), "utf8");
+    expect(source).toContain("requireOwnerContext(");
+    expect(source).not.toContain("requireTenantContext(");
   });
 });

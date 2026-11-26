@@ -3,7 +3,6 @@ export * from "./appointments";
 export * from "./outbox";
 export * from "./patients";
 export * from "./reminders";
-export * from "./gcal";
 export * from "./clinical";
 export * from "./consultations";
 export * from "./foods";
