@@ -1,12 +1,94 @@
 "use client";
 
-import { useId, useTransition } from "react";
-import { SETTINGS_TEXT as T } from "@nutri-bot/core";
+import { useEffect, useId, useState, useTransition } from "react";
+import { useFormStatus } from "react-dom";
+import { useSearchParams } from "next/navigation";
+import { AnimatePresence, m, useReducedMotionConfig } from "motion/react";
+import { GOOGLE_CALENDAR_TEXT as G, SETTINGS_TEXT as T, type GoogleCalendarCallbackResult } from "@nutri-bot/core";
 import { useConfirm } from "@/components/confirm";
-import { Button, FormError, Input } from "@/components/ui";
+import { Alert, Button, FormError, Input } from "@/components/ui";
+import { fades } from "@/lib/motion";
 import { notify } from "@/lib/notify";
-import { disconnectGoogleAction, saveGoogleCalendarIdAction } from "./actions";
+import { replaceUrlInRouter } from "@/lib/patient-tab-route";
+import { connectGoogleCalendarAction, disconnectGoogleAction, saveGoogleCalendarIdAction } from "./actions";
 import { useSettingsForm } from "./settings-ui";
+
+// HU-028b: piezas cliente de Ajustes → Google Calendar. Solo reciben lo de GoogleCalendarConnectionView
+// (sin tokens). Conectar usa el OAuth propio del calendario, no el login (D15).
+
+function SubmitButton({ label, variant, disabled }: { label: string; variant: "primary" | "secondary"; disabled?: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" variant={variant} loading={pending} disabled={disabled}>
+      {label}
+    </Button>
+  );
+}
+
+/** "Conectar Google Calendar" / "Reconectar": server action que manda a Google a autorizar el calendario. */
+export function GoogleCalendarConnectButton({
+  reconnect = false,
+  variant = "primary",
+  disabled = false,
+}: {
+  reconnect?: boolean;
+  variant?: "primary" | "secondary";
+  disabled?: boolean;
+}) {
+  return (
+    <form action={connectGoogleCalendarAction}>
+      <SubmitButton label={reconnect ? T.googleReconnect : T.googleConnect} variant={variant} disabled={disabled} />
+    </form>
+  );
+}
+
+const BANNER_MS = 8_000;
+
+function isCallbackResult(value: string | null): value is GoogleCalendarCallbackResult {
+  return value !== null && Object.prototype.hasOwnProperty.call(G.callback, value);
+}
+
+/** Resultado de la vuelta de Google (`?gcal=`). Saca `gcal` de la URL enseguida (sin ida al servidor)
+ *  para que recargar no lo repita, y se oculta solo a los 8 s. */
+export function GoogleCalendarCallbackBanner() {
+  const param = useSearchParams().get("gcal");
+  const [result, setResult] = useState<GoogleCalendarCallbackResult | null>(null);
+  const reduced = Boolean(useReducedMotionConfig());
+
+  useEffect(() => {
+    if (!isCallbackResult(param)) return;
+    setResult(param);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("gcal");
+    replaceUrlInRouter(url.toString());
+  }, [param]);
+
+  useEffect(() => {
+    if (!result) return;
+    const timer = window.setTimeout(() => setResult(null), BANNER_MS);
+    return () => window.clearTimeout(timer);
+  }, [result]);
+
+  const tone = result === "connected" ? "success" : result === "denied" ? "warning" : "danger";
+
+  return (
+    <AnimatePresence initial={false}>
+      {result ? (
+        <m.div
+          key={result}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={reduced ? { duration: 0 } : fades.fast}
+        >
+          <Alert tone={tone}>
+            <p>{G.callback[result]}</p>
+          </Alert>
+        </m.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
 
 /** "Opciones avanzadas" de Google Calendar: el identificador de otro calendario (vacío = el principal). */
 export function GoogleCalendarForm({ defaultId }: { defaultId: string }) {

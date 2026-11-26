@@ -1,9 +1,10 @@
 // HU-025 (025b-2 M11, 7.2.1): la pestaña Equipo solo la ve la responsable (OWNER).
 // HU-028a (D4b): los botones de Mercado Pago (conectar, reconectar, desconectar) también.
+// HU-028b (D4b): y los de Google Calendar (conectar, reconectar, desconectar, opciones avanzadas).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isValidElement, type ReactElement } from "react";
 
-const mocks = vi.hoisted(() => ({ ctx: vi.fn(), members: vi.fn(), botStatus: vi.fn(), logo: vi.fn(), mpView: vi.fn() }));
+const mocks = vi.hoisted(() => ({ ctx: vi.fn(), members: vi.fn(), botStatus: vi.fn(), logo: vi.fn(), mpView: vi.fn(), gcView: vi.fn() }));
 const Null = vi.hoisted(() => () => null);
 const MP = vi.hoisted(() => ({
   MercadoPagoCallbackBanner: () => null,
@@ -12,28 +13,40 @@ const MP = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/tenant-context", () => ({ requirePageContext: mocks.ctx }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { botStatus: { findUnique: mocks.botStatus }, professional: { findUnique: mocks.logo } } }));
+const GC = vi.hoisted(() => ({
+  GoogleCalendarCallbackBanner: () => null,
+  GoogleCalendarConnectButton: () => null,
+  GoogleCalendarForm: () => null,
+  GoogleDisconnectButton: () => null,
+}));
+const UI = vi.hoisted(() => ({
+  GroupedList: () => null,
+  GroupedListRow: () => null,
+  Alert: () => null,
+  DetailDisclosure: () => null,
+}));
 vi.mock("@nutri-bot/db/domain", () => ({
   listTenantMembers: mocks.members,
   getMercadoPagoConnectionView: mocks.mpView,
 }));
+vi.mock("@nutri-bot/db/domain/googleCalendar", () => ({ getGoogleCalendarConnectionView: mocks.gcView }));
 vi.mock("@/lib/professional", () => ({
   getTenantProfessional: vi.fn().mockResolvedValue({
-    timezone: "UTC", currency: "ARS", phoneJid: null, acceptedInsurances: null, googleRefreshToken: null, googleCalendarId: null,
+    timezone: "UTC", currency: "ARS", phoneJid: null, acceptedInsurances: null,
     botPaused: false, botAiEnabled: false, botAiInfo: null, afterHoursEnabled: false, afterHoursStart: "22:00", afterHoursEnd: "09:00",
     title: null, name: "Pro", licenseNumber: null, pdfAccentColor: null, pdfFooterText: null, logoMimeType: null, updatedAt: new Date(0),
   }),
 }));
-vi.mock("@/auth", () => ({ signIn: vi.fn() }));
 vi.mock("@/lib/bot-ai", () => ({ getBotAiKeyStatus: () => ({ hasKey: false, apiKeyEnvName: "X" }) }));
-vi.mock("@/components/grouped-list", () => ({ GroupedList: Null, GroupedListRow: Null }));
-vi.mock("@/components/ui", () => ({ Alert: Null, Button: Null, ButtonLink: Null }));
-vi.mock("../pacientes/[id]/detail-disclosure", () => ({ DetailDisclosure: Null }));
+vi.mock("@/components/grouped-list", () => ({ GroupedList: UI.GroupedList, GroupedListRow: UI.GroupedListRow }));
+vi.mock("@/components/ui", () => ({ Alert: UI.Alert, Button: Null, ButtonLink: Null }));
+vi.mock("../pacientes/[id]/detail-disclosure", () => ({ DetailDisclosure: UI.DetailDisclosure }));
 vi.mock("./after-hours-form", () => ({ AfterHoursForm: Null }));
 vi.mock("./ajustes-tabs", () => ({ AjustesTabs: Null }));
 vi.mock("./bot-ai-form", () => ({ BotAiForm: Null }));
 vi.mock("./bot-toggle", () => ({ BotToggle: Null }));
 vi.mock("./general-form", () => ({ GeneralForm: Null }));
-vi.mock("./google-calendar-form", () => ({ GoogleCalendarForm: Null, GoogleDisconnectButton: Null }));
+vi.mock("./google-calendar-form", () => GC);
 vi.mock("./logo-form", () => ({ LogoForm: Null }));
 vi.mock("./mercadopago-section", () => MP);
 vi.mock("./pdf-style-form", () => ({ PdfStyleForm: Null }));
@@ -51,10 +64,12 @@ const ctx = (role: "OWNER" | "STAFF") => ({
 type TabsProps = { tabs: string[]; panels: Record<string, unknown>; summaries: Record<string, string> };
 
 const MP_VIEW = { status: "not_connected", hasActiveDepositServices: false, pendingDepositCount: 0 };
+const GC_VIEW = { status: "not_connected", googleEmail: null, calendarId: null, syncError: null, connectedAt: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.mpView.mockResolvedValue(MP_VIEW);
+  mocks.gcView.mockResolvedValue(GC_VIEW);
   mocks.botStatus.mockResolvedValue(null);
   mocks.logo.mockResolvedValue(null);
   mocks.members.mockResolvedValue([
@@ -136,5 +151,93 @@ describe("Ajustes → Mercado Pago (HU-028a)", () => {
     expect(types).not.toContain(MP.MercadoPagoDisconnectButton);
     expect(types).toContain(MP.MercadoPagoCallbackBanner);
     expect(el.props.panels.mercadopago).toBeTruthy();
+  });
+});
+
+/** Elementos de un árbol de React (sin renderizar), con sus props. */
+function elements(node: unknown, out: ReactElement<Record<string, unknown>>[] = []): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(node)) node.forEach((n) => elements(n, out));
+  else if (isValidElement(node)) {
+    out.push(node as ReactElement<Record<string, unknown>>);
+    for (const value of Object.values(node.props as Record<string, unknown>)) elements(value, out);
+  }
+  return out;
+}
+
+/** Texto plano de un nodo (strings anidados). */
+function text(node: unknown): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(text).join("");
+  if (isValidElement(node)) return text((node.props as { children?: unknown }).children);
+  return "";
+}
+
+describe("Ajustes → Google Calendar (HU-028b)", () => {
+  const connected = {
+    status: "connected", googleEmail: "daiana@example.test", calendarId: "cal-x", syncError: null, connectedAt: new Date(0),
+  };
+
+  async function googlePanel(role: "OWNER" | "STAFF", view: object) {
+    mocks.ctx.mockResolvedValue(ctx(role));
+    mocks.gcView.mockResolvedValue(view);
+    const el = (await AjustesPage()) as ReactElement<TabsProps>;
+    expect(mocks.gcView).toHaveBeenCalledWith(ctx(role));
+    return { el, all: elements(el.props.panels.google) };
+  }
+
+  it("OWNER conectado: Reconectar, Desconectar, Opciones avanzadas y la fila Cuenta con el email", async () => {
+    const { el, all } = await googlePanel("OWNER", connected);
+    const types = all.map((e) => e.type);
+    const connect = all.filter((e) => e.type === GC.GoogleCalendarConnectButton);
+    expect(connect).toHaveLength(1);
+    expect(connect[0]!.props).toMatchObject({ reconnect: true, variant: "secondary" });
+    expect(types).toContain(GC.GoogleDisconnectButton);
+    expect(types).toContain(GC.GoogleCalendarCallbackBanner);
+    const advanced = all.find((e) => e.type === UI.DetailDisclosure && e.props.label === "Opciones avanzadas");
+    expect(advanced).toBeDefined();
+    expect(all.find((e) => e.type === GC.GoogleCalendarForm)?.props.defaultId).toBe("cal-x");
+    const account = all.find((e) => e.type === UI.GroupedListRow && e.props.label === "Cuenta");
+    expect(account).toBeDefined();
+    expect(text(account!.props.value)).toBe("daiana@example.test");
+    expect(elements(account!.props.value)[0]!.props.translate).toBe("no");
+    expect(el.props.summaries.google).toBe("Conectado");
+  });
+
+  it("STAFF conectado: ve estado, cuenta y calendario, sin botones ni Opciones avanzadas", async () => {
+    const { all } = await googlePanel("STAFF", connected);
+    const types = all.map((e) => e.type);
+    expect(types).not.toContain(GC.GoogleCalendarConnectButton);
+    expect(types).not.toContain(GC.GoogleDisconnectButton);
+    expect(types).not.toContain(GC.GoogleCalendarForm);
+    expect(all.some((e) => e.type === UI.DetailDisclosure && e.props.label === "Opciones avanzadas")).toBe(false);
+    const labels = all.filter((e) => e.type === UI.GroupedListRow).map((e) => e.props.label);
+    expect(labels).toEqual(["Estado", "Cuenta", "Calendario"]);
+  });
+
+  it("OWNER sin conectar: botón Conectar habilitado, sin Desconectar ni fila Cuenta", async () => {
+    const { all } = await googlePanel("OWNER", GC_VIEW);
+    const connect = all.filter((e) => e.type === GC.GoogleCalendarConnectButton);
+    expect(connect).toHaveLength(1);
+    expect(connect[0]!.props).toEqual({ disabled: false });
+    expect(all.map((e) => e.type)).not.toContain(GC.GoogleDisconnectButton);
+    expect(all.filter((e) => e.type === UI.GroupedListRow).map((e) => e.props.label)).toEqual(["Estado"]);
+  });
+
+  it("not_configured: aviso y botón deshabilitado", async () => {
+    const { all } = await googlePanel("OWNER", { ...GC_VIEW, status: "not_configured" });
+    expect(all.find((e) => e.type === GC.GoogleCalendarConnectButton)?.props).toEqual({ disabled: true });
+    const alerts = all.filter((e) => e.type === UI.Alert);
+    expect(alerts.map((a) => [a.props.tone, text(a.props.children)])).toEqual([
+      ["warning", "La conexión con Google Calendar no está configurada en el servidor."],
+    ]);
+  });
+
+  it("syncError: alerta de error con el detalle técnico", async () => {
+    const { all } = await googlePanel("OWNER", { ...connected, syncError: "Google Calendar respondió con error (status 401, invalid_grant)" });
+    const alert = all.find((e) => e.type === UI.Alert && e.props.tone === "danger");
+    expect(alert).toBeDefined();
+    expect(text(alert!.props.children)).toContain("Google dejó de aceptar la conexión");
+    const detail = elements(alert!.props.children).find((e) => e.type === UI.DetailDisclosure);
+    expect(text(detail!.props.children)).toBe("Google Calendar respondió con error (status 401, invalid_grant)");
   });
 });
