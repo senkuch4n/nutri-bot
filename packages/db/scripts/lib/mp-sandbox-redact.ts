@@ -48,6 +48,11 @@ function looksLikeMercadoPagoId(value: unknown): value is string | number {
   return false;
 }
 
+/** true si `key: value` es un id de MP (lo que se acorta al imprimir y se recuerda completo en local). */
+export function isMercadoPagoIdEntry(key: string, value: unknown): value is string | number {
+  return isIdKey(key) && looksLikeMercadoPagoId(value);
+}
+
 /** Primeros 6 caracteres + "…" si el valor es más largo. */
 export function shortMercadoPagoId(value: string | number): string {
   const s = String(value);
@@ -59,9 +64,13 @@ function redactUrl(value: string): string {
   return q === -1 ? value : `${value.slice(0, q)}?${REDACTED}`;
 }
 
+const EMAIL_IN_TEXT = /[^\s@"'<>(),;:]+@[^\s@"'<>(),;:]+\.[^\s@"'<>(),;:]+/g;
+
 /** Copia redactada de una respuesta de MP (u otro valor). Nunca muta el original. */
 export function redactMercadoPagoResource(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => redactMercadoPagoResource(item));
+  // Los mensajes de error de MP pueden repetir el email del comprador dentro de un texto.
+  if (typeof value === "string") return value.replace(EMAIL_IN_TEXT, REDACTED);
   if (value === null || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {

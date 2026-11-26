@@ -87,6 +87,11 @@ describe("redactMercadoPagoResource", () => {
     expect(out).toEqual({ init_point: "https://www.mercadopago.com.ar/subscriptions/checkout?[redacted]" });
   });
 
+  it("scrubs emails that appear inside free text (error messages)", () => {
+    expect(redactMercadoPagoResource({ message: "Cannot operate with payer test_user_1@testuser.com, retry" }))
+      .toEqual({ message: "Cannot operate with payer [redacted], retry" });
+  });
+
   it("does not mutate the original value", () => {
     const input = { id: "2c9380847e9b451c017ea1bd70ba0219", payer: { email: "a@b.com" }, list: [{ token: "x" }] };
     const snapshot = structuredClone(input);

@@ -32,6 +32,7 @@
     "test:mp-tenants": "bash scripts/test-mercadopago-per-tenant.sh",
     "test:gcal-tenants": "bash scripts/test-google-calendar-per-tenant.sh",
     "gcal:transfer": "dotenv -e ../../.env -- tsx scripts/google-calendar-transfer.ts",
+    "mp:subs-sandbox": "dotenv -e ../../.env.mp-sandbox.local -- tsx scripts/mp-subscriptions-sandbox.ts",
     "sara2:read": "tsx scripts/sara2/read-pdf.ts",
     "sara2:load": "dotenv -e ../../.env -- tsx scripts/sara2/load.ts",
     "sara2:load:prod": "tsx scripts/sara2/load.ts",
