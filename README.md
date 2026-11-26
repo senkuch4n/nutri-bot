@@ -26,7 +26,8 @@ packages/
 
 - Node.js 20+
 - Docker (solo para la base de datos en desarrollo)
-- Credenciales OAuth de Google (Client ID / Secret) con el scope de Google Calendar
+- Credenciales OAuth de Google (Client ID / Secret). El login pide solo `openid email profile`; el
+  scope de Google Calendar se pide aparte, desde Ajustes (HU-028b)
 
 ## Puesta en marcha (desarrollo)
 
@@ -84,9 +85,19 @@ completo** (no responde nada, ni siquiera a las palabras clave).
 
 ### Google Calendar
 
-En **Ajustes → Google Calendar**, "Conectar". Se pide el consentimiento con el scope de
-calendario y se guarda el `refresh_token`. Definí `googleCalendarId` (`primary` u otro) en
-Ajustes. El proceso del bot reconcilia los turnos con el calendario cada minuto.
+Cada consultorio conecta **su** calendario (HU-028b). La responsable (OWNER) entra a **Ajustes →
+Google Calendar** y toca "Conectar Google Calendar": es un permiso aparte del login (el login con Google
+pide solo `openid email profile` y nunca da acceso al calendario). Google pide el scope
+`calendar.events`; el `refresh_token` se guarda **cifrado** (AES-256-GCM) con `INTEGRATION_TOKEN_KEY`
+en `GoogleCalendarAccount`. "Opciones avanzadas" permite usar otro calendario (vacío = el principal).
+"Desconectar" borra el token y lo revoca en Google; los eventos ya creados quedan.
+
+- Redirect URI a cargar en Google Cloud Console (cliente OAuth web de Numa, además de la del login):
+  `<AUTH_URL>/api/google-calendar/oauth/callback` (en desarrollo,
+  `http://localhost:3000/api/google-calendar/oauth/callback`).
+- El bot sincroniza cada minuto, por consultorio conectado (solo escritura: crea, mueve y borra los
+  eventos de los turnos; nunca lee el calendario). Ningún dato de Google llega a la IA.
+- Probe sin red: `npm run test:gcal-tenants --workspace packages/db` (Postgres descartable).
 
 ## Scripts
 

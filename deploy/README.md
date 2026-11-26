@@ -96,6 +96,52 @@ La fila de `legacy-tenant` conserva `id = 1` y sus tokens cifrados: no hay que r
   migrada deja andando cobro y conciliación de `legacy-tenant`, pero rompe "Conectar".
 - Sin variables nuevas obligatorias.
 
+## Google Calendar por consultorio (HU-028b)
+
+La migración `google_calendar_account` crea `GoogleCalendarAccount` y `GoogleCalendarOAuthState` (no toca
+tablas existentes). El servicio `migrate` de `compose.yml`, después de `prisma migrate deploy`, corre el
+traslado idempotente `packages/db/scripts/google-calendar-transfer.ts --apply`: copia el token del login
+viejo (`Professional.googleRefreshToken`, texto plano) a `GoogleCalendarAccount`, cifrado. Daiana **no**
+reconecta. Orden real (`deploy.sh`): `pg_dump` → `build web bot` → `docker compose run --rm migrate`
+(migración **y** traslado) → `up -d`.
+
+**Antes de mergear a `main`:**
+1. En producción, solo lectura: `SELECT id, "tenantId", "googleRefreshToken" IS NOT NULL AS has_token,
+   "googleCalendarId" IS NOT NULL AS custom_cal, "googleSyncError" IS NOT NULL AS has_error FROM "Professional";`
+   (esperado: `1 | legacy-tenant | t | ? | f`) y `grep -c '^GOOGLE_CALENDAR_OWNER_EMAIL=.\+' deploy/.env`
+   (1 = la fila "Cuenta" de Ajustes se completa sola; 0 = no aparece hasta que Daiana reconecte; la sync anda igual).
+2. Generar la clave y cargarla en `deploy/.env`: `INTEGRATION_TOKEN_KEY=$(openssl rand -base64 32)`.
+   **Sin esta clave el deploy corta en `migrate`** (a propósito) y siguen los contenedores viejos.
+   Guardarla en el gestor de secretos: si se pierde, cada consultorio reconecta.
+3. Google Cloud Console → Credenciales → cliente OAuth de Numa → agregar la redirect URI
+   `https://numa.arzium.com.ar/api/google-calendar/oauth/callback` (y la de `localhost:3000` para desarrollo).
+   La pantalla de consentimiento sigue declarando `calendar.events` (ahora lo pide Ajustes). Para la
+   verificación en curso (D15), el video tiene que mostrar el flujo nuevo: login sin calendario → Ajustes →
+   Conectar Google Calendar → consentimiento con `calendar.events` → turno confirmado que aparece en el calendario.
+
+**Durante el deploy:** entre `migrate` y `up -d` el binario viejo sigue sincronizando con el token en texto
+plano (la migración no toca `Professional`). Si alguien inicia sesión en esa ventana, el binario viejo podría
+guardar un token nuevo en `Professional` que no se traslada: no pasa nada (el trasladado sigue siendo válido).
+
+**Después del deploy** (Daiana no reconecta):
+- La salida de `migrate` muestra `{"mode":"apply","transferred":1,"alreadyConnected":0,"skipped":0}`. Si diera
+  `transferred: 0` y `skipped: 1`, parar y revisar la agenda principal (no reconectar a ciegas).
+- Ajustes → Google Calendar de `legacy-tenant`: "Conectado", misma opción de calendario; con OWNER se ven
+  Reconectar/Desconectar.
+- Logs del bot: `Sync Google Calendar` con `tenantId: "legacy-tenant"` tras confirmar o mover un turno, y el
+  evento aparece en el mismo calendario.
+- Login: Google ya no pide permiso de calendario (probar con una sesión nueva).
+- Re-correr el traslado a mano (idempotente, dry-run):
+  `docker compose run --rm migrate npx --no-install tsx packages/db/scripts/google-calendar-transfer.ts`.
+
+**Rollback:** volver a 028a con `deploy.sh <sha>`: la base expandida es compatible; el código viejo lee
+`Professional.googleRefreshToken`, que sigue ahí salvo que Daiana haya conectado o desconectado con el flujo
+nuevo (entonces vuelve a quedar el login como "Conectar", como antes de 028b). Rollback de la base (a mano, con
+el `pg_dump` del deploy): `DROP TABLE "GoogleCalendarOAuthState"; DROP TABLE "GoogleCalendarAccount";`.
+
+**Después, en otra publicación:** 028b-2 (contracción): borra las columnas viejas de `Professional`, el traslado
+y `GOOGLE_CALENDAR_OWNER_EMAIL`, y `migrate` vuelve al comando de una línea.
+
 ## Útiles
 
 ```bash
