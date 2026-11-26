@@ -35,10 +35,11 @@ describe("submitOnboardingClinicAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isPublicOnboardingEnabled.mockReturnValue(false);
+    mocks.resolve.mockReset().mockResolvedValue({ kind: "denied", reason: "no_membership" });
     mocks.createOnboardingServer.mockImplementation((cfg: { onComplete: () => void }) => ({
       resolve: mocks.resolve,
-      submit: async (fd: FormData) => {
-        await mocks.submit(fd);
+      submit: async (fd: FormData, resumeTenantId?: string) => {
+        await mocks.submit(fd, resumeTenantId);
         cfg.onComplete();
       },
     }));
@@ -56,13 +57,15 @@ describe("submitOnboardingClinicAction", () => {
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 
-  it("allows resuming an incomplete clinic setup even when public onboarding is disabled", async () => {
+  it.each([false, true])("resumes only the server-resolved clinic (public flag %s)", async (enabled) => {
+    mocks.isPublicOnboardingEnabled.mockReturnValue(enabled);
     mocks.resolve
-      .mockResolvedValueOnce({ kind: "setup", clinicName: "Consultorio Sur" })
+      .mockResolvedValueOnce({ kind: "setup", tenantId: "saved-clinic", clinicName: "Consultorio guardado", timeZone: "America/Argentina/Buenos_Aires" })
       .mockResolvedValueOnce({ kind: "onboarding", clinicName: "Consultorio Sur" });
 
     await expect(submitOnboardingClinicAction(null, form())).rejects.toMatchObject({ url: "/inicio" });
     expect(mocks.submit).toHaveBeenCalledOnce();
+    expect(mocks.submit).toHaveBeenCalledWith(expect.any(FormData), "saved-clinic");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/inicio");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
   });

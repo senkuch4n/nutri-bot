@@ -39,7 +39,9 @@ it("resumes setup before checking subscription if there is no primary agenda", a
   const { server, getTenantSubscriptionGate, onComplete } = setup();
   mocks.findClinic.mockResolvedValueOnce({ ...profile, agendas: [] });
 
-  expect(await server.resolve()).toEqual({ kind: "setup", clinicName: name });
+  const access = await server.resolve();
+  expect(access).toEqual({ kind: "setup", tenantId, clinicName: name, timeZone });
+  if (access.kind !== "setup") throw new Error("Expected resumable setup");
   expect(getTenantSubscriptionGate).not.toHaveBeenCalled();
   expect(mocks.findClinic.mock.calls).toEqual([[{
     where: { id: tenantId },
@@ -47,11 +49,11 @@ it("resumes setup before checking subscription if there is no primary agenda", a
   }]]);
 
   const form = new FormData();
-  form.set("name", name);
+  form.set("name", "Not the saved clinic name");
   form.set("professionalName", "Ana Sur");
-  form.set("timeZone", timeZone);
-  await server.submit(form);
-  expect(mocks.createOrResumeClinic.mock.calls).toEqual([[{ userId, name, timeZone }]]);
+  form.set("timeZone", "Not the saved time zone");
+  await server.submit(form, access.tenantId);
+  expect(mocks.createOrResumeClinic).not.toHaveBeenCalled();
   expect(mocks.provisionClinic.mock.calls).toEqual([[{ userId, expectedTenantId: tenantId, professionalName: "Ana Sur" }]]);
   expect(onComplete).toHaveBeenCalledOnce();
   expect(await server.resolve()).toEqual({ kind: "onboarding", clinicName: name });

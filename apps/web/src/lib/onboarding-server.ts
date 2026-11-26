@@ -19,13 +19,13 @@ export function isPublicOnboardingEnabled(): boolean {
   return process.env.NUTRIBOT_PUBLIC_ONBOARDING_ENABLED === "true";
 }
 
-export async function loadOnboardedClinic(tenantId: string): Promise<{ name: string; setupComplete: boolean } | null> {
+export async function loadOnboardedClinic(tenantId: string): Promise<{ name: string; timeZone: string; setupComplete: boolean } | null> {
   const clinic = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { name: true, timeZone: true, agendas: { where: { isPrimary: true }, select: { id: true }, take: 1 } },
   });
   if (!clinic?.name || !clinic.timeZone) return null;
-  return { name: clinic.name, setupComplete: clinic.agendas.length === 1 };
+  return { name: clinic.name, timeZone: clinic.timeZone, setupComplete: clinic.agendas.length === 1 };
 }
 
 export function createOnboardingServer(configuration: OnboardingServerConfiguration) {

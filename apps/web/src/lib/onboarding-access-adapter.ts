@@ -6,13 +6,13 @@ type OnboardingAccessDependencies = {
   readSession: () => Promise<{ userId?: string | null } | null>;
   loadAccessFacts: (userId: string) => Promise<AccessFacts | null>;
   existingEnabledTenantIds: readonly string[];
-  loadOnboardedClinic: (tenantId: string) => Promise<{ name: string; setupComplete: boolean } | null>;
+  loadOnboardedClinic: (tenantId: string) => Promise<{ name: string; timeZone: string; setupComplete: boolean } | null>;
   getTenantSubscriptionGate: GetTenantSubscriptionGate;
 };
 
 export type OnboardingAccess =
   | { kind: "operational"; grant: AccessGrant }
-  | { kind: "setup"; clinicName: string }
+  | { kind: "setup"; tenantId: string; clinicName: string; timeZone: string }
   | { kind: "onboarding"; clinicName: string }
   | { kind: "denied"; reason: AccessDenial | "unauthenticated" | "subscription_pending" };
 
@@ -37,7 +37,7 @@ export function createOnboardingAccessAdapter(deps: OnboardingAccessDependencies
     if (!clinic) return { kind: "denied", reason: "tenant_not_enabled" };
     if (!clinic.setupComplete) {
       return grant.role === "OWNER"
-        ? { kind: "setup", clinicName: clinic.name }
+        ? { kind: "setup", tenantId: grant.tenantId, clinicName: clinic.name, timeZone: clinic.timeZone }
         : { kind: "denied", reason: "tenant_not_enabled" };
     }
 

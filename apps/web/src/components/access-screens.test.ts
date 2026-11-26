@@ -135,11 +135,17 @@ describe("AccessGateScreen (/inicio y /login)", () => {
       ok: false,
       reason: "onboarding_setup",
       clinicName: "Consultorio del Sur",
+      timeZone: "America/Montevideo",
       email: "carla@example.test",
     });
     const out = html(await AccessGateScreen());
     expect(out).toContain("Configurá tu consultorio");
-    expect(out).toContain('name="professionalName"');
+    expect(out).toMatch(/<input(?=[^>]*readonly="")(?=[^>]*name="name")(?=[^>]*value="Consultorio del Sur")[^>]*>/i);
+    expect(out).toMatch(/<input(?=[^>]*readonly="")(?=[^>]*name="timeZone")(?=[^>]*value="America\/Montevideo")[^>]*>/i);
+    const professional = out.match(/<input[^>]*name="professionalName"[^>]*>/)?.[0];
+    expect(professional).toBeDefined();
+    expect(professional).not.toMatch(/readonly|disabled/i);
+    expect(out).toContain("Solo podés editar tu nombre profesional");
   });
 
   it("HU-026: no_membership con alta pública habilitada → OnboardingSignupForm", async () => {
@@ -148,6 +154,8 @@ describe("AccessGateScreen (/inicio y /login)", () => {
     const out = html(await AccessGateScreen());
     expect(out).toContain("Configurá tu consultorio");
     expect(out).not.toContain("Tu cuenta no tiene acceso");
+    expect(out).toMatch(/<select[^>]*name="timeZone"/);
+    expect(out).not.toMatch(/readonly/i);
   });
 });
 

@@ -15,10 +15,12 @@ export function OnboardingSignupFormFields({
   action,
   timeZones,
   initialState = null,
+  savedClinic,
 }: {
   action: OnboardingSignupFormAction;
   timeZones: readonly string[];
   initialState?: OnboardingSignupFormState | null;
+  savedClinic?: { name: string; timeZone: string };
 }) {
   const [state, formAction, pending] = useActionState(action, initialState);
 
@@ -29,14 +31,18 @@ export function OnboardingSignupFormFields({
           {state.error}
         </p>
       ) : null}
+      {savedClinic && (
+        <p className="text-body text-muted-foreground">El nombre del consultorio y la zona horaria ya se guardaron. Solo podés editar tu nombre profesional.</p>
+      )}
       <div>
         <label htmlFor="onboarding-clinic-name" className="text-body font-semibold">Nombre del consultorio</label>
         <input
           id="onboarding-clinic-name"
           name="name"
           autoComplete="organization"
-          defaultValue={state?.values?.name ?? ""}
-          required
+          defaultValue={savedClinic?.name ?? state?.values?.name ?? ""}
+          readOnly={Boolean(savedClinic)}
+          required={!savedClinic}
           className={fieldClass}
         />
       </div>
@@ -53,18 +59,22 @@ export function OnboardingSignupFormFields({
       </div>
       <div>
         <label htmlFor="onboarding-time-zone" className="text-body font-semibold">Zona horaria del consultorio</label>
-        <select
-          id="onboarding-time-zone"
-          name="timeZone"
-          defaultValue={state?.values?.timeZone ?? ""}
-          required
-          className={fieldClass}
-        >
-          <option value="" disabled>Elegí una zona horaria</option>
-          {timeZones.map((timeZone) => (
-            <option key={timeZone} value={timeZone}>{timeZone.replaceAll("_", " ")}</option>
-          ))}
-        </select>
+        {savedClinic ? (
+          <input id="onboarding-time-zone" name="timeZone" value={savedClinic.timeZone} readOnly className={fieldClass} />
+        ) : (
+          <select
+            id="onboarding-time-zone"
+            name="timeZone"
+            defaultValue={state?.values?.timeZone ?? ""}
+            required
+            className={fieldClass}
+          >
+            <option value="" disabled>Elegí una zona horaria</option>
+            {timeZones.map((timeZone) => (
+              <option key={timeZone} value={timeZone}>{timeZone.replaceAll("_", " ")}</option>
+            ))}
+          </select>
+        )}
       </div>
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
         {pending ? "Guardando…" : "Guardar y continuar"}

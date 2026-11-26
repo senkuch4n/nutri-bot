@@ -24,7 +24,8 @@ export type TenantContext = {
 export type TenantAccessResult =
   | { ok: true; ctx: TenantContext }
   | { ok: false; reason: AccessDenial | "unauthenticated"; email: string | null }
-  | { ok: false; reason: "onboarding_setup" | "onboarding_pending"; clinicName: string; email: string | null };
+  | { ok: false; reason: "onboarding_setup"; clinicName: string; timeZone: string; email: string | null }
+  | { ok: false; reason: "onboarding_pending"; clinicName: string; email: string | null };
 
 /** Candado transitorio (025a–025c): consultorios existentes que operan sin pasar por el alta nueva. */
 export const ENABLED_TENANT_IDS: readonly string[] = [LEGACY_TENANT_ID];
@@ -49,7 +50,7 @@ export const getTenantAccess: () => Promise<TenantAccessResult> = cache(async ()
   }).resolve();
 
   if (access.kind === "setup") {
-    return { ok: false, reason: "onboarding_setup", clinicName: access.clinicName, email };
+    return { ok: false, reason: "onboarding_setup", clinicName: access.clinicName, timeZone: access.timeZone, email };
   }
   if (access.kind === "onboarding") {
     return { ok: false, reason: "onboarding_pending", clinicName: access.clinicName, email };

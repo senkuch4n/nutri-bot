@@ -10,7 +10,7 @@ const clinicId = "clinic-from-membership";
 const legacyId = "legacy-tenant";
 const userId = "owner-from-session";
 const foreignId = "clinic-from-browser";
-const clinic = { name: "Consultorio del Sur", setupComplete: true };
+const clinic = { name: "Consultorio del Sur", timeZone: "America/Montevideo", setupComplete: true };
 const facts = (memberships: AccessFacts["memberships"]): AccessFacts => ({
   linked: true, memberships, platformOperator: false, activeSupportGrants: [],
 });

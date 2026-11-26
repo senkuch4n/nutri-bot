@@ -14,16 +14,18 @@ function readRequiredText(formData: FormData, field: "name" | "professionalName"
 }
 
 export function createOnboardingSignupAction(deps: SignupActionDependencies) {
-  return async (formData: FormData): Promise<void> => {
+  return async (formData: FormData, resumeTenantId?: string): Promise<void> => {
     const session = await deps.readSession();
     if (!session?.userId) throw new Error("Verified identity is required");
     const { userId } = session;
 
-    const name = readRequiredText(formData, "name");
     const professionalName = readRequiredText(formData, "professionalName");
-    const timeZone = readRequiredText(formData, "timeZone");
-    const { tenantId } = await deps.createOrResumeClinic({ userId, name, timeZone });
-    await deps.provisionClinic({ userId, professionalName, expectedTenantId: tenantId });
+    const expectedTenantId = resumeTenantId ?? (await deps.createOrResumeClinic({
+      userId,
+      name: readRequiredText(formData, "name"),
+      timeZone: readRequiredText(formData, "timeZone"),
+    })).tenantId;
+    await deps.provisionClinic({ userId, professionalName, expectedTenantId });
     await deps.onComplete();
   };
 }

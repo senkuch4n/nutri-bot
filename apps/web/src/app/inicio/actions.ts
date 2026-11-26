@@ -50,16 +50,19 @@ export async function submitOnboardingClinicAction(
     },
   });
 
-  if (!isPublicOnboardingEnabled()) {
-    const current = await server.resolve();
-    if (current.kind !== "setup") {
-      return { error: "El alta de nuevos consultorios no está habilitada todavía.", values };
-    }
-  }
-
   let target: "/" | "/inicio";
   try {
-    await server.submit(formData);
+    const current = await server.resolve();
+    if (current.kind === "setup") {
+      values.name = current.clinicName;
+      values.timeZone = current.timeZone;
+      await server.submit(formData, current.tenantId);
+    } else {
+      if (!isPublicOnboardingEnabled()) {
+        return { error: "El alta de nuevos consultorios no está habilitada todavía.", values };
+      }
+      await server.submit(formData);
+    }
     const next = await server.resolve();
     target = next.kind === "operational" ? "/" : "/inicio";
   } catch (error) {

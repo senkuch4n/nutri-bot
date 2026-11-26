@@ -294,12 +294,13 @@ describe("HU-026: consultorios nuevos con política de onboarding y suscripción
   });
 
   it("alta incompleta (sin agenda principal) vuelve a setup y bloquea operación aun con gate verified", async () => {
-    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", setupComplete: false });
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", timeZone: "America/Montevideo", setupComplete: false });
     mocks.getTenantSubscriptionGate.mockResolvedValue("verified");
     expect(await getTenantAccess()).toEqual({
       ok: false,
       reason: "onboarding_setup",
       clinicName: "Consultorio Nuevo",
+      timeZone: "America/Montevideo",
       email: "ana@example.test",
     });
     expect(await codeOf(() => requireTenantContext("write"))).toBe("no_context");

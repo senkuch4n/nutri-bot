@@ -21,7 +21,9 @@ export async function AccessGateScreen({ signInError }: { signInError?: string |
   // Auth.js manda a /inicio?error=AccessDenied (u otro código) si rechazó el login: aviso genérico.
   if (access.reason === "unauthenticated") return <LoginScreen signInFailed={Boolean(signInError)} />;
   if (access.reason === "onboarding_pending") return <OnboardingPendingScreen clinicName={access.clinicName} />;
-  if (access.reason === "onboarding_setup") return <OnboardingSignupForm action={submitOnboardingClinicAction} />;
+  if (access.reason === "onboarding_setup") {
+    return <OnboardingSignupForm action={submitOnboardingClinicAction} savedClinic={{ name: access.clinicName, timeZone: access.timeZone }} />;
+  }
   if (access.reason === "no_membership" && isPublicOnboardingEnabled()) {
     return <OnboardingSignupForm action={submitOnboardingClinicAction} />;
   }
