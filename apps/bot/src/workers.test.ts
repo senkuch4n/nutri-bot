@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn(), connected: vi.fn(), pending: vi.fn(), warn: vi.fn() }));
+const mocks = vi.hoisted(() => ({ gcalTenants: vi.fn(), schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn(), connected: vi.fn(), pending: vi.fn(), warn: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 const outbox = vi.hoisted(() => ({ findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), resolveScope: vi.fn() }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { outboundMessage: outbox } }));
@@ -8,7 +8,7 @@ vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySche
 vi.mock("@nutri-bot/db/domain", () => ({
   reconcilePendingPayments: mocks.reconcile, expireStalePendingPayments: mocks.expire,
   enqueueServiceReminders: mocks.serviceReminders,
-  enqueuePrepInstructions: mocks.prep, syncGoogleCalendar: mocks.gcal,
+  enqueuePrepInstructions: mocks.prep,
   enqueueAfterHoursDigest: mocks.digest,
   purgeExpiredBotAiQuestions: mocks.purge,
   clearExpiredSessionText: mocks.clearSessions,
@@ -16,12 +16,17 @@ vi.mock("@nutri-bot/db/domain", () => ({
   listConnectedMercadoPagoTenants: mocks.connected,
   listTenantsWithPendingMercadoPagoPayments: mocks.pending,
 }));
+// HU-028b: Google Calendar sale del barrel general (subpath propio).
+vi.mock("@nutri-bot/db/domain/googleCalendar", () => ({
+  listConnectedGoogleCalendarTenants: mocks.gcalTenants,
+  syncGoogleCalendar: mocks.gcal,
+}));
 vi.mock("./ai/runtime", () => ({ getBotAiConfig: () => ({ limits: { retentionDays: 90 } }) }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
 
 vi.mock("./env", () => ({ env: { pollIntervalMs: 4000 } }));
 vi.mock("./logger", () => ({ logger: { info: mocks.info, warn: mocks.warn, error: mocks.error } }));
-import { runServiceReminders, runStartupJobs, startCron, startOutboxConsumer } from "./workers";
+import { runGoogleCalendarSync, runServiceReminders, runStartupJobs, startCron, startOutboxConsumer } from "./workers";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE } from "./outbound-payload";
 
@@ -343,11 +348,77 @@ describe("service reminders cron (HU-014)", () => {
     mocks.serviceReminders.mockResolvedValue({ reminders: 0, confirmations: 0 });
     mocks.prep.mockResolvedValue(0);
     mocks.gcal.mockResolvedValue({ processed: 0 });
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
     mocks.digest.mockResolvedValue({ digested: 0, outboundId: null });
     mocks.purge.mockResolvedValue(0);
     await runStartupJobs();
     expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
     expect(mocks.prep).toHaveBeenCalledTimes(1);
+    // HU-028b: el arranque sincroniza Google Calendar por consultorio.
+    expect(mocks.gcalTenants).toHaveBeenCalledTimes(1);
+    expect(mocks.gcal).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
+  });
+});
+
+describe("sync de Google Calendar por consultorio (HU-028b)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "a" }, { tenantId: "b" }]);
+  });
+  /** El cron de Calendar es el segundo "* * * * *" (después de la conciliación, antes del resumen). */
+  const calendarTick = () => {
+    startCron();
+    const everyMinute = mocks.schedule.mock.calls.filter((c) => c[0] === "* * * * *");
+    expect(everyMinute).toHaveLength(3);
+    return everyMinute[1]![1] as () => Promise<void>;
+  };
+
+  it("el cron de cada minuto recorre A y B; un throw en B no frena a A", async () => {
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "b" }, { tenantId: "a" }]);
+    mocks.gcal.mockImplementation(async (t: { tenantId: string }) => {
+      if (t.tenantId === "b") throw Object.assign(new Error("boom"), { config: { headers: { Authorization: "Bearer SECRETO" } } });
+      return { processed: 2 };
+    });
+    await expect(calendarTick()()).resolves.toBeUndefined();
+    expect(mocks.gcal.mock.calls.map((c) => c[0])).toEqual([{ tenantId: "b" }, { tenantId: "a" }]);
+    expect(mocks.error.mock.calls).toEqual([[{ tenantId: "b" }, "Error en sync de Google Calendar"]]);
+    expect(mocks.info.mock.calls).toEqual([[{ tenantId: "a", processed: 2, error: undefined }, "Sync Google Calendar"]]);
+    expect(JSON.stringify([...mocks.error.mock.calls, ...mocks.info.mock.calls])).not.toContain("SECRETO");
+  });
+
+  it("{ error } de B se loguea con tenantId y sin objeto err", async () => {
+    mocks.gcal.mockImplementation(async (t: { tenantId: string }) =>
+      t.tenantId === "b" ? { processed: 0, error: "Google Calendar respondió con error (status 401, invalid_grant)" } : { processed: 0 });
+    await calendarTick()();
+    expect(mocks.info.mock.calls).toEqual([[
+      { tenantId: "b", processed: 0, error: "Google Calendar respondió con error (status 401, invalid_grant)" },
+      "Sync Google Calendar",
+    ]]);
+    for (const [obj] of mocks.info.mock.calls) expect(obj).not.toHaveProperty("err");
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("si falla la lista de consultorios: log fijo y no propaga", async () => {
+    mocks.gcalTenants.mockRejectedValue(new Error("db down SECRETO"));
+    await expect(calendarTick()()).resolves.toBeUndefined();
+    expect(mocks.gcal).not.toHaveBeenCalled();
+    expect(mocks.error.mock.calls).toEqual([["Error en sync de Google Calendar"]]);
+  });
+
+  it("ticks solapados se saltean", async () => {
+    let release!: () => void;
+    mocks.gcal.mockImplementation(() => new Promise((r) => { release = () => r({ processed: 0 }); }));
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "a" }]);
+    const first = runGoogleCalendarSync();
+    for (let i = 0; i < 10 && mocks.gcal.mock.calls.length === 0; i++) await Promise.resolve();
+    expect(mocks.gcal).toHaveBeenCalledTimes(1);
+    await runGoogleCalendarSync();
+    expect(mocks.gcalTenants).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+    mocks.gcal.mockResolvedValue({ processed: 0 });
+    await runGoogleCalendarSync();
+    expect(mocks.gcalTenants).toHaveBeenCalledTimes(2);
   });
 });
 
