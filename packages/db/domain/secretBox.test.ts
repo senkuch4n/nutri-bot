@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  GOOGLE_SECRET_AAD,
+  IntegrationConfigError,
   MercadoPagoConfigError,
   SECRET_AAD,
   SecretDecryptError,
+  loadIntegrationTokenKey,
   loadMercadoPagoTokenKey,
   openSecret,
   sealSecret,
@@ -68,5 +71,44 @@ describe("secretBox (HU-023)", () => {
     expect((error as Error).message).not.toContain(short);
     expect(() => loadMercadoPagoTokenKey({ MERCADOPAGO_TOKEN_KEY: "" })).toThrow(MercadoPagoConfigError);
     expect(() => loadMercadoPagoTokenKey({})).toThrow(MercadoPagoConfigError);
+  });
+});
+
+describe("secretBox (HU-028b): INTEGRATION_TOKEN_KEY y AAD de Google por consultorio", () => {
+  it("loadIntegrationTokenKey acepta una clave válida de 32 bytes", () => {
+    expect(loadIntegrationTokenKey({ INTEGRATION_TOKEN_KEY: KEY_B64 }).equals(key)).toBe(true);
+  });
+
+  it.each([
+    ["corta", randomBytes(16).toString("base64")],
+    ["vacía", ""],
+    ["ausente", undefined],
+    ["no base64", "no es base64!!"],
+  ])("clave %s → IntegrationConfigError con el mensaje exacto", (_name, value) => {
+    let caught: unknown;
+    try {
+      loadIntegrationTokenKey({ INTEGRATION_TOKEN_KEY: value });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(IntegrationConfigError);
+    expect((caught as Error).name).toBe("IntegrationConfigError");
+    expect((caught as Error).message).toBe("INTEGRATION_TOKEN_KEY inválida o ausente");
+  });
+
+  it("no lee MERCADOPAGO_TOKEN_KEY ni MP lee INTEGRATION_TOKEN_KEY", () => {
+    expect(() => loadIntegrationTokenKey({ MERCADOPAGO_TOKEN_KEY: KEY_B64 })).toThrow(IntegrationConfigError);
+    expect(() => loadMercadoPagoTokenKey({ INTEGRATION_TOKEN_KEY: KEY_B64 })).toThrow(MercadoPagoConfigError);
+    expect(() => loadMercadoPagoTokenKey({})).toThrow("MERCADOPAGO_TOKEN_KEY inválida o ausente");
+  });
+
+  it("AAD: lo sellado para el consultorio A no abre con B ni con el AAD de MP", () => {
+    expect(GOOGLE_SECRET_AAD.refreshToken("A")).toBe("google:refresh_token:A");
+    expect(GOOGLE_SECRET_AAD.codeVerifier("A")).toBe("google:code_verifier:A");
+    const sealed = sealSecret("1//rt-google", key, GOOGLE_SECRET_AAD.refreshToken("A"));
+    expect(openSecret(sealed, key, GOOGLE_SECRET_AAD.refreshToken("A"))).toBe("1//rt-google");
+    expect(() => openSecret(sealed, key, GOOGLE_SECRET_AAD.refreshToken("B"))).toThrow(SecretDecryptError);
+    expect(() => openSecret(sealed, key, GOOGLE_SECRET_AAD.codeVerifier("A"))).toThrow(SecretDecryptError);
+    expect(() => openSecret(sealed, key, SECRET_AAD.refreshToken)).toThrow(SecretDecryptError);
   });
 });

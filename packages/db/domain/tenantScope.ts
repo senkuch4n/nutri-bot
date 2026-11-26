@@ -19,12 +19,8 @@ const DIGEST_SELECT = {
   afterHoursStart: true,
   afterHoursEnd: true,
 } as const satisfies Prisma.ProfessionalSelect;
-const CALENDAR_SELECT = {
-  timezone: true,
-  googleRefreshToken: true,
-  googleCalendarId: true,
-  googleSyncError: true,
-} as const satisfies Prisma.ProfessionalSelect;
+/** HU-028b: la conexión de Google vive en GoogleCalendarAccount; de la profesional solo hace falta la zona. */
+const CALENDAR_SELECT = { timezone: true } as const satisfies Prisma.ProfessionalSelect;
 
 export type SchedulingContext = { scope: TenantScope; professional: { timezone: string; phoneJid: string | null } };
 export type DigestContext = {
@@ -33,7 +29,7 @@ export type DigestContext = {
 };
 export type CalendarContext = {
   scope: TenantScope;
-  professional: Prisma.ProfessionalGetPayload<{ select: typeof CALENDAR_SELECT }>;
+  professional: { timezone: string };
   agendaOwner: { isPrimary: true; professionalId: number };
 };
 

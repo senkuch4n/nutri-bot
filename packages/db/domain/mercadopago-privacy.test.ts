@@ -36,8 +36,10 @@ describe("privacidad de los tokens de Mercado Pago (HU-023)", () => {
     expect(files.some((f) => f.path.startsWith("apps/bot/src/"))).toBe(true);
   });
 
-  it("las columnas cifradas solo aparecen en mercadopagoAccount.ts", () => {
+  it("las columnas cifradas solo aparecen en mercadopagoAccount.ts (y, HU-028b, en los dos archivos de Google Calendar)", () => {
     expect(filesMentioning(/accessTokenEnc|refreshTokenEnc|codeVerifierEnc/)).toEqual([
+      "packages/db/domain/gcal.ts",
+      "packages/db/domain/googleCalendarAccount.ts",
       "packages/db/domain/mercadopagoAccount.ts",
     ]);
   });
