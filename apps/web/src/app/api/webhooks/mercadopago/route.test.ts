@@ -61,21 +61,50 @@ describe("Mercado Pago webhook HTTP boundary", () => {
     expect(mocks.after).toHaveBeenCalledTimes(1);
     await finishResponse();
     expect(readBody).toHaveBeenCalledTimes(1);
-    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" });
+    // HU-028a: sin user_id en el cuerpo, la cuenta no se puede identificar (userId null).
+    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" }, { userId: null });
   });
   it("accepts a modern signed payment notification and processes its payment after responding", async () => {
     const req = new Request("http://localhost/api/webhooks/mercadopago?data.id=123&type=payment", {
       method: "POST",
       headers: request(true, "data.id=123&type=payment").headers,
-      body: JSON.stringify({ id: 456, live_mode: true, type: "payment", action: "payment.updated", api_version: "v1", data: { id: "123" } }),
+      body: JSON.stringify({ id: 456, live_mode: true, type: "payment", action: "payment.updated", api_version: "v1", user_id: 777, data: { id: "123" } }),
     });
+    const readBody = vi.spyOn(req, "json");
     const response = await POST(req);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(mocks.handle).not.toHaveBeenCalled();
     await finishResponse();
+    // HU-028a: el cuerpo se lee siempre (aunque el query ya traiga type) para sacar el user_id.
+    expect(readBody).toHaveBeenCalledTimes(1);
     expect(mocks.handle).toHaveBeenCalledTimes(1);
-    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" });
+    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" }, { userId: "777" });
+  });
+  it.each([
+    [{ type: "payment", user_id: "12a" }, null],
+    [{ type: "payment", user_id: -5 }, null],
+    [{ type: "payment", user_id: { id: 1 } }, null],
+    [{ type: "payment", user_id: "4321" }, "4321"],
+  ])("HU-028a: user_id del cuerpo %j → %s", async (body, userId) => {
+    const req = new Request("http://localhost/api/webhooks/mercadopago?data.id=123&type=payment", {
+      method: "POST", headers: request(true, "data.id=123&type=payment").headers, body: JSON.stringify(body),
+    });
+    expect((await POST(req)).status).toBe(200);
+    await finishResponse();
+    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" }, { userId });
+  });
+  it("HU-028a: nunca loguea el cuerpo ni el user_id si el procesamiento falla", async () => {
+    mocks.handle.mockRejectedValue(new Error("x"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const req = new Request("http://localhost/api/webhooks/mercadopago?data.id=123&type=payment", {
+      method: "POST", headers: request(true, "data.id=123&type=payment").headers,
+      body: JSON.stringify({ type: "payment", user_id: 9876, payer: { email: "payer@example.test" } }),
+    });
+    await POST(req);
+    await finishResponse();
+    expect(JSON.stringify([...error.mock.calls, ...warn.mock.calls])).not.toMatch(/9876|payer/);
   });
   it.each([false, true])("acknowledges and ignores legacy merchant_order IPN without processing (header present: %s)", async (withSignature) => {
     const req = new Request("http://localhost/api/webhooks/mercadopago?id=456&topic=merchant_order", {
@@ -133,7 +162,8 @@ describe("Mercado Pago webhook HTTP boundary", () => {
     expect(response.status).toBe(200);
     expect(mocks.handle).not.toHaveBeenCalled();
     const processing = finishResponse();
-    expect(mocks.handle).toHaveBeenCalledTimes(1);
+    // HU-028a: el cuerpo se lee antes de procesar (user_id), así que handle llega después de un tick.
+    await vi.waitFor(() => expect(mocks.handle).toHaveBeenCalledTimes(1));
     expect(response.status).toBe(200);
     resolve();
     await processing;
@@ -194,15 +224,17 @@ describe("Mercado Pago webhook HTTP boundary", () => {
   it("contains malformed bodies after responding", async () => {
     const req = request();
     vi.spyOn(req, "json").mockRejectedValue(new SyntaxError("Invalid JSON"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     expect((await POST(req)).status).toBe(200);
     await expect(finishResponse()).resolves.toBeUndefined();
-    expect(mocks.handle).not.toHaveBeenCalled();
+    // HU-028a: un cuerpo ilegible no identifica cuenta; sin type el dominio lo ignora.
+    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123" }, { userId: null });
+    expect(error).not.toHaveBeenCalled();
   });
   it("also defers signed GET payment notifications", async () => {
     expect((await GET(request(true, "data.id=123&type=payment", "GET"))).status).toBe(200);
     expect(mocks.handle).not.toHaveBeenCalled();
     await finishResponse();
-    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" });
+    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" }, { userId: null });
   });
 });

@@ -35,6 +35,8 @@ model User {
   /// HU-025: último login con Google verificado. null = nunca entró.
   lastSignInAt  DateTime?
   memberships   TenantMembership[]
+  /// HU-028a: states de OAuth de Mercado Pago iniciados por esta persona.
+  mercadoPagoOAuthStates MercadoPagoOAuthState[]
 }
 
 enum TenantRole {
@@ -601,18 +603,20 @@ model Payment {
   @@index([externalId])
 }
 
-/// HU-023: cuenta de Mercado Pago vinculada por OAuth (aplicación "Numa"). Los consumidores
-/// legacy siguen usando id = 1. La fila puede existir sin cuenta vinculada (guarda el tope del aviso
-/// "falta Mercado Pago"). Se crea perezosamente con INSERT ... ON CONFLICT DO NOTHING.
+/// HU-023 / HU-028a: cuenta de Mercado Pago de señas de UN consultorio (fila por tenant), vinculada por
+/// OAuth (aplicación "Numa"). La fila puede existir sin cuenta vinculada (guarda el tope del aviso
+/// "falta Mercado Pago"). Se crea perezosamente con INSERT ... ON CONFLICT ("tenantId") DO NOTHING.
+/// La fila de legacy-tenant conserva id = 1 (migración 028a). Nunca guarda credenciales de Arzium (HU-029).
 /// DATO SENSIBLE: accessTokenEnc / refreshTokenEnc van cifrados (AES-256-GCM con
-/// MERCADOPAGO_TOKEN_KEY, formato "v1.<iv>.<tag>.<ct>" en base64url). Solo los lee
+/// MERCADOPAGO_TOKEN_KEY, AAD por campo, formato "v1.<iv>.<tag>.<ct>" en base64url). Solo los lee
 /// domain/mercadopagoAccount.ts; nunca viajan al navegador ni a los logs.
 model MercadoPagoAccount {
-  id              Int       @id @default(1)
-  tenantId        String?   @unique
-  tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  id              Int       @id @default(autoincrement())
+  tenantId        String    @unique
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   /// user_id de MP de la cuenta vinculada (número, guardado como texto). null = sin cuenta.
-  userId          String?
+  /// Único entre consultorios (HU-028a, D3a).
+  userId          String?   @unique
   nickname        String?
   email           String?
   /// live_mode que devolvió /oauth/token. En producción solo se acepta true (D8).
@@ -636,23 +640,28 @@ model MercadoPagoAccount {
   updatedAt       DateTime  @updatedAt
 }
 
-/// HU-023: estado temporal del OAuth (anti-CSRF + PKCE). Un solo uso: se borra con
-/// DELETE ... RETURNING al volver del callback. Vence a los 10 minutos.
+/// HU-023 / HU-028a: estado temporal del OAuth (anti-CSRF + PKCE). Un solo uso: se borra con
+/// DELETE ... RETURNING al volver del callback. Vence a los 10 minutos. El callback exige la misma
+/// persona (userId) y el mismo consultorio (tenantId).
 model MercadoPagoOAuthState {
   id              String   @id @default(cuid())
-  tenantId        String?
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// HU-028a: User.id de quien inició el flujo.
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// sha256 (hex) del state que viaja a MP. El state en claro no se guarda.
   stateHash       String   @unique
   /// code_verifier de PKCE, cifrado con la misma clave que los tokens.
   codeVerifierEnc String
-  /// Email de la sesión de Auth.js que inició el flujo: el callback exige la misma sesión.
-  sessionEmail    String
+  /// HU-023, en desuso desde 028a (ya no se escribe ni se compara). Se borra en la migración de 028b.
+  sessionEmail    String?
   expiresAt       DateTime
   createdAt       DateTime @default(now())
 
   @@index([expiresAt])
   @@index([tenantId])
+  @@index([userId])
 }
 
 enum MessageStatus {

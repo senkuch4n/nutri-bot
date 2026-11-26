@@ -1,18 +1,18 @@
-// HU-023: callback del OAuth de Mercado Pago, sin base ni red.
+// HU-023 / HU-028a: callback del OAuth de Mercado Pago, sin base ni red. Solo el OWNER (D4b).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  auth: vi.fn(),
   complete: vi.fn(),
   revalidatePath: vi.fn(),
   requireTenantContext: vi.fn(),
+  requireOwnerContext: vi.fn(),
   TenantAccessError: class TenantAccessError extends Error {
     constructor(readonly code: string) { super(code); }
   },
 }));
-vi.mock("@/auth", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/tenant-context", () => ({
   requireTenantContext: mocks.requireTenantContext,
+  requireOwnerContext: mocks.requireOwnerContext,
   TenantAccessError: mocks.TenantAccessError,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -26,34 +26,36 @@ describe("GET /api/mercadopago/oauth/callback", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv("AUTH_URL", "https://panel.example.test");
-    mocks.auth.mockResolvedValue({ user: { email: "Pro@Example.test" } });
-    mocks.requireTenantContext.mockResolvedValue({ userId: "u", tenantId: "legacy-tenant" });
+    mocks.requireOwnerContext.mockResolvedValue({ userId: "u", tenantId: "legacy-tenant" });
   });
   afterEach(() => vi.unstubAllEnvs());
 
   it("sin contexto de consultorio (sin sesión, sin membresía, revocada) → /inicio sin completar el OAuth", async () => {
-    mocks.requireTenantContext.mockRejectedValue(new mocks.TenantAccessError("no_context"));
+    mocks.requireOwnerContext.mockRejectedValue(new mocks.TenantAccessError("no_context"));
     const res = await GET(new Request(CALLBACK));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("https://panel.example.test/inicio");
-    expect(mocks.requireTenantContext).toHaveBeenCalledWith("write");
+    expect(mocks.requireOwnerContext).toHaveBeenCalledTimes(1);
+    expect(mocks.requireTenantContext).not.toHaveBeenCalled();
     expect(mocks.complete).not.toHaveBeenCalled();
   });
 
-  it("con contexto pero sin email en la sesión → /inicio sin completar el OAuth", async () => {
-    mocks.auth.mockResolvedValue({ user: {} });
+  it("HU-028a: un miembro que no es OWNER → invalid_state, sin canjear ni consumir el state", async () => {
+    mocks.requireOwnerContext.mockRejectedValue(new mocks.TenantAccessError("owner_only"));
     const res = await GET(new Request(CALLBACK));
-    expect(res.headers.get("location")).toBe("https://panel.example.test/inicio");
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("https://panel.example.test/ajustes?tab=mercadopago&mp=invalid_state");
     expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("un error que no es de acceso no se disfraza de redirect", async () => {
-    mocks.requireTenantContext.mockRejectedValue(new Error("db down"));
+    mocks.requireOwnerContext.mockRejectedValue(new Error("db down"));
     await expect(GET(new Request(CALLBACK))).rejects.toThrow("db down");
     expect(mocks.complete).not.toHaveBeenCalled();
   });
 
-  it.each(["connected", "denied", "invalid_state", "rejected", "not_configured", "wrong_environment"])(
+  it.each(["connected", "denied", "invalid_state", "rejected", "not_configured", "wrong_environment", "account_in_use"])(
     "%s → 303 a Ajustes con el resultado, sobre AUTH_URL",
     async (result) => {
       mocks.complete.mockResolvedValue(result);
@@ -63,7 +65,9 @@ describe("GET /api/mercadopago/oauth/callback", () => {
       // HU-025: el consultorio es el del contexto, nunca del query.
       expect(mocks.complete.mock.calls[0]![0]).toEqual({ userId: "u", tenantId: "legacy-tenant" });
       const arg = mocks.complete.mock.calls[0]![1];
-      expect(arg.sessionEmail).toBe("pro@example.test");
+      // HU-028a: el state se ata al userId de la sesión, no al email.
+      expect(arg.userId).toBe("u");
+      expect(arg).not.toHaveProperty("sessionEmail");
       expect(arg.query.get("code")).toBe("TG-code");
       expect(arg.query.get("state")).toBe("st");
       if (result === "connected") {

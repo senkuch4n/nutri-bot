@@ -71,6 +71,31 @@ ta forget-pending --email <cuenta de prueba> --apply         # borrar una identi
 - **Rollback:** `deploy.sh <sha de 025a-1>` (vuelve a entrar por la lista). Por eso la línea
   `ALLOWED_EMAILS` se deja en `deploy/.env` hasta que 025b-1 esté en producción y estable.
 
+## Mercado Pago de señas por consultorio (HU-028a)
+
+La migración `mercadopago_account_per_tenant` pasa `MercadoPagoAccount` a una fila por consultorio
+(id generado, `tenantId` obligatorio, `userId` único) y ata el state del OAuth a la persona y al consultorio.
+La fila de `legacy-tenant` conserva `id = 1` y sus tokens cifrados: no hay que reconectar.
+
+- **Antes de mergear a `main`**, en producción (solo lectura):
+  `SELECT id, "tenantId", "userId" IS NOT NULL AS connected, "liveMode" FROM "MercadoPagoAccount";`
+  (esperado: `1 | legacy-tenant | t | t`) y `SELECT count(*) FROM "MercadoPagoAccount" WHERE "tenantId" IS NULL;` = 0.
+  Si hay una fila sin `tenantId`, la migración aborta a propósito: resolverla a mano antes.
+- **Durante el deploy** (entre `migrate` y `up -d`) el binario viejo sigue cobrando, conciliando y
+  renovando; lo único que falla es *iniciar* una conexión de Mercado Pago. No conectar MP durante el
+  deploy; un state en vuelo se pierde y hay que reintentar.
+- **Después:** Ajustes → Mercado Pago de `legacy-tenant` sigue "Conectada" con la misma cuenta; la
+  consulta de arriba da lo mismo; en los logs del bot la conciliación corre con `tenantId: "legacy-tenant"`
+  y no aparecen `unknown_account` para pagos de la cuenta conectada.
+- **Webhook:** la cuenta sale del `user_id` del cuerpo de la notificación. Si Mercado Pago mandara
+  notificaciones sin `user_id`, se ignoran (`unknown_account`) y la conciliación del bot confirma la
+  seña en ≤ 1 min: no se pierde ningún pago, solo se demora. Verificarlo con el primer pago real.
+- **`ARZIUM_MERCADOPAGO_USER_ID`:** dejarla **vacía** en 028a. Si se setea con el `user_id` de la cuenta
+  conectada hoy en `legacy-tenant`, no la desconecta, pero le impide reconectarla (decisión de HU-029).
+- **Rollback:** código y base juntos, con el `pg_dump` del deploy. Volver solo el código con la base
+  migrada deja andando cobro y conciliación de `legacy-tenant`, pero rompe "Conectar".
+- Sin variables nuevas obligatorias.
+
 ## Útiles
 
 ```bash

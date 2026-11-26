@@ -144,11 +144,11 @@ before(async () => {
   saraId = sara.id;
   fx.c = await seed("c", C.tenantId, 503, 0);
   fx.d = await seed("d", D.tenantId, 504, 1);
-  // Fila única de Mercado Pago (id = 1) del consultorio D, sin tokens: C nunca la ve ni la usa.
+  // HU-028a: fila de Mercado Pago del consultorio D (por tenantId), sin tokens: C nunca la ve ni la usa.
   await prisma.mercadoPagoAccount.upsert({
-    where: { id: 1 },
-    create: { id: 1, tenantId: D.tenantId, userId: "seller-d", nickname: "VENDEDOR D" },
-    update: { tenantId: D.tenantId, userId: "seller-d", nickname: "VENDEDOR D" },
+    where: { tenantId: D.tenantId },
+    create: { tenantId: D.tenantId, userId: "seller-d", nickname: "VENDEDOR D" },
+    update: { userId: "seller-d", nickname: "VENDEDOR D" },
   });
 });
 
@@ -184,11 +184,24 @@ describe("M4 pagos y Mercado Pago", () => {
     assert.equal(view.value?.userId, null);
     assert.equal(view.value?.nickname, null);
     assert.equal((await unchanged("getMercadoPagoCredentials", () => getMercadoPagoCredentials(C, { kind: "current" }))).value, null);
-    await rejectsUnchanged("disconnectMercadoPagoAccount", () => disconnectMercadoPagoAccount(C));
-    await rejectsUnchanged("markMercadoPagoAccountError", () => markMercadoPagoAccountError(C, "revoked"));
-    const notified = await unchanged("notifyMercadoPagoMissingForBooking", () =>
-      notifyMercadoPagoMissingForBooking(C, { patientName: "x", patientPhone: "1", serviceName: "s" }));
-    assert.equal(notified.value, false);
+    // HU-028a: C no tiene fila; desconectar y marcar error no hacen nada (ni fallan ni crean la fila).
+    const disconnected = await unchanged("disconnectMercadoPagoAccount", () => disconnectMercadoPagoAccount(C));
+    assert.ifError(disconnected.error);
+    assert.deepEqual(disconnected.value, { cancelledDeposits: 0 });
+    const marked = await unchanged("markMercadoPagoAccountError", () => markMercadoPagoAccountError(C, "revoked"));
+    assert.ifError(marked.error);
+    // notifyMissing(C) crea la fila de C (y su aviso, C tiene phoneJid) sin tocar la de D.
+    const rowD = await prisma.mercadoPagoAccount.findUniqueOrThrow({ where: { tenantId: D.tenantId } });
+    assert.equal(await notifyMercadoPagoMissingForBooking(C, { patientName: "x", patientPhone: "1", serviceName: "s" }), true);
+    assert.deepEqual(await prisma.mercadoPagoAccount.findUniqueOrThrow({ where: { tenantId: D.tenantId } }), rowD);
+    const rowC = await prisma.mercadoPagoAccount.findUniqueOrThrow({ where: { tenantId: C.tenantId } });
+    assert.equal(rowC.userId, null);
+    assert.ok(rowC.missingAlertAt);
+    const alerts = await prisma.outboundMessage.findMany({ where: { kind: "PROFESSIONAL_ALERT", toJid: "pro-c@s.whatsapp.net" } });
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0]?.tenantId, C.tenantId);
+    assert.equal(await prisma.outboundMessage.count({ where: { toJid: "pro-d@s.whatsapp.net" } }), 0);
+    await prisma.outboundMessage.delete({ where: { id: alerts[0]!.id } });
   });
 });
 

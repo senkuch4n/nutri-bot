@@ -198,7 +198,8 @@ export default async function AjustesPage() {
         <Alert tone="danger">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p>{MP.errorAlert(MP.errorReasons[mp.errorCode])}</p>
-            <MercadoPagoConnectButton reconnect />
+            {/* HU-028a (D4b): solo el OWNER conecta, reconecta o desconecta. */}
+            {isOwner ? <MercadoPagoConnectButton reconnect /> : null}
           </div>
         </Alert>
       ) : null}
@@ -234,18 +235,20 @@ export default async function AjustesPage() {
             <GroupedListRow label={MP.connectedAt} value={formatConnectedAt(mp.connectedAt, pro.timezone)} />
           ) : null}
         </GroupedList>
-        <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
-          {mp.status === "connected" ? (
-            <>
-              <MercadoPagoConnectButton reconnect variant="secondary" />
+        {isOwner ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
+            {mp.status === "connected" ? (
+              <>
+                <MercadoPagoConnectButton reconnect variant="secondary" />
+                <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
+              </>
+            ) : mp.status === "needs_reconnect" ? (
               <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
-            </>
-          ) : mp.status === "needs_reconnect" ? (
-            <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
-          ) : (
-            <MercadoPagoConnectButton disabled={mp.status === "not_configured"} />
-          )}
-        </div>
+            ) : (
+              <MercadoPagoConnectButton disabled={mp.status === "not_configured"} />
+            )}
+          </div>
+        ) : null}
       </div>
     </>
   );

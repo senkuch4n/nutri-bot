@@ -6,6 +6,7 @@
       "afinando",
       "en_arquitectura",
       "implementando",
+      "implementada",
       "en_revision"
     ],
     "valid_status": [
@@ -16,12 +17,14 @@
       "en_arquitectura",
       "arquitectura_lista",
       "implementando",
+      "implementada",
       "en_revision",
       "aprobada",
       "rechazada_reintentando",
       "bloqueada"
     ],
     "max_intentos_revision": 2,
-    "max_activas_por_responsable": 1
+    "max_activas_por_responsable": 10,
+    "lotes": "Hasta 10 HU activas por responsable (decisión de senkuch4n, 2026-11-25). Las HU que se trabajan juntas llevan el mismo campo `lote` en backlog/<id>.json. Cada una se afina, diseña e implementa por separado; al terminar su implementer pasa a `implementada` y espera. Cuando todas las del lote están `implementada`, un solo reviewer las revisa juntas (un progress/review_<id>.md por HU). Sigue valiendo: una sola HU con migración en `implementando` a la vez en todo el equipo."
   }
 }

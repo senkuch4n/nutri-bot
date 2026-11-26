@@ -51,7 +51,7 @@ por qué, con archivo y línea. No confíes en lo que dice
 
 ## Reglas duras
 
-- ❌ No edites nada salvo `progress/review_<id>.md`.
+- ❌ No edites nada salvo `progress/review_<id>.md` (en un lote, uno por cada HU del lote).
 - ❌ No apruebes con typecheck o tests rotos.
 - ❌ No marques `[x]` sin haberlo verificado vos.
 - ✅ Un hallazgo bloqueante cita archivo y línea. Si no podés ubicarlo con
