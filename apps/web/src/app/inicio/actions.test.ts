@@ -46,7 +46,11 @@ describe("submitOnboardingClinicAction", () => {
 
   it("blocks new signups on the server when public onboarding is disabled", async () => {
     mocks.resolve.mockResolvedValue({ kind: "denied", reason: "no_membership" });
-    await expect(submitOnboardingClinicAction(form())).rejects.toThrow("Public onboarding is disabled");
+    const result = await submitOnboardingClinicAction(null, form());
+    expect(result).toEqual({
+      error: "El alta de nuevos consultorios no está habilitada todavía.",
+      values: { name: "Consultorio Sur", professionalName: "Dra. Ana Sur", timeZone: "America/Montevideo" },
+    });
     expect(mocks.submit).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
     expect(mocks.redirect).not.toHaveBeenCalled();
@@ -57,7 +61,7 @@ describe("submitOnboardingClinicAction", () => {
       .mockResolvedValueOnce({ kind: "setup", clinicName: "Consultorio Sur" })
       .mockResolvedValueOnce({ kind: "onboarding", clinicName: "Consultorio Sur" });
 
-    await expect(submitOnboardingClinicAction(form())).rejects.toMatchObject({ url: "/inicio" });
+    await expect(submitOnboardingClinicAction(null, form())).rejects.toMatchObject({ url: "/inicio" });
     expect(mocks.submit).toHaveBeenCalledOnce();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/inicio");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
@@ -67,7 +71,7 @@ describe("submitOnboardingClinicAction", () => {
     mocks.isPublicOnboardingEnabled.mockReturnValue(true);
     mocks.resolve.mockResolvedValue({ kind: "operational", grant: { kind: "member", tenantId: "c1", role: "OWNER" } });
 
-    await expect(submitOnboardingClinicAction(form())).rejects.toMatchObject({ url: "/" });
+    await expect(submitOnboardingClinicAction(null, form())).rejects.toMatchObject({ url: "/" });
     expect(mocks.submit).toHaveBeenCalledOnce();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/inicio");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/");
@@ -77,7 +81,26 @@ describe("submitOnboardingClinicAction", () => {
     mocks.isPublicOnboardingEnabled.mockReturnValue(true);
     mocks.resolve.mockResolvedValue({ kind: "onboarding", clinicName: "Consultorio Sur" });
 
-    await expect(submitOnboardingClinicAction(form())).rejects.toMatchObject({ url: "/inicio" });
+    await expect(submitOnboardingClinicAction(null, form())).rejects.toMatchObject({ url: "/inicio" });
     expect(mocks.submit).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["Required setup field: name", "Ingresá el nombre del consultorio."],
+    ["Required setup field: professionalName", "Ingresá el nombre profesional que querés mostrar."],
+    ["Invalid time zone", "Elegí una zona horaria válida."],
+    ["Verified identity is required", "Tu sesión venció. Volvé a iniciar sesión con Google."],
+    ["ECONNREFUSED postgres://secret", "No pudimos guardar la configuración. Intentá de nuevo en unos momentos."],
+  ])("maps %s to a safe user-facing error while preserving submitted values", async (rawError, expected) => {
+    mocks.isPublicOnboardingEnabled.mockReturnValue(true);
+    mocks.submit.mockRejectedValueOnce(new Error(rawError));
+
+    const result = await submitOnboardingClinicAction(null, form());
+    expect(result).toEqual({
+      error: expected,
+      values: { name: "Consultorio Sur", professionalName: "Dra. Ana Sur", timeZone: "America/Montevideo" },
+    });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+    expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });

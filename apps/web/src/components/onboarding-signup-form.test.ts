@@ -15,4 +15,21 @@ it("asks for the display name separately from the clinic and sends only setup fi
   expect(out).toMatch(/<input(?=[^>]*\bname="professionalName")(?=[^>]*\brequired)[^>]*>/);
   expect(out).toMatch(/<select(?=[^>]*\bname="timeZone")(?=[^>]*\brequired)[^>]*>/);
   expect(out).not.toMatch(/name="(?:tenantId|userId|email)"/);
+  expect(out).not.toContain('role="alert"');
+});
+
+it("renders accessible error feedback and preserves entered values for retry", () => {
+  const out = renderToStaticMarkup(
+    createElement(OnboardingSignupForm, {
+      action: vi.fn(),
+      initialState: {
+        error: "Elegí una zona horaria válida.",
+        values: { name: "Consultorio Sur", professionalName: "Dra. Ana Sur", timeZone: "" },
+      },
+    }),
+  );
+
+  expect(out).toMatch(/<p[^>]*role="alert"[^>]*>Elegí una zona horaria válida\.<\/p>/);
+  expect(out).toContain('value="Consultorio Sur"');
+  expect(out).toContain('value="Dra. Ana Sur"');
 });
