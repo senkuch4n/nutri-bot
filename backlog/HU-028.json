@@ -11,7 +11,7 @@
   "rama": "feat/HU-028-integraciones-por-consultorio",
   "lock": "https://github.com/senkuch4n/nutri-bot/issues/71",
   "notas": "Depende de #67 y #68 (mergeadas). Se coordina con HU-027 (WhatsApp por tenant) y HU-029 (suscripción SaaS de Arzium). Lleva migración (MercadoPagoAccount de fila única a una por tenant). 025b-2 dejó: fila única de MP perezosa (ensureAccountRow) y candado ENABLED_TENANT_IDS.",
-  "entrega_actual": "028b",
+  "entrega_actual": "028c",
   "skills_architect": [
     "migracion-prisma",
     "refactor"
@@ -29,7 +29,30 @@
       "revision_fuera_de_lote": true,
       "modelo_reviewer": "opus",
       "review": "progress/review_HU-028a.md",
-      "rama_pr": "feat/HU-028a-mp-por-consultorio"
+      "rama_pr": "feat/HU-028a-mp-por-consultorio",
+      "merge": "5900638 (PR #85)"
+    },
+    "028b": {
+      "estado": "aprobada",
+      "skills_architect": [
+        "migracion-prisma",
+        "refactor"
+      ],
+      "rama": "feat/HU-028b-calendar-por-consultorio",
+      "worktree": "../Nutri-Bot-HU028b",
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "web-design-guidelines"
+      ],
+      "impl": "progress/impl_HU-028b.md",
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-028b.md",
+      "revision_fuera_de_lote": true
+    },
+    "028b-2": {
+      "estado": "pendiente",
+      "nota": "contracción: borra Professional.google* y sessionEmail, deploy aparte tras confirmar la sync de Daiana"
     }
   },
   "lote": "lote-1-mp"
