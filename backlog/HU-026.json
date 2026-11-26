@@ -1,0 +1,13 @@
+{
+  "id": "HU-026",
+  "responsable": "imleticio",
+  "slug": "onboarding-consultorios",
+  "titulo": "Registro y onboarding independiente de cada consultorio",
+  "origen": "Issue #69 · plan de alta y onboarding con alcance acordado",
+  "estado": "implementando",
+  "intentos_revision": 0,
+  "sdd": "Refactorizaciones/onboarding-consultorios.md",
+  "rama": "feat/HU-026-onboarding",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/69",
+  "notas": "HU-021 integrada por PR #56; #50 cerrado como completado. Contrato final con HU-029 (#72) confirmado: getTenantSubscriptionGate permite operar con verified o not_required; pending o error mantiene onboarding. HU-029b todavía no provee la función. RED de alta observado en Postgres descartable. Joel confirmó el turno de Prisma. La rama aislada ya incorpora #85 y #86; las 43 migraciones, incluida 028b antes de la propia, se aplicaron en Postgres descartable. Perfil y agenda inicial pasaron sus pruebas locales; falta verificación independiente y conectar el flujo web. La sesión principal se encarga de pruebas e implementación; Neon solo si el usuario pide el traspaso. Este corte no autoriza publicar. Trabajo solo en la rama aislada."
+}

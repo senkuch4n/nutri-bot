@@ -13,6 +13,8 @@
     "./domain/legacySchedulingScope": "./domain/legacySchedulingScope.ts",
     "./domain/outbox": "./domain/outbox.ts",
     "./domain/tenantAccess": "./domain/tenantAccess.ts",
+    "./domain/tenantOnboarding": "./domain/tenantOnboarding.ts",
+    "./domain/tenantOnboardingProvisioning": "./domain/tenantOnboardingProvisioning.ts",
     "./domain/tenantScope": "./domain/tenantScope.ts",
     "./media": "./media/recipe-photo.ts"
   },
