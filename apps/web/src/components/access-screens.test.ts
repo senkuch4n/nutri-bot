@@ -6,6 +6,8 @@ import type { AccessDenial } from "@nutri-bot/core";
 
 const mocks = vi.hoisted(() => ({
   getTenantAccess: vi.fn(),
+  isPublicOnboardingEnabled: vi.fn(() => false),
+  submitOnboardingClinicAction: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
   redirect: vi.fn((url: string) => {
@@ -14,6 +16,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/auth", () => ({ signIn: mocks.signIn, signOut: mocks.signOut }));
+vi.mock("@/app/inicio/actions", () => ({ submitOnboardingClinicAction: mocks.submitOnboardingClinicAction }));
+vi.mock("@/lib/onboarding-server", () => ({ isPublicOnboardingEnabled: mocks.isPublicOnboardingEnabled }));
 vi.mock("@/lib/tenant-context", () => ({ getTenantAccess: mocks.getTenantAccess }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
@@ -102,12 +106,48 @@ describe("AccessGateScreen (/inicio y /login)", () => {
   });
 
   it("con sesión y sin acceso → NoAccessScreen con la razón y el email", async () => {
+    mocks.isPublicOnboardingEnabled.mockReturnValue(false);
     mocks.getTenantAccess.mockResolvedValue({ ok: false, reason: "no_membership", email: "carla@example.test" });
     const out = html(await AccessGateScreen());
     expect(out).toContain("Tu cuenta no tiene acceso a ningún consultorio.");
     expect(out).toContain("carla@example.test");
     expect(out).toContain(PENDING);
+    expect(out).not.toContain("Configurá tu consultorio");
     expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("HU-026: titular con suscripción pendiente → OnboardingPendingScreen", async () => {
+    mocks.getTenantAccess.mockResolvedValue({
+      ok: false,
+      reason: "onboarding_pending",
+      clinicName: "Consultorio del Sur",
+      email: "carla@example.test",
+    });
+    const out = html(await AccessGateScreen());
+    expect(out).toContain("Consultorio del Sur");
+    expect(out).toContain("Suscripción pendiente");
+    expect(out).toContain('href="/ajustes/suscripcion"');
+  });
+
+  it("HU-026: titular con alta incompleta → retoma OnboardingSignupForm", async () => {
+    mocks.isPublicOnboardingEnabled.mockReturnValue(false);
+    mocks.getTenantAccess.mockResolvedValue({
+      ok: false,
+      reason: "onboarding_setup",
+      clinicName: "Consultorio del Sur",
+      email: "carla@example.test",
+    });
+    const out = html(await AccessGateScreen());
+    expect(out).toContain("Configurá tu consultorio");
+    expect(out).toContain('name="professionalName"');
+  });
+
+  it("HU-026: no_membership con alta pública habilitada → OnboardingSignupForm", async () => {
+    mocks.isPublicOnboardingEnabled.mockReturnValue(true);
+    mocks.getTenantAccess.mockResolvedValue({ ok: false, reason: "no_membership", email: "carla@example.test" });
+    const out = html(await AccessGateScreen());
+    expect(out).toContain("Configurá tu consultorio");
+    expect(out).not.toContain("Tu cuenta no tiene acceso");
   });
 });
 

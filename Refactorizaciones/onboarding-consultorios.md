@@ -49,7 +49,14 @@ Prueba enfocada: `npm test -- apps/web/src/lib/onboarding-subscription-access.te
 
 El adaptador de servidor `apps/web/src/lib/onboarding-access-adapter.ts` compone sesión, hechos de membresía, perfil de alta y estado de suscripción con dependencias inyectadas. Solo consume `userId` de sesión y obtiene el consultorio de la membresía. Los consultorios ya habilitados conservan su ruta sin consultar suscripción. Para uno nuevo, `resolve()` distingue el onboarding pendiente de la operación; `getOperationalGrant()` devuelve `null` cuando no se puede operar. Un permiso operativo todavía debe convertirse en el contexto del panel con sus comprobaciones habituales de agenda, profesional y alcance.
 
-`npm test -- apps/web/src/lib/onboarding-access-adapter.test.ts` prueba esos resultados con un proveedor simulado y consumidores de prueba que representan una acción y una API. **No** demuestra que páginas o endpoints reales apliquen la decisión: el adaptador aún no está conectado y la lista de consultorios habilitados sigue intacta.
+`npm test -- apps/web/src/lib/onboarding-access-adapter.test.ts` prueba esos resultados con un proveedor simulado y consumidores de prueba que representan una acción y una API.
+
+## Integración en guardas reales y `/inicio` (alta pública apagada por defecto)
+
+- `apps/web/src/lib/onboarding-subscription-gate.ts` expone el stub fail-closed `getTenantSubscriptionGate` (`"pending"`) con la firma exacta acordada con HU-029b. Cuando HU-029b publique el proveedor real, se reemplaza en este punto.
+- `apps/web/src/lib/tenant-context.ts` (`getTenantAccess`) y `apps/web/src/middleware.ts` (`panelGate`) evalúan la política de onboarding mediante `createOnboardingAccessAdapter`. Los consultorios de `ENABLED_TENANT_IDS` conservan su acceso sin consultar el perfil de onboarding ni el gate de suscripción. Para consultorios nuevos con alta completa, `not_required` y `verified` habilitan el contexto operativo; `pending`, error del proveedor o alta incompleta (`setupComplete: false`) bloquean páginas (redirect a `/inicio`), API (`401`) y server actions (`TenantAccessError("no_context")`, sin escrituras).
+- `apps/web/src/components/access-gate-screen.tsx` y `apps/web/src/app/inicio/actions.ts` conectan el flujo autenticado en `/inicio`: `onboarding_pending` muestra `OnboardingPendingScreen` y `onboarding_setup` retoma `OnboardingSignupForm`. El alta pública para `no_membership` queda deshabilitada por defecto (`isPublicOnboardingEnabled()` exige `NUTRIBOT_PUBLIC_ONBOARDING_ENABLED="true"`), tanto en la pantalla (`NoAccessScreen`) como en la validación de servidor de `submitOnboardingClinicAction`.
+- Siguen pendientes antes de habilitar el alta pública: reemplazar el stub por el proveedor real de HU-029b, integrar `/ajustes/suscripcion` y ejecutar la verificación E2E (HTTP/navegador) y la revisión independiente de este corte.
 
 ## Verificación y eventual traspaso
 
