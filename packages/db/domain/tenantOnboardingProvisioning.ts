@@ -39,9 +39,10 @@ export async function provisionOnboardedClinic(
     });
     if (existing) return { tenantId, professionalId: existing.professionalId, agendaId: existing.id };
 
-    // This infrequent path must coexist with writers that provide an explicit ID.
-    // Serialize allocation with table writes and preserve the legacy DEFAULT 1.
-    await tx.$executeRaw`LOCK TABLE "Professional" IN SHARE ROW EXCLUSIVE MODE`;
+    // Serialize onboarding ID allocation with a transaction-scoped advisory lock
+    // instead of locking the Professional table, so unrelated writes (e.g. bot updates
+    // to the legacy profile) are never blocked during provisioning.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('Professional'), hashtext('id_allocation'))`;
     const existingProfile = await tx.professional.findFirst({ where: { tenantId }, select: { id: true } });
     if (existingProfile) throw new Error("Clinic profile exists without a primary agenda");
     const [allocation] = await tx.$queryRaw<{ id: number }[]>`

@@ -1,20 +1,25 @@
 import "server-only";
-import { decideTenantAccess, type AccessDenial, type AccessFacts, type AccessGrant } from "@nutri-bot/core";
+import {
+  decideOnboardedClinicSetupAccess,
+  decidePostSetupOnboardingAccess,
+  decidePreClinicOnboardingAccess,
+  decideTenantAccess,
+  type AccessFacts,
+  type AccessGrant,
+  type OnboardedClinicProfile,
+  type OnboardingAccess,
+} from "@nutri-bot/core";
 import { resolveOnboardingSubscriptionAccess, type GetTenantSubscriptionGate } from "./onboarding-subscription-access";
+
+export type { OnboardingAccess };
 
 type OnboardingAccessDependencies = {
   readSession: () => Promise<{ userId?: string | null } | null>;
   loadAccessFacts: (userId: string) => Promise<AccessFacts | null>;
   existingEnabledTenantIds: readonly string[];
-  loadOnboardedClinic: (tenantId: string) => Promise<{ name: string; timeZone: string; setupComplete: boolean } | null>;
+  loadOnboardedClinic: (tenantId: string) => Promise<OnboardedClinicProfile | null>;
   getTenantSubscriptionGate: GetTenantSubscriptionGate;
 };
-
-export type OnboardingAccess =
-  | { kind: "operational"; grant: AccessGrant }
-  | { kind: "setup"; tenantId: string; clinicName: string; timeZone: string }
-  | { kind: "onboarding"; clinicName: string }
-  | { kind: "denied"; reason: AccessDenial | "unauthenticated" | "subscription_pending" };
 
 // The caller supplies trusted server dependencies; callers cannot select a tenant.
 // An operational grant still needs the panel's regular context and scope checks.
@@ -28,23 +33,15 @@ export function createOnboardingAccessAdapter(deps: OnboardingAccessDependencies
     if (!decision.ok) return { kind: "denied", reason: decision.reason };
 
     const { grant } = decision;
-    if (deps.existingEnabledTenantIds.includes(grant.tenantId)) {
-      return { kind: "operational", grant };
-    }
-    if (grant.kind !== "member") return { kind: "denied", reason: "tenant_not_enabled" };
+    const preClinic = decidePreClinicOnboardingAccess(grant, deps.existingEnabledTenantIds);
+    if (preClinic) return preClinic;
 
     const clinic = await deps.loadOnboardedClinic(grant.tenantId);
-    if (!clinic) return { kind: "denied", reason: "tenant_not_enabled" };
-    if (!clinic.setupComplete) {
-      return grant.role === "OWNER"
-        ? { kind: "setup", tenantId: grant.tenantId, clinicName: clinic.name, timeZone: clinic.timeZone }
-        : { kind: "denied", reason: "tenant_not_enabled" };
-    }
+    const setupDecision = decideOnboardedClinicSetupAccess(grant, clinic);
+    if (setupDecision) return setupDecision;
 
     const subscription = await resolveOnboardingSubscriptionAccess(grant.tenantId, deps.getTenantSubscriptionGate);
-    if (subscription.canOperate) return { kind: "operational", grant };
-    if (grant.role === "OWNER") return { kind: "onboarding", clinicName: clinic.name };
-    return { kind: "denied", reason: "subscription_pending" };
+    return decidePostSetupOnboardingAccess(grant, clinic!, subscription.status);
   }
 
   async function getOperationalGrant(): Promise<AccessGrant | null> {

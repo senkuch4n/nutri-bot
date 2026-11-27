@@ -127,6 +127,9 @@ describe("AccessGateScreen (/inicio y /login)", () => {
     expect(out).toContain("Consultorio del Sur");
     expect(out).toContain("Suscripción pendiente");
     expect(out).toContain('href="/ajustes/suscripcion"');
+    expect(out).toContain("carla@example.test");
+    expect(out).toContain("Usar otra cuenta");
+    expect(out).toContain("Reintentar");
   });
 
   it("HU-026: titular con alta incompleta → retoma OnboardingSignupForm", async () => {
@@ -140,6 +143,9 @@ describe("AccessGateScreen (/inicio y /login)", () => {
     });
     const out = html(await AccessGateScreen());
     expect(out).toContain("Configurá tu consultorio");
+    expect(out).toContain("carla@example.test");
+    expect(out).toContain("Usar otra cuenta");
+    expect(out).toContain("Reintentar");
     expect(out).toMatch(/<input(?=[^>]*readonly="")(?=[^>]*name="name")(?=[^>]*value="Consultorio del Sur")[^>]*>/i);
     expect(out).toMatch(/<input(?=[^>]*readonly="")(?=[^>]*name="timeZone")(?=[^>]*value="America\/Montevideo")[^>]*>/i);
     const professional = out.match(/<input[^>]*name="professionalName"[^>]*>/)?.[0];
@@ -148,11 +154,14 @@ describe("AccessGateScreen (/inicio y /login)", () => {
     expect(out).toContain("Solo podés editar tu nombre profesional");
   });
 
-  it("HU-026: no_membership con alta pública habilitada → OnboardingSignupForm", async () => {
+  it("HU-026: no_membership con alta pública habilitada → OnboardingSignupForm con opciones de cambiar cuenta", async () => {
     mocks.isPublicOnboardingEnabled.mockReturnValue(true);
     mocks.getTenantAccess.mockResolvedValue({ ok: false, reason: "no_membership", email: "carla@example.test" });
     const out = html(await AccessGateScreen());
     expect(out).toContain("Configurá tu consultorio");
+    expect(out).toContain("carla@example.test");
+    expect(out).toContain("Usar otra cuenta");
+    expect(out).toMatch(/<a[^>]*href="\/"[^>]*>Reintentar<\/a>/);
     expect(out).not.toContain("Tu cuenta no tiene acceso");
     expect(out).toMatch(/<select[^>]*name="timeZone"/);
     expect(out).not.toMatch(/readonly/i);

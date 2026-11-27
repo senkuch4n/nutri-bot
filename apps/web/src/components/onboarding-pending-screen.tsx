@@ -1,13 +1,21 @@
+import { AccountSwitchActions, SignedInAccountNotice } from "@/components/account-switch-actions";
 import { AuthCard } from "@/components/login-screen";
 import { ARZIUM_CONTACT_EMAIL } from "@/components/public-page";
 import { ButtonLink } from "@/components/ui";
 
 // Render only after the server resolves the pending owner's clinic.
-export function OnboardingPendingScreen({ clinicName }: { clinicName: string }) {
+export function OnboardingPendingScreen({
+  clinicName,
+  email,
+}: {
+  clinicName: string;
+  email?: string | null;
+}) {
   return (
     <AuthCard>
       <p className="text-footnote text-muted-foreground">Alta del consultorio</p>
       <h1 className="mt-1 break-words text-balance text-title-2">{clinicName}</h1>
+      <SignedInAccountNotice email={email} />
       <ol aria-label="Progreso del alta" className="mt-4 list-decimal space-y-2 pl-5 text-body">
         <li>Configuración guardada</li>
         <li aria-current="step" className="font-semibold">Suscripción pendiente</li>
@@ -23,6 +31,7 @@ export function OnboardingPendingScreen({ clinicName }: { clinicName: string }) 
           Contactar a Arzium
         </a>
       </div>
+      <AccountSwitchActions retryHref="/inicio" className="mt-4 flex flex-col gap-2" />
     </AuthCard>
   );
 }
