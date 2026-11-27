@@ -139,10 +139,10 @@ script (o extracto), con el paso de la corrida.
 
 | Compuerta | Depende de | Resolución | Consecuencia para 029b |
 |---|---|---|---|
-| **G1** · flujo D4(c) (`preapproval` sin plan + `init_point`) | S1 | _(pendiente)_ | Si S1 se refuta: 029b no arranca y se relanza el architect para D4(b). |
-| **G2** · creación fuera de la transacción | S2 (y S4) | _(pendiente)_ | Sin búsqueda por referencia (o S2 y S4 fallan): variante de §B.5.3 nota 2 (llamada a MP dentro del advisory lock). |
-| **G3** · `payer_email` opcional | S3 | _(pendiente)_ | Si se refuta: variante D8(a), campo "Email de tu cuenta de Mercado Pago". |
-| **G4** · packs con `end_date` | S5 | _(pendiente)_ | Sin `end_date` que corte: `PLAN_BILLING_CYCLES_SUPPORTED = false` y los packs van a otra HU. |
+| **G1** · flujo D4(c) (`preapproval` sin plan + `init_point`) | S1 | **Abierta (2026-11-27):** S1 confirmado; 029b puede arrancar con D4(c). | Si S1 se refuta: 029b no arranca y se relanza el architect para D4(b). |
+| **G2** · creación fuera de la transacción | S2 (y S4) | **Creación fuera de la transacción, con deduplicación propia (2026-11-27):** S2 confirmado (búsqueda por `external_reference` funciona); S4 refutado (MP no respeta `X-Idempotency-Key`), así que 029b busca por referencia antes de crear y nunca reintenta un `POST` a ciegas. | Sin búsqueda por referencia (o S2 y S4 fallan): variante de §B.5.3 nota 2 (llamada a MP dentro del advisory lock). |
+| **G3** · `payer_email` opcional | S3 | **Refutada (2026-11-27):** `payer_email` es obligatorio → variante D8(a), campo "Email de tu cuenta de Mercado Pago". | Si se refuta: variante D8(a), campo "Email de tu cuenta de Mercado Pago". |
+| **G4** · packs con `end_date` | S5 | **Sin confirmar (2026-11-27):** `end_date` se fija, pero no se vio el paso a `finished`. Hasta verificarlo: `PLAN_BILLING_CYCLES_SUPPORTED = false` (packs a otra HU o a una corrida posterior). | Sin `end_date` que corte: `PLAN_BILLING_CYCLES_SUPPORTED = false` y los packs van a otra HU. |
 
 ## 5. Valores para 029b/029c
 
