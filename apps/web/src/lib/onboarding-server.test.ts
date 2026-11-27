@@ -56,7 +56,8 @@ it("resumes setup before checking subscription if there is no primary agenda", a
   expect(mocks.createOrResumeClinic).not.toHaveBeenCalled();
   expect(mocks.provisionClinic.mock.calls).toEqual([[{ userId, expectedTenantId: tenantId, professionalName: "Ana Sur" }]]);
   expect(onComplete).toHaveBeenCalledOnce();
-  expect(await server.resolve()).toEqual({ kind: "onboarding", clinicName: name });
+  // HU-029b (§B.6.7): el caso onboarding trae tenantId y timeZone del consultorio.
+  expect(await server.resolve()).toEqual({ kind: "onboarding", tenantId, clinicName: name, timeZone });
   expect(await server.getOperationalGrant()).toBeNull();
 });
 

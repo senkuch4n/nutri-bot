@@ -6,6 +6,7 @@ import { prisma } from "@nutri-bot/db";
 import { LEGACY_TENANT_ID, TenantScopeError, loadAccessFacts, resolvePrimaryAgenda } from "@nutri-bot/db/domain";
 import { auth } from "@/auth";
 import { createOnboardingAccessAdapter } from "./onboarding-access-adapter";
+import { tenantProfessionalWhere } from "./tenant-professional";
 import { loadOnboardedClinic } from "./onboarding-server";
 import { getTenantSubscriptionGate } from "./onboarding-subscription-gate";
 
@@ -25,7 +26,16 @@ export type TenantAccessResult =
   | { ok: true; ctx: TenantContext }
   | { ok: false; reason: AccessDenial | "unauthenticated"; email: string | null }
   | { ok: false; reason: "onboarding_setup"; clinicName: string; timeZone: string; email: string | null }
-  | { ok: false; reason: "onboarding_pending"; clinicName: string; email: string | null };
+  | {
+      ok: false;
+      reason: "onboarding_pending";
+      clinicName: string;
+      email: string | null;
+      /** HU-029b (§B.6.7): para la puerta de /ajustes/suscripcion (getSubscriptionAccess). */
+      userId: string;
+      tenantId: string;
+      timeZone: string;
+    };
 
 /** Candado transitorio (025a–025c): consultorios existentes que operan sin pasar por el alta nueva. */
 export const ENABLED_TENANT_IDS: readonly string[] = [LEGACY_TENANT_ID];
@@ -53,7 +63,15 @@ export const getTenantAccess: () => Promise<TenantAccessResult> = cache(async ()
     return { ok: false, reason: "onboarding_setup", clinicName: access.clinicName, timeZone: access.timeZone, email };
   }
   if (access.kind === "onboarding") {
-    return { ok: false, reason: "onboarding_pending", clinicName: access.clinicName, email };
+    return {
+      ok: false,
+      reason: "onboarding_pending",
+      clinicName: access.clinicName,
+      email,
+      userId,
+      tenantId: access.tenantId,
+      timeZone: access.timeZone,
+    };
   }
   if (access.kind === "denied") {
     const reason = access.reason === "subscription_pending" ? "tenant_not_enabled" : access.reason;
@@ -120,5 +138,67 @@ export async function requireOwnerContext(): Promise<TenantContext> {
 export async function requirePageContext(): Promise<TenantContext> {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/inicio");
+  return ctx;
+}
+
+// ---------------------------------------------------------------------------
+// HU-029b (§B.6.7): la única puerta de /ajustes/suscripcion (grupo de rutas `(suscripcion)`).
+// Deja pasar a la OWNER en onboarding (alta completa, suscripción pendiente, HU-026) sin abrirle el resto
+// del panel: requirePageContext / requireOwnerContext / requireTenantContext no cambian.
+// ---------------------------------------------------------------------------
+
+export type SubscriptionContext = {
+  userId: string;
+  tenantId: string;
+  /** member OWNER (operativa u onboarding). Soporte nunca. */
+  isOwner: boolean;
+  /** true = OWNER con el alta completa y la suscripción pendiente (HU-026). */
+  onboarding: boolean;
+  /** Operativa: la de la profesional de la agenda principal; onboarding: la del consultorio. */
+  timeZone: string;
+};
+
+const DEFAULT_TIME_ZONE = "America/Argentina/Buenos_Aires";
+
+/** Sobre getTenantAccess() (cacheado). ok → contexto operativo; "onboarding_pending" → onboarding; cualquier
+ *  otro (incluido "onboarding_setup" y STAFF con suscripción pendiente) → null. */
+export async function getSubscriptionAccess(): Promise<SubscriptionContext | null> {
+  const access = await getTenantAccess();
+  if (access.ok) {
+    const { ctx } = access;
+    const pro = await prisma.professional.findUnique({ where: tenantProfessionalWhere(ctx), select: { timezone: true } });
+    return {
+      userId: ctx.userId,
+      tenantId: ctx.tenantId,
+      isOwner: ctx.access.kind === "member" && ctx.access.role === "OWNER",
+      onboarding: false,
+      timeZone: pro?.timezone ?? DEFAULT_TIME_ZONE,
+    };
+  }
+  if (access.reason === "onboarding_pending") {
+    return { userId: access.userId, tenantId: access.tenantId, isOwner: true, onboarding: true, timeZone: access.timeZone };
+  }
+  return null;
+}
+
+/** Server components de (suscripcion): redirect("/inicio") si no hay acceso. */
+export async function requireSubscriptionPageContext(): Promise<SubscriptionContext> {
+  const ctx = await getSubscriptionAccess();
+  if (!ctx) redirect("/inicio");
+  return ctx;
+}
+
+/** Acciones start/continue/cancel: sin acceso → no_context; STAFF o soporte → owner_only. */
+export async function requireSubscriptionOwnerContext(): Promise<SubscriptionContext> {
+  const ctx = await getSubscriptionAccess();
+  if (!ctx) throw new TenantAccessError("no_context");
+  if (!ctx.isOwner) throw new TenantAccessError("owner_only");
+  return ctx;
+}
+
+/** Acción refresh (STAFF operativa también: solo lectura de hechos). */
+export async function requireSubscriptionReadContext(): Promise<SubscriptionContext> {
+  const ctx = await getSubscriptionAccess();
+  if (!ctx) throw new TenantAccessError("no_context");
   return ctx;
 }

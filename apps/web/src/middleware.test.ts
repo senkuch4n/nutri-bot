@@ -171,6 +171,74 @@ describe("middleware (opción A, runtime Node)", () => {
   });
 });
 
+// HU-029b (§B.6.7 punto 3): la OWNER en onboarding (alta completa, suscripción pendiente) entra solo a
+// /ajustes/suscripcion (y su vuelta ?mp=volver); el resto del panel la sigue mandando a /inicio.
+describe("HU-029b: /ajustes/suscripcion para la titular en onboarding", () => {
+  const newClinic = { name: "Consultorio Nuevo", timeZone: "America/Montevideo", setupComplete: true };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "OWNER" }]));
+    mocks.loadOnboardedClinic.mockResolvedValue(newClinic);
+    mocks.getTenantSubscriptionGate.mockResolvedValue("pending");
+  });
+
+  it.each(["/ajustes/suscripcion", "/ajustes/suscripcion?mp=volver"])("OWNER en onboarding → GET %s pasa, sin console.warn", async (path) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      passes(await panelGate(request(path)));
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("las server actions de la página pasan (las frena requireSubscriptionOwnerContext)", async () => {
+    passes(await panelGate(request("/ajustes/suscripcion", { method: "POST", headers: { "next-action": "abc" } })));
+  });
+
+  it.each(["/ajustes", "/ajustes/suscripcion/x", "/ajustes/suscripcionx", "/agenda", "/api/slots"])(
+    "la misma OWNER → %s sigue rechazada con access_denied reason=onboarding_pending",
+    async (path) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const res = await panelGate(request(path));
+        if (path.startsWith("/api/")) await expectUnauthorized(res);
+        else expectRedirectToInicio(res);
+        expect(warn.mock.calls).toEqual([["[auth] access_denied reason=onboarding_pending"]]);
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
+
+  it("OWNER con el alta incompleta (setup) → /ajustes/suscripcion redirige a /inicio", async () => {
+    mocks.loadOnboardedClinic.mockResolvedValue({ ...newClinic, setupComplete: false });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expectRedirectToInicio(await panelGate(request("/ajustes/suscripcion")));
+      expect(warn.mock.calls).toEqual([["[auth] access_denied reason=onboarding_setup"]]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("STAFF con la suscripción pendiente → /ajustes/suscripcion redirige a /inicio", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "STAFF" }]));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expectRedirectToInicio(await panelGate(request("/ajustes/suscripcion")));
+      expect(warn.mock.calls).toEqual([["[auth] access_denied reason=subscription_pending"]]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("usuaria operativa → /ajustes/suscripcion pasa (regresión)", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(legacyOwner);
+    passes(await panelGate(request("/ajustes/suscripcion")));
+  });
+});
+
 describe("matcher", () => {
   const matcher = new RegExp(`^${config.matcher[0]}$`);
   it("excludes the exact webhook", () => {
@@ -182,6 +250,12 @@ describe("matcher", () => {
   });
   it.each(["/opengraph-image.png", "/icon.png", "/apple-icon.png"])("serves %s for link previews without authentication", (pathname) => {
     expect(matcher.test(pathname)).toBe(false);
+  });
+  // HU-029b (§B.6.6): el webhook de suscripciones de Arzium tampoco pasa por la puerta del panel.
+  it("excluye el webhook exacto de suscripciones", () => {
+    expect(matcher.test("/api/webhooks/mercadopago-suscripciones")).toBe(false);
+    expect(matcher.test("/api/webhooks/mercadopago-suscripciones/x")).toBe(true);
+    expect(matcher.test("/api/webhooks/mercadopago-otra")).toBe(true);
   });
   it.each(["/api/webhooks/other", "/api/webhooks/mercadopago-private", "/api/webhooks/mercadopago/other", "/agenda", "/api/professional/signature", "/api/professional/logo", "/api/mercadopago/oauth/callback"])("keeps %s protected", (pathname) => {
     expect(matcher.test(pathname)).toBe(true);
