@@ -6,22 +6,31 @@ import { PortalAccessGate, PortalAccessScreen } from "@/components/portal/portal
 import { Toaster } from "@/components/primitives/sonner";
 import { PortalHeader } from "@/components/shell/portal-header";
 import { PortalNav } from "@/components/shell/portal-nav";
-import { getPortalPatient } from "@/lib/patient-session";
+import { LEGACY_TENANT_ID } from "@nutri-bot/db/domain";
+import { getPortalSession } from "@/lib/patient-session";
 import { getPortalDocumentTitle, getProfessionalPortalContact } from "@/lib/shell";
+
+/** HU-033 (025c): con sesión, el consultorio de la sesión. Sin sesión, el de la instalación de WhatsApp
+ *  (LEGACY_TENANT_ID: el único número que manda links hoy; HU-027 lo cambia). */
+async function portalTenantId(): Promise<{ session: Awaited<ReturnType<typeof getPortalSession>>; tenantId: string }> {
+  const session = await getPortalSession();
+  return { session, tenantId: session?.tenantId ?? LEGACY_TENANT_ID };
+}
 
 // HU-017d-1: la pestaña del portal no dice "NutriBot — Panel" (el título del layout raíz).
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: await getPortalDocumentTitle(),
+    title: await getPortalDocumentTitle((await portalTenantId()).tenantId),
     description: "Tu plan, tu evolución y tu diario, con tu nutricionista.",
   };
 }
 
 // HU-017a §10.3. `theme-portal` = fondo agrupado cálido (D2); el resto de la paleta es la del panel.
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
-  const [patient, contact] = await Promise.all([getPortalPatient(), getProfessionalPortalContact()]);
+  const { session, tenantId } = await portalTenantId();
+  const contact = await getProfessionalPortalContact(tenantId);
 
-  if (!patient) {
+  if (!session) {
     // HU-017d-1 (Q2): el layout no recibe searchParams; el gate cliente distingue "link vencido"
     // (?error=invalid) de "sin link". El Suspense evita el aviso de useSearchParams en el build.
     return (

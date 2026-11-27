@@ -3,8 +3,8 @@ import { prisma } from "@nutri-bot/db";
 import { RECIPE_ITEM_SELECT, listPlanRecipePreviews } from "@nutri-bot/db/domain";
 import { computeWeeklyTotals, weekdayInTimeZone, type Weekday } from "@nutri-bot/core";
 import { Card, EmptyState } from "@/components/ui";
-import { getPortalPatient } from "@/lib/patient-session";
-import { getProfessional } from "@/lib/professional";
+import { getPortalSession } from "@/lib/patient-session";
+import { getTenantProfessional } from "@/lib/professional";
 import { toMealView } from "@/lib/meal-view";
 import { portalMealsForClient, toPortalRecipeMap } from "@/lib/portal-recipe";
 import { PortalPlanView } from "./plan-view";
@@ -12,10 +12,11 @@ import { PortalPlanView } from "./plan-view";
 export const dynamic = "force-dynamic";
 
 export default async function PortalPlanPage() {
-  const patient = await getPortalPatient();
-  // HU-025b-1: el plan es del consultorio del paciente; un paciente sin consultorio no ve planes.
-  if (!patient?.tenantId) return null;
-  const tenant = { tenantId: patient.tenantId };
+  // HU-033 (025c): el plan es del paciente de la sesión en el consultorio de la sesión.
+  const session = await getPortalSession();
+  if (!session) return null;
+  const { patient } = session;
+  const tenant = { tenantId: session.tenantId };
 
   const plan = await prisma.nutritionPlan.findFirst({
     where: { patientId: patient.id, tenantId: tenant.tenantId, status: "ACTIVE" },
@@ -49,7 +50,7 @@ export default async function PortalPlanPage() {
   const weeklyTotals = computeWeeklyTotals(meals);
   let weekly: { today: Weekday; loadedDays: Weekday[] } | null = null;
   if (weeklyTotals.isWeekly) {
-    const pro = await getProfessional();
+    const pro = await getTenantProfessional(tenant.tenantId);
     weekly = {
       today: weekdayInTimeZone(new Date(), pro.timezone),
       loadedDays: weeklyTotals.loadedDays,

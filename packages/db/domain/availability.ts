@@ -19,6 +19,8 @@ function minLeadMinutes(): number {
   return Number(process.env.MIN_LEAD_MINUTES ?? 120);
 }
 
+// 028c lo reemplaza (D-c1 b): Professional(1). Solo lo usan botAi.ts (runBotAiTool) y el inicio de
+// handleIncoming en apps/bot/src/conversation.ts; el resto ya lee getTenantProfessional(tenantId).
 export async function getProfessional() {
   const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: PROFESSIONAL_SELECT });
   if (!pro) {

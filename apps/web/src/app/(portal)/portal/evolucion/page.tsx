@@ -10,21 +10,23 @@ import {
 import { Card, EmptyState, Metric, cn } from "@/components/ui";
 import { EvolutionChart } from "@/components/evolution-chart";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
-import { getPortalPatient } from "@/lib/patient-session";
-import { getProfessional } from "@/lib/professional";
+import { getPortalSession } from "@/lib/patient-session";
+import { getTenantProfessional } from "@/lib/professional";
 
 export const dynamic = "force-dynamic";
 
 // HU-017d-1 (SDD 4.6 y 5.2). D2: la consulta no lee `note` (las notas clínicas no llegan ni al payload).
 export default async function PortalEvolutionPage() {
-  const patient = await getPortalPatient();
-  if (!patient) return null;
+  const session = await getPortalSession();
+  if (!session) return null;
+  // HU-033 (025c): registros del paciente de la sesión y de su consultorio.
+  const { patient, tenantId } = session;
 
   const now = new Date();
   const [pro, entries] = await Promise.all([
-    getProfessional(),
+    getTenantProfessional(tenantId),
     prisma.evolutionEntry.findMany({
-      where: { patientId: patient.id },
+      where: { patientId: patient.id, tenantId },
       orderBy: { recordedAt: "desc" },
       select: { id: true, recordedAt: true, weightKg: true, heightCm: true },
     }),

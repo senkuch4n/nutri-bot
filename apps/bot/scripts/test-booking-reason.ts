@@ -28,7 +28,7 @@ import {
   InvalidBookingReasonError,
   createAppointment,
   getAvailableSlotsForService,
-  getProfessional,
+  getTenantProfessional,
   runBotAiTool,
   setAppointmentStatus,
   updateAppointmentReason,
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
   if (bot?.connected && process.env.ALLOW_BOT_RUNNING !== "1") {
     throw new Error("Pará el bot antes de correr esta prueba (encola alertas de prueba)");
   }
-  const pro = await getProfessional(); // solo lectura
+  const pro = await getTenantProfessional(T.tenantId); // solo lectura
   if (pro.botPaused) throw new Error("El bot está pausado en /ajustes: la prueba necesita que responda.");
   const tz = pro.timezone;
 

@@ -4,7 +4,6 @@ import { messages } from "@nutri-bot/core";
 import { Prisma } from "../index";
 
 const mocks = vi.hoisted(() => ({
-  getProfessional: vi.fn(),
   checkSlotAvailable: vi.fn(),
   enqueueMessage: vi.fn(),
   prisma: {
@@ -27,7 +26,6 @@ vi.mock("../index", () => ({
 vi.mock("./availability", async (importOriginal) => ({
   // HU-022: canRescheduleAppointment es pura; corre la real.
   canRescheduleAppointment: (await importOriginal<typeof import("./availability")>()).canRescheduleAppointment,
-  getProfessional: mocks.getProfessional,
   checkSlotAvailable: mocks.checkSlotAvailable,
 }));
 vi.mock("./outbox", () => ({ enqueueMessage: mocks.enqueueMessage }));
@@ -67,7 +65,6 @@ describe("createAppointment con motivo (HU-013)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
-    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
     mockLegacyAgenda();
     mocks.prisma.service.findUnique.mockResolvedValue(SERVICE);
@@ -178,7 +175,6 @@ describe("cancelAppointment en la agenda original", () => {
     vi.resetAllMocks();
     row = { ...appt };
     mockLegacyAgenda();
-    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
     mocks.prisma.appointment.findUniqueOrThrow.mockImplementation(async ({ where }: { where: Partial<typeof scope> }) => {
       if ((where.tenantId && row.tenantId !== where.tenantId) || (where.agendaId && row.agendaId !== where.agendaId)) {
@@ -315,7 +311,6 @@ describe("createAppointment sella bookedAt (HU-014, D5)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
-    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
     mockLegacyAgenda();
     mocks.prisma.service.findUnique.mockResolvedValue(SERVICE);
@@ -359,7 +354,6 @@ describe("reservar desarchiva (HU-019, T4/T5)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
-    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
     mockLegacyAgenda();
     mocks.prisma.service.findUnique.mockResolvedValue(SERVICE);
@@ -543,7 +537,6 @@ describe("rescheduleAppointment (HU-022)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(mocks.prisma));
-    mocks.getProfessional.mockResolvedValue({ timezone: TZ, phoneJid: "pro@s.whatsapp.net" });
     mocks.checkSlotAvailable.mockResolvedValue(true);
     mockLegacyAgenda();
     mocks.prisma.appointment.findUnique.mockResolvedValue(APPT);
