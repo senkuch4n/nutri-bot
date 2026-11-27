@@ -4,6 +4,7 @@ import {
   MERCADOPAGO_TEXT as MP,
   PROFESSIONAL_TEXT,
   SETTINGS_TEXT as T,
+  SUBSCRIPTION_TEXT,
   TEAM_TEXT,
   formatInTimeZone,
   formatPhone,
@@ -13,7 +14,7 @@ import {
   type MercadoPagoConnectionStatus,
 } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
-import { getMercadoPagoConnectionView, listTenantMembers } from "@nutri-bot/db/domain";
+import { getMercadoPagoConnectionView, getTenantSubscriptionView, listTenantMembers, type TenantSubscriptionView } from "@nutri-bot/db/domain";
 import { getGoogleCalendarConnectionView } from "@nutri-bot/db/domain/googleCalendar";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { Alert, ButtonLink } from "@/components/ui";
@@ -77,11 +78,19 @@ function formatConnectedAt(date: Date, tz: string): string {
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "long", timeZone: tz }).format(date);
 }
 
+/** HU-029b (§B.6.3): estado corto de la suscripción. Un checkout abandonado (nunca autorizado) no es una baja. */
+function subscriptionSummary(view: TenantSubscriptionView): string {
+  if (view.availability !== "enabled") return SUBSCRIPTION_TEXT.unavailableShort;
+  const sub = view.subscription;
+  if (!sub || (sub.status === "CANCELED" && !sub.authorized)) return SUBSCRIPTION_TEXT.summaryNone;
+  return SUBSCRIPTION_TEXT.summary[sub.status];
+}
+
 export default async function AjustesPage() {
   const ctx = await requirePageContext();
   // HU-025 (7.2.1, D4): Equipo solo para la responsable; soporte (025d) nunca.
   const isOwner = ctx.access.kind === "member" && ctx.access.role === "OWNER";
-  const [pro, botStatus, logo, mp, gc, members] = await Promise.all([
+  const [pro, botStatus, logo, mp, gc, members, subscriptionView] = await Promise.all([
     getTenantProfessional(ctx.tenantId),
     // HU-025: el estado de WhatsApp y el logo son los del consultorio de la sesión.
     prisma.botStatus.findUnique({ where: { tenantId: ctx.tenantId } }),
@@ -90,7 +99,10 @@ export default async function AjustesPage() {
     // HU-028b: la conexión de Google Calendar del consultorio (sin tokens).
     getGoogleCalendarConnectionView(ctx),
     isOwner ? listTenantMembers(ctx.tenantId) : Promise.resolve(null),
+    // HU-029b: la suscripción del consultorio (sin ids ni URLs de MP).
+    getTenantSubscriptionView({ tenantId: ctx.tenantId }, { userId: ctx.userId }),
   ]);
+  const subscriptionText = subscriptionSummary(subscriptionView);
   const googleConnected = gc.status === "connected";
   const botConnected = botStatus?.connected ?? false;
   const calendarId = gc.calendarId ?? "";
@@ -330,17 +342,29 @@ export default async function AjustesPage() {
       }))}
     />
   ) : undefined;
+  // HU-029b (§B.6.3): visible para todos los miembros; la gestión vive en /ajustes/suscripcion.
+  const suscripcion = (
+    <GroupedList>
+      <GroupedListRow label="Estado" value={subscriptionText} />
+      <li className="px-4 py-3">
+        <ButtonLink href="/ajustes/suscripcion" variant="secondary">
+          {SUBSCRIPTION_TEXT.openScreen}
+        </ButtonLink>
+      </li>
+    </GroupedList>
+  );
   // Lista literal: AJUSTES_TABS vive en un módulo "use client" y no se puede leer desde el servidor.
-  const tabs: AjustesTabValue[] = ["general", "whatsapp", "google", "mercadopago", "pdf", ...(equipo ? (["equipo"] as const) : [])];
+  const tabs: AjustesTabValue[] = ["general", "whatsapp", "google", "mercadopago", "suscripcion", "pdf", ...(equipo ? (["equipo"] as const) : [])];
 
   return (
     <AjustesTabs
       tabs={tabs}
-      panels={{ general, whatsapp, google, mercadopago, pdf, ...(equipo ? { equipo } : {}) }}
+      panels={{ general, whatsapp, google, mercadopago, suscripcion, pdf, ...(equipo ? { equipo } : {}) }}
       summaries={{
         whatsapp: botConnected ? T.connected : T.disconnected,
         google: googleConnected ? T.googleConnected : T.googleNotConnected,
         mercadopago: mercadoPagoStatusLabel(mp.status),
+        suscripcion: subscriptionText,
         ...(members ? { equipo: TEAM_TEXT.summary(members.length) } : {}),
       }}
       banner={banner}
