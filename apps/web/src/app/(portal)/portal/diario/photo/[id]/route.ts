@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@nutri-bot/db";
-import { getPortalPatient } from "@/lib/patient-session";
+import { getPortalSession } from "@/lib/patient-session";
 
+// HU-033 (025c): la entrada tiene que ser del paciente de la sesión y de su consultorio. Un id de otro
+// paciente o de otro consultorio responde igual que uno inexistente.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const patient = await getPortalPatient();
-  if (!patient) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await getPortalSession();
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const entry = await prisma.diaryEntry.findUnique({
-    where: { id },
-    select: { patientId: true, photoData: true, photoMimeType: true },
+  const entry = await prisma.diaryEntry.findFirst({
+    where: { id, patientId: session.patient.id, patient: { tenantId: session.tenantId } },
+    select: { photoData: true, photoMimeType: true },
   });
-  if (!entry || entry.patientId !== patient.id || !entry.photoData || !entry.photoMimeType) {
+  if (!entry?.photoData || !entry.photoMimeType) {
     return NextResponse.json({ error: "no encontrado" }, { status: 404 });
   }
 

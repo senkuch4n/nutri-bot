@@ -901,9 +901,18 @@ async function readRecipePhotoBytes(
 }
 
 /** Portal (D3/D19): true si el paciente tiene un plan ACTIVE con un ítem de la receta de esa foto. */
-export async function patientCanSeeRecipePhoto(patientId: string, photoId: string): Promise<boolean> {
+export async function patientCanSeeRecipePhoto(t: TenantRef, patientId: string, photoId: string): Promise<boolean> {
+  const { tenantId } = t;
+  // HU-033 (025c): la receta es del consultorio de la sesión del portal y el plan ACTIVE es del paciente en ese
+  // mismo consultorio. Una foto de otro consultorio responde igual que una inexistente.
   const found = await prisma.recipePhoto.findFirst({
-    where: { id: photoId, recipe: { planItems: { some: { meal: { plan: { patientId, status: "ACTIVE" } } } } } },
+    where: {
+      id: photoId,
+      recipe: {
+        tenantId,
+        planItems: { some: { meal: { plan: { patientId, tenantId, status: "ACTIVE", patient: { tenantId } } } } },
+      },
+    },
     select: { id: true },
   });
   return found !== null;

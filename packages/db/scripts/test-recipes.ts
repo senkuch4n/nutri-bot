@@ -44,6 +44,7 @@ import {
 import { exportPublishedRecipes, importRecipeBundle } from "../domain/recipeTransfer";
 import { F1_PAGE } from "../../core/src/recipe-import/__fixtures__/synthetic";
 import { updateRecipe } from "../domain/recipes";
+import { LEGACY_TENANT_ID } from "../domain/tenantAccess";
 
 const TEST_JID = "5490000018001@s.whatsapp.net";
 const TEST_PHONE = "5490000018001";
@@ -170,10 +171,10 @@ async function main() {
   step(6, "borrar la receta usada en un plan falla por FK (P2003)");
 
   // 7. Portal
-  assert.equal(await patientCanSeeRecipePhoto(patient.id, second.photoId), true);
-  assert.equal(await patientCanSeeRecipePhoto("paciente-inventado-hu018a", second.photoId), false);
+  assert.equal(await patientCanSeeRecipePhoto({ tenantId: LEGACY_TENANT_ID }, patient.id, second.photoId), true);
+  assert.equal(await patientCanSeeRecipePhoto({ tenantId: LEGACY_TENANT_ID }, "paciente-inventado-hu018a", second.photoId), false);
   await prisma.nutritionPlan.update({ where: { id: plan.id }, data: { status: "ARCHIVED" } });
-  assert.equal(await patientCanSeeRecipePhoto(patient.id, second.photoId), false);
+  assert.equal(await patientCanSeeRecipePhoto({ tenantId: LEGACY_TENANT_ID }, patient.id, second.photoId), false);
   step(7, "patientCanSeeRecipePhoto: true con plan ACTIVE; false archivado o con otro paciente");
 
   // 8. Archivar y volver a publicar

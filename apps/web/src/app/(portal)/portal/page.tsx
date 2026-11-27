@@ -16,8 +16,8 @@ import { PortalCardLink } from "@/components/portal/portal-card-link";
 import { PortalLogoutButton } from "@/components/portal/portal-logout-button";
 import { buttonVariants } from "@/components/primitives/button";
 import { ButtonLink, Card, Metric, cn } from "@/components/ui";
-import { getPortalPatient } from "@/lib/patient-session";
-import { getProfessional } from "@/lib/professional";
+import { getPortalSession } from "@/lib/patient-session";
+import { getTenantProfessional } from "@/lib/professional";
 
 export const dynamic = "force-dynamic";
 
@@ -25,31 +25,33 @@ const cardTitle = "text-subheadline font-semibold text-muted-foreground";
 
 // HU-017d-1 (SDD 4.4 y 5.1): inicio del portal. Fechas y "hoy" en la zona de la profesional (T9f).
 export default async function PortalHomePage() {
-  const patient = await getPortalPatient();
-  if (!patient) return null; // el layout ya cubre este caso
+  const session = await getPortalSession();
+  if (!session) return null; // el layout ya cubre este caso
+  // HU-033 (025c): todo lo que se lee es del paciente de la sesión Y de su consultorio.
+  const { patient, tenantId } = session;
 
   const now = new Date();
-  const pro = await getProfessional();
+  const pro = await getTenantProfessional(tenantId);
   const tz = pro.timezone;
 
   const [nextAppointment, latestPlan, latestWeight, diaryToday] = await Promise.all([
     // D6: el primero por fecha entre confirmados y los que esperan la seña.
     prisma.appointment.findFirst({
-      where: { patientId: patient.id, status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
+      where: { patientId: patient.id, tenantId, status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] }, startsAt: { gte: now } },
       orderBy: { startsAt: "asc" },
       select: { startsAt: true, status: true, priceSnapshot: true, service: { select: { name: true } } },
     }),
     prisma.nutritionPlan.findFirst({
-      where: { patientId: patient.id, status: "ACTIVE" },
+      where: { patientId: patient.id, tenantId, status: "ACTIVE" },
       orderBy: { updatedAt: "desc" },
       select: { title: true },
     }),
     prisma.evolutionEntry.findFirst({
-      where: { patientId: patient.id, weightKg: { not: null } },
+      where: { patientId: patient.id, tenantId, weightKg: { not: null } },
       orderBy: { recordedAt: "desc" },
       select: { weightKg: true, recordedAt: true },
     }),
-    prisma.diaryEntry.count({ where: { patientId: patient.id, createdAt: { gte: startOfTodayInTz(now, tz) } } }),
+    prisma.diaryEntry.count({ where: { patientId: patient.id, patient: { tenantId }, createdAt: { gte: startOfTodayInTz(now, tz) } } }),
   ]);
 
   const whatsappUrl = professionalWhatsappUrl(pro.phoneJid);

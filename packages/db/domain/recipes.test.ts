@@ -378,15 +378,23 @@ describe("foto", () => {
     expect(await getRecipePhotoBytes("nope", "full")).toBeNull();
   });
 
-  it("patientCanSeeRecipePhoto: plan ACTIVE del paciente", async () => {
+  it("patientCanSeeRecipePhoto: receta del consultorio y plan ACTIVE del paciente en ese consultorio (HU-033)", async () => {
     p().recipePhoto.findFirst.mockResolvedValue({ id: "ph1" });
-    expect(await patientCanSeeRecipePhoto("pat1", "ph1")).toBe(true);
+    expect(await patientCanSeeRecipePhoto({ tenantId: "tenant-a" }, "pat1", "ph1")).toBe(true);
     expect(p().recipePhoto.findFirst).toHaveBeenCalledWith({
-      where: { id: "ph1", recipe: { planItems: { some: { meal: { plan: { patientId: "pat1", status: "ACTIVE" } } } } } },
+      where: {
+        id: "ph1",
+        recipe: {
+          tenantId: "tenant-a",
+          planItems: {
+            some: { meal: { plan: { patientId: "pat1", tenantId: "tenant-a", status: "ACTIVE", patient: { tenantId: "tenant-a" } } } },
+          },
+        },
+      },
       select: { id: true },
     });
     p().recipePhoto.findFirst.mockResolvedValue(null);
-    expect(await patientCanSeeRecipePhoto("pat1", "ph1")).toBe(false);
+    expect(await patientCanSeeRecipePhoto({ tenantId: "tenant-a" }, "pat1", "ph1")).toBe(false);
   });
 });
 

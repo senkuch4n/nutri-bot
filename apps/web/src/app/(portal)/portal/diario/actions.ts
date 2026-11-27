@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@nutri-bot/db";
 import { addDiaryEntry, deleteDiaryEntry } from "@nutri-bot/db/domain";
 import { PORTAL_DIARY_TEXT } from "@nutri-bot/core";
-import { getPortalPatient } from "@/lib/patient-session";
+import { getPortalSession } from "@/lib/patient-session";
 
 // HU-017d-2 (SDD 4.4): errores en lenguaje simple (T10) y borrado idempotente para el "Deshacer" (T9d).
 
@@ -20,10 +20,11 @@ function revalidateDiary() {
 }
 
 export async function addDiaryEntryAction(_prev: DiaryState, formData: FormData): Promise<DiaryState> {
-  const patient = await getPortalPatient();
-  // HU-025b-1: el diario se escribe en el consultorio del paciente; sin dueño no hay acceso.
-  if (!patient?.tenantId) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
-  const tenant = { tenantId: patient.tenantId };
+  // HU-033 (025c): el diario se escribe en el consultorio de la sesión del portal; sin sesión no hay acceso.
+  const session = await getPortalSession();
+  if (!session) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
+  const { patient } = session;
+  const tenant = { tenantId: session.tenantId };
 
   const note = String(formData.get("note") ?? "").trim();
   const photo = formData.get("photo");
@@ -50,19 +51,20 @@ export async function addDiaryEntryAction(_prev: DiaryState, formData: FormData)
 }
 
 export async function deleteDiaryEntryAction(id: string): Promise<DiaryDeleteResult> {
-  const patient = await getPortalPatient();
-  if (!patient?.tenantId) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
+  const session = await getPortalSession();
+  if (!session) return { ok: false, error: PORTAL_DIARY_TEXT.errorNoAccess };
   if (typeof id !== "string" || !id) return { ok: false };
-  const tenant = { tenantId: patient.tenantId };
+  const tenant = { tenantId: session.tenantId };
 
   try {
+    // HU-033 (025c): solo entradas del paciente de la sesión y de su consultorio. Una de otro paciente o de
+    // otro consultorio responde igual que una inexistente.
     const entry = await prisma.diaryEntry.findFirst({
-      where: { id, patient: { tenantId: tenant.tenantId } },
-      select: { patientId: true },
+      where: { id, patientId: session.patient.id, patient: { tenantId: tenant.tenantId } },
+      select: { id: true },
     });
     // Ya no está: el borrado es idempotente (un segundo commit o un registro borrado en otra pestaña).
     if (!entry) return { ok: true };
-    if (entry.patientId !== patient.id) return { ok: false, error: PORTAL_DIARY_TEXT.deleteError };
     await deleteDiaryEntry(tenant, id);
   } catch (error) {
     // Se borró entre la consulta y el delete (otra pestaña): también es "ya no está".
