@@ -30,3 +30,5 @@ export * from "./planSections";
 export * from "./planTemplateImport";
 export * from "./tenantAccess";
 export * from "./tenantScope";
+export * from "./subscriptions";
+export { SubscriptionBillingUnavailableError, type ArziumMercadoPagoGateway } from "./subscriptionsGateway";

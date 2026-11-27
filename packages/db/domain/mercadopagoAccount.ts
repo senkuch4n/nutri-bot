@@ -625,6 +625,9 @@ export async function resolveMercadoPagoWebhookAccount(
   notifiedUserId: string | null,
   env: Record<string, string | undefined> = process.env,
 ): Promise<{ tenant: TenantRef; sellerUserId: string | null } | null> {
+  // HU-029b (§B.5.7): una notificación de la cuenta de cobro de Arzium nunca es una seña de un consultorio
+  // (ni por fila ni por el respaldo .env). El llamador ya loguea unknown_account.
+  if (notifiedUserId !== null && isPlatformMercadoPagoUserId(notifiedUserId, env)) return null;
   if (notifiedUserId !== null) {
     const row = await prisma.mercadoPagoAccount.findUnique({
       where: { userId: notifiedUserId },
