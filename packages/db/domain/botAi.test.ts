@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAvailableSlotsForService: vi.fn(),
   prisma: {
     agenda: { findUnique: vi.fn() },
-    botAiQuestion: { count: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
+    botAiQuestion: { count: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn(), groupBy: vi.fn() },
     service: { findMany: vi.fn() },
     appointment: { findMany: vi.fn() },
     conversationState: { updateMany: vi.fn() },
@@ -27,7 +27,10 @@ import {
   clearExpiredSessionText,
   countBotAiQuestionsToday,
   markBotAiQuestionHandedOff,
+  botAiRetentionCutoff,
+  listTenantsWithExpiredBotAiQuestions,
   purgeExpiredBotAiQuestions,
+  purgeExpiredBotAiQuestionsForTenant,
   recordBotAiQuestion,
   runBotAiTool,
 } from "./botAi";
@@ -140,13 +143,34 @@ describe("purgeExpiredBotAiQuestions", () => {
   it("con scope acota a esos pacientes", async () => {
     mocks.prisma.botAiQuestion.deleteMany.mockResolvedValue({ count: 1 });
     await purgeExpiredBotAiQuestions({ retentionDays: 90, now: NOW, scope: { patientIds: ["a", "b"] } });
-    expect(mocks.prisma.botAiQuestion.deleteMany.mock.calls[0]![0].where.patientId).toEqual({ in: ["a", "b"] });
+    expect(mocks.prisma.botAiQuestion.deleteMany).toHaveBeenCalledWith({
+      where: { askedAt: { lt: new Date("2026-07-05T02:10:00Z") }, patientId: { in: ["a", "b"] } },
+    });
   });
 
   it("retentionDays < 1 rechaza sin borrar", async () => {
     await expect(purgeExpiredBotAiQuestions({ retentionDays: 0 })).rejects.toThrow();
     await expect(purgeExpiredBotAiQuestions({ retentionDays: Number.NaN })).rejects.toThrow();
     expect(mocks.prisma.botAiQuestion.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("tenant AI question retention", () => {
+  it("discovers groups and deletes only the selected tenant with the same strict cutoff", async () => {
+    const cutoff = botAiRetentionCutoff(90, NOW);
+    expect(cutoff).toEqual(new Date("2026-07-05T02:10:00Z"));
+    const tenants = [{ tenantId: "no-status" }, { tenantId: "stopped" }];
+    mocks.prisma.botAiQuestion.groupBy.mockResolvedValue(tenants);
+    mocks.prisma.botAiQuestion.deleteMany.mockResolvedValue({ count: 2 });
+    await expect(listTenantsWithExpiredBotAiQuestions(cutoff)).resolves.toEqual(tenants);
+    expect(mocks.prisma.botAiQuestion.groupBy.mock.calls).toEqual([[{
+      by: ["tenantId"], where: { askedAt: { lt: cutoff } },
+    }]]);
+    expect(mocks.prisma.botAiQuestion.deleteMany).not.toHaveBeenCalled();
+    await expect(purgeExpiredBotAiQuestionsForTenant(tenants[1]!, cutoff)).resolves.toBe(2);
+    expect(mocks.prisma.botAiQuestion.deleteMany.mock.calls).toEqual([[{
+      where: { tenantId: "stopped", askedAt: { lt: cutoff } },
+    }]]);
   });
 });
 

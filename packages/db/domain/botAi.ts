@@ -1,5 +1,5 @@
 // HU-012: registro de preguntas a la IA del bot, límites diarios, retención y tools de SOLO LECTURA.
-import type { BotAiOutcome } from "@prisma/client";
+import type { BotAiOutcome, Prisma } from "@prisma/client";
 import {
   afterHoursConfigFrom,
   appointmentsForAi,
@@ -13,7 +13,7 @@ import {
 import { prisma } from "../index";
 import { getAvailableSlotsForService } from "./availability";
 import { clearExpiredLegacyConversationText } from "./conversationState";
-import { getTenantProfessional } from "./tenantScope";
+import { getTenantProfessional, type TenantRef } from "./tenantScope";
 
 export { SESSION_STEPS_WITH_PATIENT_TEXT } from "./conversationState";
 
@@ -103,27 +103,44 @@ export async function markBotAiQuestionHandedOff(p: {
 
 const DAY_MS = 86_400_000;
 
-/**
- * BOT (cron diario + arranque). Retención D7: borra las preguntas con askedAt anterior a
- * now − retentionDays. `scope` es SOLO para el script de prueba. retentionDays < 1 → lanza.
- */
+export function botAiRetentionCutoff(retentionDays: number, now = new Date()): Date {
+  if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+    throw new Error("purgeExpiredBotAiQuestions: retentionDays tiene que ser >= 1");
+  }
+  return new Date(now.getTime() - retentionDays * DAY_MS);
+}
+
+function expiredBotAiQuestionsWhere(cutoff: Date) {
+  return { askedAt: { lt: cutoff } };
+}
+
+/** Retention follows the question's required tenantId, regardless of WhatsApp intent. */
+export async function listTenantsWithExpiredBotAiQuestions(cutoff: Date): Promise<TenantRef[]> {
+  const tenants = await prisma.botAiQuestion.groupBy({ by: ["tenantId"], where: expiredBotAiQuestionsWhere(cutoff) });
+  return tenants;
+}
+
+async function deleteExpiredBotAiQuestions(
+  cutoff: Date,
+  scope: Pick<Prisma.BotAiQuestionWhereInput, "tenantId" | "patientId">,
+): Promise<number> {
+  const res = await prisma.botAiQuestion.deleteMany({ where: { ...scope, ...expiredBotAiQuestionsWhere(cutoff) } });
+  return res.count;
+}
+
+/** Scheduled and startup retention (D7), scoped to one tenant. */
+export async function purgeExpiredBotAiQuestionsForTenant({ tenantId }: TenantRef, cutoff: Date): Promise<number> {
+  return deleteExpiredBotAiQuestions(cutoff, { tenantId });
+}
+
+/** Legacy global retention entry point. `scope` limits the deletion for the test script. */
 export async function purgeExpiredBotAiQuestions(opts: {
   retentionDays: number;
   now?: Date;
   scope?: { patientIds: string[] };
 }): Promise<number> {
-  if (!Number.isFinite(opts.retentionDays) || opts.retentionDays < 1) {
-    throw new Error("purgeExpiredBotAiQuestions: retentionDays tiene que ser >= 1");
-  }
-  const now = opts.now ?? new Date();
-  const cutoff = new Date(now.getTime() - opts.retentionDays * DAY_MS);
-  const res = await prisma.botAiQuestion.deleteMany({
-    where: {
-      askedAt: { lt: cutoff },
-      ...(opts.scope ? { patientId: { in: opts.scope.patientIds } } : {}),
-    },
-  });
-  return res.count;
+  const cutoff = botAiRetentionCutoff(opts.retentionDays, opts.now);
+  return deleteExpiredBotAiQuestions(cutoff, opts.scope ? { patientId: { in: opts.scope.patientIds } } : {});
 }
 
 /**

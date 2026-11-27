@@ -24,6 +24,7 @@ export * from "./isak";
 export * from "./anthropometricReports";
 export * from "./inquiries";
 export * from "./botAi";
+export { clearExpiredConversationText, listTenantsWithExpiredConversationText } from "./conversationState";
 export * from "./aiUsage";
 export * from "./professionalSelect";
 export * from "./planSections";
