@@ -2,7 +2,7 @@ import { messages } from "@nutri-bot/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  createAppointment: vi.fn(), checkout: vi.fn(), professional: vi.fn(), patient: vi.fn(), error: vi.fn(),
+  createAppointment: vi.fn(), checkout: vi.fn(), patient: vi.fn(), error: vi.fn(),
   available: vi.fn(), notifyMissing: vi.fn(), scopedPatient: vi.fn(), token: vi.fn(), cancelable: vi.fn(), tenantProfessional: vi.fn(),
   MercadoPagoUnavailableError: class MercadoPagoUnavailableError extends Error {},
   prisma: { agenda: { findUnique: vi.fn(), findFirst: vi.fn() }, service: { findUniqueOrThrow: vi.fn() }, conversationState: { findUnique: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() }, patient: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() }, outboundMessage: { create: vi.fn() } },
@@ -11,7 +11,7 @@ vi.mock("@nutri-bot/db", () => ({ prisma: mocks.prisma }));
 vi.mock("../../../packages/db/index", () => ({ prisma: mocks.prisma }));
 vi.mock("@nutri-bot/db/domain", () => ({
   createAppointment: mocks.createAppointment, createDepositCheckout: mocks.checkout,
-  getProfessional: mocks.professional, getTenantProfessional: mocks.tenantProfessional, findOrCreatePatientByJid: mocks.patient,
+  getTenantProfessional: mocks.tenantProfessional, findOrCreatePatientByJid: mocks.patient,
   findPatientByJidOrThrow: mocks.scopedPatient, createPatientToken: mocks.token,
   SlotUnavailableError: class extends Error {},
   // HU-023
@@ -35,7 +35,6 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     vi.resetAllMocks();
     mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { phoneJid: "bound-alert" } });
     mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { phoneJid: "bound-alert" } });
-    mocks.professional.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires", currency: "ARS", botPaused: false, botAiEnabled: false });
     mocks.tenantProfessional.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires", currency: "ARS", botPaused: false, botAiEnabled: false });
     mocks.patient.mockResolvedValue({ id: "patient", name: "Test" });
     mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ name: "Consulta nutricional" });
@@ -161,9 +160,8 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     mocks.createAppointment.mockResolvedValue({ id: "appointment", status: "CONFIRMED", startsAt });
     const send = vi.fn();
     await handleIncoming("fake-patient", "sí", send);
-    // Inicio de handleIncoming (028c, D-c1 b) + confirmación (025c): nunca Professional(1).
+    // Inicio de handleIncoming (028c, D-c1 b) + confirmación (025c). Professional(1) fijo ya no existe.
     expect(mocks.tenantProfessional.mock.calls).toEqual([["legacy-tenant"], ["legacy-tenant"]]);
-    expect(mocks.professional).not.toHaveBeenCalled();
   });
 
   it("reports checkout failure without logging provider credentials", async () => {

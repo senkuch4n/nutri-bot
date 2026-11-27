@@ -7,7 +7,6 @@ import type { BotAiProvider } from "./ai/provider";
 
 const mocks = vi.hoisted(() => ({
   tenantProfessional: vi.fn(),
-  legacyProfessional: vi.fn(),
   patient: vi.fn(),
   settings: vi.fn(),
   count: vi.fn(),
@@ -25,7 +24,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@nutri-bot/db", () => ({ prisma: {} }));
 vi.mock("@nutri-bot/db/domain", () => ({
   getTenantProfessional: mocks.tenantProfessional,
-  getProfessional: mocks.legacyProfessional,
   findOrCreatePatientByJid: mocks.patient,
   getTenantAiSettings: mocks.settings,
   countBotAiQuestionsToday: mocks.count,
@@ -72,7 +70,6 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.conversationTenant.mockResolvedValue(A);
   mocks.tenantProfessional.mockResolvedValue(PRO_A);
-  mocks.legacyProfessional.mockRejectedValue(new Error("handleIncoming no tiene que leer Professional(1)"));
   mocks.patient.mockResolvedValue(PATIENT);
   mocks.settings.mockResolvedValue({ botDailyPerPatient: null, botDailyPerTenant: null });
   mocks.count.mockResolvedValue({ patient: 0, tenant: 0 });
@@ -92,7 +89,6 @@ describe("modo pregunta por consultorio (HU-028c)", () => {
     const send = vi.fn();
     await handleIncoming(JID, QUESTION, send, opts);
     expect(mocks.tenantProfessional).toHaveBeenCalledWith("tenant-a");
-    expect(mocks.legacyProfessional).not.toHaveBeenCalled();
     expect(mocks.patient).toHaveBeenCalledWith(A, JID);
     expect(mocks.settings).toHaveBeenCalledWith(A);
     expect(mocks.count).toHaveBeenCalledWith({ tenantId: "tenant-a", patientId: "patient-a", now: NOW, tz: TZ });
