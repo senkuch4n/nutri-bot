@@ -152,7 +152,9 @@ corriendo**) → `up -d`.
 
 **Antes de mergear a `main`**, en producción y solo lectura:
 - `SELECT count(*) FROM "BotAiQuestion" q JOIN "Patient" p ON p.id = q."patientId" WHERE p."tenantId" IS NULL;` → 0
-  (si no, el `migrate` corta a propósito con `HU-028c: …` y siguen los contenedores viejos).
+  (si no, el `migrate` corta a propósito y siguen los contenedores viejos. Prisma muestra
+  `current transaction is aborted`; el motivo `HU-028c: …` queda en el log de Postgres:
+  `docker compose logs db --since 10m | grep HU-028c`).
 - `SELECT p."tenantId", count(*) FROM "BotAiQuestion" q JOIN "Patient" p ON p.id = q."patientId" GROUP BY 1;` →
   solo `legacy-tenant` (anotar el número).
 - `grep -E '^BOT_AI_DAILY_(PER_PATIENT|GLOBAL)=' deploy/.env` → anotar los valores: siguen siendo los topes de
@@ -180,6 +182,8 @@ rompe el registro de preguntas del bot viejo (`NOT NULL`): si hiciera falta, a m
 `ALTER TABLE "BotAiQuestion" ALTER COLUMN "tenantId" DROP NOT NULL;` (las tablas nuevas no molestan al código viejo).
 Si el `migrate` cortó por el fail closed, Prisma deja la migración marcada como fallida: después de resolver los
 datos, `prisma migrate resolve --rolled-back <carpeta>` antes de volver a deployar.
+En producción, desde `/opt/nutribot/deploy`:
+`docker compose run --rm migrate npx --no-install prisma migrate resolve --rolled-back 20261127190208_ai_usage_per_tenant --schema packages/db/prisma/schema.prisma`.
 
 ## Suscripción de Arzium con Mercado Pago (HU-029b)
 
