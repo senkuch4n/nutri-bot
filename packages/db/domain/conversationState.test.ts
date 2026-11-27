@@ -3,12 +3,15 @@ import { beforeEach, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   agenda: { findUnique: vi.fn() },
   patient: { findMany: vi.fn() },
+  tenant: { findMany: vi.fn() },
   conversationState: { findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), createMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
 }));
 vi.mock("../index", () => ({ prisma: db }));
 
 import {
   clearExpiredLegacyConversationText,
+  clearExpiredConversationText,
+  listTenantsWithExpiredConversationText,
   findLegacyConversationState,
   listPatientLastContacts,
   loadOrInitializeLegacyConversationState,
@@ -28,6 +31,31 @@ const state = db.conversationState;
 beforeEach(() => {
   vi.resetAllMocks();
   db.agenda.findUnique.mockResolvedValue({ professional: { timezone: "UTC", phoneJid: null } });
+});
+
+const expiredText = {
+  step: { in: ["AWAIT_QUESTION", "BOOK_REASON", "BOOK_CONFIRM"] },
+  updatedAt: { lt: insertedAt },
+};
+
+it("selects only tenants with expired text, regardless of absent or stopped WhatsApp intent", async () => {
+  db.tenant.findMany.mockResolvedValue([{ id: "no-status" }, { id: "stopped" }]);
+  await expect(listTenantsWithExpiredConversationText(insertedAt)).resolves.toEqual([
+    { tenantId: "no-status" }, { tenantId: "stopped" },
+  ]);
+  expect(db.tenant.findMany.mock.calls).toEqual([[{
+    where: { conversationStates: { some: expiredText } }, select: { id: true },
+  }]]);
+});
+
+it("resets only the specified tenant's expired text, including first-contact sessions", async () => {
+  state.updateMany.mockResolvedValue({ count: 3 });
+  await expect(clearExpiredConversationText({ tenantId: "stopped" }, insertedAt)).resolves.toBe(3);
+  expect(state.updateMany.mock.calls).toEqual([[{
+    where: { tenantId: "stopped", ...expiredText }, data: initial,
+  }]]);
+  expect(db.agenda.findUnique).not.toHaveBeenCalled();
+  expect(db.patient.findMany).not.toHaveBeenCalled();
 });
 
 it("reads only scoped timestamps for requested JIDs belonging to active original patients", async () => {

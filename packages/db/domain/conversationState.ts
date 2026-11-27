@@ -9,6 +9,10 @@ function ownedStateKey(tenantId: string, patientJid: string) {
 
 export async function findLegacyConversationState(patientJid: string) {
   const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  return findConversationState({ tenantId }, patientJid);
+}
+
+export function findConversationState({ tenantId }: TenantRef, patientJid: string) {
   return prisma.conversationState.findUnique({ where: ownedStateKey(tenantId, patientJid) });
 }
 
@@ -40,6 +44,10 @@ function insertLegacyState(db: StateClient, tenantId: string, patientJid: string
 
 export async function loadOrInitializeLegacyConversationState(patientJid: string, initialStep: string) {
   const { scope: { tenantId } } = await resolveLegacySchedulingScope();
+  return loadOrInitializeConversationState({ tenantId }, patientJid, initialStep);
+}
+
+export async function loadOrInitializeConversationState({ tenantId }: TenantRef, patientJid: string, initialStep: string) {
   const where = ownedStateKey(tenantId, patientJid);
   // Existing sessions keep their inactivity timestamp, including after a racing insert.
   const existing = await prisma.conversationState.findUnique({ where });
@@ -61,7 +69,11 @@ async function saveLegacyState(db: StateClient, tenantId: string, patientJid: st
 
 export async function saveLegacyConversationState(patientJid: string, step: string, context: Prisma.InputJsonValue) {
   const { scope: { tenantId } } = await resolveLegacySchedulingScope();
-  await saveLegacyState(prisma, tenantId, patientJid, { step, context });
+  return saveConversationState({ tenantId }, patientJid, step, context);
+}
+
+export function saveConversationState({ tenantId }: TenantRef, patientJid: string, step: string, context: Prisma.InputJsonValue) {
+  return saveLegacyState(prisma, tenantId, patientJid, { step, context });
 }
 
 // Verify the original installation on the same transaction that owns the appointment write.
@@ -116,14 +128,30 @@ function bindConversationStateTo(tx: Prisma.TransactionClient, binding: Scheduli
 /** Steps that retain text supplied by the patient (AI history or booking reason). */
 export const SESSION_STEPS_WITH_PATIENT_TEXT = ["AWAIT_QUESTION", "BOOK_REASON", "BOOK_CONFIRM"] as const;
 
+function expiredTextWhere(cutoff: Date) {
+  return { step: { in: [...SESSION_STEPS_WITH_PATIENT_TEXT] }, updatedAt: { lt: cutoff } };
+}
+
+export async function listTenantsWithExpiredConversationText(cutoff: Date): Promise<TenantRef[]> {
+  // Privacy retention follows owned conversation data, not WhatsApp session intent.
+  const rows = await prisma.tenant.findMany({
+    where: { conversationStates: { some: expiredTextWhere(cutoff) } },
+    select: { id: true },
+  });
+  return rows.map(({ id }) => ({ tenantId: id }));
+}
+
 export async function clearExpiredLegacyConversationText(cutoff: Date, jids?: string[]) {
-  const { scope: { tenantId } } = await resolveLegacySchedulingScope();
-  // The legacy table also holds first-contact sessions with no corresponding Patient.
+  const { scope } = await resolveLegacySchedulingScope();
+  return clearExpiredConversationText(scope, cutoff, jids);
+}
+
+export async function clearExpiredConversationText({ tenantId }: TenantRef, cutoff: Date, jids?: string[]) {
+  // First-contact sessions may not have a corresponding Patient.
   const { count } = await prisma.conversationState.updateMany({
     where: {
       tenantId,
-      step: { in: [...SESSION_STEPS_WITH_PATIENT_TEXT] },
-      updatedAt: { lt: cutoff },
+      ...expiredTextWhere(cutoff),
       ...(jids ? { patientJid: { in: jids } } : {}),
     },
     data: { step: "DORMANT", context: {} },

@@ -20,8 +20,11 @@ import {
   runBotAiTool,
 } from "@nutri-bot/db/domain";
 import {
+  findConversationState,
   findLegacyConversationState,
+  loadOrInitializeConversationState,
   loadOrInitializeLegacyConversationState,
+  saveConversationState,
   saveLegacyConversationState,
 } from "@nutri-bot/db/domain/conversationState";
 import {
@@ -68,11 +71,14 @@ import { getConversationTenant } from "./tenant";
 type Send = (text: string) => Promise<void>;
 
 type Professional = TenantProfessional;
-
-/** HU-033 (025c): la profesional del consultorio de la conversación (antes se leía Professional(1)). */
-async function conversationProfessional(): Promise<Professional> {
-  return getTenantProfessional((await getConversationTenant()).tenantId);
+async function conversationProfessional(scope: TenantRef | undefined) {
+  return getTenantProfessional((scope ?? await getConversationTenant()).tenantId);
 }
+
+function readState(scope: TenantRef | undefined, jid: string) {
+  return scope ? findConversationState(scope, jid) : findLegacyConversationState(jid);
+}
+
 type PatientRow = Awaited<ReturnType<typeof findOrCreatePatientByJid>>;
 
 /** Opciones inyectables. En producción no se pasan. */
@@ -144,13 +150,17 @@ type Ctx = {
   reason?: string;
 };
 
-async function loadState(jid: string): Promise<{ step: string; ctx: Ctx; updatedAt: Date }> {
-  const row = await loadOrInitializeLegacyConversationState(jid, STEP.DORMANT);
+async function loadState(scope: TenantRef | undefined, jid: string): Promise<{ step: string; ctx: Ctx; updatedAt: Date }> {
+  const row = scope
+    ? await loadOrInitializeConversationState(scope, jid, STEP.DORMANT)
+    : await loadOrInitializeLegacyConversationState(jid, STEP.DORMANT);
   return { step: row.step, ctx: (row.context ?? {}) as Ctx, updatedAt: row.updatedAt };
 }
 
-async function save(jid: string, step: string, ctx: Ctx = {}): Promise<void> {
-  await saveLegacyConversationState(jid, step, ctx as unknown as Prisma.InputJsonValue);
+async function save(scope: TenantRef | undefined, jid: string, step: string, ctx: Ctx = {}): Promise<void> {
+  const context = ctx as unknown as Prisma.InputJsonValue;
+  if (scope) await saveConversationState(scope, jid, step, context);
+  else await saveLegacyConversationState(jid, step, context);
 }
 
 function parseChoice(text: string, max: number): number | null {
@@ -174,10 +184,11 @@ export async function handleIncoming(
   text: string,
   send: Send,
   opts: ConversationOptions = {},
+  scope?: TenantRef,
 ): Promise<void> {
   const now = opts.now ?? new Date();
   // HU-028c (D-c1 b): la profesional del consultorio de la conversación (opción 5, zona y nombre de la IA).
-  const tenant = await getConversationTenant();
+  const tenant = scope ?? await getConversationTenant();
   const pro = await getTenantProfessional(tenant.tenantId);
 
   // Interruptor global: la nutricionista puede apagar el bot desde el panel.
@@ -185,18 +196,18 @@ export async function handleIncoming(
 
   // Attendance must never create a patient from a stale or foreign conversation hint.
   const attendanceJid = jid.replace(/^(\d+):\d+(@(?:s\.whatsapp\.net|lid))$/, "$1$2");
-  const saved = await findLegacyConversationState(attendanceJid);
+  const saved = await readState(scope, attendanceJid);
   if (saved?.step === STEP.CONFIRM_ATTENDANCE && !isExitWord(text) &&
       !(isWakeWord(text) && /\bmenu\b/.test(normalize(text)))) {
     const late = now.getTime() - saved.updatedAt.getTime() > SESSION_TIMEOUT_MS;
     if (!late || lateAttendanceAnswer(text) !== null) {
-      return handleConfirmAttendance(attendanceJid, text, (saved.context ?? {}) as Ctx, send, now, saved.updatedAt);
+      return handleConfirmAttendance(scope, attendanceJid, text, (saved.context ?? {}) as Ctx, send, now, saved.updatedAt);
     }
     if (!isWakeWord(text)) return;
   }
 
   const patient = await findOrCreatePatientByJid(tenant, jid);
-  const state = await loadState(jid);
+  const state = await loadState(scope, jid);
   const ctx = state.ctx;
   let step = state.step;
 
@@ -221,10 +232,10 @@ export async function handleIncoming(
   if (step === STEP.DORMANT) {
     if (!isWakeWord(text)) return; // silencio total ante mensajes normales
     if (!patient.name) {
-      await save(jid, STEP.ASK_NAME);
+      await save(scope, jid, STEP.ASK_NAME);
       await send(messages.ASK_NAME);
     } else {
-      await save(jid, STEP.MENU);
+      await save(scope, jid, STEP.MENU);
       await send(messages.welcomeBack(patient.name, menuText));
     }
     return;
@@ -235,55 +246,55 @@ export async function handleIncoming(
   // para que "¿puedo salir a correr?" se guarde como consulta.
   if (step === STEP.AWAIT_INQUIRY) {
     if (isExitCommand(text)) {
-      await save(jid, STEP.DORMANT);
+      await save(scope, jid, STEP.DORMANT);
       await send(messages.DORMANT_BYE);
       return;
     }
     if (isMenuCommand(text)) {
-      await save(jid, STEP.MENU);
+      await save(scope, jid, STEP.MENU);
       await send(menuText);
       return;
     }
-    return handleInquiryText(jid, text, ctx, patient, pro, send, opts, now, menuText, ai);
+    return handleInquiryText(scope, jid, text, ctx, patient, pro, send, opts, now, menuText, ai);
   }
 
   // HU-012: modo pregunta. Comandos estrictos y dígitos sueltos no llaman a la IA.
   if (step === STEP.AWAIT_QUESTION) {
     if (isExitCommand(text)) {
-      await save(jid, STEP.DORMANT);
+      await save(scope, jid, STEP.DORMANT);
       await send(messages.DORMANT_BYE);
       return;
     }
     if (isMenuCommand(text)) {
-      await save(jid, STEP.MENU);
+      await save(scope, jid, STEP.MENU);
       await send(menuText);
       return;
     }
     const d = menuDigit(text, 5);
     if (d === "0" && ctx.lastQuestion) {
-      return handoffFromQuestion(jid, ctx, patient, pro, send, opts, now);
+      return handoffFromQuestion(scope, jid, ctx, patient, pro, send, opts, now);
     }
-    if (d !== null) return handleMenu(jid, d, send, pro, opts, now, menuText, ai);
-    return handleQuestionText(jid, text, ctx, tenant, patient, pro, send, opts, now, ai);
+    if (d !== null) return handleMenu(scope, jid, d, send, pro, opts, now, menuText, ai);
+    return handleQuestionText(scope, jid, text, ctx, tenant, patient, pro, send, opts, now, ai);
   }
 
   // HU-013: paso del motivo. Texto libre: solo comandos estrictos (mensaje entero).
   if (step === STEP.BOOK_REASON) {
     if (isExitCommand(text)) {
-      await save(jid, STEP.DORMANT);
+      await save(scope, jid, STEP.DORMANT);
       await send(messages.DORMANT_BYE);
       return;
     }
     if (isMenuCommand(text)) {
-      await save(jid, STEP.MENU);
+      await save(scope, jid, STEP.MENU);
       await send(menuText);
       return;
     }
-    return handleBookReason(jid, text, ctx, send, menuText);
+    return handleBookReason(scope, jid, text, ctx, send, menuText);
   }
 
   if (isExitWord(text)) {
-    await save(jid, STEP.DORMANT);
+    await save(scope, jid, STEP.DORMANT);
     await send(messages.DORMANT_BYE);
     return;
   }
@@ -294,42 +305,43 @@ export async function handleIncoming(
       await send(messages.ASK_NAME);
       return;
     }
-    await prisma.patient.update({ where: { id: patient.id }, data: { name } });
-    await save(jid, STEP.MENU);
+    await prisma.patient.update({ where: { id: patient.id, ...(scope && { tenantId: scope.tenantId }) }, data: { name } });
+    await save(scope, jid, STEP.MENU);
     await send(messages.greetByName(name, menuText));
     return;
   }
 
   if (isWakeWord(text) && /\bmenu\b/.test(normalize(text))) {
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     await send(menuText);
     return;
   }
 
   switch (step) {
     case STEP.MENU:
-      return handleMenu(jid, text, send, pro, opts, now, menuText, ai);
+      return handleMenu(scope, jid, text, send, pro, opts, now, menuText, ai);
     case STEP.BOOK_SERVICE:
-      return handleBookService(jid, text, send);
+      return handleBookService(scope, jid, text, send);
     case STEP.BOOK_DAY:
-      return handleBookDay(jid, text, ctx, send);
+      return handleBookDay(scope, jid, text, ctx, send);
     case STEP.BOOK_SLOT:
-      return handleBookSlot(jid, text, ctx, send);
+      return handleBookSlot(scope, jid, text, ctx, send);
     case STEP.BOOK_CONFIRM:
-      return handleBookConfirm(jid, text, ctx, patient.id, send, menuText, opts);
+      return handleBookConfirm(scope, jid, text, ctx, patient.id, send, menuText, opts);
     case STEP.CANCEL_PICK:
-      return handleCancelPick(jid, text, ctx, send);
+      return handleCancelPick(scope, jid, text, ctx, send);
     case STEP.CANCEL_CONFIRM:
-      return handleCancelConfirm(jid, text, ctx, send, menuText);
+      return handleCancelConfirm(scope, jid, text, ctx, send, menuText);
     case STEP.CONFIRM_ATTENDANCE:
-      return handleConfirmAttendance(attendanceJid, text, ctx, send, now, state.updatedAt);
+      return handleConfirmAttendance(scope, attendanceJid, text, ctx, send, now, state.updatedAt);
     default:
-      await save(jid, STEP.MENU);
+      await save(scope, jid, STEP.MENU);
       await send(menuText);
   }
 }
 
 async function handleMenu(
+  scope: TenantRef | undefined,
   jid: string,
   text: string,
   send: Send,
@@ -342,12 +354,12 @@ async function handleMenu(
   const choice = text.trim().replace(/\D/g, "");
 
   if (choice === "1") {
-    const services = await listActiveServices();
+    const services = await listActiveServices(...(scope ? [scope] : []));
     if (services.length === 0) {
       await send("Todavía no hay servicios disponibles para reservar. Probá más tarde.");
       return;
     }
-    await save(jid, STEP.BOOK_SERVICE);
+    await save(scope, jid, STEP.BOOK_SERVICE);
     await send(
       messages.askService(
         services
@@ -359,14 +371,14 @@ async function handleMenu(
   }
 
   if (choice === "2") {
-    const patient = await findPatientByJidOrThrow(await getConversationTenant(), jid);
-    const appts = await cancelableAppointments(patient.id);
+    const patient = await findPatientByJidOrThrow((scope ?? await getConversationTenant()), jid);
+    const appts = await cancelableAppointments(patient.id, ...(scope ? [scope] : []));
     if (appts.length === 0) {
       await send(messages.NO_APPTS_TO_CANCEL);
       await send(menuText);
       return;
     }
-    await save(jid, STEP.CANCEL_PICK, { apptIds: appts.map((a) => a.id) });
+    await save(scope, jid, STEP.CANCEL_PICK, { apptIds: appts.map((a) => a.id) });
     await send(
       messages.askWhichToCancel(
         appts.map((a) => ({ serviceName: a.service.name, startsAt: a.startsAt })),
@@ -377,7 +389,7 @@ async function handleMenu(
   }
 
   if (choice === "3") {
-    const services = await listActiveServices();
+    const services = await listActiveServices(...(scope ? [scope] : []));
     await send(
       messages.pricesMessage(
         formatServiceList(
@@ -396,10 +408,9 @@ async function handleMenu(
   }
 
   if (choice === "4") {
-    const patient = await findPatientByJidOrThrow(await getConversationTenant(), jid);
-    // HU-033 (025c): el token v2 ata el link al paciente y a su consultorio. Sin consultorio no hay link:
-    // falla como una búsqueda de paciente fallida (se registra el código, no se manda nada nuevo).
-    if (!patient.tenantId) throw new Error("portal_link_without_tenant");
+    const tenant = scope ?? await getConversationTenant();
+    const patient = await findPatientByJidOrThrow(tenant, jid);
+    if (patient.tenantId !== tenant.tenantId) throw new Error("portal_link_without_tenant");
     const token = createPatientToken({ patientId: patient.id, tenantId: patient.tenantId }, 15);
     const url = `${process.env.AUTH_URL}/portal/login?token=${token}`;
     await send(messages.portalLink(url));
@@ -413,23 +424,23 @@ async function handleMenu(
       await send(
         messages.afterHoursHandoff({ attendFrom: formatClock(config.end), attendTo: formatClock(config.start) }),
       );
-      await save(jid, STEP.AWAIT_INQUIRY, { alerted: false, confirmed: false });
+      await save(scope, jid, STEP.AWAIT_INQUIRY, { alerted: false, confirmed: false });
       return;
     }
-    const target = await handoffAlertTarget(opts);
-    const patient = target ? await findPatientByJidOrThrow(await getConversationTenant(), jid) : null;
+    const target = await handoffAlertTarget(scope, opts);
+    const patient = target ? await findPatientByJidOrThrow((scope ?? await getConversationTenant()), jid) : null;
     await send(messages.HANDOFF);
     if (target && patient) {
       await enqueueHandoffAlert(patient, target);
     }
     // HU-011 (D4): de día también se captura lo que escriba después.
-    await save(jid, STEP.AWAIT_INQUIRY, { alerted: Boolean(target), confirmed: false });
+    await save(scope, jid, STEP.AWAIT_INQUIRY, { alerted: Boolean(target), confirmed: false });
     return;
   }
 
   // HU-012: opción 5 (oculta si la IA no está disponible: como hoy, no se entiende).
   if (choice === "5" && ai.available) {
-    await save(jid, STEP.AWAIT_QUESTION, { aiHistory: [] }); // historial nuevo al entrar (P7)
+    await save(scope, jid, STEP.AWAIT_QUESTION, { aiHistory: [] }); // historial nuevo al entrar (P7)
     await send(messages.QUESTION_MODE_INTRO);
     return;
   }
@@ -437,25 +448,25 @@ async function handleMenu(
   await send(messages.NOT_UNDERSTOOD);
 }
 
-async function handleBookService(jid: string, text: string, send: Send): Promise<void> {
-  const services = await listActiveServices();
+async function handleBookService(scope: TenantRef | undefined, jid: string, text: string, send: Send): Promise<void> {
+  const services = await listActiveServices(...(scope ? [scope] : []));
   const idx = parseChoice(text, services.length);
   if (idx === null) {
     await send(messages.NOT_UNDERSTOOD);
     return;
   }
   const service = services[idx]!;
-  const days = await nextAvailableDays(service.id);
+  const days = await (scope ? nextAvailableDays(service.id, undefined, scope) : nextAvailableDays(service.id));
   if (days.length === 0) {
     await send("No hay turnos disponibles en las próximas semanas. Escribí *menú* para volver.");
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     return;
   }
-  await save(jid, STEP.BOOK_DAY, { serviceId: service.id, days });
+  await save(scope, jid, STEP.BOOK_DAY, { serviceId: service.id, days });
   await send(messages.askDay(days));
 }
 
-async function handleBookDay(jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
+async function handleBookDay(scope: TenantRef | undefined, jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
   const days = ctx.days ?? [];
   const idx = parseChoice(text, days.length);
   if (idx === null || !ctx.serviceId) {
@@ -463,24 +474,24 @@ async function handleBookDay(jid: string, text: string, ctx: Ctx, send: Send): P
     return;
   }
   const day = days[idx]!;
-  const slots = await slotsForDay(ctx.serviceId, day.dayKey);
+  const slots = await slotsForDay(ctx.serviceId, day.dayKey, ...(scope ? [scope] : []));
   if (slots.length === 0) {
     await send(messages.NO_SLOTS);
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     return;
   }
   const iso = slots.map((s) => s.toISOString());
-  await save(jid, STEP.BOOK_SLOT, {
+  await save(scope, jid, STEP.BOOK_SLOT, {
     serviceId: ctx.serviceId,
     dayKey: day.dayKey,
     slots: iso,
     ...(ctx.reason ? { reason: ctx.reason } : {}), // HU-013: motivo conservado tras SLOT_TAKEN
   });
-  const pro = await conversationProfessional();
+  const pro = await conversationProfessional(scope);
   await send(messages.askSlot(slots, pro.timezone));
 }
 
-async function handleBookSlot(jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
+async function handleBookSlot(scope: TenantRef | undefined, jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
   const slots = ctx.slots ?? [];
   const idx = parseChoice(text, slots.length);
   if (idx === null || !ctx.serviceId) {
@@ -489,28 +500,29 @@ async function handleBookSlot(jid: string, text: string, ctx: Ctx, send: Send): 
   }
   const startsAt = slots[idx]!;
   // HU-013: el motivo ya lo dejó antes de que se ocupara el horario anterior: no se pide de nuevo.
-  if (ctx.reason) return sendBookingSummary(jid, { serviceId: ctx.serviceId, startsAt, reason: ctx.reason }, send);
-  const service = await prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } });
+  if (ctx.reason) return sendBookingSummary(scope, jid, { serviceId: ctx.serviceId, startsAt, reason: ctx.reason }, send);
+  const service = await prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId, ...(scope && { tenantId: scope.tenantId }) } });
   // HU-013: si el servicio pide motivo, se pide antes del resumen.
   if (service.asksReason) {
-    await save(jid, STEP.BOOK_REASON, { serviceId: ctx.serviceId, startsAt });
+    await save(scope, jid, STEP.BOOK_REASON, { serviceId: ctx.serviceId, startsAt });
     await send(messages.ASK_BOOKING_REASON);
     return;
   }
-  return sendBookingSummary(jid, { serviceId: ctx.serviceId, startsAt }, send);
+  return sendBookingSummary(scope, jid, { serviceId: ctx.serviceId, startsAt }, send);
 }
 
 /** HU-013: resumen de confirmación (lo usan handleBookSlot y handleBookReason). */
 async function sendBookingSummary(
+  scope: TenantRef | undefined,
   jid: string,
   b: { serviceId: string; startsAt: string; reason?: string },
   send: Send,
 ): Promise<void> {
   const [service, pro] = await Promise.all([
-    prisma.service.findUniqueOrThrow({ where: { id: b.serviceId } }),
-    conversationProfessional(),
+    prisma.service.findUniqueOrThrow({ where: { id: b.serviceId, ...(scope && { tenantId: scope.tenantId }) } }),
+    conversationProfessional(scope),
   ]);
-  await save(jid, STEP.BOOK_CONFIRM, {
+  await save(scope, jid, STEP.BOOK_CONFIRM, {
     serviceId: b.serviceId,
     startsAt: b.startsAt,
     ...(b.reason ? { reason: b.reason } : {}),
@@ -529,6 +541,7 @@ async function sendBookingSummary(
 
 /** HU-013: paso del motivo (D1–D3). El texto inválido no se guarda. */
 async function handleBookReason(
+  scope: TenantRef | undefined,
   jid: string,
   text: string,
   ctx: Ctx,
@@ -536,7 +549,7 @@ async function handleBookReason(
   menuText: string,
 ): Promise<void> {
   if (!ctx.serviceId || !ctx.startsAt) {
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     await send(menuText);
     return;
   }
@@ -544,21 +557,22 @@ async function handleBookReason(
   const r = parseBookingReason(text);
   switch (r.kind) {
     case "skip":
-      return sendBookingSummary(jid, b, send);
+      return sendBookingSummary(scope, jid, b, send);
     case "ok":
-      return sendBookingSummary(jid, { ...b, reason: r.reason }, send);
+      return sendBookingSummary(scope, jid, { ...b, reason: r.reason }, send);
     case "tooShort":
-      await save(jid, STEP.BOOK_REASON, b);
+      await save(scope, jid, STEP.BOOK_REASON, b);
       await send(messages.BOOKING_REASON_TOO_SHORT);
       return;
     case "tooLong":
-      await save(jid, STEP.BOOK_REASON, b);
+      await save(scope, jid, STEP.BOOK_REASON, b);
       await send(messages.BOOKING_REASON_TOO_LONG);
       return;
   }
 }
 
 async function handleBookConfirm(
+  scope: TenantRef | undefined,
   jid: string,
   text: string,
   ctx: Ctx,
@@ -569,7 +583,7 @@ async function handleBookConfirm(
 ): Promise<void> {
   if (isNo(text)) {
     await send("Sin problema, no reservé nada. Escribí *menú* si querés hacer otra cosa.");
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     return;
   }
   if (!isYes(text)) {
@@ -577,7 +591,7 @@ async function handleBookConfirm(
     return;
   }
   if (!ctx.serviceId || !ctx.startsAt) {
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     await send(menuText);
     return;
   }
@@ -585,15 +599,15 @@ async function handleBookConfirm(
   let serviceName: string | null = null;
   try {
     const [service, pro] = await Promise.all([
-      prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } }),
-      conversationProfessional(),
+      prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId, ...(scope && { tenantId: scope.tenantId }) } }),
+      conversationProfessional(scope),
     ]);
     serviceName = service.name;
-    const tenant = await getConversationTenant();
+    const tenant = (scope ?? await getConversationTenant());
     // HU-023 (D3): sin cuenta de Mercado Pago usable no se crea el turno con seña.
     if (service.requiresDeposit && !(await isMercadoPagoCheckoutAvailable(tenant))) {
-      await depositUnavailable(patientId, service.name, send);
-      await save(jid, STEP.MENU);
+      await depositUnavailable(scope, patientId, service.name, send);
+      await save(scope, jid, STEP.MENU);
       return;
     }
     const appointment = await createAppointment(tenant, {
@@ -615,9 +629,9 @@ async function handleBookConfirm(
     if (err instanceof SlotUnavailableError) {
       // HU-013: si dejó motivo, se le ofrecen otros días del mismo servicio sin perderlo.
       if (ctx.reason) {
-        const days = await nextAvailableDays(ctx.serviceId);
+        const days = await (scope ? nextAvailableDays(ctx.serviceId, undefined, scope) : nextAvailableDays(ctx.serviceId));
         if (days.length > 0) {
-          await save(jid, STEP.BOOK_DAY, { serviceId: ctx.serviceId, days, reason: ctx.reason });
+          await save(scope, jid, STEP.BOOK_DAY, { serviceId: ctx.serviceId, days, reason: ctx.reason });
           await send(messages.slotTakenKeepReason(days));
           return;
         }
@@ -626,21 +640,21 @@ async function handleBookConfirm(
     } else if (err instanceof MercadoPagoUnavailableError) {
       // HU-023: carrera (la cuenta se cayó entre el chequeo y el checkout). El turno ya quedó
       // cancelado por el catch de createDepositCheckout.
-      await depositUnavailable(patientId, serviceName ?? "", send);
+      await depositUnavailable(scope, patientId, serviceName ?? "", send);
     } else {
       // Provider errors may contain request headers with the access token.
       logger.error({ errorType: err instanceof Error ? err.name : "UnknownError" }, "Error creando turno desde el bot");
       await send("Hubo un problema al reservar. Escribí *menú* e intentá de nuevo.");
     }
   }
-  await save(jid, STEP.MENU);
+  await save(scope, jid, STEP.MENU);
 }
 
 /** HU-023 (D3/D5): avisa al paciente que la seña no está disponible y a la profesional (tope 24 h). */
-async function depositUnavailable(patientId: string, serviceName: string, send: Send): Promise<void> {
+async function depositUnavailable(scope: TenantRef | undefined, patientId: string, serviceName: string, send: Send): Promise<void> {
   await send(messages.DEPOSIT_UNAVAILABLE);
   try {
-    const tenant = await getConversationTenant();
+    const tenant = (scope ?? await getConversationTenant());
     const patient = await prisma.patient.findUnique({ where: { id: patientId, tenantId: tenant.tenantId }, select: { name: true, phone: true } });
     if (patient) {
       await notifyMercadoPagoMissingForBooking(tenant, { patientName: patient.name, patientPhone: patient.phone, serviceName });
@@ -651,7 +665,7 @@ async function depositUnavailable(patientId: string, serviceName: string, send: 
   }
 }
 
-async function handleCancelPick(jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
+async function handleCancelPick(scope: TenantRef | undefined, jid: string, text: string, ctx: Ctx, send: Send): Promise<void> {
   const ids = ctx.apptIds ?? [];
   const idx = parseChoice(text, ids.length);
   if (idx === null) {
@@ -660,16 +674,16 @@ async function handleCancelPick(jid: string, text: string, ctx: Ctx, send: Send)
   }
   const apptId = ids[idx]!;
   const appt = await prisma.appointment.findUnique({
-    where: { id: apptId },
+    where: { id: apptId, ...(scope && { tenantId: scope.tenantId }) },
     include: { service: true },
   });
   if (!appt || appt.status !== "CONFIRMED") {
     await send("Ese turno ya no está activo. Escribí *menú* para volver.");
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     return;
   }
-  const pro = await conversationProfessional();
-  await save(jid, STEP.CANCEL_CONFIRM, { apptId });
+  const pro = await conversationProfessional(scope);
+  await save(scope, jid, STEP.CANCEL_CONFIRM, { apptId });
   await send(
     messages.confirmCancel({
       serviceName: appt.service.name,
@@ -680,6 +694,7 @@ async function handleCancelPick(jid: string, text: string, ctx: Ctx, send: Send)
 }
 
 async function handleCancelConfirm(
+  scope: TenantRef | undefined,
   jid: string,
   text: string,
   ctx: Ctx,
@@ -688,7 +703,7 @@ async function handleCancelConfirm(
 ): Promise<void> {
   if (isNo(text)) {
     await send("Listo, dejo el turno como está. Escribí *menú* para volver.");
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     return;
   }
   if (!isYes(text)) {
@@ -696,18 +711,18 @@ async function handleCancelConfirm(
     return;
   }
   if (!ctx.apptId) {
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     await send(menuText);
     return;
   }
 
   const appt = await prisma.appointment.findUnique({
-    where: { id: ctx.apptId },
+    where: { id: ctx.apptId, ...(scope && { tenantId: scope.tenantId }) },
     include: { service: true },
   });
   if (appt && appt.status === "CONFIRMED") {
-    await cancelAppointment(await getConversationTenant(), { id: ctx.apptId, by: "PATIENT", notifyPatient: false });
-    const pro = await conversationProfessional();
+    await cancelAppointment((scope ?? await getConversationTenant()), { id: ctx.apptId, by: "PATIENT", notifyPatient: false });
+    const pro = await conversationProfessional(scope);
     await send(
       messages.cancelDone({
         serviceName: appt.service.name,
@@ -718,10 +733,11 @@ async function handleCancelConfirm(
   } else {
     await send("Ese turno ya no estaba activo.");
   }
-  await save(jid, STEP.MENU);
+  await save(scope, jid, STEP.MENU);
 }
 
 async function handleConfirmAttendance(
+  scope: TenantRef | undefined,
   jid: string,
   text: string,
   ctx: Ctx,
@@ -731,7 +747,7 @@ async function handleConfirmAttendance(
 ): Promise<void> {
   if (typeof ctx.apptId !== "string" || !ctx.apptId) return;
   const attending = isYes(text) ? true : isNo(text) ? false : null;
-  const details = await respondToAppointmentAttendance(await getConversationTenant(), {
+  const details = await respondToAppointmentAttendance((scope ?? await getConversationTenant()), {
     id: ctx.apptId, whatsappJid: jid, attending, now, promptUpdatedAt,
   });
   if (!details) return;
@@ -740,7 +756,7 @@ async function handleConfirmAttendance(
     return;
   }
   await send(attending ? messages.attendanceConfirmedThanks(details) : messages.attendanceDeclinedNotice(details));
-  await save(jid, STEP.MENU);
+  await save(scope, jid, STEP.MENU);
 }
 
 // --- HU-011: consultas por la opción 0 ---
@@ -749,8 +765,8 @@ function afterHoursConfigFor(pro: Professional, opts: ConversationOptions): Afte
   return opts.afterHours ?? afterHoursConfigFrom(pro);
 }
 
-async function handoffAlertTarget(opts: ConversationOptions) {
-  const { tenantId } = await getConversationTenant();
+async function handoffAlertTarget(scope: TenantRef | undefined, opts: ConversationOptions) {
+  const { tenantId } = (scope ?? await getConversationTenant());
   const { professional } = await resolveTenantSchedulingContext(prisma, tenantId);
   const toJid = opts.alertJid !== undefined ? opts.alertJid : professional.phoneJid;
   return toJid ? { tenantId, toJid } : null;
@@ -771,6 +787,7 @@ async function enqueueHandoffAlert(
 }
 
 async function handleInquiryText(
+  scope: TenantRef | undefined,
   jid: string,
   text: string,
   ctx: Ctx,
@@ -784,11 +801,11 @@ async function handleInquiryText(
 ): Promise<void> {
   // P4: un dígito suelto es una opción del menú, no una consulta (HU-012: el 5 si hay IA).
   const d = menuDigit(text, ai.available ? 5 : 4);
-  if (d !== null) return handleMenu(jid, d, send, pro, opts, now, menuText, ai);
+  if (d !== null) return handleMenu(scope, jid, d, send, pro, opts, now, menuText, ai);
 
   const config = afterHoursConfigFor(pro, opts);
   const afterHours = isWithinAfterHours(now, config, pro.timezone); // según la hora de ESTE mensaje
-  const { inquiry } = await recordInquiryMessage(await getConversationTenant(), {
+  const { inquiry } = await recordInquiryMessage((scope ?? await getConversationTenant()), {
     patientId: patient.id,
     text,
     at: now,
@@ -800,7 +817,7 @@ async function handleInquiryText(
   // Cruce de franja (empezó de noche, escribe de día): alerta inmediata, salvo que la consulta
   // ya sea nocturna (entonces va en el resumen y no se notifica dos veces).
   if (!afterHours && !alerted && !inquiry.receivedAfterHours) {
-    const target = await handoffAlertTarget(opts);
+    const target = await handoffAlertTarget(scope, opts);
     if (target) {
       await enqueueHandoffAlert(patient, target);
       alerted = true;
@@ -814,7 +831,7 @@ async function handleInquiryText(
     );
   }
   // El save renueva updatedAt: la sesión de 20 minutos sigue abierta.
-  await save(jid, STEP.AWAIT_INQUIRY, { inquiryId: inquiry.id, alerted, confirmed: true });
+  await save(scope, jid, STEP.AWAIT_INQUIRY, { inquiryId: inquiry.id, alerted, confirmed: true });
 }
 
 /** Mensaje entrante sin texto (audio, foto sin epígrafe, sticker, documento…). D8. */
@@ -822,12 +839,13 @@ export async function handleIncomingMedia(
   jid: string,
   send: Send,
   opts: ConversationOptions = {},
+  scope?: TenantRef,
 ): Promise<void> {
   const now = opts.now ?? new Date();
-  const pro = await conversationProfessional();
+  const pro = await conversationProfessional(scope);
   if (pro.botPaused) return;
   // Una lectura sin inicialización no crea pacientes ni estado para contactos desconocidos.
-  const row = await findLegacyConversationState(jid);
+  const row = await readState(scope, jid);
   if (
     !row ||
     (row.step !== STEP.AWAIT_INQUIRY &&
@@ -846,13 +864,14 @@ export async function handleIncomingMedia(
         ? messages.BOOKING_REASON_TEXT_ONLY
         : messages.INQUIRY_TEXT_ONLY,
   );
-  await save(jid, row.step, (row.context ?? {}) as Ctx);
+  await save(scope, jid, row.step, (row.context ?? {}) as Ctx);
 }
 
 // --- HU-012: preguntas al bot con IA (opción 5) ---
 
 /** D4 (c): "0" desde el modo pregunta con una pregunta previa → consulta con la pregunta cargada. */
 async function handoffFromQuestion(
+  scope: TenantRef | undefined,
   jid: string,
   ctx: Ctx,
   patient: PatientRow,
@@ -863,7 +882,7 @@ async function handoffFromQuestion(
 ): Promise<void> {
   const config = afterHoursConfigFor(pro, opts);
   const afterHours = isWithinAfterHours(now, config, pro.timezone);
-  const { inquiry } = await recordInquiryMessage(await getConversationTenant(), {
+  const { inquiry } = await recordInquiryMessage((scope ?? await getConversationTenant()), {
     patientId: patient.id,
     // Sección 15 (P6): con prefijo, para que ella sepa que la IA ya respondió algo.
     text: inquiryBodyFromAiQuestion(ctx.lastQuestion ?? ""),
@@ -875,14 +894,14 @@ async function handoffFromQuestion(
     await markBotAiQuestionHandedOff({
       id: ctx.lastQuestionLogId,
       patientId: patient.id,
-      tenantId: (await getConversationTenant()).tenantId,
+      tenantId: (scope ?? await getConversationTenant()).tenantId,
       at: now,
     });
   }
   let alerted = false;
   // De día: alerta inmediata (HU-011). De noche: va en el resumen de la mañana.
   if (!afterHours && !inquiry.receivedAfterHours) {
-    const target = await handoffAlertTarget(opts);
+    const target = await handoffAlertTarget(scope, opts);
     if (target) {
       await enqueueHandoffAlert(patient, target);
       alerted = true;
@@ -892,11 +911,12 @@ async function handoffFromQuestion(
   await send(
     afterHours ? messages.inquirySavedAfterHours({ attendFrom: formatClock(config.end) }) : messages.INQUIRY_SAVED_DAY,
   );
-  await save(jid, STEP.AWAIT_INQUIRY, { inquiryId: inquiry.id, alerted, confirmed: true });
+  await save(scope, jid, STEP.AWAIT_INQUIRY, { inquiryId: inquiry.id, alerted, confirmed: true });
 }
 
 /** Texto libre en el modo pregunta: va a la IA (con límites, registro y limpieza de formato). */
 async function handleQuestionText(
+  scope: TenantRef | undefined,
   jid: string,
   text: string,
   ctx: Ctx,
@@ -910,7 +930,7 @@ async function handleQuestionText(
 ): Promise<void> {
   if (!ai.available || !ai.provider) {
     // La apagaron (o se fue la clave) en medio de la sesión.
-    await save(jid, STEP.MENU);
+    await save(scope, jid, STEP.MENU);
     await send(messages.AI_UNAVAILABLE);
     return;
   }
@@ -955,7 +975,7 @@ async function handleQuestionText(
     // Falla de base (topes, conteo o registro). Solo el nombre del error: uno de Prisma puede traer los
     // argumentos, o sea el texto de la pregunta. El paciente sigue en el modo pregunta.
     logger.error({ errName: err instanceof Error ? err.name : typeof err }, "Error de base en el modo pregunta");
-    await save(jid, STEP.AWAIT_QUESTION, ctx);
+    await save(scope, jid, STEP.AWAIT_QUESTION, ctx);
     await send(messages.AI_ERROR);
     return;
   }
@@ -972,6 +992,6 @@ async function handleQuestionText(
     if (ctx.lastQuestionLogId) next.lastQuestionLogId = ctx.lastQuestionLogId;
   }
   // Se guarda ANTES de mandar: un mensaje encolado detrás (D14) ya ve el historial. Renueva la sesión.
-  await save(jid, STEP.AWAIT_QUESTION, next);
+  await save(scope, jid, STEP.AWAIT_QUESTION, next);
   await send(result.reply);
 }

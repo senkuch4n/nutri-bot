@@ -1,7 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { __queueSizeForTests, runSerialByJid } from "./jid-queue";
+import { __queueSizeForTests, runSerialByJid, runSerialByTenantAndJid } from "./jid-queue";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe("runSerialByTenantAndJid", () => {
+  it("procesa el mismo JID en paralelo entre consultorios, pero en FIFO dentro de cada uno", async () => {
+    const events: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const first = runSerialByTenantAndJid("tenant-a", "shared-jid", async () => {
+      events.push("a:first:start");
+      await gate;
+      events.push("a:first:end");
+    });
+    const second = runSerialByTenantAndJid("tenant-a", "shared-jid", async () => {
+      events.push("a:second");
+    });
+    const other = runSerialByTenantAndJid("tenant-b", "shared-jid", async () => {
+      events.push("b:first");
+    });
+    await Promise.resolve();
+    const whileFirstWasPending = [...events];
+    release();
+    await Promise.all([first, second, other]);
+    expect(whileFirstWasPending).toEqual(["a:first:start", "b:first"]);
+    expect(events).toEqual(["a:first:start", "b:first", "a:first:end", "a:second"]);
+  });
+});
 
 describe("runSerialByJid", () => {
   it("mismo jid: FIFO y la 2.ª empieza cuando termina la 1.ª", async () => {

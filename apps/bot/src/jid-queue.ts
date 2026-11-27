@@ -21,6 +21,11 @@ export function runSerialByJid<T>(jid: string, task: () => Promise<T>): Promise<
   return result;
 }
 
+/** Serializa al contacto dentro de un consultorio, sin bloquear al mismo contacto en otro. */
+export function runSerialByTenantAndJid<T>(tenantId: string, jid: string, task: () => Promise<T>): Promise<T> {
+  return runSerialByJid(JSON.stringify([tenantId, jid]), task);
+}
+
 /** SOLO tests: cantidad de jids con cola viva. */
 export function __queueSizeForTests(): number {
   return tails.size;
