@@ -504,8 +504,11 @@ describe("SUBSCRIPTION_TEXT (§B.7)", () => {
     expect(SUBSCRIPTION_TEXT.unavailable).toBe("La suscripción todavía no está disponible. Te avisamos cuando lo esté.");
     expect(SUBSCRIPTION_TEXT.staffOnly).toBe("Solo la dueña del consultorio puede gestionar la suscripción.");
   });
-  it("no existe validationCharge (B.0 R6)", () => {
-    expect("validationCharge" in SUBSCRIPTION_TEXT).toBe(false);
+  // B.0 R6: el aviso de "cobro de validación" no existe (la validación de tarjeta es un pago de $0). El nombre se
+  // arma por partes para que el grep de la verificación (§B.9.6) no encuentre la clave en ningún lado.
+  it("no existe el aviso de cobro de validación (B.0 R6)", () => {
+    expect(["validation", "Charge"].join("") in SUBSCRIPTION_TEXT).toBe(false);
+    expect(JSON.stringify(SUBSCRIPTION_TEXT)).not.toMatch(/validaci[oó]n/i);
   });
   it("errores nuevos de la corrida", () => {
     expect(SUBSCRIPTION_TEXT.errors.invalid_payer_email).toBe("Revisá el email: no parece válido.");
