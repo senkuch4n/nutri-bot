@@ -1,13 +1,13 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { createPatientToken, verifyPatientToken } from "@nutri-bot/db/domain";
+import { createPatientToken, verifyPatientToken, type PatientPortalClaims } from "@nutri-bot/db/domain";
 import { prisma } from "@nutri-bot/db";
 
 const COOKIE_NAME = "patient_session";
 const SESSION_TTL_MINUTES = 60 * 24 * 30; // 30 días
 
-export async function setPatientSessionCookie(patientId: string) {
-  const token = createPatientToken(patientId, SESSION_TTL_MINUTES);
+export async function setPatientSessionCookie(claims: PatientPortalClaims) {
+  const token = createPatientToken(claims, SESSION_TTL_MINUTES);
   const store = await cookies();
   store.set(COOKIE_NAME, token, {
     httpOnly: true,
@@ -28,7 +28,7 @@ export async function getPortalPatient() {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  const patientId = verifyPatientToken(token);
-  if (!patientId) return null;
-  return prisma.patient.findUnique({ where: { id: patientId } });
+  const claims = verifyPatientToken(token);
+  if (!claims) return null;
+  return prisma.patient.findUnique({ where: { id: claims.patientId } });
 }

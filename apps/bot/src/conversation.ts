@@ -384,7 +384,10 @@ async function handleMenu(
 
   if (choice === "4") {
     const patient = await findPatientByJidOrThrow(await getConversationTenant(), jid);
-    const token = createPatientToken(patient.id, 15);
+    // HU-033 (025c): el token v2 ata el link al paciente y a su consultorio. Sin consultorio no hay link:
+    // falla como una búsqueda de paciente fallida (se registra el código, no se manda nada nuevo).
+    if (!patient.tenantId) throw new Error("portal_link_without_tenant");
+    const token = createPatientToken({ patientId: patient.id, tenantId: patient.tenantId }, 15);
     const url = `${process.env.AUTH_URL}/portal/login?token=${token}`;
     await send(messages.portalLink(url));
     return;

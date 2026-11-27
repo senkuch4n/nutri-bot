@@ -80,12 +80,22 @@ describe("WhatsApp booking confirmation without Baileys", () => {
 
   it("preserves the portal link for an owned JID", async () => {
     state.findUnique.mockResolvedValue({ step: "MENU", updatedAt: new Date() });
-    mocks.scopedPatient.mockResolvedValue({ id: "own" });
+    mocks.scopedPatient.mockResolvedValue({ id: "own", tenantId });
     mocks.token.mockReturnValue("test-token");
     const send = vi.fn();
     await handleIncoming("fake-patient", "4", send);
-    expect(mocks.token).toHaveBeenCalledWith("own", 15);
+    // HU-033 (025c): el token v2 lleva el consultorio del paciente.
+    expect(mocks.token.mock.calls).toEqual([[{ patientId: "own", tenantId }, 15]]);
     expect(send.mock.calls).toEqual([[messages.portalLink(`${process.env.AUTH_URL}/portal/login?token=test-token`)]]);
+  });
+
+  it("HU-033: un paciente sin consultorio no recibe link (falla como una búsqueda fallida, sin mensaje nuevo)", async () => {
+    state.findUnique.mockResolvedValue({ step: "MENU", updatedAt: new Date() });
+    mocks.scopedPatient.mockResolvedValue({ id: "own", tenantId: null });
+    const send = vi.fn();
+    await expect(handleIncoming("fake-patient", "4", send)).rejects.toThrow("portal_link_without_tenant");
+    expect(mocks.token).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("preserves the empty cancellation list for an owned JID", async () => {
