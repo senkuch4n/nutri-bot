@@ -16,7 +16,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import MercadoPagoConfig, { Invoice, Payment, PreApproval, User } from "mercadopago";
+import { Invoice, MercadoPagoConfig, Payment, PreApproval, User } from "mercadopago";
 import { assertCaptureDirOutsideRepo, assertSandboxEnv, assertSandboxSeller } from "./lib/mp-sandbox-guard";
 import { collectMercadoPagoIds, mergeIds, resolveIdArg } from "./lib/mp-sandbox-ids";
 import {
