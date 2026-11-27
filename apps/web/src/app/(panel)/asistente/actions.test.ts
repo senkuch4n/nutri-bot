@@ -4,10 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   ctx: vi.fn(), professional: vi.fn(), create: vi.fn(),
   buscarPaciente: vi.fn(), resumenPaciente: vi.fn(), turnosAgenda: vi.fn(), resumenFacturacion: vi.fn(),
+  recordPanelAiUsage: vi.fn(),
 }));
 vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: mocks.ctx }));
 vi.mock("@/lib/professional", () => ({ getTenantProfessional: mocks.professional }));
-vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.create } } }) }));
+vi.mock("@/lib/deepseek", () => ({
+  DEEPSEEK_MODEL: "test", DEEPSEEK_PROVIDER: "deepseek",
+  deepseekClient: () => ({ chat: { completions: { create: mocks.create } } }),
+}));
+vi.mock("@nutri-bot/db/domain", () => ({ recordPanelAiUsage: mocks.recordPanelAiUsage }));
 vi.mock("@/lib/assistant-tools", () => ({
   buscarPaciente: mocks.buscarPaciente, resumenPaciente: mocks.resumenPaciente,
   turnosAgenda: mocks.turnosAgenda, resumenFacturacion: mocks.resumenFacturacion,
@@ -22,6 +27,7 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   mocks.ctx.mockResolvedValue(CTX_A);
   mocks.professional.mockResolvedValue({ name: "Profesional A", timezone: "UTC" });
+  mocks.recordPanelAiUsage.mockResolvedValue(undefined);
 });
 
 describe("askAssistantAction", () => {
@@ -61,5 +67,73 @@ describe("askAssistantAction", () => {
     expect(logged).toContain("AuthenticationError");
     expect(logged).not.toContain("sk-secreta");
     expect(logged).not.toContain("Ana");
+  });
+});
+
+describe("askAssistantAction: registro de consumo (HU-028c, D11b, D12)", () => {
+  const QUESTION = "¿Cómo viene Ana Pérez con el plan?";
+  const ANSWER = "Ana Pérez bajó 2 kg.";
+  const toolTurn = (id: string) => ({
+    choices: [{ message: { content: null, tool_calls: [{ id, type: "function", function: { name: "buscar_paciente", arguments: "{\"query\":\"Ana\"}" } }] } }],
+    usage: { prompt_tokens: 100, completion_tokens: 10 },
+  });
+
+  it("dos vueltas (tool + final) → un registro OK con tokens y llamadas sumados, del consultorio de la sesión", async () => {
+    mocks.buscarPaciente.mockResolvedValue([{ id: "p-a", nombre: "Ana Pérez" }]);
+    mocks.create
+      .mockResolvedValueOnce(toolTurn("c1"))
+      .mockResolvedValueOnce({ choices: [{ message: { content: ANSWER } }], usage: { prompt_tokens: 150, completion_tokens: 20 } });
+    const res = await askAssistantAction([], QUESTION);
+    expect(res).toMatchObject({ ok: true });
+    expect(mocks.recordPanelAiUsage.mock.calls).toEqual([[CTX_A, {
+      feature: "ASSISTANT", provider: "deepseek", model: "test",
+      inputTokens: 250, outputTokens: 30, calls: 2, outcome: "OK", errorCode: undefined,
+    }]]);
+    const recorded = JSON.stringify(mocks.recordPanelAiUsage.mock.calls);
+    expect(recorded).not.toContain("Ana");
+    expect(recorded).not.toContain("bajó");
+  });
+
+  it("el proveedor tira → ERROR con el código, misma respuesta al cliente", async () => {
+    mocks.create.mockRejectedValue(Object.assign(new Error("429 rate limit; prompt: Ana"), { name: "RateLimitError" }));
+    const res = await askAssistantAction([], QUESTION);
+    expect(res).toEqual({ ok: false, error: "Error consultando al asistente", messages: [] });
+    expect(mocks.recordPanelAiUsage.mock.calls).toEqual([[CTX_A, {
+      feature: "ASSISTANT", provider: "deepseek", model: "test",
+      inputTokens: 0, outputTokens: 0, calls: 0, outcome: "ERROR", errorCode: "RateLimitError",
+    }]]);
+  });
+
+  it("4 vueltas de tools sin respuesta final → TOOL_LIMIT", async () => {
+    mocks.buscarPaciente.mockResolvedValue([]);
+    mocks.create.mockResolvedValue(toolTurn("c"));
+    const res = await askAssistantAction([], QUESTION);
+    expect(res).toEqual({ ok: false, error: "El asistente no pudo resolver la consulta.", messages: [] });
+    expect(mocks.recordPanelAiUsage).toHaveBeenCalledTimes(1);
+    expect(mocks.recordPanelAiUsage.mock.calls[0]![1]).toMatchObject({ outcome: "TOOL_LIMIT", calls: 4, inputTokens: 400, outputTokens: 40 });
+  });
+
+  it("respuesta sin mensaje → INVALID_RESPONSE", async () => {
+    mocks.create.mockResolvedValue({ choices: [], usage: { prompt_tokens: 50, completion_tokens: 0 } });
+    const res = await askAssistantAction([], QUESTION);
+    expect(res).toEqual({ ok: false, error: "El asistente no pudo resolver la consulta.", messages: [] });
+    expect(mocks.recordPanelAiUsage.mock.calls[0]![1]).toMatchObject({ outcome: "INVALID_RESPONSE", calls: 1, inputTokens: 50 });
+  });
+
+  it("pregunta vacía o sin contexto → no registra", async () => {
+    await askAssistantAction([], "   ");
+    mocks.ctx.mockRejectedValue(new Error("tenant_access:no_context"));
+    await askAssistantAction([], QUESTION);
+    expect(mocks.recordPanelAiUsage).not.toHaveBeenCalled();
+  });
+
+  it("la respuesta al cliente no depende del registro", async () => {
+    mocks.create.mockResolvedValue({ choices: [{ message: { content: ANSWER } }] });
+    const withRecord = await askAssistantAction([], QUESTION);
+    expect(mocks.recordPanelAiUsage).toHaveBeenCalledTimes(1);
+    expect(withRecord).toEqual({
+      ok: true,
+      messages: [{ role: "user", content: QUESTION }, { role: "assistant", content: ANSWER }],
+    });
   });
 });
