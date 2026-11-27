@@ -4,7 +4,7 @@
   "slug": "integraciones-por-consultorio",
   "titulo": "Google Calendar, Mercado Pago de señas e IA por consultorio",
   "origen": "Backlog SaaS de NutriBot, issue #71. Sigue a HU-024 (multi-tenant) y HU-025 (acceso por membresía), ya en producción.",
-  "estado": "validada",
+  "estado": "aprobada",
   "intentos_revision": 0,
   "hu": "docs/hu-integraciones-por-consultorio.md",
   "sdd": "Refactorizaciones/integraciones-por-consultorio.md",
@@ -48,12 +48,31 @@
       "impl": "progress/impl_HU-028b.md",
       "modelo_reviewer": "opus",
       "review": "progress/review_HU-028b.md",
-      "revision_fuera_de_lote": true
+      "revision_fuera_de_lote": true,
+      "merge": "PR #86"
     },
     "028b-2": {
       "estado": "pendiente",
       "nota": "contracción: borra Professional.google* y sessionEmail, deploy aparte tras confirmar la sync de Daiana"
+    },
+    "028c": {
+      "estado": "aprobada",
+      "skills_architect": [
+        "migracion-prisma",
+        "refactor"
+      ],
+      "worktree": "../Nutri-Bot-HU028c",
+      "rama": "feat/HU-028c-ia-por-consultorio",
+      "decision_d_c1": "b (2026-11-27): absorbe runBotAiTool con tenantId + linea de handleIncoming; resto 025c/025d en #91 (HU-033)",
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma"
+      ],
+      "impl": "progress/impl_HU-028c.md",
+      "commits": "4ee3d80..20f83aa (rebasado sobre a58e023)",
+      "review": "progress/review_HU-028c.md"
     }
   },
-  "lote": "lote-1-mp"
+  "lote": "lote-1-mp",
+  "modelo_reviewer": "opus"
 }

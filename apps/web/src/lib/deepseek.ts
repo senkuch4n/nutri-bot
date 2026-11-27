@@ -2,6 +2,8 @@ import "server-only";
 import OpenAI from "openai";
 
 export const DEEPSEEK_MODEL = "deepseek-chat";
+/** HU-028c (D9a): proveedor global de la IA del panel; se guarda en PanelAiUsage. */
+export const DEEPSEEK_PROVIDER = "deepseek";
 
 let client: OpenAI | null = null;
 

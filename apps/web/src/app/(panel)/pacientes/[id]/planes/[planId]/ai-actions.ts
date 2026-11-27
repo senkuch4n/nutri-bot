@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@nutri-bot/db";
+import { prisma, type PanelAiOutcome } from "@nutri-bot/db";
 import {
   listFoods,
   addMeal,
@@ -11,16 +11,19 @@ import {
   getPlan,
   getLatestFormulaMeasurements,
   getTenantProfessional,
+  recordPanelAiUsage,
 } from "@nutri-bot/db/domain";
 import {
   activityLevelOption,
+  addChatUsage,
+  EMPTY_CHAT_USAGE,
   buildAiFoodCatalog,
   computeAgeYears,
   nutritionGoalLabel,
   selectAiCatalogFoods,
   sexLabel,
 } from "@nutri-bot/core";
-import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
+import { deepseekClient, DEEPSEEK_MODEL, DEEPSEEK_PROVIDER } from "@/lib/deepseek";
 import { errorCode } from "@/lib/error-code";
 import { requireTenantContext } from "@/lib/tenant-context";
 
@@ -110,6 +113,20 @@ export async function generateAiPlanAction(
     instrucciones_adicionales: instructions || null,
   };
 
+  // HU-028c (D11b, D12): un registro de consumo por pedido al proveedor. Solo consultorio, función,
+  // proveedor, modelo, tokens, llamadas y resultado: nunca el pedido (datos de la paciente) ni la respuesta.
+  // No bloquea: recordPanelAiUsage nunca tira y la respuesta al cliente no cambia.
+  let usage = EMPTY_CHAT_USAGE;
+  const track = (outcome: PanelAiOutcome, code?: string) =>
+    recordPanelAiUsage(ctx, {
+      feature: "PLAN_AI",
+      provider: DEEPSEEK_PROVIDER,
+      model: DEEPSEEK_MODEL,
+      ...usage,
+      outcome,
+      errorCode: code,
+    });
+
   let raw: string | null;
   try {
     const completion = await deepseekClient().chat.completions.create({
@@ -137,25 +154,32 @@ export async function generateAiPlanAction(
         },
       ],
     });
+    usage = addChatUsage(usage, completion.usage);
     raw = completion.choices[0]?.message?.content ?? null;
   } catch (err) {
     // D11: solo el código o la clase del error. Ni el prompt (datos del paciente), ni la respuesta, ni el
     // mensaje del proveedor (puede traer el pedido o la clave) van al log ni al cliente.
     console.error("[plan-ai] provider_error", errorCode(err));
+    await track("ERROR", errorCode(err));
     return { ok: false, error: "Error consultando a la IA" };
   }
 
-  if (!raw) return { ok: false, error: "La IA no devolvió una respuesta" };
+  if (!raw) {
+    await track("INVALID_RESPONSE");
+    return { ok: false, error: "La IA no devolvió una respuesta" };
+  }
 
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
+    await track("INVALID_RESPONSE");
     return { ok: false, error: "La respuesta de la IA no fue un JSON válido" };
   }
 
   const result = aiResponseSchema.safeParse(json);
   if (!result.success) {
+    await track("INVALID_RESPONSE");
     return { ok: false, error: "La respuesta de la IA no tuvo el formato esperado" };
   }
 
@@ -169,8 +193,11 @@ export async function generateAiPlanAction(
   });
 
   if (proposal.length === 0) {
+    await track("INVALID_RESPONSE");
     return { ok: false, error: "La IA no propuso alimentos válidos. Probá de nuevo." };
   }
+  // Lo que pase después (releer el plan, escribir comidas) ya no es del proveedor.
+  await track("OK");
 
   // HU-018b (D2): recién con la propuesta validada se reemplazan las comidas vacías del plan
   // (las por defecto), así un error de la IA no deja el plan sin comidas.

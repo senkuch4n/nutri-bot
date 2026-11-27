@@ -90,7 +90,7 @@ export async function resolveTenantCalendarContext(db: ScopeClient, tenantId: st
   return { scope, professional, agendaOwner: { isPrimary: true, professionalId } };
 }
 
-/** Reemplaza getProfessional(): PROFESSIONAL_SELECT de la profesional de la agenda principal del tenant.
+/** PROFESSIONAL_SELECT de la profesional de la agenda principal del tenant.
  *  Consume: web y bot. */
 export async function getTenantProfessional(tenantId: string, db: ScopeClient = prisma): Promise<TenantProfessional> {
   return (await resolvePrimaryAgenda(db, tenantId, PROFESSIONAL_SELECT)).professional;

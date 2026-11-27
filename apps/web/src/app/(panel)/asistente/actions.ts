@@ -1,8 +1,10 @@
 "use server";
 
 import type OpenAI from "openai";
-import { formatInTimeZone } from "@nutri-bot/core";
-import { deepseekClient, DEEPSEEK_MODEL } from "@/lib/deepseek";
+import type { PanelAiOutcome } from "@nutri-bot/db";
+import { addChatUsage, EMPTY_CHAT_USAGE, formatInTimeZone } from "@nutri-bot/core";
+import { recordPanelAiUsage } from "@nutri-bot/db/domain";
+import { deepseekClient, DEEPSEEK_MODEL, DEEPSEEK_PROVIDER } from "@/lib/deepseek";
 import { buscarPaciente, resumenPaciente, turnosAgenda, resumenFacturacion } from "@/lib/assistant-tools";
 import { errorCode } from "@/lib/error-code";
 import { getTenantProfessional } from "@/lib/professional";
@@ -120,6 +122,20 @@ export async function askAssistantAction(
     { role: "user", content: trimmed },
   ];
 
+  // HU-028c (D11b, D12): un registro de consumo por invocación que llegó a intentar el proveedor. Solo
+  // consultorio, función, proveedor, modelo, tokens, llamadas y resultado: nunca la pregunta ni la respuesta.
+  // No bloquea: recordPanelAiUsage nunca tira y la respuesta al cliente no cambia.
+  let usage = EMPTY_CHAT_USAGE;
+  const track = (outcome: PanelAiOutcome, code?: string) =>
+    recordPanelAiUsage(ctx, {
+      feature: "ASSISTANT",
+      provider: DEEPSEEK_PROVIDER,
+      model: DEEPSEEK_MODEL,
+      ...usage,
+      outcome,
+      errorCode: code,
+    });
+
   try {
     for (let i = 0; i < 4; i++) {
       const completion = await deepseekClient().chat.completions.create({
@@ -127,8 +143,12 @@ export async function askAssistantAction(
         messages,
         tools,
       });
+      usage = addChatUsage(usage, completion.usage);
       const msg = completion.choices[0]?.message;
-      if (!msg) break;
+      if (!msg) {
+        await track("INVALID_RESPONSE");
+        return { ok: false, error: "El asistente no pudo resolver la consulta.", messages: history };
+      }
 
       const toolCalls = msg.tool_calls?.filter((c) => c.type === "function") ?? [];
       if (toolCalls.length > 0) {
@@ -147,16 +167,19 @@ export async function askAssistantAction(
       }
 
       const answer = msg.content ?? "No pude generar una respuesta.";
+      await track("OK");
       return {
         ok: true,
         messages: [...history, { role: "user", content: trimmed }, { role: "assistant", content: answer }],
       };
     }
+    await track("TOOL_LIMIT");
     return { ok: false, error: "El asistente no pudo resolver la consulta.", messages: history };
   } catch (err) {
     // D11: solo el código o la clase del error. Ni el prompt, ni la respuesta, ni el mensaje del
     // proveedor (puede traer datos del pedido) van al log ni al cliente.
     console.error("[assistant] provider_error", errorCode(err));
+    await track("ERROR", errorCode(err));
     return { ok: false, error: ASSISTANT_ERROR, messages: history };
   }
 }

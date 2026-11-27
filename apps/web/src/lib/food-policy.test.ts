@@ -28,6 +28,8 @@ vi.mock("@nutri-bot/db/domain", () => ({
   ...mocks,
   getTenantProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }),
   getLatestFormulaMeasurements: vi.fn().mockResolvedValue({ weightKg: null, heightCm: null, bodyFatPercent: null }),
+  // HU-028c: la IA de planes registra su consumo (nunca tira).
+  recordPanelAiUsage: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@nutri-bot/db", () => ({ prisma: {
   patient: { findUnique: mocks.patient, findUniqueOrThrow: mocks.patient },
@@ -62,7 +64,7 @@ const TENANT_CTX = vi.hoisted(() => ({
   access: { kind: "member" as const, tenantId: "tenant", role: "OWNER" as const },
 }));
 vi.mock("@/lib/professional", () => ({ getTenantProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
-vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
+vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", DEEPSEEK_PROVIDER: "deepseek", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
 vi.mock("@/lib/plan-pdf", () => ({ renderPlanPdf: vi.fn() }));
 
 vi.mock("@/lib/services", () => ({ listServices: vi.fn().mockResolvedValue([]) }));

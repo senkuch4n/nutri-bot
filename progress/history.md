@@ -521,3 +521,6 @@
 
 ## HU-033 · 025c — Portal y booking por consultorio (2026-11-27, senkuch4n)
 Token v2 del portal con tenant, getPortalSession por tenant (archivados siguen entrando), todas las páginas y descargas del portal filtradas por paciente y tenant (404 igual que inexistente), bot opción 4 y booking.ts por consultorio, fin del candado ENABLED_TENANT_IDS. Excluido por D-c1 b: runBotAiTool y la línea de handleIncoming (los hace la 028c). Implementer Opus + refactor; reviewer Sonnet: aprobada. Queda 025d (SupportGrant, con migración) en #91.
+
+## HU-028 · 028c — IA por consultorio (2026-11-27, senkuch4n)
+Migración `ai_usage_per_tenant` (BotAiQuestion.tenantId con backfill y corte si hay huérfanos, FK compuesta, TenantAiSettings con topes por consultorio y fallback al .env, PanelAiUsage sin contenido). Las 4 tools de la IA del bot leen el consultorio de la conversación (D-c1 b; cierra la fuga entre consultorios). Se borró `getProfessional()`. Implementer Opus + migracion-prisma; reviewer Opus (lote-1-mp): aprobada.
