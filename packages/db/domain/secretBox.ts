@@ -1,12 +1,21 @@
 // HU-023 (D10): cifrado de los tokens de Mercado Pago en reposo. AES-256-GCM con una clave propia
 // (MERCADOPAGO_TOKEN_KEY), IV aleatorio de 12 bytes y AAD por campo (un ciphertext no se puede mover
 // de columna). Server-only: no se exporta desde domain/index.ts; lo usa mercadopagoAccount.ts.
+// HU-028b: misma caja para Google Calendar con INTEGRATION_TOKEN_KEY y AAD por campo y consultorio.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 export class MercadoPagoConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "MercadoPagoConfigError";
+  }
+}
+
+/** HU-028b: clave de las integraciones que no son Mercado Pago (INTEGRATION_TOKEN_KEY). */
+export class IntegrationConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IntegrationConfigError";
   }
 }
 
@@ -23,20 +32,39 @@ export const SECRET_AAD = {
   codeVerifier: "mercadopago:code_verifier",
 } as const;
 
+/** HU-028b: AAD atado al campo y al consultorio: un ciphertext no se puede mover de columna ni de fila. */
+export const GOOGLE_SECRET_AAD = {
+  refreshToken: (tenantId: string) => `google:refresh_token:${tenantId}`,
+  codeVerifier: (tenantId: string) => `google:code_verifier:${tenantId}`,
+} as const;
+
 const VERSION = "v1";
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
 
+function loadKey(
+  env: Record<string, string | undefined>,
+  name: string,
+  makeError: (message: string) => Error,
+): Buffer {
+  const raw = env[name]?.trim();
+  const key = raw && /^[A-Za-z0-9+/_-]+={0,2}$/.test(raw) ? Buffer.from(raw, "base64") : null;
+  if (!key || key.length !== KEY_BYTES) throw makeError(`${name} inválida o ausente`);
+  return key;
+}
+
 /** Lee MERCADOPAGO_TOKEN_KEY: base64 de exactamente 32 bytes (openssl rand -base64 32).
  *  Falta o largo distinto → MercadoPagoConfigError("MERCADOPAGO_TOKEN_KEY inválida o ausente"). */
 export function loadMercadoPagoTokenKey(env: Record<string, string | undefined> = process.env): Buffer {
-  const raw = env.MERCADOPAGO_TOKEN_KEY?.trim();
-  const key = raw && /^[A-Za-z0-9+/_-]+={0,2}$/.test(raw) ? Buffer.from(raw, "base64") : null;
-  if (!key || key.length !== KEY_BYTES) {
-    throw new MercadoPagoConfigError("MERCADOPAGO_TOKEN_KEY inválida o ausente");
-  }
-  return key;
+  return loadKey(env, "MERCADOPAGO_TOKEN_KEY", (m) => new MercadoPagoConfigError(m));
+}
+
+/** HU-028b: clave de las integraciones que no son Mercado Pago. Mismo formato que MERCADOPAGO_TOKEN_KEY
+ *  (base64 de 32 bytes, `openssl rand -base64 32`). Falta o inválida →
+ *  IntegrationConfigError("INTEGRATION_TOKEN_KEY inválida o ausente"). */
+export function loadIntegrationTokenKey(env: Record<string, string | undefined> = process.env): Buffer {
+  return loadKey(env, "INTEGRATION_TOKEN_KEY", (m) => new IntegrationConfigError(m));
 }
 
 /** AES-256-GCM, IV aleatorio de 12 bytes, AAD = `aad` (utf8). Salida "v1.<iv>.<tag>.<ct>" (base64url). */

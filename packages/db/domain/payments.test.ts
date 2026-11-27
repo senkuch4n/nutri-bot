@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), search: vi.fn(), createPreference: vi.fn(),
-  getMercadoPagoCredentials: vi.fn(), markMercadoPagoAccountError: vi.fn(), resolveMercadoPagoWebhookTenant: vi.fn(), prisma: {
+  getMercadoPagoCredentials: vi.fn(), markMercadoPagoAccountError: vi.fn(), resolveMercadoPagoWebhookAccount: vi.fn(), prisma: {
   $transaction: vi.fn(), $queryRaw: vi.fn(),
   payment: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   appointment: { findUniqueOrThrow: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn(), findMany: vi.fn() },
@@ -14,7 +14,7 @@ vi.mock("../index", () => ({ prisma: mocks.prisma }));
 vi.mock("./mercadopagoAccount", () => ({
   getMercadoPagoCredentials: mocks.getMercadoPagoCredentials,
   markMercadoPagoAccountError: mocks.markMercadoPagoAccountError,
-  resolveMercadoPagoWebhookTenant: mocks.resolveMercadoPagoWebhookTenant,
+  resolveMercadoPagoWebhookAccount: mocks.resolveMercadoPagoWebhookAccount,
   MercadoPagoUnavailableError: class MercadoPagoUnavailableError extends Error {},
 }));
 const CREDS = { accessToken: "isolated-test-token", sellerUserId: "seller-1", source: "account" as const };
@@ -23,6 +23,7 @@ vi.mock("mercadopago", () => ({
   Payment: class { get = mocks.get; search = mocks.search; },
 }));
 const T = { tenantId: "legacy-tenant" };
+const NOTIFIED = { userId: "seller-1" };
 /** Agenda principal del consultorio (lo que lee resolveTenantSchedulingContext). */
 const primaryAgenda = (professional: unknown) => ({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional });
 import { createDepositCheckout, expireStalePendingPayments, handleMercadoPagoWebhook, reconcilePendingPayments, syncMercadoPagoPayment } from "./payments";
@@ -53,7 +54,7 @@ describe("checkout return URL configuration and legacy ownership", () => {
     vi.resetAllMocks();
     mocks.getMercadoPagoCredentials.mockResolvedValue(CREDS);
     mocks.markMercadoPagoAccountError.mockResolvedValue(undefined);
-    mocks.resolveMercadoPagoWebhookTenant.mockResolvedValue(T);
+    mocks.resolveMercadoPagoWebhookAccount.mockResolvedValue({ tenant: T, sellerUserId: "seller-1" });
     vi.stubEnv("AUTH_URL", "http://localhost:3000");
     vi.stubEnv("MERCADOPAGO_RETURN_URL", "https://return.example.test/result");
     vi.stubEnv("MERCADOPAGO_NOTIFICATION_URL", "https://notifications.example.test/api/webhooks/mercadopago");
@@ -246,8 +247,8 @@ describe("payment reconciliation without database or network", () => {
     vi.resetAllMocks();
     mocks.getMercadoPagoCredentials.mockResolvedValue(CREDS);
     mocks.markMercadoPagoAccountError.mockResolvedValue(undefined);
-    mocks.resolveMercadoPagoWebhookTenant.mockResolvedValue(T);
-    payment = { id: "internal", provider: "mercadopago", kind: "DEPOSIT", status: "PENDING", paidAt: null,
+    mocks.resolveMercadoPagoWebhookAccount.mockResolvedValue({ tenant: T, sellerUserId: "seller-1" });
+    payment = { id: "internal", provider: "mercadopago", kind: "DEPOSIT", status: "PENDING", paidAt: null, mercadopagoUserId: "seller-1",
       appointment: { ...appointmentKey, ...scope, status: "AWAITING_PAYMENT", startsAt: new Date("2026-10-01T12:00:00Z"),
         patient: { whatsappJid: "fake", name: "Test", phone: "fake" }, service: { name: "Test service" },
         tenantPatient: { whatsappJid: "fake", name: "Test", phone: "fake" }, tenantService: { name: "Test service" } } };
@@ -274,7 +275,7 @@ describe("payment reconciliation without database or network", () => {
     mocks.prisma.payment.findMany.mockImplementation(async ({ where }) => matchesOwnership(where.appointment, payment.appointment) ? [payment] : []);
     mocks.prisma.appointment.findMany.mockImplementation(async ({ where }) => matchesOwnership(where, payment.appointment) ? [payment.appointment] : []);
 
-    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).resolves.toBeUndefined();
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED)).resolves.toBe("processed");
     expect(mocks.get).toHaveBeenCalledTimes(1);
     expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
     expectNoMutations();
@@ -291,7 +292,7 @@ describe("payment reconciliation without database or network", () => {
   it("fails closed before payment or provider work when the original agenda is unavailable", async () => {
     mocks.prisma.agenda.findFirst.mockResolvedValue(null);
     const error = "tenant_scope:tenant_scope_missing";
-    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).rejects.toThrow(error);
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED)).rejects.toThrow(error);
     await expect(reconcilePendingPayments(T)).rejects.toThrow(error);
     await expect(expireStalePendingPayments(T)).rejects.toThrow(error);
     expect(mocks.getMercadoPagoCredentials).not.toHaveBeenCalled();
@@ -303,7 +304,7 @@ describe("payment reconciliation without database or network", () => {
 
   it("ignores a provider-verified reference without a local payment", async () => {
     mocks.prisma.$queryRaw.mockResolvedValue([]);
-    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).resolves.toBeUndefined();
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED)).resolves.toBe("processed");
     expect(mocks.get).toHaveBeenCalledWith({ id: "123" });
     expectNoMutations();
   });
@@ -333,9 +334,9 @@ describe("payment reconciliation without database or network", () => {
   });
   it("does not duplicate messages when a replayed webhook and polling process the same approval", async () => {
     mocks.prisma.payment.findMany.mockResolvedValue([{ id: "internal", externalId: "123" }]);
-    await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" });
+    await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED);
     await reconcilePendingPayments(T);
-    await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" });
+    await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED);
     expect(payment.status).toBe("APPROVED");
     expect(mocks.get).toHaveBeenCalledTimes(3);
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
@@ -388,7 +389,7 @@ describe("payment reconciliation without database or network", () => {
     expect(payment.status).toBe("APPROVED");
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledWith({ where: awaiting, data: { status: "CONFIRMED", needsGoogleSync: true, bookedAt: expect.any(Date) } });
     expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
-    await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" });
+    await handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED);
     expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.outboundMessage.createMany).toHaveBeenCalledTimes(2);
   });
@@ -499,6 +500,43 @@ describe("payment reconciliation without database or network", () => {
     expect(mocks.getMercadoPagoCredentials).toHaveBeenCalledTimes(1);
     expect(mocks.getMercadoPagoCredentials).toHaveBeenCalledWith(T, { kind: "payment", sellerUserId: "seller-1" });
   });
+  it("HU-028a: el webhook resuelve la cuenta por el user_id notificado y procesa en su consultorio", async () => {
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED)).resolves.toBe("processed");
+    expect(mocks.resolveMercadoPagoWebhookAccount).toHaveBeenCalledWith("seller-1");
+    expect(mocks.getMercadoPagoCredentials).toHaveBeenCalledWith(T, { kind: "current" });
+    expect(payment.status).toBe("APPROVED");
+  });
+  it("HU-028a: sin data.id de pago → ignored sin resolver la cuenta", async () => {
+    await expect(handleMercadoPagoWebhook({ type: "merchant_order", "data.id": "123" }, NOTIFIED)).resolves.toBe("ignored");
+    expect(mocks.resolveMercadoPagoWebhookAccount).not.toHaveBeenCalled();
+  });
+  it("HU-028a: credencial de cuenta + Payment sin vendedor (null) → no actualiza", async () => {
+    payment.mercadopagoUserId = null;
+    await syncMercadoPagoPayment(T, "123");
+    expectNoMutations();
+  });
+  it("HU-028a: collector_id distinto de la cuenta → no actualiza ni toca la base", async () => {
+    mocks.get.mockResolvedValue({ id: 123, external_reference: "internal", status: "approved", collector_id: 42 });
+    await syncMercadoPagoPayment(T, "123");
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expectNoMutations();
+  });
+  it("HU-028a: mismo vendedor (collector_id y Payment) → actualiza y confirma (regresión)", async () => {
+    mocks.getMercadoPagoCredentials.mockResolvedValue({ ...CREDS, sellerUserId: "42" });
+    payment.mercadopagoUserId = "42";
+    mocks.get.mockResolvedValue({ id: 123, external_reference: "internal", status: "approved", collector_id: 42, date_approved: "2026-10-01T11:00:00Z" });
+    await syncMercadoPagoPayment(T, "123");
+    expect(payment.status).toBe("APPROVED");
+    expect(mocks.prisma.appointment.updateMany).toHaveBeenCalledTimes(1);
+  });
+  it("HU-028a: respaldo .env solo concilia pagos creados sin cuenta", async () => {
+    const envCreds = { accessToken: "env", sellerUserId: null, source: "env_fallback" as const };
+    await syncMercadoPagoPayment(T, "123", undefined, envCreds);
+    expectNoMutations();
+    payment.mercadopagoUserId = null;
+    await syncMercadoPagoPayment(T, "123", undefined, envCreds);
+    expect(payment.status).toBe("APPROVED");
+  });
   it("does not confirm a payment created with another Mercado Pago account", async () => {
     payment.mercadopagoUserId = "otro";
     await syncMercadoPagoPayment(T, "123");
@@ -507,7 +545,7 @@ describe("payment reconciliation without database or network", () => {
   });
   it("the webhook without credentials throws MercadoPagoUnavailableError before calling Mercado Pago", async () => {
     mocks.getMercadoPagoCredentials.mockResolvedValue(null);
-    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).rejects.toThrow("No hay cuenta de Mercado Pago usable");
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, NOTIFIED)).rejects.toThrow("No hay cuenta de Mercado Pago usable");
     expect(mocks.get).not.toHaveBeenCalled();
   });
   it("a 401 while reconciling marks the account as revoked and counts as failed", async () => {
@@ -559,17 +597,38 @@ describe("HU-025: pagos del consultorio del contexto", () => {
   });
 
   it("webhook sin consultorio dueño de la cuenta: no consulta Mercado Pago ni la base", async () => {
-    mocks.resolveMercadoPagoWebhookTenant.mockResolvedValue(null);
-    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" })).resolves.toBeUndefined();
+    mocks.resolveMercadoPagoWebhookAccount.mockResolvedValue(null);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123" }, { userId: "999" })).resolves.toBe("ignored");
+    expect(mocks.resolveMercadoPagoWebhookAccount).toHaveBeenCalledWith("999");
+    // HU-028a: solo el código, nada del payload.
+    expect(warn).toHaveBeenCalledWith("[mercadopago] webhook_ignored", { code: "unknown_account" });
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/999|123/);
+    warn.mockRestore();
     expect(mocks.getMercadoPagoCredentials).not.toHaveBeenCalled();
     expect(mocks.get).not.toHaveBeenCalled();
     expect(mocks.prisma.agenda.findFirst).not.toHaveBeenCalled();
   });
 
   it("webhook: usa el consultorio de la cuenta, no el del payload", async () => {
-    mocks.resolveMercadoPagoWebhookTenant.mockResolvedValue(B);
+    mocks.resolveMercadoPagoWebhookAccount.mockResolvedValue({ tenant: B, sellerUserId: "seller-b" });
     mocks.prisma.agenda.findFirst.mockResolvedValue(null);
-    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123", tenantId: "legacy-tenant" })).rejects.toThrow("tenant_scope");
+    await expect(handleMercadoPagoWebhook({ type: "payment", "data.id": "123", tenantId: "legacy-tenant" }, NOTIFIED)).rejects.toThrow("tenant_scope");
     expect(mocks.prisma.agenda.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: "tenant-b", isPrimary: true } }));
+  });
+});
+
+describe("listTenantsWithPendingMercadoPagoPayments (HU-028a)", () => {
+  beforeEach(() => vi.resetAllMocks());
+  it("consultorios distintos con señas PENDING de MP, orden por tenantId", async () => {
+    const { listTenantsWithPendingMercadoPagoPayments } = await import("./payments");
+    mocks.prisma.appointment.findMany.mockResolvedValue([{ tenantId: "a" }, { tenantId: "b" }]);
+    expect(await listTenantsWithPendingMercadoPagoPayments()).toEqual([{ tenantId: "a" }, { tenantId: "b" }]);
+    expect(mocks.prisma.appointment.findMany).toHaveBeenCalledWith({
+      where: { tenantId: { not: null }, payments: { some: { status: "PENDING", provider: "mercadopago" } } },
+      distinct: ["tenantId"],
+      select: { tenantId: true },
+      orderBy: { tenantId: "asc" },
+    });
   });
 });

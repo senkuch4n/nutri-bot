@@ -1,0 +1,37 @@
+{
+  "id": "HU-033",
+  "responsable": "senkuch4n",
+  "slug": "portal-por-consultorio",
+  "titulo": "Resto de 025c/025d: portal, booking y soporte por consultorio",
+  "origen": "Issue #91: entregas 025c/025d de la HU-025 que nunca se hicieron (detectado por el architect de la 028c).",
+  "estado": "aprobada",
+  "lote": "lote-3-portal",
+  "intentos_revision": 0,
+  "hu": "docs/hu-autenticacion-permisos-tenant.md",
+  "sdd": "Refactorizaciones/autenticacion-permisos-tenant.md (§7.3, sin la parte de runBotAiTool)",
+  "rama": "feat/HU-033-portal-por-consultorio",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/91",
+  "entrega_actual": "025c",
+  "entregas": {
+    "025c": {
+      "estado": "aprobada",
+      "migracion": false,
+      "excluye": "runBotAiTool con tenantId y la línea de handleIncoming (los hace la 028c, D-c1 b)",
+      "modelo": "opus",
+      "skills": [
+        "refactor"
+      ],
+      "impl": "progress/impl_HU-033.md",
+      "commits": "5e1c4a1..7c7de25",
+      "review": "progress/review_HU-033.md"
+    },
+    "025d": {
+      "estado": "no_afinada",
+      "migracion": true,
+      "nota": "SupportGrant; espera el turno de migración"
+    }
+  },
+  "notas": "025c sin migración: se puede implementar en paralelo al candado de migraciones.",
+  "modelo": "opus",
+  "modelo_reviewer": "sonnet"
+}

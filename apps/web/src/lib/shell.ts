@@ -6,7 +6,7 @@ import { countPendingInquiries, findTenantProfessionalSummary } from "@nutri-bot
 export type BotShellStatus = "connected" | "paused" | "disconnected";
 
 // El shell tolera `null`: si falta la fila, el layout tiene que seguir usable.
-// HU-025: las funciones del panel reciben el tenant del contexto (las del portal, en 025c).
+// HU-025: las funciones del panel reciben el tenant del contexto; las del portal, el de la sesión del portal (025c).
 
 /** Nombre de la profesional de la agenda principal del consultorio. Nunca tira. */
 export async function getProfessionalDisplayName(tenantId: string): Promise<string | null> {
@@ -14,25 +14,14 @@ export async function getProfessionalDisplayName(tenantId: string): Promise<stri
   return pro?.name?.trim() || null;
 }
 
-/** HU-016 (D6): "Lic. Daiana Ponce" para el portal. Igual que getProfessionalDisplayName: nunca tira. */
-export async function getProfessionalPortalName(): Promise<string | null> {
+/** HU-017d-1 (D7, D8): nombre del portal y link de WhatsApp de la profesional del consultorio para la pantalla
+ *  de acceso y el header del portal. HU-033 (025c): recibe el consultorio (el de la sesión del portal o, sin
+ *  sesión, el de la instalación de WhatsApp). Nunca tira (ante error → { name: null, whatsappUrl: null }). */
+export async function getProfessionalPortalContact(
+  tenantId: string,
+): Promise<{ name: string | null; whatsappUrl: string | null }> {
   try {
-    const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: { name: true, title: true } });
-    if (!pro?.name?.trim()) return null;
-    return professionalDisplayName(pro);
-  } catch {
-    return null;
-  }
-}
-
-/** HU-017d-1 (D7, D8): nombre del portal y link de WhatsApp de la profesional para la pantalla de acceso
- *  del layout. Igual que getProfessionalPortalName: nunca tira (ante error → { name: null, whatsappUrl: null }). */
-export async function getProfessionalPortalContact(): Promise<{ name: string | null; whatsappUrl: string | null }> {
-  try {
-    const pro = await prisma.professional.findUnique({
-      where: { id: 1 },
-      select: { name: true, title: true, phoneJid: true },
-    });
+    const pro = await findTenantProfessionalSummary(tenantId);
     if (!pro) return { name: null, whatsappUrl: null };
     return {
       name: pro.name?.trim() ? professionalDisplayName(pro) : null,
@@ -43,10 +32,10 @@ export async function getProfessionalPortalContact(): Promise<{ name: string | n
   }
 }
 
-/** HU-017d-1: título de la pestaña del portal ("Tu espacio — Lic. Daiana Ponce"). Nunca tira. */
-export async function getPortalDocumentTitle(): Promise<string> {
+/** HU-017d-1: título de la pestaña del portal ("Tu espacio — Lic. Daiana Ponce"), del consultorio pedido. Nunca tira. */
+export async function getPortalDocumentTitle(tenantId: string): Promise<string> {
   try {
-    const pro = await prisma.professional.findUnique({ where: { id: 1 }, select: { name: true, title: true } });
+    const pro = await findTenantProfessionalSummary(tenantId);
     return portalDocumentTitle(pro ?? { title: null, name: "" });
   } catch {
     return portalDocumentTitle({ title: null, name: "" });

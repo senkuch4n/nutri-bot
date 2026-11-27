@@ -21,7 +21,7 @@ import {
   deleteIsakStudy,
   getIsakStudy,
   getPreviousIsakStudy,
-  getProfessional,
+  getTenantProfessional,
   toIsakMeasures,
   updateIsakStudy,
 } from "../domain";
@@ -74,7 +74,7 @@ async function main() {
     consultationIds.push(c05.id);
     const c08 = await createManualConsultation(T, { patientId: patient.id, dayKey: "2026-05-08" });
     consultationIds.push(c08.id);
-    const pro = await getProfessional();
+    const pro = await getTenantProfessional(T.tenantId);
 
     // 3) Bioimpedancia propia + estudio A en la del 08/05.
     let bioId = "";

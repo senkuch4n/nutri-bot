@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn() }));
+const mocks = vi.hoisted(() => ({ gcalTenants: vi.fn(), schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn(), connected: vi.fn(), pending: vi.fn(), warn: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 const outbox = vi.hoisted(() => ({ findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), resolveScope: vi.fn() }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { outboundMessage: outbox } }));
@@ -8,18 +8,25 @@ vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySche
 vi.mock("@nutri-bot/db/domain", () => ({
   reconcilePendingPayments: mocks.reconcile, expireStalePendingPayments: mocks.expire,
   enqueueServiceReminders: mocks.serviceReminders,
-  enqueuePrepInstructions: mocks.prep, syncGoogleCalendar: mocks.gcal,
+  enqueuePrepInstructions: mocks.prep,
   enqueueAfterHoursDigest: mocks.digest,
   purgeExpiredBotAiQuestions: mocks.purge,
   clearExpiredSessionText: mocks.clearSessions,
   refreshMercadoPagoAccountToken: mocks.mpRefresh,
+  listConnectedMercadoPagoTenants: mocks.connected,
+  listTenantsWithPendingMercadoPagoPayments: mocks.pending,
+}));
+// HU-028b: Google Calendar sale del barrel general (subpath propio).
+vi.mock("@nutri-bot/db/domain/googleCalendar", () => ({
+  listConnectedGoogleCalendarTenants: mocks.gcalTenants,
+  syncGoogleCalendar: mocks.gcal,
 }));
 vi.mock("./ai/runtime", () => ({ getBotAiConfig: () => ({ limits: { retentionDays: 90 } }) }));
 vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
 
 vi.mock("./env", () => ({ env: { pollIntervalMs: 4000 } }));
-vi.mock("./logger", () => ({ logger: { info: mocks.info, warn: vi.fn(), error: mocks.error } }));
-import { runServiceReminders, runStartupJobs, startCron, startOutboxConsumer } from "./workers";
+vi.mock("./logger", () => ({ logger: { info: mocks.info, warn: mocks.warn, error: mocks.error } }));
+import { runGoogleCalendarSync, runServiceReminders, runStartupJobs, startCron, startOutboxConsumer } from "./workers";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE } from "./outbound-payload";
 
@@ -117,6 +124,8 @@ describe("payment cron without Baileys or database", () => {
     vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
     outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
     mocks.reconcile.mockResolvedValue({ processed: 1, failed: 0 });
+    mocks.connected.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
+    mocks.pending.mockResolvedValue([]);
   });
   it("reconciles and expires every minute, not only on five-minute boundaries", async () => {
     vi.setSystemTime(new Date("2026-10-01T12:01:00Z"));
@@ -126,9 +135,46 @@ describe("payment cron without Baileys or database", () => {
     expect(mocks.reconcile).toHaveBeenCalledTimes(1);
     expect(mocks.expire).toHaveBeenCalledTimes(1);
     expect(mocks.reconcile.mock.invocationCallOrder[0]).toBeLessThan(mocks.expire.mock.invocationCallOrder[0]!);
-    // HU-025: conciliación y vencimiento con el consultorio de getConversationTenant().
+    // HU-028a: conciliación y vencimiento con los consultorios de Mercado Pago (no getConversationTenant()).
     expect(mocks.reconcile.mock.calls[0]?.[0]).toEqual({ tenantId: "legacy-tenant" });
     expect(mocks.expire).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
+    expect(outbox.resolveScope).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+  it("HU-028a: recorre la unión deduplicada de conectados y con pendientes, en orden estable", async () => {
+    mocks.connected.mockResolvedValue([{ tenantId: "a" }, { tenantId: "b" }]);
+    mocks.pending.mockResolvedValue([{ tenantId: "b" }, { tenantId: "c" }]);
+    startCron();
+    await mocks.schedule.mock.calls[0]?.[1]();
+    expect(mocks.reconcile.mock.calls.map((c) => c[0])).toEqual([{ tenantId: "a" }, { tenantId: "b" }, { tenantId: "c" }]);
+    expect(mocks.expire.mock.calls.map((c) => c[0])).toEqual([{ tenantId: "a" }, { tenantId: "b" }, { tenantId: "c" }]);
+    expect(outbox.resolveScope).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+  it("HU-028a: una falla en B no frena a A; failed > 0 en B no vence B pero sí A", async () => {
+    mocks.connected.mockResolvedValue([{ tenantId: "b" }, { tenantId: "a" }, { tenantId: "c" }]);
+    mocks.reconcile.mockImplementation(async (t: { tenantId: string }) => {
+      if (t.tenantId === "b") throw new Error("Authorization: Bearer secreto-b");
+      if (t.tenantId === "c") return { processed: 0, failed: 1, skipped: 0 };
+      return { processed: 1, failed: 0, skipped: 0 };
+    });
+    startCron();
+    await expect(mocks.schedule.mock.calls[0]?.[1]()).resolves.toBeUndefined();
+    expect(mocks.reconcile).toHaveBeenCalledTimes(3);
+    expect(mocks.expire.mock.calls.map((c) => c[0])).toEqual([{ tenantId: "a" }]);
+    expect(mocks.error).toHaveBeenCalledWith({ tenantId: "b" }, "Error en conciliación Mercado Pago");
+    expect(mocks.info).toHaveBeenCalledWith({ tenantId: "a", processed: 1, failed: 0, skipped: 0 }, "Conciliación Mercado Pago");
+    expect(JSON.stringify([...mocks.error.mock.calls, ...mocks.info.mock.calls])).not.toContain("secreto");
+    vi.useRealTimers();
+  });
+  it("HU-028a: el aviso por pago fallido lleva el consultorio", async () => {
+    mocks.reconcile.mockImplementation(async (_t: unknown, onError: (id: string) => void) => {
+      onError("pay-1");
+      return { processed: 0, failed: 1, skipped: 0 };
+    });
+    startCron();
+    await mocks.schedule.mock.calls[0]?.[1]();
+    expect(mocks.warn).toHaveBeenCalledWith({ tenantId: "legacy-tenant", paymentId: "pay-1" }, "Error conciliando pago de Mercado Pago");
     vi.useRealTimers();
   });
   it("does not expire reservations when a payment lookup fails", async () => {
@@ -155,7 +201,7 @@ describe("payment cron without Baileys or database", () => {
     const tick = mocks.schedule.mock.calls[0]?.[1];
     const first = tick();
     await tick();
-    // El primero espera getConversationTenant() antes de llamar al dominio.
+    // El primero espera las listas de consultorios antes de llamar al dominio.
     await vi.waitFor(() => expect(mocks.reconcile).toHaveBeenCalledTimes(1));
     finish({ processed: 0, failed: 0 });
     await first;
@@ -297,21 +343,91 @@ describe("service reminders cron (HU-014)", () => {
 
   it("runStartupJobs calls enqueueServiceReminders", async () => {
     mocks.reconcile.mockResolvedValue({ processed: 0, failed: 0 });
+    mocks.connected.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
+    mocks.pending.mockResolvedValue([]);
     mocks.serviceReminders.mockResolvedValue({ reminders: 0, confirmations: 0 });
     mocks.prep.mockResolvedValue(0);
     mocks.gcal.mockResolvedValue({ processed: 0 });
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
     mocks.digest.mockResolvedValue({ digested: 0, outboundId: null });
     mocks.purge.mockResolvedValue(0);
     await runStartupJobs();
     expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
     expect(mocks.prep).toHaveBeenCalledTimes(1);
+    // HU-028b: el arranque sincroniza Google Calendar por consultorio.
+    expect(mocks.gcalTenants).toHaveBeenCalledTimes(1);
+    expect(mocks.gcal).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
   });
 });
 
-describe("renovación diaria de Mercado Pago (HU-023)", () => {
+describe("sync de Google Calendar por consultorio (HU-028b)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "a" }, { tenantId: "b" }]);
+  });
+  /** El cron de Calendar es el segundo "* * * * *" (después de la conciliación, antes del resumen). */
+  const calendarTick = () => {
+    startCron();
+    const everyMinute = mocks.schedule.mock.calls.filter((c) => c[0] === "* * * * *");
+    expect(everyMinute).toHaveLength(3);
+    return everyMinute[1]![1] as () => Promise<void>;
+  };
+
+  it("el cron de cada minuto recorre A y B; un throw en B no frena a A", async () => {
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "b" }, { tenantId: "a" }]);
+    mocks.gcal.mockImplementation(async (t: { tenantId: string }) => {
+      if (t.tenantId === "b") throw Object.assign(new Error("boom"), { config: { headers: { Authorization: "Bearer SECRETO" } } });
+      return { processed: 2 };
+    });
+    await expect(calendarTick()()).resolves.toBeUndefined();
+    expect(mocks.gcal.mock.calls.map((c) => c[0])).toEqual([{ tenantId: "b" }, { tenantId: "a" }]);
+    expect(mocks.error.mock.calls).toEqual([[{ tenantId: "b" }, "Error en sync de Google Calendar"]]);
+    expect(mocks.info.mock.calls).toEqual([[{ tenantId: "a", processed: 2, error: undefined }, "Sync Google Calendar"]]);
+    expect(JSON.stringify([...mocks.error.mock.calls, ...mocks.info.mock.calls])).not.toContain("SECRETO");
+  });
+
+  it("{ error } de B se loguea con tenantId y sin objeto err", async () => {
+    mocks.gcal.mockImplementation(async (t: { tenantId: string }) =>
+      t.tenantId === "b" ? { processed: 0, error: "Google Calendar respondió con error (status 401, invalid_grant)" } : { processed: 0 });
+    await calendarTick()();
+    expect(mocks.info.mock.calls).toEqual([[
+      { tenantId: "b", processed: 0, error: "Google Calendar respondió con error (status 401, invalid_grant)" },
+      "Sync Google Calendar",
+    ]]);
+    for (const [obj] of mocks.info.mock.calls) expect(obj).not.toHaveProperty("err");
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("si falla la lista de consultorios: log fijo y no propaga", async () => {
+    mocks.gcalTenants.mockRejectedValue(new Error("db down SECRETO"));
+    await expect(calendarTick()()).resolves.toBeUndefined();
+    expect(mocks.gcal).not.toHaveBeenCalled();
+    expect(mocks.error.mock.calls).toEqual([["Error en sync de Google Calendar"]]);
+  });
+
+  it("ticks solapados se saltean", async () => {
+    let release!: () => void;
+    mocks.gcal.mockImplementation(() => new Promise((r) => { release = () => r({ processed: 0 }); }));
+    mocks.gcalTenants.mockResolvedValue([{ tenantId: "a" }]);
+    const first = runGoogleCalendarSync();
+    for (let i = 0; i < 10 && mocks.gcal.mock.calls.length === 0; i++) await Promise.resolve();
+    expect(mocks.gcal).toHaveBeenCalledTimes(1);
+    await runGoogleCalendarSync();
+    expect(mocks.gcalTenants).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+    mocks.gcal.mockResolvedValue({ processed: 0 });
+    await runGoogleCalendarSync();
+    expect(mocks.gcalTenants).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("renovación diaria de Mercado Pago (HU-023 / HU-028a)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
+    mocks.connected.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
+    mocks.pending.mockResolvedValue([]);
   });
   it("hay un cron \"0 6 * * *\" cuyo tick renueva una vez", async () => {
     mocks.mpRefresh.mockResolvedValue("refreshed");
@@ -321,7 +437,8 @@ describe("renovación diaria de Mercado Pago (HU-023)", () => {
     await daily[0]![1]();
     expect(mocks.mpRefresh).toHaveBeenCalledTimes(1);
     expect(mocks.mpRefresh).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
-    expect(mocks.info).toHaveBeenCalledWith({ result: "refreshed" }, "Renovación Mercado Pago");
+    expect(mocks.info).toHaveBeenCalledWith({ tenantId: "legacy-tenant", result: "refreshed" }, "Renovación Mercado Pago");
+    expect(outbox.resolveScope).not.toHaveBeenCalled();
     // Va entre Google Calendar y la limpieza de sesiones; los asserts de orden siguen valiendo.
     const exprs = mocks.schedule.mock.calls.map((c) => c[0]);
     expect(exprs[0]).toBe("* * * * *");
@@ -339,14 +456,34 @@ describe("renovación diaria de Mercado Pago (HU-023)", () => {
     startCron();
     const tick = mocks.schedule.mock.calls.find((c) => c[0] === "0 6 * * *")![1];
     await expect(tick()).resolves.toBeUndefined();
-    expect(mocks.error).toHaveBeenCalledWith("Error renovando Mercado Pago");
+    expect(mocks.error).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, "Error renovando Mercado Pago");
     expect(JSON.stringify(mocks.error.mock.calls)).not.toContain("secreto");
+  });
+  it("HU-028a: renueva cada consultorio conectado; un throw en B no frena a A", async () => {
+    mocks.connected.mockResolvedValue([{ tenantId: "b" }, { tenantId: "a" }]);
+    mocks.mpRefresh.mockImplementation(async (t: { tenantId: string }) => {
+      if (t.tenantId === "b") throw new Error("Authorization: Bearer secreto");
+      return "refreshed";
+    });
+    startCron();
+    await mocks.schedule.mock.calls.find((c) => c[0] === "0 6 * * *")![1]();
+    expect(mocks.mpRefresh.mock.calls.map((c) => c[0])).toEqual([{ tenantId: "b" }, { tenantId: "a" }]);
+    expect(mocks.error).toHaveBeenCalledWith({ tenantId: "b" }, "Error renovando Mercado Pago");
+    expect(mocks.info).toHaveBeenCalledWith({ tenantId: "a", result: "refreshed" }, "Renovación Mercado Pago");
+    expect(JSON.stringify([...mocks.error.mock.calls, ...mocks.info.mock.calls])).not.toContain("secreto");
+  });
+  it("HU-028a: si falla la lista de consultorios, no propaga", async () => {
+    mocks.connected.mockRejectedValue(new Error("db down"));
+    startCron();
+    await expect(mocks.schedule.mock.calls.find((c) => c[0] === "0 6 * * *")![1]()).resolves.toBeUndefined();
+    expect(mocks.mpRefresh).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledWith("Error renovando Mercado Pago");
   });
   it("la conciliación loguea los pagos salteados", async () => {
     mocks.reconcile.mockResolvedValue({ processed: 0, failed: 0, skipped: 2 });
     startCron();
     await mocks.schedule.mock.calls[0]![1]();
-    expect(mocks.info).toHaveBeenCalledWith({ processed: 0, failed: 0, skipped: 2 }, "Conciliación Mercado Pago");
+    expect(mocks.info).toHaveBeenCalledWith({ tenantId: "legacy-tenant", processed: 0, failed: 0, skipped: 2 }, "Conciliación Mercado Pago");
     expect(mocks.expire).toHaveBeenCalledTimes(1);
   });
 });

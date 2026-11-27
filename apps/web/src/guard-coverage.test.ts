@@ -2,7 +2,7 @@
 //   (a) un archivo "use server" del panel o de /api exporta una función que no pasa por
 //       requireTenantContext( / requireOwnerContext( / requirePageContext( (directo o vía un helper local);
 //   (b) un route.ts de /api (salvo api/auth y api/webhooks) o del panel no lee el contexto;
-//   (c) aparece el adaptador legacy, getProfessional( o `where: { id: 1 }` en el panel, /api o lib/.
+//   (c) aparece el adaptador legacy, getProfessional( o `where: { id: 1 }` en el panel, /api, el portal o lib/.
 // Con el middleware dejando pasar las server actions al handler (6.3), (a) es la barrera de las acciones.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -17,19 +17,13 @@ const API = join(APP, "api");
 const LIB = join(SRC, "lib");
 
 const ACTION_GUARDS = ["requireTenantContext(", "requireOwnerContext(", "requirePageContext("];
-const ROUTE_GUARDS = ["getTenantContext(", "requireTenantContext("];
+const ROUTE_GUARDS = ["getTenantContext(", "requireTenantContext(", "requireOwnerContext("]; // HU-028a: el callback de MP es owner-only
 /** Rutas API sin sesión del panel: Auth.js y el webhook firmado de Mercado Pago (el tenant sale del pago). */
 const API_EXEMPT = [join(API, "auth"), join(API, "webhooks")];
 
 /** Excepciones de (c), cada una con su motivo y la entrega que la cierra. */
 const LEGACY_EXEMPT: Record<string, string> = {
-  // Google Calendar sigue escribiendo la agenda legacy hasta HU-028 (D10).
-  "auth.ts": "calendario legacy hasta HU-028",
-  // Funciones del PORTAL (getProfessionalPortalName/Contact, getPortalDocumentTitle): 025c las pasa al tenant
-  // del paciente. Las del panel (nombre, estado del bot, consultas) ya reciben tenantId.
-  "lib/shell.ts": "funciones del portal hasta 025c",
-  // Reexporta getProfessional para el portal (025c lo elimina); no lo llama.
-  "lib/professional.ts": "reexport para el portal hasta 025c",
+  // HU-033 (025c): sin excepciones. El portal y lib/shell.ts ya leen el consultorio de la sesión.
 };
 
 function walk(dir: string): string[] {
@@ -132,6 +126,7 @@ describe("guard-coverage (HU-025, 10.2)", () => {
       "app/api/professional/logo/route.ts",
       "app/api/professional/signature/route.ts",
       "app/api/mercadopago/oauth/callback/route.ts",
+      "app/api/google-calendar/oauth/callback/route.ts",
     ]));
   });
 
@@ -140,7 +135,8 @@ describe("guard-coverage (HU-025, 10.2)", () => {
     expect(ROUTE_GUARDS.some((g) => source.includes(g))).toBe(true);
   });
 
-  const legacyScope = [...scope, ...walk(LIB).filter(isSource), join(SRC, "auth.ts")];
+  // HU-033 (025c): el portal del paciente también entra en (c).
+  const legacyScope = [...scope, ...walk(join(APP, "(portal)")).filter(isSource), ...walk(LIB).filter(isSource), join(SRC, "auth.ts")];
   const FORBIDDEN: [string, RegExp][] = [
     ["resolveLegacy", /resolveLegacy/],
     ["legacySchedulingScope", /legacySchedulingScope/],
@@ -160,5 +156,25 @@ describe("guard-coverage (HU-025, 10.2)", () => {
       const source = readFileSync(join(SRC, name), "utf8");
       expect(FORBIDDEN.some(([, re]) => re.test(source)) || /getProfessional\b/.test(source), name).toBe(true);
     }
+  });
+
+  // HU-028b (D4b): conectar, desconectar y elegir el calendario de Google son solo del OWNER.
+  const exportedBody = (source: string, name: string) => {
+    const fn = topLevelFunctions(source).find((f) => f.name === name && f.exported);
+    expect(fn, name).toBeDefined();
+    return fn!.body;
+  };
+  it.each(["connectGoogleCalendarAction", "disconnectGoogleAction", "saveGoogleCalendarIdAction"])(
+    "HU-028b: %s usa requireOwnerContext y no requireTenantContext",
+    (name) => {
+      const body = exportedBody(readFileSync(join(PANEL, "ajustes", "actions.ts"), "utf8"), name);
+      expect(body).toContain("requireOwnerContext(");
+      expect(body).not.toContain("requireTenantContext(");
+    },
+  );
+  it("HU-028b: el callback de Google Calendar usa requireOwnerContext y no requireTenantContext", () => {
+    const source = readFileSync(join(API, "google-calendar", "oauth", "callback", "route.ts"), "utf8");
+    expect(source).toContain("requireOwnerContext(");
+    expect(source).not.toContain("requireTenantContext(");
   });
 });

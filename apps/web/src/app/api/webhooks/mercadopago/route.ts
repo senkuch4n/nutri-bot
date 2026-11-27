@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { parseMercadoPagoNotificationUserId } from "@nutri-bot/core";
 import { handleMercadoPagoWebhook, verifyMercadoPagoSignature } from "@nutri-bot/db/domain";
 
 async function handle(req: Request) {
@@ -23,11 +24,15 @@ async function handle(req: Request) {
     // Next.js retains the request lifecycle and starts this callback after sending the response.
     after(async () => {
       try {
-        if (!query.type && req.method === "POST" && req.body) {
-          const body = await req.json();
-          if (typeof body?.type === "string") query.type = body.type;
+        // HU-028a: la cuenta sale del user_id del cuerpo (la firma ya se verificó). El cuerpo nunca se loguea.
+        let notifiedUserId: string | null = null;
+        if (req.method === "POST" && req.body) {
+          const body: unknown = await req.json().catch(() => null);
+          const bodyType = (body as { type?: unknown } | null)?.type;
+          if (!query.type && typeof bodyType === "string") query.type = bodyType;
+          notifiedUserId = parseMercadoPagoNotificationUserId(body);
         }
-        await handleMercadoPagoWebhook(query);
+        await handleMercadoPagoWebhook(query, { userId: notifiedUserId });
       } catch {
         console.error("Error procesando webhook de Mercado Pago después de responder; la conciliación periódica queda como respaldo");
       }

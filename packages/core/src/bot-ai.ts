@@ -8,8 +8,9 @@ export type BotAiProviderName = "anthropic" | "deepseek";
 export type BotAiLimits = {
   /** D6: preguntas por paciente por día calendario (tz de la profesional). */
   perPatientDaily: number;
-  /** D6: tope global diario. */
-  globalDaily: number;
+  /** HU-028c: tope diario del CONSULTORIO (antes era global). Default del .env: BOT_AI_DAILY_GLOBAL (nombre
+   *  de variable sin cambios, por compatibilidad con deploy/.env). */
+  tenantDaily: number;
   /** D6: largo máximo de la pregunta. */
   maxQuestionChars: number;
   /** D6: vueltas de historial que se mandan. */
@@ -28,7 +29,7 @@ export type BotAiLimits = {
 
 export const BOT_AI_DEFAULT_LIMITS: BotAiLimits = {
   perPatientDaily: 20,
-  globalDaily: 300,
+  tenantDaily: 300,
   maxQuestionChars: 500,
   historyTurns: 6,
   maxTokens: 300,
@@ -61,7 +62,7 @@ export type BotAiEnvConfig = {
 
 const LIMIT_ENV: Record<keyof BotAiLimits, string> = {
   perPatientDaily: "BOT_AI_DAILY_PER_PATIENT",
-  globalDaily: "BOT_AI_DAILY_GLOBAL",
+  tenantDaily: "BOT_AI_DAILY_GLOBAL",
   maxQuestionChars: "BOT_AI_MAX_CHARS",
   historyTurns: "BOT_AI_HISTORY_TURNS",
   maxTokens: "BOT_AI_MAX_TOKENS",
@@ -107,6 +108,36 @@ export function mergeBotAiLimits(base: BotAiLimits, override?: Partial<BotAiLimi
     if (typeof v === "number") out[key] = v;
   }
   return out;
+}
+
+/** HU-028c (D10a): topes guardados del consultorio. null = usar el default. */
+export type TenantBotAiLimits = { botDailyPerPatient: number | null; botDailyPerTenant: number | null };
+
+export const TENANT_AI_LIMIT_MAX = 100_000;
+
+function tenantLimitValue(v: number | null | undefined): number | null {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= TENANT_AI_LIMIT_MAX ? v : null;
+}
+
+/** Límites efectivos del consultorio: `base` (del .env) con perPatientDaily/tenantDaily reemplazados por los
+ *  valores del consultorio que sean enteros entre 0 y 100000. null, `tenant` null o cualquier otro valor → el de
+ *  `base`. No toca las demás claves. Pura, no muta `base`. */
+export function applyTenantBotAiLimits(base: BotAiLimits, tenant: TenantBotAiLimits | null): BotAiLimits {
+  const out = { ...base };
+  if (!tenant) return out;
+  const perPatient = tenantLimitValue(tenant.botDailyPerPatient);
+  const perTenant = tenantLimitValue(tenant.botDailyPerTenant);
+  if (perPatient !== null) out.perPatientDaily = perPatient;
+  if (perTenant !== null) out.tenantDaily = perTenant;
+  return out;
+}
+
+/** Para el script ai-limits: "default" → null; dígitos 0..100000 → número; cualquier otra cosa → undefined. */
+export function parseTenantAiLimitArg(raw: string): number | null | undefined {
+  if (raw === "default") return null;
+  if (!/^\d{1,6}$/.test(raw)) return undefined;
+  const n = Number(raw);
+  return n <= TENANT_AI_LIMIT_MAX ? n : undefined;
 }
 
 /** "empty" si trim da ""; "too_long" si trim().length > maxChars; si no "ok". */

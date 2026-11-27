@@ -1,13 +1,18 @@
 import { prisma } from "@nutri-bot/db";
-import { getAvailableSlotsForService, getProfessional } from "@nutri-bot/db/domain";
+import { getAvailableSlotsForService, getTenantProfessional } from "@nutri-bot/db/domain";
 import { dayKeyInTz, formatInTimeZone, fromZonedTime } from "@nutri-bot/core";
 import { es } from "date-fns/locale";
 import { getConversationTenant } from "./tenant";
 
 const HORIZON_DAYS = 21;
 
-export function listActiveServices() {
-  return prisma.service.findMany({ where: { active: true }, orderBy: { createdAt: "asc" } });
+// HU-033 (025c): todo el flujo de reserva lee el consultorio de la conversación (getConversationTenant),
+// nunca Professional(1) ni servicios/turnos de otro consultorio.
+
+/** Servicios activos del consultorio de la conversación. */
+export async function listActiveServices() {
+  const { tenantId } = await getConversationTenant();
+  return prisma.service.findMany({ where: { tenantId, active: true }, orderBy: { createdAt: "asc" } });
 }
 
 export interface DayOption {
@@ -21,10 +26,11 @@ function capitalize(s: string): string {
 
 /** Próximos días con al menos un horario libre para el servicio. */
 export async function nextAvailableDays(serviceId: string, count = 6): Promise<DayOption[]> {
-  const pro = await getProfessional();
+  const tenant = await getConversationTenant();
+  const pro = await getTenantProfessional(tenant.tenantId);
   const from = new Date();
   const to = new Date(from.getTime() + HORIZON_DAYS * 86_400_000);
-  const slots = await getAvailableSlotsForService(await getConversationTenant(), { serviceId, from, to });
+  const slots = await getAvailableSlotsForService(tenant, { serviceId, from, to });
 
   const seen: string[] = [];
   for (const s of slots) {
@@ -43,15 +49,18 @@ export async function nextAvailableDays(serviceId: string, count = 6): Promise<D
 
 /** Horarios libres para un servicio en un día concreto ("yyyy-MM-dd" en tz). */
 export async function slotsForDay(serviceId: string, dayKey: string): Promise<Date[]> {
-  const pro = await getProfessional();
+  const tenant = await getConversationTenant();
+  const pro = await getTenantProfessional(tenant.tenantId);
   const from = fromZonedTime(`${dayKey}T00:00:00`, pro.timezone);
   const to = fromZonedTime(`${dayKey}T23:59:59`, pro.timezone);
-  return getAvailableSlotsForService(await getConversationTenant(), { serviceId, from, to });
+  return getAvailableSlotsForService(tenant, { serviceId, from, to });
 }
 
-export function cancelableAppointments(patientId: string) {
+/** Turnos confirmados y futuros del paciente en el consultorio de la conversación. */
+export async function cancelableAppointments(patientId: string) {
+  const { tenantId } = await getConversationTenant();
   return prisma.appointment.findMany({
-    where: { patientId, status: "CONFIRMED", startsAt: { gt: new Date() } },
+    where: { patientId, tenantId, status: "CONFIRMED", startsAt: { gt: new Date() } },
     include: { service: true },
     orderBy: { startsAt: "asc" },
   });

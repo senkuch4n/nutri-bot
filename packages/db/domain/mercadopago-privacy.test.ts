@@ -36,8 +36,10 @@ describe("privacidad de los tokens de Mercado Pago (HU-023)", () => {
     expect(files.some((f) => f.path.startsWith("apps/bot/src/"))).toBe(true);
   });
 
-  it("las columnas cifradas solo aparecen en mercadopagoAccount.ts", () => {
+  it("las columnas cifradas solo aparecen en mercadopagoAccount.ts (y, HU-028b, en los dos archivos de Google Calendar)", () => {
     expect(filesMentioning(/accessTokenEnc|refreshTokenEnc|codeVerifierEnc/)).toEqual([
+      "packages/db/domain/gcal.ts",
+      "packages/db/domain/googleCalendarAccount.ts",
       "packages/db/domain/mercadopagoAccount.ts",
     ]);
   });
@@ -47,6 +49,20 @@ describe("privacidad de los tokens de Mercado Pago (HU-023)", () => {
       "packages/core/src/mercadopago-oauth.ts",
       "packages/db/domain/mercadopagoAccount.ts",
     ]);
+  });
+
+  it("HU-028a: el log unknown_account del webhook lleva solo el código (nada del payload)", () => {
+    const calls = files.flatMap((f) =>
+      [...f.text.matchAll(/console\.\w+\(\s*"\[mercadopago\] webhook_ignored"[^)]*\)/g)].map((m) => ({ path: f.path, call: m[0] })));
+    expect(calls).toEqual([{
+      path: "packages/db/domain/payments.ts",
+      call: 'console.warn("[mercadopago] webhook_ignored", { code: "unknown_account" })',
+    }]);
+  });
+
+  it("HU-028a: la ruta del webhook no loguea el cuerpo de la notificación", () => {
+    const route = files.find((f) => f.path === "apps/web/src/app/api/webhooks/mercadopago/route.ts")!.text;
+    for (const m of route.matchAll(/console\.\w+\(([^)]*)\)/g)) expect(m[1]).not.toMatch(/body|notifi|user_?id/i);
   });
 
   it("secretBox no se re-exporta desde domain/index.ts", () => {

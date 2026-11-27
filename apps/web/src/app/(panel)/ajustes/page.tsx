@@ -1,5 +1,6 @@
 import { CircleCheck, CircleSlash } from "lucide-react";
 import {
+  GOOGLE_CALENDAR_TEXT as G,
   MERCADOPAGO_TEXT as MP,
   PROFESSIONAL_TEXT,
   SETTINGS_TEXT as T,
@@ -13,9 +14,9 @@ import {
 } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { getMercadoPagoConnectionView, listTenantMembers } from "@nutri-bot/db/domain";
-import { signIn } from "@/auth";
+import { getGoogleCalendarConnectionView } from "@nutri-bot/db/domain/googleCalendar";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
-import { Alert, Button, ButtonLink } from "@/components/ui";
+import { Alert, ButtonLink } from "@/components/ui";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 import { getTenantProfessional } from "@/lib/professional";
 import { tenantProfessionalWhere } from "@/lib/tenant-professional";
@@ -26,7 +27,12 @@ import { AjustesTabs, type AjustesTabValue } from "./ajustes-tabs";
 import { BotAiForm } from "./bot-ai-form";
 import { BotToggle } from "./bot-toggle";
 import { GeneralForm } from "./general-form";
-import { GoogleCalendarForm, GoogleDisconnectButton } from "./google-calendar-form";
+import {
+  GoogleCalendarCallbackBanner,
+  GoogleCalendarConnectButton,
+  GoogleCalendarForm,
+  GoogleDisconnectButton,
+} from "./google-calendar-form";
 import { LogoForm } from "./logo-form";
 import {
   MercadoPagoCallbackBanner,
@@ -75,17 +81,19 @@ export default async function AjustesPage() {
   const ctx = await requirePageContext();
   // HU-025 (7.2.1, D4): Equipo solo para la responsable; soporte (025d) nunca.
   const isOwner = ctx.access.kind === "member" && ctx.access.role === "OWNER";
-  const [pro, botStatus, logo, mp, members] = await Promise.all([
+  const [pro, botStatus, logo, mp, gc, members] = await Promise.all([
     getTenantProfessional(ctx.tenantId),
     // HU-025: el estado de WhatsApp y el logo son los del consultorio de la sesión.
     prisma.botStatus.findUnique({ where: { tenantId: ctx.tenantId } }),
     prisma.professional.findUnique({ where: tenantProfessionalWhere(ctx), select: { logoData: true } }),
     getMercadoPagoConnectionView(ctx),
+    // HU-028b: la conexión de Google Calendar del consultorio (sin tokens).
+    getGoogleCalendarConnectionView(ctx),
     isOwner ? listTenantMembers(ctx.tenantId) : Promise.resolve(null),
   ]);
-  const googleConnected = Boolean(pro.googleRefreshToken);
+  const googleConnected = gc.status === "connected";
   const botConnected = botStatus?.connected ?? false;
-  const calendarId = pro.googleCalendarId ?? "";
+  const calendarId = gc.calendarId ?? "";
   const usesMainCalendar = calendarId === "" || calendarId === "primary";
   const phoneDigits = pro.phoneJid?.split("@")[0] ?? "";
 
@@ -132,14 +140,20 @@ export default async function AjustesPage() {
 
   const google = (
     <>
-      {pro.googleSyncError ? (
+      <GoogleCalendarCallbackBanner />
+      {gc.syncError ? (
         <Alert tone="danger">
           <p>{T.googleSyncError}</p>
           <DetailDisclosure label={T.technicalDetail}>
             <p className="break-words text-footnote text-muted-foreground" translate="no">
-              {pro.googleSyncError}
+              {gc.syncError}
             </p>
           </DetailDisclosure>
+        </Alert>
+      ) : null}
+      {gc.status === "not_configured" ? (
+        <Alert tone="warning">
+          <p>{G.callback.not_configured}</p>
         </Alert>
       ) : null}
       <div>
@@ -150,6 +164,16 @@ export default async function AjustesPage() {
               <StatusValue ok={googleConnected}>{googleConnected ? T.googleConnected : T.googleNotConnected}</StatusValue>
             }
           />
+          {googleConnected && gc.googleEmail ? (
+            <GroupedListRow
+              label={G.account}
+              value={
+                <span className="block max-w-[11rem] break-all text-right sm:max-w-xs" translate="no">
+                  {gc.googleEmail}
+                </span>
+              }
+            />
+          ) : null}
           {googleConnected ? (
             <GroupedListRow
               label={T.googleCalendar}
@@ -157,21 +181,21 @@ export default async function AjustesPage() {
             />
           ) : null}
         </GroupedList>
-        <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
-          <form
-            action={async () => {
-              "use server";
-              await signIn("google", { redirectTo: "/ajustes?tab=google" });
-            }}
-          >
-            <Button type="submit" variant={googleConnected ? "secondary" : "primary"}>
-              {googleConnected ? T.googleReconnect : T.googleConnect}
-            </Button>
-          </form>
-          {googleConnected ? <GoogleDisconnectButton /> : null}
-        </div>
+        {/* HU-028b (D4b): solo el OWNER conecta, reconecta, desconecta y elige el calendario. */}
+        {isOwner ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
+            {googleConnected ? (
+              <>
+                <GoogleCalendarConnectButton reconnect variant="secondary" />
+                <GoogleDisconnectButton />
+              </>
+            ) : (
+              <GoogleCalendarConnectButton disabled={gc.status === "not_configured"} />
+            )}
+          </div>
+        ) : null}
       </div>
-      {googleConnected ? (
+      {googleConnected && isOwner ? (
         <div className="px-4">
           <DetailDisclosure label={T.googleAdvanced}>
             <GoogleCalendarForm defaultId={calendarId} />
@@ -198,7 +222,8 @@ export default async function AjustesPage() {
         <Alert tone="danger">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p>{MP.errorAlert(MP.errorReasons[mp.errorCode])}</p>
-            <MercadoPagoConnectButton reconnect />
+            {/* HU-028a (D4b): solo el OWNER conecta, reconecta o desconecta. */}
+            {isOwner ? <MercadoPagoConnectButton reconnect /> : null}
           </div>
         </Alert>
       ) : null}
@@ -234,18 +259,20 @@ export default async function AjustesPage() {
             <GroupedListRow label={MP.connectedAt} value={formatConnectedAt(mp.connectedAt, pro.timezone)} />
           ) : null}
         </GroupedList>
-        <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
-          {mp.status === "connected" ? (
-            <>
-              <MercadoPagoConnectButton reconnect variant="secondary" />
+        {isOwner ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 px-4">
+            {mp.status === "connected" ? (
+              <>
+                <MercadoPagoConnectButton reconnect variant="secondary" />
+                <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
+              </>
+            ) : mp.status === "needs_reconnect" ? (
               <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
-            </>
-          ) : mp.status === "needs_reconnect" ? (
-            <MercadoPagoDisconnectButton pendingDepositCount={mp.pendingDepositCount} />
-          ) : (
-            <MercadoPagoConnectButton disabled={mp.status === "not_configured"} />
-          )}
-        </div>
+            ) : (
+              <MercadoPagoConnectButton disabled={mp.status === "not_configured"} />
+            )}
+          </div>
+        ) : null}
       </div>
     </>
   );

@@ -18,7 +18,7 @@ import {
   deleteConsultation,
   deleteConsultationPrescription,
   getFormulaMeasurementsAsOf,
-  getProfessional,
+  getTenantProfessional,
   getReferencePrescription,
   getRequirementContextForConsultation,
   listLatestPrescriptions,
@@ -63,7 +63,7 @@ async function main() {
   };
 
   const until = async (consultedAt: Date) => {
-    const pro = await getProfessional();
+    const pro = await getTenantProfessional(T.tenantId);
     return dayRangeUtc(dayKeyInTz(consultedAt, pro.timezone), pro.timezone).end;
   };
 
@@ -349,7 +349,7 @@ async function main() {
       const list = await listLatestPrescriptions(T, patient.id, 2);
       assert.equal(list.length, 2);
       assert.ok(list[0]!.consultation.consultedAt.getTime() > list[1]!.consultation.consultedAt.getTime());
-      assert.equal(dayKeyInTz(list[1]!.consultation.consultedAt, (await getProfessional()).timezone), "2026-09-15");
+      assert.equal(dayKeyInTz(list[1]!.consultation.consultedAt, (await getTenantProfessional(T.tenantId)).timezone), "2026-09-15");
     });
 
     // 14) Nada encolado.

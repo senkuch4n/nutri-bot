@@ -1,130 +1,226 @@
+// HU-028b: syncGoogleCalendar por consultorio, con el token cifrado en GoogleCalendarAccount.
+import { randomBytes } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { GOOGLE_SECRET_AAD, sealSecret } from "./secretBox";
 
 const mocks = vi.hoisted(() => ({
-  agenda: { findUnique: vi.fn() },
+  agenda: { findFirst: vi.fn() },
   appointment: { findMany: vi.fn(), update: vi.fn() },
-  professional: { update: vi.fn() },
-  getProfessional: vi.fn(),
-  credentials: vi.fn(),
-  calendar: vi.fn(),
+  googleCalendarAccount: { findUnique: vi.fn(), updateMany: vi.fn() },
+  professional: { update: vi.fn(), updateMany: vi.fn() },
+  googleCalendar: vi.fn(),
   insert: vi.fn(),
   patch: vi.fn(),
   deleteEvent: vi.fn(),
+  eventsFactory: vi.fn(),
 }));
 
 vi.mock("../index", () => ({ prisma: mocks }));
-vi.mock("./availability", () => ({ getProfessional: mocks.getProfessional }));
 vi.mock("googleapis", () => ({
   google: {
-    auth: { OAuth2: class { setCredentials = mocks.credentials; } },
-    calendar: mocks.calendar,
+    auth: { OAuth2: class { setCredentials() {} } },
+    calendar: mocks.googleCalendar,
   },
 }));
 
-import { syncGoogleCalendar } from "./gcal";
+import { describeGoogleCalendarError, syncGoogleCalendar } from "./gcal";
 
-const scope = { tenantId: "legacy-tenant", agendaId: "legacy-agenda" };
-const agendaOwner = { professionalId: 1, isPrimary: true };
-const apptScope = { ...scope, agenda: agendaOwner };
-const proScope = {
-  id: 1,
-  tenantId: scope.tenantId,
-  agendas: { some: { id: scope.agendaId, tenantId: scope.tenantId, ...agendaOwner } },
-};
-const pro = {
-  id: 1,
-  timezone: "America/Argentina/Buenos_Aires",
-  googleRefreshToken: "original-token",
-  googleCalendarId: "original-calendar",
-  googleSyncError: "old error",
-};
+const KEY_B64 = randomBytes(32).toString("base64");
+const KEY = Buffer.from(KEY_B64, "base64");
+const ENV = { INTEGRATION_TOKEN_KEY: KEY_B64 };
+const NOW = new Date("2026-11-25T12:00:00Z");
+const TZ = "America/Argentina/Buenos_Aires";
+const T_A = { tenantId: "tenant-a" };
+const scopeA = { tenantId: "tenant-a", agendaId: "agenda-a" };
+const agendaOwnerA = { isPrimary: true, professionalId: 7 };
+const apptScopeA = { ...scopeA, agenda: agendaOwnerA };
+
+function sealedFor(tenantId: string, token = "rt-a", key = KEY): string {
+  return sealSecret(token, key, GOOGLE_SECRET_AAD.refreshToken(tenantId));
+}
+
+function account(over: Partial<{ refreshTokenEnc: string | null; calendarId: string | null; syncError: string | null }> = {}) {
+  return { refreshTokenEnc: sealedFor("tenant-a"), calendarId: null, syncError: null, ...over };
+}
+
+const deps = { env: ENV, now: () => NOW, events: mocks.eventsFactory };
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.agenda.findUnique.mockImplementation(async ({ where }) =>
-    where.id_tenantId?.id === scope.agendaId && where.id_tenantId?.tenantId === scope.tenantId &&
-    where.professionalId === 1 && where.isPrimary === true ? { professional: pro } : null,
+  mocks.agenda.findFirst.mockImplementation(async ({ where }) =>
+    where.tenantId === "tenant-a" && where.isPrimary === true
+      ? { id: "agenda-a", tenantId: "tenant-a", professionalId: 7, professional: { timezone: TZ } }
+      : null,
   );
-  mocks.getProfessional.mockResolvedValue({ ...pro, googleRefreshToken: "unverified-token" });
+  mocks.googleCalendarAccount.findUnique.mockResolvedValue(account());
+  mocks.googleCalendarAccount.updateMany.mockResolvedValue({ count: 1 });
   mocks.appointment.findMany.mockResolvedValue([]);
-  mocks.calendar.mockReturnValue({ events: { insert: mocks.insert, patch: mocks.patch, delete: mocks.deleteEvent } });
+  mocks.appointment.update.mockResolvedValue({});
+  mocks.eventsFactory.mockReturnValue({ insert: mocks.insert, patch: mocks.patch, delete: mocks.deleteEvent });
 });
 
-function expectNoWork() {
-  expect(mocks.credentials).not.toHaveBeenCalled();
-  expect(mocks.calendar).not.toHaveBeenCalled();
-  expect(mocks.appointment.update).not.toHaveBeenCalled();
-  expect(mocks.professional.update).not.toHaveBeenCalled();
+function confirmed(id: string, googleEventId: string | null) {
+  return {
+    id,
+    status: "CONFIRMED",
+    googleEventId,
+    startsAt: new Date("2026-12-01T13:00:00Z"),
+    endsAt: new Date("2026-12-01T13:30:00Z"),
+    patient: { name: "Ana", phone: "5490000000001" },
+    service: { name: "Consulta" },
+  };
 }
 
-describe("Google Calendar worker: instalación original", () => {
-  it.each(["missing", "wrong professional", "non-primary", "wrong tenant"])(
-    "fails closed for an unverifiable original agenda (%s)", async (reason) => {
-      const agenda = { id: scope.agendaId, tenantId: scope.tenantId, ...agendaOwner, professional: pro };
-      if (reason === "wrong professional") agenda.professionalId = 2;
-      if (reason === "non-primary") agenda.isPrimary = false;
-      if (reason === "wrong tenant") agenda.tenantId = "other-tenant";
-      mocks.agenda.findUnique.mockImplementation(async ({ where }) =>
-        reason !== "missing" && where.id_tenantId?.id === agenda.id &&
-        where.id_tenantId?.tenantId === agenda.tenantId && where.professionalId === agenda.professionalId &&
-        where.isPrimary === agenda.isPrimary ? agenda : null,
-      );
-      await expect(syncGoogleCalendar()).rejects.toThrow("No se pudo verificar la agenda de la instalación original.");
-      expect(mocks.appointment.findMany).not.toHaveBeenCalled();
-      expect(mocks.getProfessional).not.toHaveBeenCalled();
-      expectNoWork();
-    },
-  );
+function expectNoGoogle() {
+  expect(mocks.eventsFactory).not.toHaveBeenCalled();
+  expect(mocks.googleCalendar).not.toHaveBeenCalled();
+}
 
-  it("does not borrow a token when the verified professional has no token", async () => {
-    mocks.agenda.findUnique.mockResolvedValue({ professional: { ...pro, googleRefreshToken: null } });
-    await expect(syncGoogleCalendar()).resolves.toEqual({ processed: 0 });
-    expect(mocks.getProfessional).not.toHaveBeenCalled();
+describe("syncGoogleCalendar(t) — HU-028b", () => {
+  it("sin fila → 0, sin consultar turnos ni construir el cliente", async () => {
+    mocks.googleCalendarAccount.findUnique.mockResolvedValue(null);
+    await expect(syncGoogleCalendar(T_A, deps)).resolves.toEqual({ processed: 0 });
+    expect(mocks.googleCalendarAccount.findUnique).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a" },
+      select: { refreshTokenEnc: true, calendarId: true, syncError: true },
+    });
     expect(mocks.appointment.findMany).not.toHaveBeenCalled();
-    expectNoWork();
+    expectNoGoogle();
   });
 
-  it("preserves the empty queue without starting Google or clearing an error", async () => {
-    await expect(syncGoogleCalendar()).resolves.toEqual({ processed: 0 });
+  it("fila sin token (desconectado) → 0 y events no llamado", async () => {
+    mocks.googleCalendarAccount.findUnique.mockResolvedValue(account({ refreshTokenEnc: null }));
+    await expect(syncGoogleCalendar(T_A, deps)).resolves.toEqual({ processed: 0 });
+    expect(mocks.appointment.findMany).not.toHaveBeenCalled();
+    expectNoGoogle();
+  });
+
+  it("cola vacía → no descifra ni llama a Google (aunque la clave sea inválida)", async () => {
+    await expect(syncGoogleCalendar(T_A, { ...deps, env: {} })).resolves.toEqual({ processed: 0 });
     expect(mocks.appointment.findMany).toHaveBeenCalledOnce();
-    expectNoWork();
+    expect(mocks.googleCalendarAccount.updateMany).not.toHaveBeenCalled();
+    expectNoGoogle();
   });
 
-  it("does not select other tenants, other agendas, or unowned rows; scopes all writes", async () => {
-    const rows = [
-      { ...scope, id: "foreign-tenant", tenantId: "other-tenant" },
-      { ...scope, id: "foreign-agenda", agendaId: "other-agenda" },
-      { id: "unowned", tenantId: null, agendaId: null },
-      { ...scope, id: "cancelled", status: "CANCELLED", googleEventId: "original-event" },
-      { ...scope, id: "no-event", status: "AWAITING_PAYMENT", googleEventId: null },
-    ];
-    mocks.appointment.findMany.mockImplementation(async ({ where }) => rows.filter(
-      (row) => (!where.tenantId || row.tenantId === where.tenantId) &&
-        (!where.agendaId || row.agendaId === where.agendaId),
-    ));
-    mocks.deleteEvent.mockRejectedValue({ code: 410 });
-    await expect(syncGoogleCalendar()).resolves.toEqual({ processed: 2 });
+  it("consulta y escribe solo con el scope del consultorio pedido; calendarId null → primary", async () => {
+    mocks.appointment.findMany.mockResolvedValue([confirmed("a1", null)]);
+    mocks.insert.mockResolvedValue({ data: { id: "evt-1" } });
+    await expect(syncGoogleCalendar(T_A, deps)).resolves.toEqual({ processed: 1 });
+    expect(mocks.agenda.findFirst.mock.calls[0]![0].where).toEqual({ tenantId: "tenant-a", isPrimary: true });
     expect(mocks.appointment.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { ...apptScope, needsGoogleSync: true }, orderBy: { updatedAt: "asc" }, take: 25,
+      where: { ...apptScopeA, needsGoogleSync: true }, orderBy: { updatedAt: "asc" }, take: 25,
     }));
-    expect(mocks.credentials.mock.calls).toEqual([[{ refresh_token: "original-token" }]]);
-    expect(mocks.deleteEvent.mock.calls).toEqual([[{ calendarId: "original-calendar", eventId: "original-event" }]]);
-    expect(mocks.insert).not.toHaveBeenCalled();
-    expect(mocks.patch).not.toHaveBeenCalled();
-    expect(mocks.appointment.update.mock.calls).toEqual([
-      [{ where: { ...apptScope, id: "cancelled" }, data: { needsGoogleSync: false, googleEventId: null } }],
-      [{ where: { ...apptScope, id: "no-event" }, data: { needsGoogleSync: false } }],
-    ]);
-    expect(mocks.professional.update.mock.calls).toEqual([[{ where: proScope, data: { googleSyncError: null }, select: { id: true } }]]);
+    expect(mocks.eventsFactory.mock.calls).toEqual([["rt-a"]]);
+    expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "primary" }));
+    expect(mocks.appointment.update.mock.calls).toEqual([[{
+      where: { id: "a1", ...apptScopeA }, data: { googleEventId: "evt-1", needsGoogleSync: false },
+    }]]);
+    expect(mocks.googleCalendarAccount.updateMany).not.toHaveBeenCalled();
   });
 
-  it("records a provider failure only for the original professional and does not clear pending work", async () => {
-    mocks.appointment.findMany.mockResolvedValue([{ id: "cancelled", status: "CANCELLED", googleEventId: "original-event" }]);
-    mocks.deleteEvent.mockRejectedValue(new Error("provider unavailable"));
-    await expect(syncGoogleCalendar()).resolves.toEqual({ processed: 0, error: "provider unavailable" });
-    expect(mocks.appointment.update).not.toHaveBeenCalled();
-    expect(mocks.professional.update.mock.calls).toEqual([[{
-      where: proScope, data: { googleSyncError: "provider unavailable" }, select: { id: true },
+  it("usa el calendarId elegido y limpia el syncError previo atado al token leído", async () => {
+    const acc = account({ calendarId: "cal-x", syncError: "viejo" });
+    mocks.googleCalendarAccount.findUnique.mockResolvedValue(acc);
+    mocks.appointment.findMany.mockResolvedValue([{ ...confirmed("a2", "evt-2"), status: "CANCELLED" }]);
+    mocks.deleteEvent.mockRejectedValue({ code: 410 });
+    await expect(syncGoogleCalendar(T_A, deps)).resolves.toEqual({ processed: 1 });
+    expect(mocks.deleteEvent.mock.calls).toEqual([[{ calendarId: "cal-x", eventId: "evt-2" }]]);
+    expect(mocks.googleCalendarAccount.updateMany.mock.calls).toEqual([[{
+      where: { tenantId: "tenant-a", refreshTokenEnc: acc.refreshTokenEnc },
+      data: { syncError: null, syncErrorAt: null },
     }]]);
+  });
+
+  it.each([
+    ["clave inválida", {}, sealedFor("tenant-a")],
+    ["AAD de otro consultorio", ENV, sealedFor("tenant-b")],
+    ["otra clave", ENV, sealedFor("tenant-a", "rt-a", randomBytes(32))],
+  ])("%s → decrypt_failed, syncError guardado y sin llamar a Google", async (_name, env, enc) => {
+    mocks.googleCalendarAccount.findUnique.mockResolvedValue(account({ refreshTokenEnc: enc }));
+    mocks.appointment.findMany.mockResolvedValue([confirmed("a1", null)]);
+    await expect(syncGoogleCalendar(T_A, { ...deps, env })).resolves.toEqual({ processed: 0, error: "decrypt_failed" });
+    expectNoGoogle();
+    expect(mocks.appointment.update).not.toHaveBeenCalled();
+    expect(mocks.googleCalendarAccount.updateMany.mock.calls).toEqual([[{
+      where: { tenantId: "tenant-a", refreshTokenEnc: enc },
+      data: { syncError: "No se pudo leer la conexión guardada. Reconectá Google Calendar.", syncErrorAt: NOW },
+    }]]);
+  });
+
+  it.each([404, 410])("patch %i → googleEventId null y re-encolado, cuenta como procesado", async (status) => {
+    mocks.appointment.findMany.mockResolvedValue([confirmed("a3", "evt-gone")]);
+    mocks.patch.mockRejectedValue({ response: { status }, code: status });
+    await expect(syncGoogleCalendar(T_A, deps)).resolves.toEqual({ processed: 1 });
+    expect(mocks.appointment.update.mock.calls).toEqual([[{
+      where: { id: "a3", ...apptScopeA }, data: { googleEventId: null, needsGoogleSync: true },
+    }]]);
+    expect(mocks.googleCalendarAccount.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("patch ok → needsGoogleSync false", async () => {
+    mocks.appointment.findMany.mockResolvedValue([confirmed("a4", "evt-4")]);
+    mocks.patch.mockResolvedValue({});
+    await expect(syncGoogleCalendar(T_A, deps)).resolves.toEqual({ processed: 1 });
+    expect(mocks.appointment.update.mock.calls).toEqual([[{
+      where: { id: "a4", ...apptScopeA }, data: { needsGoogleSync: false },
+    }]]);
+  });
+
+  it("error tipo Gaxios con Bearer: syncError saneado, sin el secreto, where con el token leído", async () => {
+    const acc = account();
+    mocks.googleCalendarAccount.findUnique.mockResolvedValue(acc);
+    mocks.appointment.findMany.mockResolvedValue([confirmed("a5", null)]);
+    const gaxios = Object.assign(new Error("invalid_grant SECRETO"), {
+      config: { headers: { Authorization: "Bearer SECRETO" } },
+      response: { status: 401, data: { error: "invalid_grant", error_description: "SECRETO" } },
+      code: "401",
+    });
+    mocks.insert.mockRejectedValue(gaxios);
+    const res = await syncGoogleCalendar(T_A, deps);
+    expect(res).toEqual({ processed: 0, error: "Google Calendar respondió con error (status 401, invalid_grant)" });
+    expect(mocks.appointment.update).not.toHaveBeenCalled();
+    expect(mocks.googleCalendarAccount.updateMany.mock.calls).toEqual([[{
+      where: { tenantId: "tenant-a", refreshTokenEnc: acc.refreshTokenEnc },
+      data: { syncError: "Google Calendar respondió con error (status 401, invalid_grant)", syncErrorAt: NOW },
+    }]]);
+    expect(JSON.stringify(mocks.googleCalendarAccount.updateMany.mock.calls)).not.toContain("SECRETO");
+  });
+
+  it("consultorio sin agenda principal → tira sin tocar Google", async () => {
+    await expect(syncGoogleCalendar({ tenantId: "sin-agenda" }, deps)).rejects.toThrow();
+    expectNoGoogle();
+  });
+
+  it("nunca escribe en Professional", async () => {
+    mocks.appointment.findMany.mockResolvedValue([confirmed("a1", null)]);
+    mocks.insert.mockRejectedValue(new Error("x"));
+    await syncGoogleCalendar(T_A, deps);
+    expect(mocks.professional.update).not.toHaveBeenCalled();
+    expect(mocks.professional.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("describeGoogleCalendarError", () => {
+  it("status y código de response.data.error", () => {
+    expect(describeGoogleCalendarError({ response: { status: 401, data: { error: "invalid_grant" } } })).toBe(
+      "Google Calendar respondió con error (status 401, invalid_grant)",
+    );
+  });
+  it("código anidado de la API (error.status)", () => {
+    expect(
+      describeGoogleCalendarError({ response: { status: 403, data: { error: { status: "PERMISSION_DENIED", message: "SECRETO" } } } }),
+    ).toBe("Google Calendar respondió con error (status 403, PERMISSION_DENIED)");
+  });
+  it("code numérico sin response", () => {
+    expect(describeGoogleCalendarError({ code: 500 })).toBe("Google Calendar respondió con error (status 500)");
+  });
+  it("código no identificador → se omite", () => {
+    expect(describeGoogleCalendarError({ response: { status: 400, data: { error: "con espacios SECRETO" } } })).toBe(
+      "Google Calendar respondió con error (status 400)",
+    );
+  });
+  it("sin status → no respondió (nunca err.message)", () => {
+    expect(describeGoogleCalendarError(new Error("ECONNRESET Bearer SECRETO"))).toBe("Google Calendar no respondió");
+    expect(describeGoogleCalendarError(null)).toBe("Google Calendar no respondió");
   });
 });

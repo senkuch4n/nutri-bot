@@ -518,3 +518,11 @@
 - Cuatro entregas: 025a-1 (registro e identidad), 025a-2 (acceso por membresía, sin ALLOWED_EMAILS), 025b-1 (agenda, pacientes, clínica y planes sobre el contexto del consultorio), 025b-2 (pagos, ajustes, asistente y equipo).
 - 025b-2: implementer Opus; reviewer Opus CHANGES_REQUESTED en la 1ª ronda (recetas sin visibilidad por consultorio, SQL de prod incompleto), APPROVED en la 2ª. Docs: docs/hu-autenticacion-permisos-tenant.md, Refactorizaciones/autenticacion-permisos-tenant.md, progress/impl_HU-025b2.md, progress/review_HU-025b2.md (+ -ronda1). Issue #68.
 - Antes de publicar en prod: fases 2/3 (Daiana + `tenant-access.ts pending/grant`), SQL de la decisión 7, y chequeos de solo lectura de `BotStatus` y `MercadoPagoAccount` (tenantId).
+
+## HU-033 · 025c — Portal y booking por consultorio (2026-11-27, senkuch4n)
+Token v2 del portal con tenant, getPortalSession por tenant (archivados siguen entrando), todas las páginas y descargas del portal filtradas por paciente y tenant (404 igual que inexistente), bot opción 4 y booking.ts por consultorio, fin del candado ENABLED_TENANT_IDS. Excluido por D-c1 b: runBotAiTool y la línea de handleIncoming (los hace la 028c). Implementer Opus + refactor; reviewer Sonnet: aprobada. Queda 025d (SupportGrant, con migración) en #91.
+
+## HU-029 · 029a — Prueba en sandbox de suscripciones de Mercado Pago (2026-11-27, senkuch4n)
+Script `mp:subs-sandbox` con compuertas (solo test_user, MP_SUBS_SANDBOX, capturas fuera del repo, salida redactada) y corrida real: G1 abierta (D4(c)), G2 con deduplicación propia (MP no respeta X-Idempotency-Key), G3 refutada (payer_email obligatorio → D8(a)), G4 sin confirmar (packs apagados). Implementer Opus; reviewer Opus (lote-1-mp) rechazó el informe; corrección Sonnet; re-revisión Sonnet: aprobada.
+## HU-028 · 028c — IA por consultorio (2026-11-27, senkuch4n)
+Migración `ai_usage_per_tenant` (BotAiQuestion.tenantId con backfill y corte si hay huérfanos, FK compuesta, TenantAiSettings con topes por consultorio y fallback al .env, PanelAiUsage sin contenido). Las 4 tools de la IA del bot leen el consultorio de la conversación (D-c1 b; cierra la fuga entre consultorios). Se borró `getProfessional()`. Implementer Opus + migracion-prisma; reviewer Opus (lote-1-mp): aprobada.

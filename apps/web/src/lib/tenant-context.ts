@@ -1,10 +1,13 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { decideTenantAccess, type AccessDenial, type AccessGrant } from "@nutri-bot/core";
+import { type AccessDenial, type AccessGrant } from "@nutri-bot/core";
 import { prisma } from "@nutri-bot/db";
 import { LEGACY_TENANT_ID, TenantScopeError, loadAccessFacts, resolvePrimaryAgenda } from "@nutri-bot/db/domain";
 import { auth } from "@/auth";
+import { createOnboardingAccessAdapter } from "./onboarding-access-adapter";
+import { loadOnboardedClinic } from "./onboarding-server";
+import { getTenantSubscriptionGate } from "./onboarding-subscription-gate";
 
 // HU-025 (4.5 de la SDD): el consultorio de cada request de servidor sale de acá, nunca del cliente.
 // Se lee la sesión (solo `userId`), los hechos de acceso en la base y la agenda principal del tenant.
@@ -20,13 +23,15 @@ export type TenantContext = {
 
 export type TenantAccessResult =
   | { ok: true; ctx: TenantContext }
-  | { ok: false; reason: AccessDenial | "unauthenticated"; email: string | null };
+  | { ok: false; reason: AccessDenial | "unauthenticated"; email: string | null }
+  | { ok: false; reason: "onboarding_setup"; clinicName: string; timeZone: string; email: string | null }
+  | { ok: false; reason: "onboarding_pending"; clinicName: string; email: string | null };
 
-/** Candado transitorio (025a–025c): solo el consultorio original obtiene contexto. Se borra en el último paso de 025c. */
+/** Candado transitorio (025a–025c): consultorios existentes que operan sin pasar por el alta nueva. */
 export const ENABLED_TENANT_IDS: readonly string[] = [LEGACY_TENANT_ID];
 
 /** React cache(): una lectura de membresía por request de servidor (entre requests no hay cache).
- *  auth() → session.userId → loadAccessFacts → decideTenantAccess({ enabledTenantIds }) → agenda principal. */
+ *  auth() → session.userId → loadAccessFacts → onboarding/suscripción → agenda principal. */
 export const getTenantAccess: () => Promise<TenantAccessResult> = cache(async (): Promise<TenantAccessResult> => {
   const session = await auth();
   if (!session) return { ok: false, reason: "unauthenticated", email: null };
@@ -36,12 +41,26 @@ export const getTenantAccess: () => Promise<TenantAccessResult> = cache(async ()
   const userId = session.userId;
   if (!userId) return { ok: false, reason: "unlinked", email };
 
-  const decision = decideTenantAccess(await loadAccessFacts(userId, new Date()), {
-    enabledTenantIds: ENABLED_TENANT_IDS,
-  });
-  if (!decision.ok) return { ok: false, reason: decision.reason, email };
+  const access = await createOnboardingAccessAdapter({
+    readSession: async () => ({ userId }),
+    loadAccessFacts: (uid) => loadAccessFacts(uid, new Date()),
+    existingEnabledTenantIds: ENABLED_TENANT_IDS,
+    loadOnboardedClinic,
+    getTenantSubscriptionGate,
+  }).resolve();
 
-  const { tenantId } = decision.grant;
+  if (access.kind === "setup") {
+    return { ok: false, reason: "onboarding_setup", clinicName: access.clinicName, timeZone: access.timeZone, email };
+  }
+  if (access.kind === "onboarding") {
+    return { ok: false, reason: "onboarding_pending", clinicName: access.clinicName, email };
+  }
+  if (access.kind === "denied") {
+    const reason = access.reason === "subscription_pending" ? "tenant_not_enabled" : access.reason;
+    return { ok: false, reason, email };
+  }
+
+  const { tenantId } = access.grant;
   // HU-025b-2: la misma resolución de agenda principal que usa el dominio (tenantScope.resolvePrimaryAgenda,
   // la base de resolveTenantSchedulingContext): índice parcial único y profesional del mismo tenant por FK
   // compuesta. Se usa la primitiva porque el contexto necesita también professionalId.
@@ -57,7 +76,7 @@ export const getTenantAccess: () => Promise<TenantAccessResult> = cache(async ()
 
   return {
     ok: true,
-    ctx: { userId, tenantId, agendaId: primary.scope.agendaId, professionalId: primary.professionalId, access: decision.grant },
+    ctx: { userId, tenantId, agendaId: primary.scope.agendaId, professionalId: primary.professionalId, access: access.grant },
   };
 });
 

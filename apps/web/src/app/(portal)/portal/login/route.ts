@@ -5,12 +5,12 @@ import { publicUrl } from "@/lib/public-url";
 
 export async function GET(req: Request) {
   const token = new URL(req.url).searchParams.get("token");
-  const patientId = token ? verifyPatientToken(token) : null;
+  const claims = token ? verifyPatientToken(token) : null;
 
-  if (!patientId) {
+  if (!claims) {
     return NextResponse.redirect(publicUrl("/portal?error=invalid", req));
   }
 
-  await setPatientSessionCookie(patientId);
+  await setPatientSessionCookie(claims);
   return NextResponse.redirect(publicUrl("/portal", req));
 }

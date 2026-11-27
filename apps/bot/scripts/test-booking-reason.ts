@@ -28,7 +28,7 @@ import {
   InvalidBookingReasonError,
   createAppointment,
   getAvailableSlotsForService,
-  getProfessional,
+  getTenantProfessional,
   runBotAiTool,
   setAppointmentStatus,
   updateAppointmentReason,
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
   if (bot?.connected && process.env.ALLOW_BOT_RUNNING !== "1") {
     throw new Error("Pará el bot antes de correr esta prueba (encola alertas de prueba)");
   }
-  const pro = await getProfessional(); // solo lectura
+  const pro = await getTenantProfessional(T.tenantId); // solo lectura
   if (pro.botPaused) throw new Error("El bot está pausado en /ajustes: la prueba necesita que responda.");
   const tz = pro.timezone;
 
@@ -521,7 +521,7 @@ async function main(): Promise<void> {
     const appts = await apptsOf(ana.id);
     const reasons = appts.map((a) => a.reason).filter((r): r is string => Boolean(r));
     assert.ok(reasons.length >= 2);
-    const r = await runBotAiTool({ name: "mis_turnos", input: {}, patientId: ana.id, now: new Date() });
+    const r = await runBotAiTool({ name: "mis_turnos", input: {}, patientId: ana.id, tenantId, now: new Date() });
     assert.equal(r.isError, false);
     for (const reason of reasons) assert.ok(!r.content.includes(reason), "mis_turnos filtró un motivo");
     assert.ok(r.content.includes(sCon.name));

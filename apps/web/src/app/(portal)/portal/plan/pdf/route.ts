@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@nutri-bot/db";
-import { getPortalPatient } from "@/lib/patient-session";
+import { getPortalSession } from "@/lib/patient-session";
 
+// HU-033 (025c): el plan ACTIVE del paciente de la sesión, en el consultorio de la sesión.
 export async function GET() {
-  const patient = await getPortalPatient();
-  if (!patient) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await getPortalSession();
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const plan = await prisma.nutritionPlan.findFirst({
-    where: { patientId: patient.id, status: "ACTIVE" },
+    where: { patientId: session.patient.id, tenantId: session.tenantId, status: "ACTIVE" },
     orderBy: { updatedAt: "desc" },
     select: { pdfData: true, pdfFileName: true },
   });

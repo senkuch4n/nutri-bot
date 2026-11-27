@@ -12,6 +12,7 @@ vi.mock("@nutri-bot/db", () => ({ prisma: { professional: { update: mocks.update
 vi.mock("@/lib/bot-ai", () => ({ getBotAiKeyStatus: vi.fn() }));
 // HU-023: actions.ts también tiene las acciones de Mercado Pago (sesión + dominio).
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
+vi.mock("@nutri-bot/db/domain/googleCalendar", () => ({}));
 vi.mock("@nutri-bot/db/domain", () => ({ updateProfessionalLogo: mocks.updateLogo }));
 // HU-025a2: la acción que inicia el OAuth de Mercado Pago exige el contexto de consultorio.
 vi.mock("@/lib/tenant-context", () => ({ requireTenantContext: mocks.ctx, TenantAccessError: class extends Error {} }));

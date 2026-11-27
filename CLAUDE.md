@@ -23,11 +23,16 @@ código vos, salvo en los casos de "Cuándo NO aplica".
 5. Antes de declarar algo `aprobada`/`arquitectura_lista` o de cerrar sesión,
    corré `./ops/harness/verify.sh`.
 
-### Máquina de estados (una HU activa por persona)
+### Máquina de estados (hasta 10 HU activas por persona, en lotes)
 
 En cada transición: actualizá `backlog/<id>.json` y la label `estado: …` del issue en GitHub.
 El mapeo de estados arnés → labels está en `AGENTS.md`. Al llegar a `aprobada`: abrí el PR
 contra `develop` (con `Closes #<n>`) para que lo revise la otra persona.
+
+**Lotes** (`backlog/_reglas.json` → `lotes`): varias HU pueden estar activas a la vez (máx. 10)
+y comparten el campo `lote`. Afinador, architect e implementer siguen siendo uno por HU; el
+reviewer es uno por lote. Un rechazo reintenta solo la HU rechazada (contador propio) y se
+re-revisa sola. Las HU con migración se implementan de a una (ver `AGENTS.md`).
 
 | Estado | Quién actúa | Qué hace el orquestador |
 |---|---|---|
@@ -38,7 +43,9 @@ contra `develop` (con `Closes #<n>`) para que lo revise la otra persona.
 | `en_arquitectura` → `arquitectura_lista` | `architect` | espera su reporte |
 | `arquitectura_lista` | orquestador + usuario | muestra el resumen de la SDD y confirma arrancar |
 | `implementando` | subagente `implementer` | espera `done`/`blocked` |
-| `en_revision` | subagente `reviewer` | lee `progress/review_<id>.md`, actualiza `backlog/<id>.json` |
+| `implementando` → `implementada` | orquestador | si la HU es de un lote, queda esperando a que el resto del lote termine de implementarse |
+| lote completo (todas `implementada`) | orquestador | pasa todas a `en_revision` y lanza **un solo** `reviewer` para el lote |
+| `en_revision` | subagente `reviewer` | lee `progress/review_<id>.md` (uno por HU, también en lote), actualiza cada `backlog/<id>.json` |
 | `en_revision` → `aprobada` | orquestador | avisa al usuario, agrega el resumen a `progress/history.md` |
 | `en_revision` → `rechazada_reintentando` | orquestador | relanza `implementer` con el feedback (máx. 2 veces, contador `intentos_revision`) |
 | 3er rechazo | orquestador | `bloqueada`: para y avisa al usuario, no reintenta |

@@ -2,8 +2,8 @@ import { messages } from "@nutri-bot/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  createAppointment: vi.fn(), checkout: vi.fn(), professional: vi.fn(), patient: vi.fn(), error: vi.fn(),
-  available: vi.fn(), notifyMissing: vi.fn(), scopedPatient: vi.fn(), token: vi.fn(), cancelable: vi.fn(),
+  createAppointment: vi.fn(), checkout: vi.fn(), patient: vi.fn(), error: vi.fn(),
+  available: vi.fn(), notifyMissing: vi.fn(), scopedPatient: vi.fn(), token: vi.fn(), cancelable: vi.fn(), tenantProfessional: vi.fn(),
   MercadoPagoUnavailableError: class MercadoPagoUnavailableError extends Error {},
   prisma: { agenda: { findUnique: vi.fn(), findFirst: vi.fn() }, service: { findUniqueOrThrow: vi.fn() }, conversationState: { findUnique: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() }, patient: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() }, outboundMessage: { create: vi.fn() } },
 }));
@@ -11,7 +11,7 @@ vi.mock("@nutri-bot/db", () => ({ prisma: mocks.prisma }));
 vi.mock("../../../packages/db/index", () => ({ prisma: mocks.prisma }));
 vi.mock("@nutri-bot/db/domain", () => ({
   createAppointment: mocks.createAppointment, createDepositCheckout: mocks.checkout,
-  getProfessional: mocks.professional, findOrCreatePatientByJid: mocks.patient,
+  getTenantProfessional: mocks.tenantProfessional, findOrCreatePatientByJid: mocks.patient,
   findPatientByJidOrThrow: mocks.scopedPatient, createPatientToken: mocks.token,
   SlotUnavailableError: class extends Error {},
   // HU-023
@@ -35,7 +35,7 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     vi.resetAllMocks();
     mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: { phoneJid: "bound-alert" } });
     mocks.prisma.agenda.findFirst.mockResolvedValue({ id: "legacy-agenda", tenantId: "legacy-tenant", professionalId: 1, professional: { phoneJid: "bound-alert" } });
-    mocks.professional.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires", currency: "ARS", botPaused: false, botAiEnabled: false });
+    mocks.tenantProfessional.mockResolvedValue({ timezone: "America/Argentina/Buenos_Aires", currency: "ARS", botPaused: false, botAiEnabled: false });
     mocks.patient.mockResolvedValue({ id: "patient", name: "Test" });
     mocks.prisma.service.findUniqueOrThrow.mockResolvedValue({ name: "Consulta nutricional" });
     state.findUnique.mockResolvedValue({ step: "BOOK_CONFIRM", context: { serviceId: "service", startsAt: startsAt.toISOString() }, updatedAt: new Date() });
@@ -80,12 +80,22 @@ describe("WhatsApp booking confirmation without Baileys", () => {
 
   it("preserves the portal link for an owned JID", async () => {
     state.findUnique.mockResolvedValue({ step: "MENU", updatedAt: new Date() });
-    mocks.scopedPatient.mockResolvedValue({ id: "own" });
+    mocks.scopedPatient.mockResolvedValue({ id: "own", tenantId });
     mocks.token.mockReturnValue("test-token");
     const send = vi.fn();
     await handleIncoming("fake-patient", "4", send);
-    expect(mocks.token).toHaveBeenCalledWith("own", 15);
+    // HU-033 (025c): el token v2 lleva el consultorio del paciente.
+    expect(mocks.token.mock.calls).toEqual([[{ patientId: "own", tenantId }, 15]]);
     expect(send.mock.calls).toEqual([[messages.portalLink(`${process.env.AUTH_URL}/portal/login?token=test-token`)]]);
+  });
+
+  it("HU-033: un paciente sin consultorio no recibe link (falla como una búsqueda fallida, sin mensaje nuevo)", async () => {
+    state.findUnique.mockResolvedValue({ step: "MENU", updatedAt: new Date() });
+    mocks.scopedPatient.mockResolvedValue({ id: "own", tenantId: null });
+    const send = vi.fn();
+    await expect(handleIncoming("fake-patient", "4", send)).rejects.toThrow("portal_link_without_tenant");
+    expect(mocks.token).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("preserves the empty cancellation list for an owned JID", async () => {
@@ -144,6 +154,14 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     const message = send.mock.calls[0]?.[0];
     for (const text of ["Consulta nutricional", "lunes 5 de octubre", "12:00", "3.000", "https://checkout.example.test/deposit", "15 minutos"]) expect(message).toContain(text);
     expect(message).not.toContain("Turno confirmado");
+  });
+
+  it("HU-033 + HU-028c: el inicio y la confirmación usan la profesional del consultorio de la conversación", async () => {
+    mocks.createAppointment.mockResolvedValue({ id: "appointment", status: "CONFIRMED", startsAt });
+    const send = vi.fn();
+    await handleIncoming("fake-patient", "sí", send);
+    // Inicio de handleIncoming (028c, D-c1 b) + confirmación (025c). Professional(1) fijo ya no existe.
+    expect(mocks.tenantProfessional.mock.calls).toEqual([["legacy-tenant"], ["legacy-tenant"]]);
   });
 
   it("reports checkout failure without logging provider credentials", async () => {

@@ -1,0 +1,78 @@
+{
+  "id": "HU-028",
+  "responsable": "senkuch4n",
+  "slug": "integraciones-por-consultorio",
+  "titulo": "Google Calendar, Mercado Pago de señas e IA por consultorio",
+  "origen": "Backlog SaaS de NutriBot, issue #71. Sigue a HU-024 (multi-tenant) y HU-025 (acceso por membresía), ya en producción.",
+  "estado": "aprobada",
+  "intentos_revision": 0,
+  "hu": "docs/hu-integraciones-por-consultorio.md",
+  "sdd": "Refactorizaciones/integraciones-por-consultorio.md",
+  "rama": "feat/HU-028-integraciones-por-consultorio",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/71",
+  "notas": "Depende de #67 y #68 (mergeadas). Se coordina con HU-027 (WhatsApp por tenant) y HU-029 (suscripción SaaS de Arzium). Lleva migración (MercadoPagoAccount de fila única a una por tenant). 025b-2 dejó: fila única de MP perezosa (ensureAccountRow) y candado ENABLED_TENANT_IDS.",
+  "entrega_actual": "028c",
+  "skills_architect": [
+    "migracion-prisma",
+    "refactor"
+  ],
+  "entregas": {
+    "028a": {
+      "estado": "aprobada",
+      "rama": "feat/HU-028-integraciones-por-consultorio",
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "web-design-guidelines"
+      ],
+      "impl": "progress/impl_HU-028a.md",
+      "revision_fuera_de_lote": true,
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-028a.md",
+      "rama_pr": "feat/HU-028a-mp-por-consultorio",
+      "merge": "5900638 (PR #85)"
+    },
+    "028b": {
+      "estado": "aprobada",
+      "skills_architect": [
+        "migracion-prisma",
+        "refactor"
+      ],
+      "rama": "feat/HU-028b-calendar-por-consultorio",
+      "worktree": "../Nutri-Bot-HU028b",
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma",
+        "web-design-guidelines"
+      ],
+      "impl": "progress/impl_HU-028b.md",
+      "modelo_reviewer": "opus",
+      "review": "progress/review_HU-028b.md",
+      "revision_fuera_de_lote": true,
+      "merge": "PR #86"
+    },
+    "028b-2": {
+      "estado": "pendiente",
+      "nota": "contracción: borra Professional.google* y sessionEmail, deploy aparte tras confirmar la sync de Daiana"
+    },
+    "028c": {
+      "estado": "aprobada",
+      "skills_architect": [
+        "migracion-prisma",
+        "refactor"
+      ],
+      "worktree": "../Nutri-Bot-HU028c",
+      "rama": "feat/HU-028c-ia-por-consultorio",
+      "decision_d_c1": "b (2026-11-27): absorbe runBotAiTool con tenantId + linea de handleIncoming; resto 025c/025d en #91 (HU-033)",
+      "modelo": "opus",
+      "skills": [
+        "migracion-prisma"
+      ],
+      "impl": "progress/impl_HU-028c.md",
+      "commits": "4ee3d80..20f83aa (rebasado sobre a58e023)",
+      "review": "progress/review_HU-028c.md"
+    }
+  },
+  "lote": "lote-1-mp",
+  "modelo_reviewer": "opus"
+}

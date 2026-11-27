@@ -21,11 +21,16 @@ import {
   startMercadoPagoOAuth,
   updateProfessionalLogo,
 } from "@nutri-bot/db/domain";
-import { auth } from "@/auth";
+import {
+  GoogleCalendarConfigError,
+  disconnectGoogleCalendar,
+  setGoogleCalendarId,
+  startGoogleCalendarOAuth,
+} from "@nutri-bot/db/domain/googleCalendar";
 import { getBotAiKeyStatus } from "@/lib/bot-ai";
 import { withReauth } from "@/lib/reauth";
 import { tenantProfessionalWhere } from "@/lib/tenant-professional";
-import { TenantAccessError, requireTenantContext } from "@/lib/tenant-context";
+import { TenantAccessError, requireOwnerContext, requireTenantContext } from "@/lib/tenant-context";
 
 export type SettingsState = { ok: boolean; error?: string; reauth?: true };
 
@@ -138,6 +143,7 @@ export async function saveSignatureIdentityAction(_prev: SettingsState, formData
 
 const gcalSchema = z.object({ calendarId: z.string().trim().optional().or(z.literal("")) });
 
+/** "Opciones avanzadas": HU-028b (D4b) solo el OWNER; escribe GoogleCalendarAccount.calendarId. */
 export async function saveGoogleCalendarIdAction(
   _prev: SettingsState,
   formData: FormData,
@@ -145,12 +151,9 @@ export async function saveGoogleCalendarIdAction(
   const parsed = gcalSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: "Datos inválidos" };
   try {
-    const ctx = await requireTenantContext("write");
-    await prisma.professional.update({
-      where: tenantProfessionalWhere(ctx),
-      data: { googleCalendarId: parsed.data.calendarId || null },
-      select: { id: true },
-    });
+    const ctx = await requireOwnerContext();
+    const saved = await setGoogleCalendarId(ctx, parsed.data.calendarId || null);
+    if (!saved) return { ok: false, error: SETTINGS_TEXT.saveError };
   } catch (error) {
     return withReauth(error, { ok: false, error: SETTINGS_TEXT.saveError });
   }
@@ -158,13 +161,36 @@ export async function saveGoogleCalendarIdAction(
   return { ok: true };
 }
 
-export async function disconnectGoogleAction() {
-  const ctx = await requireTenantContext("write");
-  await prisma.professional.update({
-    where: tenantProfessionalWhere(ctx),
-    data: { googleRefreshToken: null, googleSyncError: null },
-    select: { id: true },
+// HU-028b: Google Calendar con un OAuth propio, separado del login (D15). Solo el OWNER (D4b).
+
+/** Botón "Conectar Google Calendar" / "Reconectar": crea el state del OAuth y manda a Google.
+ *  `redirect` tira NEXT_REDIRECT: se llama fuera del try/catch. */
+export async function connectGoogleCalendarAction(): Promise<void> {
+  const ctx = await requireOwnerContext().catch((error: unknown) => {
+    if (error instanceof TenantAccessError) return null;
+    throw error;
   });
+  if (!ctx) redirect("/inicio");
+  let target: string;
+  try {
+    const { url } = await startGoogleCalendarOAuth(ctx, { userId: ctx.userId });
+    target = url;
+  } catch (error) {
+    if (!(error instanceof GoogleCalendarConfigError)) throw error;
+    target = "/ajustes?tab=google&gcal=not_configured";
+  }
+  redirect(target);
+}
+
+/** Botón "Desconectar" (con confirmación en el cliente): borra el token y lo revoca en Google (D7).
+ *  Los eventos ya creados no se borran (D8). */
+export async function disconnectGoogleAction(): Promise<void> {
+  const ctx = await requireOwnerContext().catch((error: unknown) => {
+    if (error instanceof TenantAccessError) return null;
+    throw error;
+  });
+  if (!ctx) redirect("/inicio");
+  await disconnectGoogleCalendar(ctx);
   revalidatePath("/ajustes");
 }
 
@@ -286,18 +312,16 @@ export async function saveBotAiAction(_prev: SettingsState, formData: FormData):
 /** Botón "Conectar Mercado Pago" / "Reconectar": crea el estado del OAuth y manda a Mercado Pago.
  *  `redirect` tira NEXT_REDIRECT: se llama fuera del try/catch. */
 export async function connectMercadoPagoAction(): Promise<void> {
-  // HU-025: hace falta un contexto de consultorio con escritura; el email de la sesión sigue atando el state.
-  const ctx = await requireTenantContext("write").catch((error: unknown) => {
+  // HU-028a (D4b): solo el OWNER del consultorio conecta o reconecta; el state queda atado a su userId y
+  // al consultorio. Un STAFF no ve el botón: si fuerza el POST, vuelve a /inicio.
+  const ctx = await requireOwnerContext().catch((error: unknown) => {
     if (error instanceof TenantAccessError) return null;
     throw error;
   });
   if (!ctx) redirect("/inicio");
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) redirect("/inicio");
   let target: string;
   try {
-    const { url } = await startMercadoPagoOAuth(ctx, email);
+    const { url } = await startMercadoPagoOAuth(ctx, { userId: ctx.userId });
     target = url;
   } catch (error) {
     if (!(error instanceof MercadoPagoConfigError)) throw error;
@@ -308,8 +332,8 @@ export async function connectMercadoPagoAction(): Promise<void> {
 
 /** Botón "Desconectar" (con confirmación en el cliente). Cancela las señas pendientes de la cuenta (D6). */
 export async function disconnectMercadoPagoAction(): Promise<void> {
-  // HU-025: mismo candado que conectar (contexto de escritura); el consultorio sale del contexto.
-  const ctx = await requireTenantContext("write").catch((error: unknown) => {
+  // HU-028a (D4b): mismo candado que conectar (solo OWNER); el consultorio sale del contexto.
+  const ctx = await requireOwnerContext().catch((error: unknown) => {
     if (error instanceof TenantAccessError) return null;
     throw error;
   });

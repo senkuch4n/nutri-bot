@@ -20,7 +20,8 @@ export type MercadoPagoCallbackResult =
   | "invalid_state"
   | "rejected"
   | "not_configured"
-  | "wrong_environment";
+  | "wrong_environment"
+  | "account_in_use"; // HU-028a (D3a)
 export type MercadoPagoFailureKind = "revoked" | "transient" | "rejected";
 
 export type MercadoPagoTokenSet = {
@@ -183,6 +184,31 @@ export function requiresLiveMercadoPagoAccount(env: Record<string, string | unde
   return env.NODE_ENV === "production";
 }
 
+/** HU-028a: user_id del cuerpo de una notificación de MP (`{ user_id: 123 }` o `"123"`).
+ *  Solo dígitos, 1..20 caracteres; cualquier otra cosa (null, objeto, negativo, "12a") → null. */
+export function parseMercadoPagoNotificationUserId(body: unknown): string | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const raw = (body as Record<string, unknown>).user_id;
+  let value: string;
+  if (typeof raw === "number") {
+    if (!Number.isSafeInteger(raw) || raw < 0) return null;
+    value = String(raw);
+  } else if (typeof raw === "string") {
+    value = raw;
+  } else {
+    return null;
+  }
+  return /^\d{1,20}$/.test(value) ? value : null;
+}
+
+/** HU-028a: true si `userId` es la cuenta de cobro de Arzium (env ARZIUM_MERCADOPAGO_USER_ID, la
+ *  define HU-029). Variable vacía o ausente → false siempre. */
+export function isPlatformMercadoPagoUserId(userId: string, env: Record<string, string | undefined>): boolean {
+  const platform = env.ARZIUM_MERCADOPAGO_USER_ID?.trim();
+  if (!platform) return false;
+  return userId.trim() === platform;
+}
+
 /** Textos del panel (Ajustes → Mercado Pago y avisos). Sin jerga técnica (regla de SETTINGS_TEXT). */
 export const MERCADOPAGO_TEXT = {
   account: "Cuenta",
@@ -219,6 +245,8 @@ export const MERCADOPAGO_TEXT = {
     not_configured: "La conexión con Mercado Pago no está configurada en el servidor.",
     wrong_environment:
       "Esa es una cuenta de prueba de Mercado Pago. Para cobrar señas de verdad, conectá tu cuenta real.",
+    account_in_use:
+      "Esta cuenta de Mercado Pago ya está conectada en otro consultorio. Usá otra cuenta o escribinos a soporte.",
   },
   depositWarningTitle: "Tenés servicios con seña pero Mercado Pago no está conectado",
   depositWarningBody: "Hasta que lo conectes, los pacientes no pueden reservar esos servicios por WhatsApp.",

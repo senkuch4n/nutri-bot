@@ -177,7 +177,7 @@ async function main() {
   // 5. Foto visible en el portal con el plan ACTIVE.
   const jpeg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 200, g: 160, b: 90 } } }).jpeg().toBuffer();
   const { photoId } = await setRecipePhoto(recipeId, { ...(await processRecipePhoto(jpeg)), credit: null });
-  assert.equal(await patientCanSeeRecipePhoto(patient.id, photoId), true);
+  assert.equal(await patientCanSeeRecipePhoto(T, patient.id, photoId), true);
   step(5, "patientCanSeeRecipePhoto = true con el plan ACTIVE");
 
   // 6. Colaciones (EVERY_DAY, opciones).

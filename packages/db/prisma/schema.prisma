@@ -9,6 +9,9 @@ datasource db {
 
 model Tenant {
   id            String             @id @default(cuid())
+  /// Required by self-serve signup; existing tenants retain their current profile.
+  name          String?
+  timeZone      String?
   professionals Professional[]
   agendas       Agenda[]
   memberships   TenantMembership[]
@@ -16,6 +19,9 @@ model Tenant {
   services      Service[]
   mercadoPagoAccount     MercadoPagoAccount?
   mercadoPagoOAuthStates MercadoPagoOAuthState[]
+  /// HU-028b: conexión de Google Calendar del consultorio (D5a) y states de su OAuth.
+  googleCalendarAccount     GoogleCalendarAccount?
+  googleCalendarOAuthStates GoogleCalendarOAuthState[]
   botStatus              BotStatus?
   outboundMessages       OutboundMessage[]
   foods                  Food[]
@@ -24,6 +30,10 @@ model Tenant {
   recipes                Recipe[]
   planTemplates          PlanTemplate[]
   conversationStates     ConversationState[]
+  /// HU-028c (D10a): topes de la IA del bot del consultorio (null/sin fila = default del .env).
+  aiSettings             TenantAiSettings?
+  /// HU-028c (D11b, D12): registro de consumo de la IA del panel.
+  panelAiUsage           PanelAiUsage[]
 }
 
 model User {
@@ -35,6 +45,10 @@ model User {
   /// HU-025: último login con Google verificado. null = nunca entró.
   lastSignInAt  DateTime?
   memberships   TenantMembership[]
+  /// HU-028a: states de OAuth de Mercado Pago iniciados por esta persona.
+  mercadoPagoOAuthStates MercadoPagoOAuthState[]
+  /// HU-028b: states de OAuth de Google Calendar iniciados por esta persona.
+  googleCalendarOAuthStates GoogleCalendarOAuthState[]
 }
 
 enum TenantRole {
@@ -118,8 +132,12 @@ model Professional {
   /// cancelación…). Texto libre, máx. 2.000 caracteres (validado en la action). La IA lo recibe con
   /// la tool `datos_consultorio`. null = no cargado.
   botAiInfo          String?
+  /// HU-028b: EN DESUSO. Solo lo lee el traslado (scripts/google-calendar-transfer.ts); conectar o
+  /// desconectar en Ajustes lo pone en null. Se borra en la contracción (028b-2). Nunca en PROFESSIONAL_SELECT.
   googleRefreshToken String?
+  /// HU-028b: EN DESUSO (lo reemplaza GoogleCalendarAccount.calendarId). Se borra en 028b-2.
   googleCalendarId   String?
+  /// HU-028b: EN DESUSO (lo reemplaza GoogleCalendarAccount.syncError). Se borra en 028b-2.
   googleSyncError    String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -157,7 +175,8 @@ model Patient {
   consultations Consultation[] @relation("PatientConsultationLegacy")
   tenantConsultationAnchors Consultation[] @relation("PatientConsultationTenant")
   inquiries    PatientInquiry[]
-  botAiQuestions BotAiQuestion[]
+  botAiQuestions       BotAiQuestion[] @relation("PatientBotAiQuestions")
+  tenantBotAiQuestions BotAiQuestion[] @relation("PatientBotAiQuestionTenant")
 
   @@unique([id, tenantId])
   @@unique([tenantId, whatsappJid])
@@ -601,18 +620,20 @@ model Payment {
   @@index([externalId])
 }
 
-/// HU-023: cuenta de Mercado Pago vinculada por OAuth (aplicación "Numa"). Los consumidores
-/// legacy siguen usando id = 1. La fila puede existir sin cuenta vinculada (guarda el tope del aviso
-/// "falta Mercado Pago"). Se crea perezosamente con INSERT ... ON CONFLICT DO NOTHING.
+/// HU-023 / HU-028a: cuenta de Mercado Pago de señas de UN consultorio (fila por tenant), vinculada por
+/// OAuth (aplicación "Numa"). La fila puede existir sin cuenta vinculada (guarda el tope del aviso
+/// "falta Mercado Pago"). Se crea perezosamente con INSERT ... ON CONFLICT ("tenantId") DO NOTHING.
+/// La fila de legacy-tenant conserva id = 1 (migración 028a). Nunca guarda credenciales de Arzium (HU-029).
 /// DATO SENSIBLE: accessTokenEnc / refreshTokenEnc van cifrados (AES-256-GCM con
-/// MERCADOPAGO_TOKEN_KEY, formato "v1.<iv>.<tag>.<ct>" en base64url). Solo los lee
+/// MERCADOPAGO_TOKEN_KEY, AAD por campo, formato "v1.<iv>.<tag>.<ct>" en base64url). Solo los lee
 /// domain/mercadopagoAccount.ts; nunca viajan al navegador ni a los logs.
 model MercadoPagoAccount {
-  id              Int       @id @default(1)
-  tenantId        String?   @unique
-  tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  id              Int       @id @default(autoincrement())
+  tenantId        String    @unique
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   /// user_id de MP de la cuenta vinculada (número, guardado como texto). null = sin cuenta.
-  userId          String?
+  /// Único entre consultorios (HU-028a, D3a).
+  userId          String?   @unique
   nickname        String?
   email           String?
   /// live_mode que devolvió /oauth/token. En producción solo se acepta true (D8).
@@ -636,23 +657,28 @@ model MercadoPagoAccount {
   updatedAt       DateTime  @updatedAt
 }
 
-/// HU-023: estado temporal del OAuth (anti-CSRF + PKCE). Un solo uso: se borra con
-/// DELETE ... RETURNING al volver del callback. Vence a los 10 minutos.
+/// HU-023 / HU-028a: estado temporal del OAuth (anti-CSRF + PKCE). Un solo uso: se borra con
+/// DELETE ... RETURNING al volver del callback. Vence a los 10 minutos. El callback exige la misma
+/// persona (userId) y el mismo consultorio (tenantId).
 model MercadoPagoOAuthState {
   id              String   @id @default(cuid())
-  tenantId        String?
-  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// HU-028a: User.id de quien inició el flujo.
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// sha256 (hex) del state que viaja a MP. El state en claro no se guarda.
   stateHash       String   @unique
   /// code_verifier de PKCE, cifrado con la misma clave que los tokens.
   codeVerifierEnc String
-  /// Email de la sesión de Auth.js que inició el flujo: el callback exige la misma sesión.
-  sessionEmail    String
+  /// HU-023, en desuso desde 028a (ya no se escribe ni se compara). Se borra en la migración de 028b.
+  sessionEmail    String?
   expiresAt       DateTime
   createdAt       DateTime @default(now())
 
   @@index([expiresAt])
   @@index([tenantId])
+  @@index([userId])
 }
 
 enum MessageStatus {
@@ -1276,7 +1302,7 @@ enum BotAiOutcome {
   ERROR
   /// Tope diario del paciente: no se llamó a la IA.
   LIMIT_PATIENT
-  /// Tope diario global: no se llamó a la IA.
+  /// Tope diario del consultorio (HU-028c; antes "global", el nombre se conserva): no se llamó a la IA.
   LIMIT_GLOBAL
 }
 
@@ -1284,8 +1310,12 @@ enum BotAiOutcome {
 /// (cron del bot) y borrado en cascada con el paciente.
 model BotAiQuestion {
   id                  String       @id @default(cuid())
-  patient             Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient             Patient      @relation("PatientBotAiQuestions", fields: [patientId], references: [id], onDelete: Cascade)
   patientId           String
+  /// HU-028c: consultorio de la pregunta = el del paciente (lo garantiza la FK compuesta). Base del tope
+  /// diario por consultorio y del consumo. Lo pone el bot, nunca la IA.
+  tenantId            String
+  tenantPatient       Patient      @relation("PatientBotAiQuestionTenant", fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: Restrict)
   /// Instante de la pregunta (lo pone el bot: inyectable en pruebas). Base del límite diario y de la retención.
   askedAt             DateTime
   /// Texto de la pregunta tal como se mandó a la IA (trim, ≤ 500 caracteres).
@@ -1313,4 +1343,110 @@ model BotAiQuestion {
 
   @@index([patientId, askedAt])
   @@index([askedAt])
+  @@index([tenantId, askedAt])
+}
+
+/// HU-028c (D10a): configuración de IA del consultorio que define Arzium (script `ai-limits`, sin UI).
+/// null = se usa el default del .env (BOT_AI_DAILY_PER_PATIENT / BOT_AI_DAILY_GLOBAL). 0 = sin preguntas.
+/// HU-030 suma acá el cupo por plan; el tope del panel llega con el bloqueo (D11b).
+/// CHECK en SQL (TenantAiSettings_limits_check): cada tope null o entre 0 y 100000.
+model TenantAiSettings {
+  tenantId           String   @id
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Preguntas por paciente por día (tz de la profesional).
+  botDailyPerPatient Int?
+  /// Preguntas del consultorio por día (tz de la profesional).
+  botDailyPerTenant  Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum PanelAiFeature {
+  /// Asistente del panel (/asistente).
+  ASSISTANT
+  /// "Generar con IA" de un plan alimentario.
+  PLAN_AI
+}
+
+enum PanelAiOutcome {
+  /// El proveedor respondió algo usable.
+  OK
+  /// Respondió, pero vacío, sin JSON válido, con otro formato o sin alimentos válidos.
+  INVALID_RESPONSE
+  /// El asistente agotó las vueltas de tools sin respuesta final.
+  TOOL_LIMIT
+  /// Error del proveedor (o de una tool) durante la llamada.
+  ERROR
+}
+
+/// HU-028c (D11b, D12): una fila por uso de la IA del panel. Nunca la pregunta, la respuesta, el prompt
+/// ni datos del paciente; sin usuario (D12). Sin purga: no tiene datos personales.
+model PanelAiUsage {
+  id           String         @id @default(cuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feature      PanelAiFeature
+  usedAt       DateTime       @default(now())
+  /// "deepseek" (D9a: proveedor global).
+  provider     String
+  model        String
+  /// Suma de `usage.prompt_tokens` / `usage.completion_tokens` de todas las respuestas recibidas.
+  inputTokens  Int            @default(0)
+  outputTokens Int            @default(0)
+  /// Respuestas recibidas del proveedor (vueltas del asistente; 1 en planes; 0 si falló la primera).
+  calls        Int            @default(0)
+  outcome      PanelAiOutcome
+  /// Solo el código o la clase del error (`errorCode`), nunca el mensaje. null si no hubo error.
+  errorCode    String?
+
+  @@index([tenantId, usedAt])
+}
+
+/// HU-028b (D5a): conexión de Google Calendar de UN consultorio. Sincronización de una vía app → Google,
+/// solo escritura (events.insert/patch/delete). La fila sobrevive a "Desconectar" (guarda googleSubject
+/// para D8). DATO SENSIBLE: refreshTokenEnc va cifrado (AES-256-GCM, INTEGRATION_TOKEN_KEY, AAD
+/// "google:refresh_token:<tenantId>", formato "v1.<iv>.<tag>.<ct>"). Solo lo leen
+/// domain/googleCalendarAccount.ts y domain/gcal.ts. Nunca viaja al navegador, a los logs ni a la IA.
+model GoogleCalendarAccount {
+  id              String    @id @default(cuid())
+  tenantId        String    @unique
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// `sub` del id_token de la cuenta conectada (o la última conectada). Se conserva al desconectar para
+  /// reconocer la misma cuenta al reconectar (D8). null = desconocida (traslado sin identidad).
+  googleSubject   String?
+  /// Email verificado de la cuenta conectada (se muestra en Ajustes). null al desconectar.
+  googleEmail     String?
+  /// null = sin calendario conectado.
+  refreshTokenEnc String?
+  /// scope que devolvió Google (diagnóstico). Tiene que incluir calendar.events.
+  scope           String?
+  /// Identificador del calendario ("Opciones avanzadas"). null = "primary".
+  calendarId      String?
+  connectedAt     DateTime?
+  disconnectedAt  DateTime?
+  /// Mensaje saneado del último error de sincronización (sin tokens). null = sin error.
+  syncError       String?
+  syncErrorAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+/// HU-028b: estado temporal del OAuth de Google Calendar (anti-CSRF + PKCE). Un solo uso
+/// (DELETE ... RETURNING), vence a los 10 minutos, atado a la persona (userId) y al consultorio (tenantId).
+model GoogleCalendarOAuthState {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// sha256 (hex) del state que viaja a Google. El state en claro no se guarda.
+  stateHash       String   @unique
+  /// code_verifier de PKCE, cifrado (INTEGRATION_TOKEN_KEY, AAD "google:code_verifier:<tenantId>").
+  codeVerifierEnc String
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([expiresAt])
+  @@index([tenantId])
+  @@index([userId])
 }

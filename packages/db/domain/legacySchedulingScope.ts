@@ -1,6 +1,6 @@
 import { prisma, type Prisma } from "../index";
 import { LEGACY_TENANT_ID } from "./tenantAccess";
-import type { CalendarContext, DigestContext, SchedulingContext, ScopeClient, TenantScope } from "./tenantScope";
+import type { DigestContext, SchedulingContext, ScopeClient, TenantScope } from "./tenantScope";
 
 // HU-025 (4.3): fachada fina para el bot y los crons de la instalación original hasta HU-027.
 // Equivale a resolveTenant*Context(db, LEGACY_TENANT_ID) y conserva la verificación extra de HU-024:
@@ -24,16 +24,6 @@ export function resolveLegacyDigestScope(db: ScopeClient = prisma): Promise<Dige
     afterHoursStart: true,
     afterHoursEnd: true,
   } as const);
-}
-
-export async function resolveLegacyCalendarScope(db: ScopeClient = prisma): Promise<CalendarContext> {
-  const resolved = await resolveOriginalAgenda(db, {
-    timezone: true,
-    googleRefreshToken: true,
-    googleCalendarId: true,
-    googleSyncError: true,
-  } as const);
-  return { ...resolved, agendaOwner: ORIGINAL_AGENDA_OWNER };
 }
 
 async function resolveOriginalAgenda<S extends Prisma.ProfessionalSelect>(db: ScopeClient, select: S) {

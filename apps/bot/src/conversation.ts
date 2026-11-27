@@ -9,7 +9,8 @@ import {
   findPatientByJidOrThrow,
   findOrCreatePatientByJid,
   countBotAiQuestionsToday,
-  getProfessional,
+  getTenantAiSettings,
+  getTenantProfessional,
   isMercadoPagoCheckoutAvailable,
   markBotAiQuestionHandedOff,
   notifyMercadoPagoMissingForBooking,
@@ -23,9 +24,14 @@ import {
   loadOrInitializeLegacyConversationState,
   saveLegacyConversationState,
 } from "@nutri-bot/db/domain/conversationState";
-import { resolveTenantSchedulingContext } from "@nutri-bot/db/domain/tenantScope";
+import {
+  resolveTenantSchedulingContext,
+  type TenantProfessional,
+  type TenantRef,
+} from "@nutri-bot/db/domain/tenantScope";
 import {
   afterHoursConfigFrom,
+  applyTenantBotAiLimits,
   formatClock,
   formatServiceList,
   inquiryBodyFromAiQuestion,
@@ -61,7 +67,12 @@ import { getConversationTenant } from "./tenant";
 
 type Send = (text: string) => Promise<void>;
 
-type Professional = Awaited<ReturnType<typeof getProfessional>>;
+type Professional = TenantProfessional;
+
+/** HU-033 (025c): la profesional del consultorio de la conversación (antes se leía Professional(1)). */
+async function conversationProfessional(): Promise<Professional> {
+  return getTenantProfessional((await getConversationTenant()).tenantId);
+}
 type PatientRow = Awaited<ReturnType<typeof findOrCreatePatientByJid>>;
 
 /** Opciones inyectables. En producción no se pasan. */
@@ -165,7 +176,9 @@ export async function handleIncoming(
   opts: ConversationOptions = {},
 ): Promise<void> {
   const now = opts.now ?? new Date();
-  const pro = await getProfessional();
+  // HU-028c (D-c1 b): la profesional del consultorio de la conversación (opción 5, zona y nombre de la IA).
+  const tenant = await getConversationTenant();
+  const pro = await getTenantProfessional(tenant.tenantId);
 
   // Interruptor global: la nutricionista puede apagar el bot desde el panel.
   if (pro.botPaused) return;
@@ -182,7 +195,7 @@ export async function handleIncoming(
     if (!isWakeWord(text)) return;
   }
 
-  const patient = await findOrCreatePatientByJid(await getConversationTenant(), jid);
+  const patient = await findOrCreatePatientByJid(tenant, jid);
   const state = await loadState(jid);
   const ctx = state.ctx;
   let step = state.step;
@@ -251,7 +264,7 @@ export async function handleIncoming(
       return handoffFromQuestion(jid, ctx, patient, pro, send, opts, now);
     }
     if (d !== null) return handleMenu(jid, d, send, pro, opts, now, menuText, ai);
-    return handleQuestionText(jid, text, ctx, patient, pro, send, opts, now, ai);
+    return handleQuestionText(jid, text, ctx, tenant, patient, pro, send, opts, now, ai);
   }
 
   // HU-013: paso del motivo. Texto libre: solo comandos estrictos (mensaje entero).
@@ -384,7 +397,10 @@ async function handleMenu(
 
   if (choice === "4") {
     const patient = await findPatientByJidOrThrow(await getConversationTenant(), jid);
-    const token = createPatientToken(patient.id, 15);
+    // HU-033 (025c): el token v2 ata el link al paciente y a su consultorio. Sin consultorio no hay link:
+    // falla como una búsqueda de paciente fallida (se registra el código, no se manda nada nuevo).
+    if (!patient.tenantId) throw new Error("portal_link_without_tenant");
+    const token = createPatientToken({ patientId: patient.id, tenantId: patient.tenantId }, 15);
     const url = `${process.env.AUTH_URL}/portal/login?token=${token}`;
     await send(messages.portalLink(url));
     return;
@@ -460,7 +476,7 @@ async function handleBookDay(jid: string, text: string, ctx: Ctx, send: Send): P
     slots: iso,
     ...(ctx.reason ? { reason: ctx.reason } : {}), // HU-013: motivo conservado tras SLOT_TAKEN
   });
-  const pro = await getProfessional();
+  const pro = await conversationProfessional();
   await send(messages.askSlot(slots, pro.timezone));
 }
 
@@ -492,7 +508,7 @@ async function sendBookingSummary(
 ): Promise<void> {
   const [service, pro] = await Promise.all([
     prisma.service.findUniqueOrThrow({ where: { id: b.serviceId } }),
-    getProfessional(),
+    conversationProfessional(),
   ]);
   await save(jid, STEP.BOOK_CONFIRM, {
     serviceId: b.serviceId,
@@ -570,7 +586,7 @@ async function handleBookConfirm(
   try {
     const [service, pro] = await Promise.all([
       prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } }),
-      getProfessional(),
+      conversationProfessional(),
     ]);
     serviceName = service.name;
     const tenant = await getConversationTenant();
@@ -652,7 +668,7 @@ async function handleCancelPick(jid: string, text: string, ctx: Ctx, send: Send)
     await save(jid, STEP.MENU);
     return;
   }
-  const pro = await getProfessional();
+  const pro = await conversationProfessional();
   await save(jid, STEP.CANCEL_CONFIRM, { apptId });
   await send(
     messages.confirmCancel({
@@ -691,7 +707,7 @@ async function handleCancelConfirm(
   });
   if (appt && appt.status === "CONFIRMED") {
     await cancelAppointment(await getConversationTenant(), { id: ctx.apptId, by: "PATIENT", notifyPatient: false });
-    const pro = await getProfessional();
+    const pro = await conversationProfessional();
     await send(
       messages.cancelDone({
         serviceName: appt.service.name,
@@ -808,7 +824,7 @@ export async function handleIncomingMedia(
   opts: ConversationOptions = {},
 ): Promise<void> {
   const now = opts.now ?? new Date();
-  const pro = await getProfessional();
+  const pro = await conversationProfessional();
   if (pro.botPaused) return;
   // Una lectura sin inicialización no crea pacientes ni estado para contactos desconocidos.
   const row = await findLegacyConversationState(jid);
@@ -856,7 +872,12 @@ async function handoffFromQuestion(
     inquiryId: null,
   });
   if (ctx.lastQuestionLogId) {
-    await markBotAiQuestionHandedOff({ id: ctx.lastQuestionLogId, patientId: patient.id, at: now });
+    await markBotAiQuestionHandedOff({
+      id: ctx.lastQuestionLogId,
+      patientId: patient.id,
+      tenantId: (await getConversationTenant()).tenantId,
+      at: now,
+    });
   }
   let alerted = false;
   // De día: alerta inmediata (HU-011). De noche: va en el resumen de la mañana.
@@ -879,6 +900,7 @@ async function handleQuestionText(
   jid: string,
   text: string,
   ctx: Ctx,
+  tenant: TenantRef,
   patient: PatientRow,
   pro: Professional,
   send: Send,
@@ -892,19 +914,33 @@ async function handleQuestionText(
     await send(messages.AI_UNAVAILABLE);
     return;
   }
-  const limits = mergeBotAiLimits(getBotAiConfig().limits, opts.aiLimits);
   void opts.typing?.().catch(() => {}); // "escribiendo…" (no se espera)
   const title = pro.title?.trim();
+  let limits: BotAiLimits;
   let result: Awaited<ReturnType<typeof answerQuestion>>;
   try {
+    // HU-028c (D10a): topes del consultorio sobre los del .env; el override de pruebas sigue ganando.
+    limits = mergeBotAiLimits(
+      applyTenantBotAiLimits(getBotAiConfig().limits, await getTenantAiSettings(tenant)),
+      opts.aiLimits,
+    );
     result = await answerQuestion(
       {
         provider: ai.provider,
         limits,
-        countToday: () => countBotAiQuestionsToday({ patientId: patient.id, now, tz: pro.timezone }),
-        record: (row) => recordBotAiQuestion({ ...row, patientId: patient.id, askedAt: now }),
+        countToday: () =>
+          countBotAiQuestionsToday({ tenantId: tenant.tenantId, patientId: patient.id, now, tz: pro.timezone }),
+        record: (row) =>
+          recordBotAiQuestion({ ...row, tenantId: tenant.tenantId, patientId: patient.id, askedAt: now }),
         runTool: (name, input) =>
-          runBotAiTool({ name, input, patientId: patient.id, now, afterHours: opts.afterHours }),
+          runBotAiTool({
+            name,
+            input,
+            patientId: patient.id,
+            tenantId: tenant.tenantId,
+            now,
+            afterHours: opts.afterHours,
+          }),
         log: logger,
       },
       {
@@ -916,7 +952,7 @@ async function handleQuestionText(
       },
     );
   } catch (err) {
-    // Falla de base (conteo o registro). Solo el nombre del error: uno de Prisma puede traer los
+    // Falla de base (topes, conteo o registro). Solo el nombre del error: uno de Prisma puede traer los
     // argumentos, o sea el texto de la pregunta. El paciente sigue en el modo pregunta.
     logger.error({ errName: err instanceof Error ? err.name : typeof err }, "Error de base en el modo pregunta");
     await save(jid, STEP.AWAIT_QUESTION, ctx);
