@@ -4,14 +4,14 @@
   "slug": "portal-por-consultorio",
   "titulo": "Resto de 025c/025d: portal, booking y soporte por consultorio",
   "origen": "Issue #91: entregas 025c/025d de la HU-025 que nunca se hicieron (detectado por el architect de la 028c).",
-  "estado": "aprobada",
+  "estado": "arquitectura_lista",
   "lote": "lote-3-portal",
   "intentos_revision": 0,
   "hu": "docs/hu-autenticacion-permisos-tenant.md",
   "sdd": "Refactorizaciones/autenticacion-permisos-tenant.md (§7.3, sin la parte de runBotAiTool)",
   "rama": "feat/HU-033-portal-por-consultorio",
   "lock": "https://github.com/senkuch4n/nutri-bot/issues/91",
-  "entrega_actual": "025c",
+  "entrega_actual": "025d",
   "entregas": {
     "025c": {
       "estado": "aprobada",
@@ -23,12 +23,20 @@
       ],
       "impl": "progress/impl_HU-033.md",
       "commits": "5e1c4a1..7c7de25",
-      "review": "progress/review_HU-033.md"
+      "review": "progress/review_HU-033.md",
+      "pr": "#92 (mergeado 2026-11-27; se descartó el commit de ENABLED_TENANT_IDS por HU-026)"
     },
     "025d": {
-      "estado": "no_afinada",
+      "estado": "arquitectura_lista",
       "migracion": true,
-      "nota": "SupportGrant; espera el turno de migración"
+      "nota": "SupportGrant; espera el turno de migración",
+      "skills_architect": [
+        "migracion-prisma"
+      ],
+      "worktree": "../Nutri-Bot-HU033d",
+      "rama": "feat/HU-033-025d-soporte",
+      "sdd": "Refactorizaciones/autenticacion-permisos-tenant.md §16 (2026-11-27)",
+      "migracion_nombre": "platform_support_access"
     }
   },
   "notas": "025c sin migración: se puede implementar en paralelo al candado de migraciones.",

@@ -367,3 +367,80 @@ orquestador, para que las revise a la mañana:
 - 025a-1 en producción (deploy 9bd1495, migración tenant_access_identity OK). Pendiente: fases 2 y 3 de §6.4 (la nutricionista vuelve a entrar y `tenant-access.ts grant ... --role OWNER`).
 - **025a-2 aprobada** (Opus/Opus; review en progress/review_HU-025a2.md). **No se publica a `main` hasta la fase 3.** Notas del reviewer para 025b: los tests de recetas mockean `@/lib/tenant-context` sin el candado (mejor mockear `requireTenantContext`); falta el aviso de `/inicio?error=AccessDenied`; `disconnectMercadoPagoAction` sin `requireTenantContext` (M4).
 - **025b-1 aprobada** (Opus/Opus; review en progress/review_HU-025b1.md). Antes de publicarla a `main`, en producción (solo lectura): `SELECT count(*) FROM "AnthropometricReport" WHERE "tenantId" IS NULL;` → si da > 0, completar `tenantId` desde `EvolutionEntry` antes del deploy. Para 025b-2: pasar a `getConversationTenant()` los tres puntos del bot que quedan (`conversation.ts` depositUnavailable y handoffAlertTarget, `workers.ts` tick), `weeklyMenu`/`planSections` con tenant obligatorio por tipo en M10, y `professional-pdf.ts` en M6.
+
+### 2026-11-22 — pausa a pedido del usuario (025b-2)
+- 025b-2: 1er review CHANGES_REQUESTED (recetas sin visibilidad por tenant + SQL de prod incompleto). Reintento 1 hecho (commits 7df879b, ea1d792 en el worktree `../Nutri-Bot-HU025b2`). La 2da revisión (Opus) se lanzó y se **detuvo** a pedido del usuario antes de terminar.
+- Al retomar: backlog en `en_revision`, intentos_revision=1. Relanzar el reviewer (preguntar modelo) sobre `git diff ac42a4d..HEAD`; los reportes `progress/impl_HU-025b2.md` y `review_HU-025b2.md` están sin commitear en el worktree.
+- PR #80 (025b-1) sigue abierto. Pendientes de prod: fases 2/3 (Daiana + `pending`/`grant`), chequeo AnthropometricReport NULL y el chequeo SQL de alimentos SARA 2 (decisión 7 del impl) antes de publicar.
+
+## 2026-11-24/25 — demo en prod + 2ª revisión de 025b-2
+- Demo: WhatsApp de Daiana desvinculado en prod (respaldo `/root/backups/whatsapp-auth-daiana-20261124-1531.tgz`), bot con el número de Joel; MP conectado con la cuenta de Joel (liveMode). `BOT_AI_PROVIDER=deepseek` en el `.env` del VPS (respaldo en /root/backups/deploy-env-*.bak); hubo que recrear también `web` para que el panel vea la key. A las 20:25 WhatsApp cerró la sesión de Joel (logout); se re-vinculó 20:33.
+- Pendiente post-demo: devolverle a Daiana su WhatsApp (restaurar el tgz) y que reconecte su MP. Gemini como proveedor del bot (compatible OpenAI) queda para después.
+- 025b-2: review de la ronda 1 movida a `progress/review_HU-025b2-ronda1.md` (worktree). 2ª revisión lanzada (reviewer Opus) sobre `ac42a4d..HEAD`.
+- **025b-2 aprobada** (2ª ronda, reviewer Opus) → HU-025 `aprobada`. Commit 7137493 en la rama; PR #81 apilado sobre #80 (base feat/HU-025b1), con `Closes #68`. El issue queda en "estado: en revisión" hasta que se mergee. Leo tiene que revisar #80 y #81.
+- 2026-11-25: #81 y #80 mergeados → HU-025 completa en `develop` (8d56cc0). Issue #68 cerrado a mano (Closes no actúa fuera de `main`). Falta publicar a `main`: chequeos de solo lectura + fases 2/3 + legacy-memberships.
+- 2026-11-25: chequeos de solo lectura en prod OK (0 / 0 / BotStatus y MP en legacy-tenant). Joel re-logueado → registrado → `grant` OWNER en legacy-tenant aplicado. Daiana se registra y recibe OWNER recién cuando entre (cuando esté todo listo). PR develop→main abierto para publicar HU-025.
+- 2026-11-25: fix de auto-recuperación ante logout de WhatsApp (PR #83 → develop, #84 → main). **HU-028** tomada: issue #71 asignado (en curso, label migración), rama `feat/HU-028-integraciones-por-consultorio`, backlog `afinando`. Lanzo el afinador (Opus).
+- HU-028 afinada (Opus) → `afinada_pendiente_validacion`: docs/hu-integraciones-por-consultorio.md, D1–D16, corte 028a (MP) → 028b (Calendar) → 028c (IA).
+- HU-028 **validada** (acepta D1–D16; D15: app de Google en verificación, Google pidió uso limitado con IA). Se redactó la respuesta a Google.
+- 2026-11-25: respuesta a Google (uso limitado con IA) enviada por Joel, sin video. Si el revisor lo pide: grabar turno → Calendar (crear/mover/borrar) + asistente sin acceso al calendario. HU-028 → `en_arquitectura` (architect Opus; migracion-prisma + refactor) para 028a.
+- HU-028/028a: SDD lista (Refactorizaciones/integraciones-por-consultorio.md) → `arquitectura_lista`. Pendiente: confirmar arranque y la regla de lotes.
+- 2026-11-25: regla del arnés cambiada a pedido de Joel: hasta 10 HU activas por responsable, en lotes (campo `lote`, estado nuevo `implementada`, un reviewer por lote). Migraciones siguen de a una. Avisar a Leo.
+- **lote-1-mp** = HU-028 + HU-029. HU-029 tomada (issue #72 asignado, en curso), backlog `afinando`; lanzo el afinador (Opus).
+- 028a → `implementando` (implementer Opus; migracion-prisma, web-design-guidelines).
+- HU-029 afinada (Opus) → `afinada_pendiente_validacion`.
+- HU-029 **validada**: $60.000 ARS mensual por defecto, baja/alta libre, varios planes (1 mes gratis, anual con descuento, pack 3 meses); D2–D15 aceptadas.
+- HU-029 → `en_arquitectura` (architect Opus; migracion-prisma + ui).
+- HU-029: SDD lista (Refactorizaciones/suscripcion-arzium-mercadopago.md) → `arquitectura_lista`. 029a (sandbox) la corre Joel; 029b depende de la compuerta G1. Pasarle a Leo la ruta /ajustes/suscripcion para HU-026.
+- 028a implementer (Opus) `done` → progress/impl_HU-028a.md (8 commits 5299bfd..766c5c3, 3963 tests OK, migración aplicada en dev). → `implementada` esperando al lote. Supuesto sin confirmar: user_id en el cuerpo de la notificación de MP (validar en el primer pago post-deploy).
+- Joel: 028a se revisa sola, fuera del lote. 029a → `implementando` (implementer Opus, sin skills).
+- 028a → `en_revision` (reviewer Opus, fuera de lote). Tablero: #71 Revision.
+- 029a implementer (Opus) `done` → progress/impl_HU-029a.md (4 commits 995e4da..2763420, 4010 tests OK). → `implementada`. Falta la corrida en sandbox de Joel (runbook en docs/mp-suscripciones-sandbox.md); 029b bloqueada hasta entonces.
+- **028a aprobada** (reviewer Opus, 1ª ronda). PR desde rama `feat/HU-028a-mp-por-consultorio` (766c5c3 + docs, worktree ../Nutri-Bot-HU028a) a develop. HU-028 → `validada` para 028b. Tablero #71: Lista para dev.
+- Contrato HU-026↔HU-029 acordado con Leo (anexo de la SDD 029, comentario en #72): getTenantSubscriptionGate; con el cobro apagado los consultorios nuevos se habilitan sin suscripción.
+- 028b → `en_arquitectura` (architect Opus; migracion-prisma + refactor). Tablero #71: En curso.
+- PR #85 (028a) mergeado a develop (5900638). 028b: SDD lista (§B1–B16 al final de Refactorizaciones/integraciones-por-consultorio.md) → `arquitectura_lista`; 028b-2 (contracción) aparte.
+- 028b → `implementando` (Opus; migracion-prisma, web-design-guidelines) en worktree ../Nutri-Bot-HU028b, rama feat/HU-028b-calendar-por-consultorio desde develop. Sandbox 029a: Joel no puede ahora (fuera de casa).
+- 028b implementer (Opus) `done` → ../Nutri-Bot-HU028b/progress/impl_HU-028b.md (11 commits 75e6c89..f0d933d, 4109 tests OK, migración aplicada en dev con pg_dump, traslado solo dry-run). Falta INTEGRATION_TOKEN_KEY en .env local.
+- 028b → `en_revision` (reviewer Opus, sola).
+- **028b aprobada** (reviewer Opus, 1ª ronda). Commit 61c0a68, PR a develop. HU-028 → `validada` para 028c. Nota del reviewer: revocar en Google anula la cuenta entera (si dos consultorios usan la misma cuenta, desconectar en A corta B).
+- PR #86 (028b) mergeado. 028c → `en_arquitectura` (architect Opus; migracion-prisma + refactor), con la dependencia de 025c a resolver.
+- 028c: SDD lista (§C0–C16 en ../Nutri-Bot-HU028c) → `arquitectura_lista`. 025c/025d nunca se hicieron (nadie las tiene). Decisión D-c1 pendiente. Issue #71 estaba cerrado (cerrado a mano 2026-11-26 00:11 UTC): reabierto.
+
+## 2026-11-27
+- Fix fuera de HU: redirecciones del portal usaban el host interno (0.0.0.0:3000). PR #88 (develop) y hotfix #89 (main), sin publicar: falta OK del usuario.
+- Bot prod: Bad MAC continuo tras vincular el número de Joel; se respaldó la sesión (/root/backups/whatsapp-auth-joel-badmac-20261126-1416.tgz), se borró y Joel re-vinculó. Conectó sin errores.
+- Leo (mleonel.martinez0098@gmail.com) recibió OWNER en legacy-tenant (prod).
+- 028c: D-c1 = (b). Anotado en las dos SDD y en backlog/HU-028.json. Resto de 025c/025d → issue #91 (HU-033).
+- 028c no puede pasar a implementando todavía: HU-026 de Leo (migración 20261126013713_tenant_onboarding_profile) está en implementando y no está en develop.
+- HU-032 (#90, NutriBot Studio) tomada: worktree ../Nutri-Bot-HU032, afinador (Opus) corriendo → docs/hu-nutribot-studio.md.
+- HU-033 (#91) tomada, entrega 025c (sin migración): worktree ../Nutri-Bot-HU033, implementer Opus + skill refactor corriendo → progress/impl_HU-033.md. Excluye runBotAiTool (028c).
+- HU-032: afinada (docs/hu-nutribot-studio.md, D1–D20). Usuario pidió diseño Figma de la 032a antes de validar; agente de diseño corriendo → progress/diseno_HU-032a.md. Hotfix #89 publicado y verificado.
+- HU-033 025c implementada (7 commits 5e1c4a1..7c7de25, verificación OK; conflicto previsto con #88 en portal/login/route.ts). Lote-3 completo → falta elegir modelo del reviewer.
+- HU-033 025c aprobada (reviewer Sonnet) → PR #92 a develop (Refs #91; 025d pendiente). Sandbox 029a: preapproval mensual+7 días creada (5b66cf85…), esperando que Joel la autorice como comprador.
+- Sandbox 029a (2026-11-27): S1,S2,S7,S15,S16,S17 confirmados; S3 y S4 refutados (payer_email obligatorio; MP no respeta X-Idempotency-Key en preapproval); S9 next_payment_date desde la creación + validación $0; S5/S6/S13 en parte. Creadas 3 diarias para pasos 8/10: 266d63 (1 día de prueba), 35df7c (sin prueba, APRO), df8a35 (sin prueba, OTHE). Túnel ngrok y listen corriendo en la Mac.
+- 029a: compuertas resueltas (G1 abierta). 029b desbloqueada salvo turno de migración. Leo abrió PR #87 (HU-026).
+- HU-032 validada (Leo aprobó el diseño; D1–D20 recomendadas; D10 pendiente de confirmación de Leo en #90). Orden de migraciones: 028c → 029b → 032a. Architect (Opus) ajustando SDD 029b con resultados del sandbox.
+- PR #87 (HU-026 Leo) revisado (code-review high: 1 importante conocido → 029b, 5 nits comentados), aprobado y mergeado. Turno de migración → 028c: implementer Opus + migracion-prisma corriendo en ../Nutri-Bot-HU028c → progress/impl_HU-028c.md. Issue #71 en curso.
+- #88 y #92 mergeados (en #92 se descartó el commit de ENABLED_TENANT_IDS: HU-026 le cambió el sentido). DP1 de 029b aceptada (1 h) → 029b arquitectura_lista. HU-032 SDD lista (Refactorizaciones/nutribot-studio.md en ../Nutri-Bot-HU032; ADR: editor propio dnd-kit + react-pdf, sin Chromium; 032a-1 con migración, 032a-2 galería+editor; Q1–Q9 con recomendación aplicada).
+- HU-032: Q1–Q9 aceptadas; SDD commiteada en feat/HU-032-nutribot-studio. arquitectura_lista; 032a-1 espera turno después de 029b.
+- 028c implementada y rebasada sobre develop con #92 (12 commits, getProfessional borrado; 4294 tests OK). Lote-1-mp completo (028c + 029a) → falta modelo del reviewer.
+- Turno de migraciones acordado con Leo (2026-11-27): 028c → HU-027 (Leo) → 029b → 032a-1. Avisarle a Leo cuando el PR de la 028c esté mergeado en develop.
+- 028c aprobada → PR #93 (Refs #71). 029a rechazada (1/2): el código está bien; falla el informe docs/mp-suscripciones-sandbox.md (encabezado, tabla con celdas de más, §5/§6, conclusiones S1/S6/S9/S8/S14) e impl_HU-029a.md desactualizado.
+- #93 (028c) mergeado a develop. Turno de migración → HU-027 de Leo (avisado en #70). HU-028 queda con 028b-2 pendiente.
+- 029a aprobada en la re-revisión (Sonnet) → PR #94 (Refs #72), rama feat/HU-029a-sandbox-suscripciones. HU-029 queda arquitectura_lista con 029b (espera que entre la migración de la HU-027 de Leo).
+- #94 (029a) mergeado a develop.
+- Prep publicación develop→main: chequeos de solo lectura en prod OK (028a/028b/028c, 0 huérfanas, 9 preguntas legacy). INTEGRATION_TOKEN_KEY generada en el VPS (respaldo del .env en /root/backups/deploy-env-*.bak) y en el .env local. Falta: Joel copia la clave al gestor, agrega redirect URIs de Calendar en Google Cloud, prueba local opcional, PR develop→main.
+- PR #95 develop→main abierto (publicación), sin mergear: espera OK de Joel.
+- 2026-11-27 PUBLICADO #95 (0f138c5): 4 migraciones OK, traslado de Calendar transferred=1, MP y Calendar conectados en legacy-tenant, 9 preguntas IA con tenant, bot conectado, web 200. Falta prueba manual en el panel.
+- Joel probó prod: todo conectado. Leo abrió PR #97 (follow-ups del review de #87, sin migración).
+- Orden de migraciones cambiado con OK de Leo: 029b → HU-027 → 032a-1.
+- 025d: SDD actualizada (§16, en ../Nutri-Bot-HU033d), migración platform_support_access en cola; dudas Q1–Q7 pendientes.
+- 025d: Q1–Q7 aceptadas; spec commiteada en feat/HU-033-025d-soporte. Migración al final de la cola (029b → HU-027 → 032a-1 → 025d).
+- 029b implementada (15 commits en feat/HU-029b-suscripcion, migración 20261127213351_tenant_subscriptions aplicada en dev, §B.9.6 OK). Arreglos chicos (robots/canónica/calculateAge) en ../Nutri-Bot-fixchicos SIN commitear: Joel rechazó el commit/push/PR.
+- 029b aprobada (+ test de no reintento del SDK) → PR #98 a develop (Refs #72). Al mergear: avisar a Leo en #70 que tiene el turno para la 027.
+- #98 (029b) mergeado a develop. Turno de migración → HU-027 de Leo (avisado en #70). Siguiente en cola: 032a-1, luego 025d.
+- Publicación de la 029b: chequeos previos OK (1 tenant, sin migraciones a medias), ARZIUM_SUBSCRIPTIONS_ENABLED=false agregada al .env del VPS (respaldo en /root/backups). PR #99 develop→main abierto, sin mergear. PR #100 (docs) con P-b1..P-b3 en la Parte C.
+- Deploy de #99 (85c0b61) FALLÓ en el build de web por OOM de Node; prod sigue con la versión anterior (sin migrar). Fix: PR #101 (NODE_OPTIONS=--max-old-space-size=3072 en la etapa build). El merge de #101 lo bloqueó el modo auto: lo decide Joel. Después: PR develop→main para republicar.
+- 2026-11-27 PUBLICADO #102 (c1603ce): build OK con el heap nuevo; migración tenant_subscriptions aplicada; plan mensual 60000/7 días en LIVE y SANDBOX; CHECKs del email; bot conectado; web 200. Cobro apagado.
+- 2026-11-27 orden del espacio de trabajo: 11 worktrees mergeados borrados; repo principal pasado a develop; copias viejas de docs borradas (develop tenía iguales o más nuevas); sesiones viejas de WhatsApp movidas a ~/backups/nutribot-whatsapp-viejas.

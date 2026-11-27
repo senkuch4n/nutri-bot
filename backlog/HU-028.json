@@ -4,14 +4,14 @@
   "slug": "integraciones-por-consultorio",
   "titulo": "Google Calendar, Mercado Pago de señas e IA por consultorio",
   "origen": "Backlog SaaS de NutriBot, issue #71. Sigue a HU-024 (multi-tenant) y HU-025 (acceso por membresía), ya en producción.",
-  "estado": "aprobada",
+  "estado": "arquitectura_lista",
   "intentos_revision": 0,
   "hu": "docs/hu-integraciones-por-consultorio.md",
   "sdd": "Refactorizaciones/integraciones-por-consultorio.md",
   "rama": "feat/HU-028-integraciones-por-consultorio",
   "lock": "https://github.com/senkuch4n/nutri-bot/issues/71",
   "notas": "Depende de #67 y #68 (mergeadas). Se coordina con HU-027 (WhatsApp por tenant) y HU-029 (suscripción SaaS de Arzium). Lleva migración (MercadoPagoAccount de fila única a una por tenant). 025b-2 dejó: fila única de MP perezosa (ensureAccountRow) y candado ENABLED_TENANT_IDS.",
-  "entrega_actual": "028c",
+  "entrega_actual": "028b-2",
   "skills_architect": [
     "migracion-prisma",
     "refactor"
@@ -70,7 +70,8 @@
       ],
       "impl": "progress/impl_HU-028c.md",
       "commits": "4ee3d80..20f83aa (rebasado sobre a58e023)",
-      "review": "progress/review_HU-028c.md"
+      "review": "progress/review_HU-028c.md",
+      "pr": "#93 (mergeado 2026-11-27)"
     }
   },
   "lote": "lote-1-mp",
