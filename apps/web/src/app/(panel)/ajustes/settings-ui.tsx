@@ -21,7 +21,7 @@ import type { SettingsState } from "./actions";
 // HU-017b-4 (D19): piezas compartidas de Ajustes. Cada grupo es su propio <form>, guarda solo lo suyo y
 // avisa si quedó con cambios sin guardar; el índice marca la sección con un punto.
 
-export type SettingsSection = "general" | "whatsapp" | "google" | "mercadopago" | "pdf" | "equipo";
+export type SettingsSection = "general" | "whatsapp" | "google" | "mercadopago" | "suscripcion" | "pdf" | "equipo";
 
 type DirtyApi = { report: (key: string, section: SettingsSection, dirty: boolean) => void };
 

@@ -3,8 +3,8 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { m, useReducedMotionConfig } from "motion/react";
-import { CalendarDays, ChevronLeft, ChevronRight, FileText, MessageCircle, SlidersHorizontal, Users, Wallet, type LucideIcon } from "lucide-react";
-import { SETTINGS_TEXT as T, TEAM_TEXT } from "@nutri-bot/core";
+import { CalendarDays, ChevronLeft, ChevronRight, CreditCard, FileText, MessageCircle, SlidersHorizontal, Users, Wallet, type LucideIcon } from "lucide-react";
+import { SETTINGS_TEXT as T, SUBSCRIPTION_TEXT, TEAM_TEXT } from "@nutri-bot/core";
 import { GroupedList, GroupedListRow } from "@/components/grouped-list";
 import { PageHeader, cn } from "@/components/ui";
 import { fades } from "@/lib/motion";
@@ -16,6 +16,8 @@ export const AJUSTES_TABS = [
   { value: "whatsapp", label: T.sections.whatsapp },
   { value: "google", label: T.sections.google },
   { value: "mercadopago", label: T.sections.mercadopago },
+  // HU-029b (§B.6.3): todos los miembros la ven; la gestión es de la OWNER en /ajustes/suscripcion.
+  { value: "suscripcion", label: SUBSCRIPTION_TEXT.tabLabel },
   { value: "pdf", label: T.sections.pdf },
   // HU-025 (7.2.1): solo para la responsable. page.tsx decide qué pestañas se ven (prop `tabs`).
   { value: "equipo", label: TEAM_TEXT.tabLabel },
@@ -36,6 +38,7 @@ const ICONS: Record<AjustesTabValue, LucideIcon> = {
   whatsapp: MessageCircle,
   google: CalendarDays,
   mercadopago: Wallet,
+  suscripcion: CreditCard,
   pdf: FileText,
   equipo: Users,
 };

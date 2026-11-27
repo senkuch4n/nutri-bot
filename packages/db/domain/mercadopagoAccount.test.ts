@@ -1036,4 +1036,15 @@ describe("resolveMercadoPagoWebhookAccount (HU-028a)", () => {
     db.accounts = [connectedAccount({ accessTokenEnc: null })];
     expect(await resolveMercadoPagoWebhookAccount("555", DEV)).toBeNull();
   });
+
+  it("HU-029b (§B.5.7): el user_id de Arzium → null aunque haya fila o respaldo .env, sin buscar la fila", async () => {
+    db.accounts = [connectedAccount({ userId: "424242" })];
+    mocks.prisma.mercadoPagoAccount.findUnique.mockClear();
+    const env = { ...DEV, ARZIUM_MERCADOPAGO_USER_ID: "424242" };
+    expect(await resolveMercadoPagoWebhookAccount("424242", env)).toBeNull();
+    expect(await resolveMercadoPagoWebhookAccount(" 424242 ", env)).toBeNull();
+    expect(mocks.prisma.mercadoPagoAccount.findUnique).not.toHaveBeenCalled();
+    // Otro user_id sigue igual; null sigue cayendo al respaldo de dev.
+    expect(await resolveMercadoPagoWebhookAccount(null, env)).toEqual({ tenant: { tenantId: "legacy-tenant" }, sellerUserId: null });
+  });
 });

@@ -181,6 +181,48 @@ rompe el registro de preguntas del bot viejo (`NOT NULL`): si hiciera falta, a m
 Si el `migrate` cortó por el fail closed, Prisma deja la migración marcada como fallida: después de resolver los
 datos, `prisma migrate resolve --rolled-back <carpeta>` antes de volver a deployar.
 
+## Suscripción de Arzium con Mercado Pago (HU-029b)
+
+La migración `tenant_subscriptions` es **aditiva**: crea `SubscriptionPlan`, `SubscriptionPlanOffer`,
+`TenantSubscription` y `SubscriptionEvent` (seis enums nuevos, índices parciales y CHECK) y siembra el plan
+mensual por defecto ($60.000 ARS, 7 días de prueba) en `LIVE` y `SANDBOX`. No toca tablas existentes: el
+binario viejo sigue andando en la ventana `migrate` → `up -d`.
+
+- **Variables:** agregar `ARZIUM_SUBSCRIPTIONS_ENABLED=false` (explícito) al `.env` de producción. El resto
+  (`ARZIUM_MERCADOPAGO_MODE`, `ARZIUM_MERCADOPAGO_ACCESS_TOKEN`, `ARZIUM_MERCADOPAGO_WEBHOOK_SECRET`,
+  `ARZIUM_SUBSCRIPTIONS_BACK_URL`) puede quedar vacío: con `ENABLED` distinto de `"true"` la pantalla muestra
+  "todavía no está disponible" y el webhook nuevo responde 503 (sin secreto) o 200 ignorado.
+- **`ARZIUM_MERCADOPAGO_USER_ID`:** **no** setearla en producción hasta que `legacy-tenant` esté conectado a la
+  cuenta de MP de **Daiana** para señas (D2). Chequeo de solo lectura antes de setearla:
+  `SELECT "tenantId", "userId" FROM "MercadoPagoAccount";` ≠ el `user_id` de Arzium. Con ella seteada, el
+  webhook de señas ignora las notificaciones de esa cuenta.
+- **HU-026 (onboarding):** al desplegar 029b el gate de onboarding deja de ser el stub `"pending"`. Con el
+  cobro apagado (`not_required`), las titulares que estaban en "Suscripción pendiente" pasan a operativas
+  (decisión del anexo de la SDD). **Avisar a Leo antes del deploy.**
+- **Aplicación de MP de Arzium (D3a), cuando se habilite:** URL de notificaciones
+  `https://numa.arzium.com.ar/api/webhooks/mercadopago-suscripciones`, tópicos de suscripciones y pagos
+  (`subscription_preapproval`, `subscription_authorized_payment`, `payment`). Caddy sin cambios.
+- **Dato personal nuevo:** `TenantSubscription.checkoutPayerEmail` (email de la cuenta de MP de la titular) solo
+  vive mientras el checkout está sin autorizar; el CHECK `TenantSubscription_payer_email_transient` impide que
+  quede en una suscripción autorizada o cancelada.
+- **Después del deploy (solo lectura):**
+  `SELECT code, mode, amount, "trialLength", "trialUnit", "isDefault" FROM "SubscriptionPlan";` → 2 filas
+  (`mensual`, 60000.00, 7, DAYS, true) y
+  `SELECT conname FROM pg_constraint WHERE conname LIKE 'TenantSubscription_payer_email%';` → 2 filas.
+- **Habilitar cobros reales** (`ENABLED=true`, `MODE=live`) es de **HU-031**, con aprobación explícita.
+- **Rollback:** código y base juntos con el `pg_dump` del deploy. Volver solo el código deja tablas nuevas sin
+  uso (inocuo). A mano, solo con el dump: `DROP TABLE` de `SubscriptionEvent`, `TenantSubscription`,
+  `SubscriptionPlanOffer`, `SubscriptionPlan` (en ese orden) y `DROP TYPE` de los seis enums.
+
+**Planes y ofertas (sin consola de Arzium):** script `subscription-plans` (lo corre Arzium, nunca un agente):
+`docker compose run --rm migrate npx --no-install tsx packages/db/scripts/subscription-plans.ts <comando>`.
+Comandos: `list [--mode live|sandbox]`, `create --mode <m> --code <c> --name <n> --amount <a> --frequency <f>
+--unit days|months [--trial <n> --trial-unit days|months] [--private] [--default]`, `set-default`, `deactivate`,
+`offer --tenant <id> --mode <m> --code <c> [--allow-trial] [--expires YYYY-MM-DD]`, `revoke-offer`. Los planes no
+se editan (cambiar el precio = plan nuevo con otro `code` + `deactivate` del viejo). Importe entre $15 y
+$2.000.000; `--cycles` (packs) da `cycles_not_supported` hasta que una corrida en sandbox confirme G4.
+En desarrollo: `npm run subscription-plans --workspace packages/db -- <comando>`.
+
 ## Útiles
 
 ```bash

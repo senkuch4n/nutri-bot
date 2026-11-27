@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ gcalTenants: vi.fn(), schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn(), connected: vi.fn(), pending: vi.fn(), warn: vi.fn() }));
+const mocks = vi.hoisted(() => ({ gcalTenants: vi.fn(), schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn(), connected: vi.fn(), pending: vi.fn(), warn: vi.fn(), subs: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 const outbox = vi.hoisted(() => ({ findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), resolveScope: vi.fn() }));
 vi.mock("@nutri-bot/db", () => ({ prisma: { outboundMessage: outbox } }));
@@ -15,6 +15,7 @@ vi.mock("@nutri-bot/db/domain", () => ({
   refreshMercadoPagoAccountToken: mocks.mpRefresh,
   listConnectedMercadoPagoTenants: mocks.connected,
   listTenantsWithPendingMercadoPagoPayments: mocks.pending,
+  reconcileOpenSubscriptions: mocks.subs,
 }));
 // HU-028b: Google Calendar sale del barrel general (subpath propio).
 vi.mock("@nutri-bot/db/domain/googleCalendar", () => ({
@@ -26,7 +27,7 @@ vi.mock("./whatsapp", () => ({ sendDocument: vi.fn(), sendText: vi.fn() }));
 
 vi.mock("./env", () => ({ env: { pollIntervalMs: 4000 } }));
 vi.mock("./logger", () => ({ logger: { info: mocks.info, warn: mocks.warn, error: mocks.error } }));
-import { runGoogleCalendarSync, runServiceReminders, runStartupJobs, startCron, startOutboxConsumer } from "./workers";
+import { runGoogleCalendarSync, runServiceReminders, runStartupJobs, runSubscriptionReconciliation, startCron, startOutboxConsumer } from "./workers";
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE } from "./outbound-payload";
 
@@ -351,7 +352,11 @@ describe("service reminders cron (HU-014)", () => {
     mocks.gcalTenants.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
     mocks.digest.mockResolvedValue({ digested: 0, outboundId: null });
     mocks.purge.mockResolvedValue(0);
+    mocks.subs.mockResolvedValue({ processed: 0, failed: 0, skipped: 0 });
     await runStartupJobs();
+    // HU-029b: el arranque concilia las suscripciones de Arzium.
+    expect(mocks.subs).toHaveBeenCalledTimes(1);
+    expect(mocks.subs.mock.invocationCallOrder[0]!).toBeGreaterThan(mocks.reconcile.mock.invocationCallOrder[0]!);
     expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
     expect(mocks.prep).toHaveBeenCalledTimes(1);
     // HU-028b: el arranque sincroniza Google Calendar por consultorio.
@@ -485,5 +490,56 @@ describe("renovación diaria de Mercado Pago (HU-023 / HU-028a)", () => {
     await mocks.schedule.mock.calls[0]![1]();
     expect(mocks.info).toHaveBeenCalledWith({ tenantId: "legacy-tenant", processed: 0, failed: 0, skipped: 2 }, "Conciliación Mercado Pago");
     expect(mocks.expire).toHaveBeenCalledTimes(1);
+  });
+});
+
+// HU-029b (§B.8, §B.9.5): conciliación de suscripciones de Arzium (respaldo del webhook) cada 10 minutos.
+describe("conciliación de suscripciones (HU-029b)", () => {
+  beforeEach(() => vi.resetAllMocks());
+  const tick = () => {
+    startCron();
+    return mocks.schedule.mock.calls.find((c) => c[0] === "*/10 * * * *")![1] as () => Promise<void>;
+  };
+
+  it("se registra justo después de la renovación diaria de Mercado Pago, sin romper el orden", () => {
+    startCron();
+    const crons = mocks.schedule.mock.calls.map((c) => c[0]);
+    expect(crons.filter((c) => c === "*/10 * * * *")).toHaveLength(1);
+    expect(crons.indexOf("*/10 * * * *")).toBe(crons.indexOf("0 6 * * *") + 1);
+  });
+
+  it("su tick llama reconcileOpenSubscriptions una vez y loguea solo si hubo trabajo", async () => {
+    mocks.subs.mockResolvedValue({ processed: 0, failed: 0, skipped: 3 });
+    await tick()();
+    expect(mocks.subs).toHaveBeenCalledTimes(1);
+    expect(mocks.info).not.toHaveBeenCalled();
+    mocks.subs.mockResolvedValue({ processed: 2, failed: 1, skipped: 0 });
+    await runSubscriptionReconciliation();
+    expect(mocks.info).toHaveBeenCalledWith({ processed: 2, failed: 1, skipped: 0 }, "Conciliación de suscripciones");
+  });
+
+  it("no se solapa: dos ticks concurrentes → una sola llamada", async () => {
+    let release!: () => void;
+    mocks.subs.mockImplementation(() => new Promise((r) => { release = () => r({ processed: 0, failed: 0, skipped: 0 }); }));
+    const run = tick();
+    const first = run();
+    const second = run();
+    await second;
+    expect(mocks.subs).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+  });
+
+  it("un error por suscripción se loguea con el id interno; un throw → logger.error sin el error", async () => {
+    mocks.subs.mockImplementation(async (onError: (id: string) => void) => {
+      onError("sub-1");
+      return { processed: 0, failed: 1, skipped: 0 };
+    });
+    await runSubscriptionReconciliation();
+    expect(mocks.warn).toHaveBeenCalledWith({ subscriptionId: "sub-1" }, "Error conciliando suscripción");
+    mocks.subs.mockRejectedValue(new Error("Bearer TEST-secreto"));
+    await expect(runSubscriptionReconciliation()).resolves.toBeUndefined();
+    expect(mocks.error).toHaveBeenCalledWith("Error en conciliación de suscripciones");
+    expect(JSON.stringify(mocks.error.mock.calls)).not.toContain("secreto");
   });
 });

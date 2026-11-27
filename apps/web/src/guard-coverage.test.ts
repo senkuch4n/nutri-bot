@@ -13,10 +13,15 @@ import { describe, expect, it } from "vitest";
 const SRC = fileURLToPath(new URL(".", import.meta.url));
 const APP = join(SRC, "app");
 const PANEL = join(APP, "(panel)");
+/** HU-029b (§B.6.7): /ajustes/suscripcion vive fuera del layout del panel, con sus propias puertas. */
+const SUSCRIPCION = join(APP, "(suscripcion)");
 const API = join(APP, "api");
 const LIB = join(SRC, "lib");
 
 const ACTION_GUARDS = ["requireTenantContext(", "requireOwnerContext(", "requirePageContext("];
+/** HU-029b: cuentan como guarda SOLO en archivos bajo app/(suscripcion)/ (dejan pasar a la OWNER en onboarding). */
+const SUBSCRIPTION_GUARDS = ["requireSubscriptionOwnerContext(", "requireSubscriptionReadContext("];
+const guardsFor = (path: string) => (path.startsWith(SUSCRIPCION) ? [...ACTION_GUARDS, ...SUBSCRIPTION_GUARDS] : ACTION_GUARDS);
 const ROUTE_GUARDS = ["getTenantContext(", "requireTenantContext(", "requireOwnerContext("]; // HU-028a: el callback de MP es owner-only
 /** Rutas API sin sesión del panel: Auth.js y el webhook firmado de Mercado Pago (el tenant sale del pago). */
 const API_EXEMPT = [join(API, "auth"), join(API, "webhooks")];
@@ -78,7 +83,7 @@ function guarded(fn: Fn, all: Map<string, Fn>, guards: string[], seen = new Set<
   return false;
 }
 
-const scope = [...walk(PANEL), ...walk(API)].filter(isSource);
+const scope = [...walk(PANEL), ...walk(SUSCRIPCION), ...walk(API)].filter(isSource);
 
 describe("detector de guardas (autoprueba)", () => {
   const check = (source: string) => {
@@ -113,7 +118,7 @@ describe("guard-coverage (HU-025, 10.2)", () => {
     const all = new Map(fns.map((f) => [f.name, f]));
     const exported = fns.filter((f) => f.exported);
     expect(exported.length).toBeGreaterThan(0);
-    const unguarded = exported.filter((f) => !guarded(f, all, ACTION_GUARDS)).map((f) => f.name);
+    const unguarded = exported.filter((f) => !guarded(f, all, guardsFor(path))).map((f) => f.name);
     expect(unguarded).toEqual([]);
   });
 
@@ -156,6 +161,28 @@ describe("guard-coverage (HU-025, 10.2)", () => {
       const source = readFileSync(join(SRC, name), "utf8");
       expect(FORBIDDEN.some(([, re]) => re.test(source)) || /getProfessional\b/.test(source), name).toBe(true);
     }
+  });
+
+  // HU-029b (§B.6.6): las puertas de suscripción no valen fuera de (suscripcion), y las acciones de la
+  // pantalla usan la de OWNER para gestionar y la de lectura para el polling.
+  it("HU-029b: requireSubscription* no cuenta como guarda fuera de app/(suscripcion)/", () => {
+    const source = `export async function a() { await requireSubscriptionOwnerContext(); }`;
+    const fns = topLevelFunctions(source);
+    const all = new Map(fns.map((f) => [f.name, f]));
+    expect(guarded(fns[0]!, all, guardsFor(join(PANEL, "x.ts")))).toBe(false);
+    expect(guarded(fns[0]!, all, guardsFor(join(SUSCRIPCION, "x.ts")))).toBe(true);
+    expect(serverFiles.map(rel)).toContain("app/(suscripcion)/ajustes/suscripcion/actions.ts");
+  });
+  it("HU-029b: start/continue/cancel pasan por requireSubscriptionOwnerContext y refresh por requireSubscriptionReadContext", () => {
+    const source = readFileSync(join(SUSCRIPCION, "ajustes", "suscripcion", "actions.ts"), "utf8");
+    const fns = topLevelFunctions(source);
+    const all = new Map(fns.map((f) => [f.name, f]));
+    const fn = (name: string) => fns.find((f) => f.name === name && f.exported)!;
+    for (const name of ["startSubscriptionAction", "continueCheckoutAction", "cancelSubscriptionAction"]) {
+      expect(guarded(fn(name), all, ["requireSubscriptionOwnerContext("]), name).toBe(true);
+    }
+    expect(guarded(fn("refreshSubscriptionAction"), all, ["requireSubscriptionReadContext("])).toBe(true);
+    expect(guarded(fn("refreshSubscriptionAction"), all, ["requireSubscriptionOwnerContext("])).toBe(false);
   });
 
   // HU-028b (D4b): conectar, desconectar y elegir el calendario de Google son solo del OWNER.

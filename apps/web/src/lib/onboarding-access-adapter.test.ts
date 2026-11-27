@@ -60,7 +60,8 @@ describe("createOnboardingAccessAdapter", () => {
       return new Response(null, { status: 204 });
     };
 
-    expect(await adapter.resolve()).toEqual({ kind: "onboarding", clinicName: clinic.name });
+    // HU-029b (§B.6.7): el caso onboarding trae tenantId y timeZone (para la puerta de /ajustes/suscripcion).
+    expect(await adapter.resolve()).toEqual({ kind: "onboarding", tenantId: clinicId, clinicName: clinic.name, timeZone: clinic.timeZone });
     await expect(action()).rejects.toThrow("tenant_access:no_context");
     expect((await api()).status).toBe(401);
     expect(write).not.toHaveBeenCalled();
