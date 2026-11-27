@@ -8,7 +8,6 @@ const db = vi.hoisted(() => ({
   nutritionPrescription: { findFirst: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn(), upsert: vi.fn() },
 }));
 vi.mock("../index", () => ({ prisma: db }));
-vi.mock("./availability", () => ({ getProfessional: async () => ({ timezone: "UTC" }) }));
 
 import {
   deleteConsultationPrescription, getReferencePrescription, getRequirementContextForConsultation,

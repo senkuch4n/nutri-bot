@@ -20,7 +20,7 @@ import {
   createManualConsultation,
   createPlanForConsultation,
   deleteConsultation,
-  getProfessional,
+  getTenantProfessional,
   saveConsultationNotes,
   setAppointmentStatus,
   setConsultationPlan,
@@ -52,7 +52,7 @@ async function main() {
   };
 
   try {
-    const pro = await getProfessional();
+    const pro = await getTenantProfessional(T.tenantId);
     const tz = pro.timezone;
 
     // 1) Datos propios.

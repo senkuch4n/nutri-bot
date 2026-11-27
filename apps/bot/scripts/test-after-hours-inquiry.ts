@@ -20,10 +20,11 @@ import { resolveLegacySchedulingScope } from "@nutri-bot/db/domain/legacySchedul
 import {
   countPendingInquiries,
   enqueueAfterHoursDigest,
-  getProfessional,
+  getTenantProfessional,
   markInquiryAnswered,
   recordInquiryMessage,
 } from "@nutri-bot/db/domain";
+import { LEGACY_TENANT_ID } from "@nutri-bot/db/domain/tenantAccess";
 import { formatClock, formatInTimeZone, messages, type AfterHoursConfig } from "@nutri-bot/core";
 import { handleIncoming, handleIncomingMedia, type ConversationOptions } from "../src/conversation";
 
@@ -88,7 +89,7 @@ async function main(): Promise<void> {
   if (bot?.connected && process.env.ALLOW_BOT_RUNNING !== "1") {
     throw new Error("Pará el bot antes de correr esta prueba (encola alertas de prueba)");
   }
-  const pro = await getProfessional(); // solo lectura
+  const pro = await getTenantProfessional(LEGACY_TENANT_ID); // solo lectura
   if (pro.botPaused) throw new Error("El bot está pausado en /ajustes: la prueba necesita que responda.");
   const tz = pro.timezone;
 
