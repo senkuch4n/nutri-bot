@@ -2,7 +2,7 @@
 // Lo corre Arzium; ningún agente lo corre contra una base salvo pedido del usuario.
 //
 // Uso:  npm run subscription-plans --workspace packages/db -- <comando> [opciones]
-// Prod: docker compose run --rm <servicio con el código de db> npx tsx packages/db/scripts/subscription-plans.ts <comando>
+// Prod: docker compose run --rm migrate npx --no-install tsx packages/db/scripts/subscription-plans.ts <comando>
 //
 // Comandos:
 //   list [--mode live|sandbox]
