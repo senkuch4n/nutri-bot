@@ -63,14 +63,14 @@ beforeEach(() => {
 });
 
 describe("countBotAiQuestionsToday", () => {
-  it("cuenta del paciente y global en el día de la tz, sin LIMIT_*", async () => {
+  it("cuenta del paciente y del consultorio en el día de la tz, sin LIMIT_* (HU-028c)", async () => {
     mocks.prisma.botAiQuestion.count.mockResolvedValueOnce(3).mockResolvedValueOnce(40);
-    const r = await countBotAiQuestionsToday({ patientId: "p1", now: NOW, tz: TZ });
-    expect(r).toEqual({ patient: 3, global: 40 });
+    const r = await countBotAiQuestionsToday({ tenantId: "tenant-a", patientId: "p1", now: NOW, tz: TZ });
+    expect(r).toEqual({ patient: 3, tenant: 40 });
     const [first, second] = mocks.prisma.botAiQuestion.count.mock.calls.map((c) => c[0].where);
     const askedAt = { gte: new Date("2026-10-02T03:00:00Z"), lt: new Date("2026-10-03T03:00:00Z") };
-    expect(first).toEqual({ patientId: "p1", askedAt, outcome: { in: BOT_AI_COUNTED_OUTCOMES } });
-    expect(second).toEqual({ askedAt, outcome: { in: BOT_AI_COUNTED_OUTCOMES } });
+    expect(first).toEqual({ tenantId: "tenant-a", patientId: "p1", askedAt, outcome: { in: BOT_AI_COUNTED_OUTCOMES } });
+    expect(second).toEqual({ tenantId: "tenant-a", askedAt, outcome: { in: BOT_AI_COUNTED_OUTCOMES } });
     expect(BOT_AI_COUNTED_OUTCOMES).not.toContain("LIMIT_PATIENT");
     expect(BOT_AI_COUNTED_OUTCOMES).not.toContain("LIMIT_GLOBAL");
   });
@@ -80,6 +80,7 @@ describe("recordBotAiQuestion", () => {
   it("pasa los campos, tokens ausentes en 0 y recorta la pregunta", async () => {
     mocks.prisma.botAiQuestion.create.mockResolvedValue({ id: "q1" });
     const r = await recordBotAiQuestion({
+      tenantId: "tenant-a",
       patientId: "p1",
       askedAt: NOW,
       question: `  ${"x".repeat(2500)}  `,
@@ -92,6 +93,7 @@ describe("recordBotAiQuestion", () => {
     expect(r).toEqual({ id: "q1" });
     const data = mocks.prisma.botAiQuestion.create.mock.calls[0]![0].data;
     expect(data).toMatchObject({
+      tenantId: "tenant-a",
       patientId: "p1",
       askedAt: NOW,
       answer: "hola",
@@ -111,11 +113,11 @@ describe("recordBotAiQuestion", () => {
 });
 
 describe("markBotAiQuestionHandedOff", () => {
-  it("updateMany idempotente por id + paciente + no derivada", async () => {
+  it("updateMany idempotente por id + paciente + consultorio + no derivada", async () => {
     mocks.prisma.botAiQuestion.updateMany.mockResolvedValue({ count: 0 });
-    await markBotAiQuestionHandedOff({ id: "q1", patientId: "p1", at: NOW });
+    await markBotAiQuestionHandedOff({ id: "q1", patientId: "p1", tenantId: "tenant-a", at: NOW });
     expect(mocks.prisma.botAiQuestion.updateMany).toHaveBeenCalledWith({
-      where: { id: "q1", patientId: "p1", handedOffAt: null },
+      where: { id: "q1", patientId: "p1", tenantId: "tenant-a", handedOffAt: null },
       data: { handedOffAt: NOW },
     });
   });

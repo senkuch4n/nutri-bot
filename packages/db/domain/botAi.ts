@@ -27,22 +27,26 @@ export const BOT_AI_COUNTED_OUTCOMES: BotAiOutcome[] = [
   "ERROR",
 ];
 
-/** BOT. Preguntas de hoy (día en tz) que llamaron a la IA: del paciente y globales. */
+/** BOT. Preguntas de hoy (día en tz) que llamaron a la IA: del paciente y del consultorio (HU-028c). Las dos
+ *  consultas llevan `tenantId` en el where. */
 export async function countBotAiQuestionsToday(p: {
+  tenantId: string;
   patientId: string;
   now: Date;
   tz: string;
-}): Promise<{ patient: number; global: number }> {
+}): Promise<{ patient: number; tenant: number }> {
   const { from, to } = dayBoundsInTz(p.now, p.tz);
   const base = { askedAt: { gte: from, lt: to }, outcome: { in: BOT_AI_COUNTED_OUTCOMES } };
-  const [patient, global] = await Promise.all([
-    prisma.botAiQuestion.count({ where: { patientId: p.patientId, ...base } }),
-    prisma.botAiQuestion.count({ where: base }),
+  const [patient, tenant] = await Promise.all([
+    prisma.botAiQuestion.count({ where: { tenantId: p.tenantId, patientId: p.patientId, ...base } }),
+    prisma.botAiQuestion.count({ where: { tenantId: p.tenantId, ...base } }),
   ]);
-  return { patient, global };
+  return { patient, tenant };
 }
 
 export type BotAiQuestionInput = {
+  /** HU-028c: consultorio de la conversación (lo pone el bot). La FK compuesta exige que sea el del paciente. */
+  tenantId: string;
   patientId: string;
   askedAt: Date;
   question: string;
@@ -59,10 +63,12 @@ export type BotAiQuestionInput = {
   errorKind?: string | null;
 };
 
-/** BOT. Crea la fila. `question` se recorta (trim, slice 2000) y `answer` (slice 4000) por las dudas. */
+/** BOT. Crea la fila. `question` se recorta (trim, slice 2000) y `answer` (slice 4000) por las dudas.
+ *  Escribe también `tenantId`: si no coincide con el del paciente, la FK compuesta rechaza el insert. */
 export async function recordBotAiQuestion(data: BotAiQuestionInput): Promise<{ id: string }> {
   return prisma.botAiQuestion.create({
     data: {
+      tenantId: data.tenantId,
       patientId: data.patientId,
       askedAt: data.askedAt,
       question: data.question.trim().slice(0, 2000),
@@ -86,10 +92,11 @@ export async function recordBotAiQuestion(data: BotAiQuestionInput): Promise<{ i
 export async function markBotAiQuestionHandedOff(p: {
   id: string;
   patientId: string;
+  tenantId: string;
   at: Date;
 }): Promise<void> {
   await prisma.botAiQuestion.updateMany({
-    where: { id: p.id, patientId: p.patientId, handedOffAt: null },
+    where: { id: p.id, patientId: p.patientId, tenantId: p.tenantId, handedOffAt: null },
     data: { handedOffAt: p.at },
   });
 }

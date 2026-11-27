@@ -69,6 +69,7 @@ describe("D15 · garantía 3: Google Calendar queda fuera del alcance de la IA",
 
   const AI_FILES = [
     "packages/db/domain/botAi.ts",
+    "packages/db/domain/aiUsage.ts",
     ...tsFilesIn("apps/bot/src/ai"),
     "apps/web/src/lib/deepseek.ts",
     "apps/web/src/lib/assistant-tools.ts",
