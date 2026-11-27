@@ -1,8 +1,9 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PAYMENT_METHODS, messages } from "@nutri-bot/core";
 
 const mocks = vi.hoisted(() => ({
-  getProfessional: vi.fn(),
+  getTenantProfessional: vi.fn(),
   getAvailableSlotsForService: vi.fn(),
   prisma: {
     agenda: { findUnique: vi.fn() },
@@ -14,8 +15,11 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 vi.mock("./availability", () => ({
-  getProfessional: mocks.getProfessional,
   getAvailableSlotsForService: mocks.getAvailableSlotsForService,
+}));
+vi.mock("./tenantScope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./tenantScope")>()),
+  getTenantProfessional: mocks.getTenantProfessional,
 }));
 
 import {
@@ -57,7 +61,7 @@ const SERVICE = {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.getProfessional.mockResolvedValue(PRO);
+  mocks.getTenantProfessional.mockResolvedValue(PRO);
   mocks.prisma.agenda.findUnique.mockResolvedValue({ professional: PRO });
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
@@ -147,13 +151,14 @@ describe("purgeExpiredBotAiQuestions", () => {
 });
 
 describe("runBotAiTool", () => {
-  const base = { patientId: "p1", now: NOW };
+  const base = { patientId: "p1", tenantId: "tenant-a", now: NOW };
 
-  it("servicios: solo activos, JSON válido", async () => {
+  it("servicios: solo activos del consultorio de la conversación, JSON válido", async () => {
     mocks.prisma.service.findMany.mockResolvedValue([SERVICE]);
     const r = await runBotAiTool({ ...base, name: "servicios", input: {} });
     expect(r.isError).toBe(false);
-    expect(mocks.prisma.service.findMany.mock.calls[0]![0].where).toEqual({ active: true });
+    expect(mocks.prisma.service.findMany.mock.calls[0]![0].where).toEqual({ tenantId: "tenant-a", active: true });
+    expect(mocks.getTenantProfessional).toHaveBeenCalledWith("tenant-a");
     const parsed = JSON.parse(r.content);
     expect(parsed[0]).toMatchObject({ id: "svc-1", nombre: "Antropometría", duracionMin: 45, preparacion: "Ir en ayunas." });
     expect(parsed[0].precio).toContain("25.000");
@@ -168,6 +173,7 @@ describe("runBotAiTool", () => {
     const args = mocks.prisma.appointment.findMany.mock.calls[0]![0];
     expect(args.where).toEqual({
       patientId: "p1",
+      tenantId: "tenant-a",
       status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] },
       startsAt: { gt: NOW },
     });
@@ -182,7 +188,7 @@ describe("runBotAiTool", () => {
     mocks.getAvailableSlotsForService.mockResolvedValue([new Date("2026-10-08T13:00:00Z")]);
     const r = await runBotAiTool({ ...base, name: "disponibilidad", input: { servicio: "svc-1" } });
     expect(r.isError).toBe(false);
-    expect(mocks.getAvailableSlotsForService).toHaveBeenCalledWith({ tenantId: "legacy-tenant" }, {
+    expect(mocks.getAvailableSlotsForService).toHaveBeenCalledWith({ tenantId: "tenant-a" }, {
       serviceId: "svc-1",
       from: NOW,
       to: new Date(NOW.getTime() + 21 * 86_400_000),
@@ -229,6 +235,7 @@ describe("runBotAiTool", () => {
     }
     expect(parsed.informacionAdicional).toBe("Av. Siempre Viva 123");
     expect(parsed.nutricionista).toBe("Lic. Daiana Ponce");
+    expect(mocks.getTenantProfessional).toHaveBeenCalledWith("tenant-a");
     expect(parsed.ahoraFueraDeHorario).toBe(true);
     const day = await runBotAiTool({
       ...base,
@@ -237,6 +244,28 @@ describe("runBotAiTool", () => {
       afterHours: { enabled: false, start: "22:00", end: "09:00" },
     });
     expect(JSON.parse(day.content).ahoraFueraDeHorario).toBe(false);
+  });
+
+  it("un tenantId en el input de la IA no cambia ningún where (D-c1 b)", async () => {
+    mocks.prisma.service.findMany.mockResolvedValue([SERVICE]);
+    mocks.prisma.appointment.findMany.mockResolvedValue([]);
+    mocks.getAvailableSlotsForService.mockResolvedValue([]);
+    const evil = { tenantId: "tenant-b", servicio: "svc-1", patientId: "OTRO" };
+    for (const name of ["servicios", "disponibilidad", "mis_turnos", "datos_consultorio"]) {
+      const r = await runBotAiTool({ ...base, name, input: evil });
+      expect(r.isError, name).toBe(false);
+    }
+    for (const c of mocks.prisma.service.findMany.mock.calls) expect(c[0].where).toEqual({ tenantId: "tenant-a", active: true });
+    expect(mocks.prisma.appointment.findMany.mock.calls[0]![0].where).toMatchObject({ patientId: "p1", tenantId: "tenant-a" });
+    expect(mocks.getAvailableSlotsForService.mock.calls[0]![0]).toEqual({ tenantId: "tenant-a" });
+    for (const c of mocks.getTenantProfessional.mock.calls) expect(c[0]).toBe("tenant-a");
+    expect(JSON.stringify(mocks.prisma.service.findMany.mock.calls)).not.toContain("tenant-b");
+  });
+
+  it("el código de las tools no usa el consultorio fijo ni getProfessional (D-c1 b)", () => {
+    const src = readFileSync(new URL("./botAi.ts", import.meta.url), "utf8");
+    expect(src).not.toContain("getProfessional");
+    expect(src).not.toContain("LEGACY_TENANT_ID");
   });
 
   it("tool desconocida → error", async () => {

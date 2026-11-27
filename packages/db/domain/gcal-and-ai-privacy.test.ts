@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   insert: vi.fn(),
   patch: vi.fn(),
   del: vi.fn(),
-  getProfessional: vi.fn(),
+  getTenantProfessional: vi.fn(),
   getAvailableSlotsForService: vi.fn(),
   prisma: {
     agenda: { findUnique: vi.fn(), findFirst: vi.fn() },
@@ -28,8 +28,11 @@ vi.mock("googleapis", () => ({
 }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 vi.mock("./availability", () => ({
-  getProfessional: mocks.getProfessional,
   getAvailableSlotsForService: mocks.getAvailableSlotsForService,
+}));
+vi.mock("./tenantScope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./tenantScope")>()),
+  getTenantProfessional: mocks.getTenantProfessional,
 }));
 
 import { runBotAiTool } from "./botAi";
@@ -67,7 +70,7 @@ function appt(googleEventId: string | null) {
 describe("privacidad del motivo (HU-013, D9)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getProfessional.mockResolvedValue({ timezone: TZ, currency: "ARS" });
+    mocks.getTenantProfessional.mockResolvedValue({ timezone: TZ, currency: "ARS" });
     mocks.prisma.agenda.findFirst.mockResolvedValue({
       id: "legacy-agenda",
       tenantId: "legacy-tenant",
@@ -120,7 +123,7 @@ describe("privacidad del motivo (HU-013, D9)", () => {
         service: { name: "Antropometría" },
       },
     ]);
-    const r = await runBotAiTool({ name: "mis_turnos", input: {}, patientId: "p1", now: NOW });
+    const r = await runBotAiTool({ name: "mis_turnos", input: {}, patientId: "p1", tenantId: "legacy-tenant", now: NOW });
     expect(r.isError).toBe(false);
     expect(r.content).toContain("Antropometría");
     expect(r.content).not.toContain("MOTIVO-PRIVADO");

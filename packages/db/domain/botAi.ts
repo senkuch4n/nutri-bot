@@ -11,9 +11,9 @@ import {
   type AfterHoursConfig,
 } from "@nutri-bot/core";
 import { prisma } from "../index";
-import { getAvailableSlotsForService, getProfessional } from "./availability";
+import { getAvailableSlotsForService } from "./availability";
 import { clearExpiredLegacyConversationText } from "./conversationState";
-import { LEGACY_TENANT_ID } from "./tenantAccess";
+import { getTenantProfessional } from "./tenantScope";
 
 export { SESSION_STEPS_WITH_PATIENT_TEXT } from "./conversationState";
 
@@ -157,12 +157,13 @@ function fail(content: string): BotAiToolResult {
   return { content, isError: true };
 }
 
-async function activeServices() {
-  return prisma.service.findMany({ where: { active: true }, orderBy: { createdAt: "asc" } });
+async function activeServices(tenantId: string) {
+  return prisma.service.findMany({ where: { tenantId, active: true }, orderBy: { createdAt: "asc" } });
 }
 
 /**
- * BOT. Ejecuta una tool de SOLO LECTURA para el paciente `patientId` (lo pone el bot, nunca la IA).
+ * BOT. Ejecuta una tool de SOLO LECTURA para el paciente `patientId` en el consultorio `tenantId` (los dos los
+ * pone el bot desde la conversación, nunca la IA; un `tenantId` dentro de `input` se ignora). HU-028c (D-c1 b).
  * Nunca lanza: cualquier excepción → { content: "No se pudo consultar ese dato.", isError: true }.
  * No lee ClinicalRecord, EvolutionEntry, NutritionPlan, DiaryEntry, Consultation, PatientInquiry ni Patient.
  */
@@ -170,6 +171,7 @@ export async function runBotAiTool(p: {
   name: string;
   input: unknown;
   patientId: string;
+  tenantId: string;
   now: Date;
   /** SOLO pruebas: reemplaza la franja de Professional. */
   afterHours?: AfterHoursConfig;
@@ -177,7 +179,7 @@ export async function runBotAiTool(p: {
   try {
     switch (p.name) {
       case "servicios": {
-        const [pro, services] = await Promise.all([getProfessional(), activeServices()]);
+        const [pro, services] = await Promise.all([getTenantProfessional(p.tenantId), activeServices(p.tenantId)]);
         return ok(
           servicesForAi(
             services.map((s) => ({
@@ -199,13 +201,12 @@ export async function runBotAiTool(p: {
         const input = (p.input ?? {}) as Record<string, unknown>;
         const wanted = typeof input.servicio === "string" ? input.servicio.trim() : "";
         if (!wanted) return fail("Falta el servicio.");
-        const [pro, services] = await Promise.all([getProfessional(), activeServices()]);
+        const [pro, services] = await Promise.all([getTenantProfessional(p.tenantId), activeServices(p.tenantId)]);
         const key = normalize(wanted);
         const service =
           services.find((s) => s.id === wanted) ?? services.find((s) => normalize(s.name) === key);
         if (!service) return fail("No hay un servicio activo con ese nombre. Usá la herramienta servicios.");
-        // HU-025b-1: la IA del bot sigue sobre el consultorio original; 025c pasa el tenant de la conversación.
-        const slots = await getAvailableSlotsForService({ tenantId: LEGACY_TENANT_ID }, {
+        const slots = await getAvailableSlotsForService({ tenantId: p.tenantId }, {
           serviceId: service.id,
           from: p.now,
           to: new Date(p.now.getTime() + AVAILABILITY_DAYS * DAY_MS),
@@ -216,10 +217,11 @@ export async function runBotAiTool(p: {
       case "mis_turnos": {
         // El input se IGNORA: el paciente es siempre el que escribe (p.patientId).
         const [pro, appts] = await Promise.all([
-          getProfessional(),
+          getTenantProfessional(p.tenantId),
           prisma.appointment.findMany({
             where: {
               patientId: p.patientId,
+              tenantId: p.tenantId,
               status: { in: ["CONFIRMED", "AWAITING_PAYMENT"] },
               startsAt: { gt: p.now },
             },
@@ -240,7 +242,7 @@ export async function runBotAiTool(p: {
         );
       }
       case "datos_consultorio": {
-        const pro = await getProfessional();
+        const pro = await getTenantProfessional(p.tenantId);
         return ok(
           clinicInfoForAi({
             professionalName: pro.name,
