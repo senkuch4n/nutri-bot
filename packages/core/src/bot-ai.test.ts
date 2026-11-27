@@ -10,8 +10,11 @@ import {
   dayBoundsInTz,
   inquiryBodyFromAiQuestion,
   isBotAiAvailable,
+  applyTenantBotAiLimits,
   mergeBotAiLimits,
+  parseTenantAiLimitArg,
   resolveBotAiEnv,
+  TENANT_AI_LIMIT_MAX,
   toWhatsAppText,
   trimHistory,
   validateBotAiInfo,
@@ -63,7 +66,7 @@ describe("resolveBotAiEnv", () => {
     const c = resolveBotAiEnv({ BOT_AI_TIMEOUT_MS: "15000", BOT_AI_RETENTION_DAYS: "30" });
     expect(c.limits.timeoutMs).toBe(15000);
     expect(c.limits.retentionDays).toBe(30);
-    expect(c.limits.globalDaily).toBe(300);
+    expect(c.limits.tenantDaily).toBe(300);
   });
 
   it("respeta BOT_AI_MODEL", () => {
@@ -73,9 +76,69 @@ describe("resolveBotAiEnv", () => {
 
 describe("mergeBotAiLimits", () => {
   it("pisa solo las claves dadas", () => {
-    const m = mergeBotAiLimits(BOT_AI_DEFAULT_LIMITS, { globalDaily: 0, perPatientDaily: 3 });
-    expect(m).toEqual({ ...BOT_AI_DEFAULT_LIMITS, globalDaily: 0, perPatientDaily: 3 });
+    const m = mergeBotAiLimits(BOT_AI_DEFAULT_LIMITS, { tenantDaily: 0, perPatientDaily: 3 });
+    expect(m).toEqual({ ...BOT_AI_DEFAULT_LIMITS, tenantDaily: 0, perPatientDaily: 3 });
     expect(mergeBotAiLimits(BOT_AI_DEFAULT_LIMITS)).toEqual(BOT_AI_DEFAULT_LIMITS);
+  });
+});
+
+describe("resolveBotAiEnv · tope del consultorio (HU-028c)", () => {
+  it("BOT_AI_DAILY_GLOBAL es el default del tope diario por consultorio", () => {
+    expect(resolveBotAiEnv({ BOT_AI_DAILY_GLOBAL: "50" }).limits.tenantDaily).toBe(50);
+  });
+});
+
+describe("applyTenantBotAiLimits (HU-028c)", () => {
+  const base = { ...BOT_AI_DEFAULT_LIMITS, perPatientDaily: 7, tenantDaily: 70 };
+
+  it("null → mismos valores que base, en otro objeto", () => {
+    const out = applyTenantBotAiLimits(base, null);
+    expect(out).toEqual(base);
+    expect(out).not.toBe(base);
+  });
+
+  it("reemplaza solo los topes con valor propio", () => {
+    expect(applyTenantBotAiLimits(base, { botDailyPerPatient: 5, botDailyPerTenant: null })).toEqual({
+      ...base,
+      perPatientDaily: 5,
+    });
+    expect(applyTenantBotAiLimits(base, { botDailyPerPatient: null, botDailyPerTenant: 0 })).toEqual({
+      ...base,
+      tenantDaily: 0,
+    });
+  });
+
+  it("valores fuera de 0..100000 o no enteros → base", () => {
+    expect(applyTenantBotAiLimits(base, { botDailyPerPatient: -1, botDailyPerTenant: 2.5 })).toEqual(base);
+    expect(applyTenantBotAiLimits(base, { botDailyPerPatient: 100001, botDailyPerTenant: Number.NaN })).toEqual(base);
+    expect(applyTenantBotAiLimits(base, { botDailyPerPatient: TENANT_AI_LIMIT_MAX, botDailyPerTenant: null })).toEqual({
+      ...base,
+      perPatientDaily: 100000,
+    });
+  });
+
+  it("no toca las demás claves ni muta base", () => {
+    const snapshot = { ...base };
+    const out = applyTenantBotAiLimits(base, { botDailyPerPatient: 1, botDailyPerTenant: 2 });
+    expect(out.maxTokens).toBe(base.maxTokens);
+    expect(out.retentionDays).toBe(base.retentionDays);
+    expect(base).toEqual(snapshot);
+  });
+});
+
+describe("parseTenantAiLimitArg (HU-028c)", () => {
+  it('"default" → null', () => {
+    expect(parseTenantAiLimitArg("default")).toBeNull();
+  });
+  it("dígitos 0..100000 → número", () => {
+    expect(parseTenantAiLimitArg("0")).toBe(0);
+    expect(parseTenantAiLimitArg("20")).toBe(20);
+    expect(parseTenantAiLimitArg("100000")).toBe(100000);
+  });
+  it("cualquier otra cosa → undefined", () => {
+    for (const bad of ["100001", "-1", "2.5", "abc", "", " 5"]) {
+      expect(parseTenantAiLimitArg(bad), bad).toBeUndefined();
+    }
   });
 });
 
