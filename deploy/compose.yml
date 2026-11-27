@@ -48,6 +48,7 @@ services:
       db: { condition: service_healthy }
     volumes:
       - whatsapp-auth:/app/.whatsapp-auth
+      - whatsapp-auth-sessions:/app/.whatsapp-auth.sessions
 
   # Migraciones: usa la imagen del bot (la de la web es standalone, sin la CLI de Prisma).
   migrate:
@@ -81,5 +82,6 @@ services:
 volumes:
   pgdata:
   whatsapp-auth:
+  whatsapp-auth-sessions:
   caddy_data:
   caddy_config:

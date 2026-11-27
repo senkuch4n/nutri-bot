@@ -46,7 +46,9 @@ services:
       db: { condition: service_healthy }
     volumes:
       - whatsapp-auth:/app/.whatsapp-auth
+      - whatsapp-auth-sessions:/app/.whatsapp-auth.sessions
 
 volumes:
   pgdata:
   whatsapp-auth:
+  whatsapp-auth-sessions:

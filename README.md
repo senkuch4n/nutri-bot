@@ -153,7 +153,10 @@ docker compose run --rm web node -e "require('child_process')"  # (opcional) see
 docker compose logs -f bot   # para escanear el QR la primera vez
 ```
 
-El volumen `whatsapp-auth` persiste la sesión de WhatsApp entre reinicios.
+El volumen `whatsapp-auth` conserva la sesión original de WhatsApp. El volumen separado
+`whatsapp-auth-sessions` conserva las credenciales de las sesiones vinculadas desde el
+panel, en carpetas por consultorio y vinculación. No montes el volumen nuevo dentro
+de la carpeta de la sesión original.
 
 La carga de SARA 2 va **después** de `migrate deploy` y se puede repetir en cada deploy: lee
 `packages/db/data/sara2/alimentos.json` (versionado), no necesita `pdftotext` y nunca toca los
