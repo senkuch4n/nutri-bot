@@ -117,23 +117,23 @@ script (o extracto), con el paso de la corrida.
 
 | # | Supuesto (SDD §A.5) | Paso | Resultado | Evidencia redactada |
 |---|---|---|---|---|
-| S1 | `POST /preapproval` sin `preapproval_plan_id`, `status: "pending"`, devuelve `init_point` y respeta `auto_recurring.free_trial` (días y meses). | 2, 9 | | |
-| S2 | `external_reference` vuelve igual en `GET` y se busca con `/preapproval/search?external_reference=`. | 4, 5 | | |
-| S3 | `payer_email` es opcional en `status: "pending"`. | 7 | | |
-| S4 | `X-Idempotency-Key` devuelve la misma `preapproval` con la misma key (anotar TTL si se ve); qué pasa con otra key y la misma referencia. | 6 | | |
+| S1 | `POST /preapproval` sin `preapproval_plan_id`, `status: "pending"`, devuelve `init_point` y respeta `auto_recurring.free_trial` (días y meses). | 2, 9 | | **confirmado** (mensual + 7 días; falta variante en meses) | `create --freq 1 --unit months --trial 7 --trial-unit days` → `status: pending`, `init_point` presente; `GET` devuelve `free_trial: { frequency: 7, frequency_type: "days", first_invoice_offset: 7 }`. |
+| S2 | `external_reference` vuelve igual en `GET` y se busca con `/preapproval/search?external_reference=`. | 4, 5 | | **confirmado** | `search --ref sbx_98f1…` → `total: 1`, mismo `external_reference` y `status: authorized`. |
+| S3 | `payer_email` es opcional en `status: "pending"`. | 7 | **refutado** (2026-11-27) | `POST /preapproval` sin `payer_email` → 400 `"payer_email is required"`. Con un email que no es de un usuario de prueba → 400 `"User bad request"`. |
+| S4 | `X-Idempotency-Key` devuelve la misma `preapproval` con la misma key (anotar TTL si se ve); qué pasa con otra key y la misma referencia. | 6 | | **refutado** (2026-11-27) | Dos `create --idem prueba-s4-1` seguidos → dos `preapproval` distintas (`64a678…` y `6c9f27…`, ambas `pending`). MP **no** respeta `X-Idempotency-Key` en `POST /preapproval`: 029b tiene que deduplicar por su cuenta (p. ej. buscar por `external_reference` antes de crear). |
 | S5 | `months` acepta 1, 3, 6 y 12; `days` funciona en sandbox; `end_date` corta después de N cobros y termina en `finished`. | 8, 9 | | |
-| S6 | Notificaciones desde la URL de la aplicación; tópicos `subscription_preapproval`, `subscription_authorized_payment`, `payment`; cuerpo `{ type, action, data: { id } }`; `data.id` en la query; `x-signature` valida con el manifiesto de las señas. | 3, 14 | | |
-| S7 | `back_url` recibe `?preapproval_id=…`; MP exige `https`. | 3 | | |
+| S6 | Notificaciones desde la URL de la aplicación; tópicos `subscription_preapproval`, `subscription_authorized_payment`, `payment`; cuerpo `{ type, action, data: { id } }`; `data.id` en la query; `x-signature` valida con el manifiesto de las señas. | 3, 14 | | **confirmado en parte** | Llegaron `payment` (`action: payment.created`) y `subscription_preapproval` (`action: updated`). Cuerpo `{ type, action, data: { id } }`; `data.id` en query y cuerpo; `x-signature` valida con el id de la **query**. Falta `subscription_authorized_payment` (llega con el primer cobro, después de la prueba). |
+| S7 | `back_url` recibe `?preapproval_id=…`; MP exige `https`. | 3 | | **confirmado** | La vuelta a `back_url` (`https`) trae solo `?preapproval_id=<id>`. |
 | S8 | Estados `pending`, `authorized`, `paused`, `cancelled`, `finished`; `cancelled` inmediato en el `GET`; una `pending` cancelada no se puede autorizar; cancelación del comprador con webhook. | 4, 12, 13 | | |
-| S9 | Con prueba, `next_payment_date` = autorización + prueba. ¿Cobro de validación al autorizar? | 3, 4 | | |
+| S9 | Con prueba, `next_payment_date` = autorización + prueba. ¿Cobro de validación al autorizar? | 3, 4 | | **confirmado con matiz** | Creada 14:31:30, autorizada ~14:36; `next_payment_date` = 2026-12-04 14:31:30 → creación/`start_date` + 7 días, **no** autorización + 7. Hubo cobro de validación: `payment` de $0, `operation_type: card_validation`, `approved`. `authorized_payments` vacío. |
 | S10 | Sin prueba, primer cobro al autorizar, visible en `/authorized_payments` en minutos. | 8 | | |
 | S11 | `authorized_payments`: `status` (`scheduled`/`processed`/`recycling`/`cancelled`), `payment.status`, `retry_attempt`, política de reintentos. | 8, 10 | | |
 | S12 | `/v1/payments/{id}` con el token de Arzium; devolución total → `refunded`; parcial → `approved` + `transaction_amount_refunded > 0` (o `partially_refunded`); contracargo → `charged_back`; llega `payment`. | 8, 11 | | |
-| S13 | `collector_id` = `user_id` de la cuenta de Arzium (`collector_matches_seller: true`); `payer_id` estable entre suscripciones del mismo comprador. | 1, 2, 4 | | |
+| S13 | `collector_id` = `user_id` de la cuenta de Arzium (`collector_matches_seller: true`); `payer_id` estable entre suscripciones del mismo comprador. | 1, 2, 4 | | **confirmado** (en parte) | `collector_matches_seller: true`. `payer_id` estable: pendiente de una segunda suscripción autorizada. |
 | S14 | El comprador cambia el medio de pago desde su cuenta; URL de gestión de suscripciones del comprador. | 13 | | |
-| S15 | Forma de `auto_recurring.free_trial` en la respuesta (`free_trial_type`: `object`/`string`/`missing`). | 2, 4 | | |
+| S15 | Forma de `auto_recurring.free_trial` en la respuesta (`free_trial_type`: `object`/`string`/`missing`). | 2, 4 | | **confirmado** | `free_trial_type: "object"`. |
 | S16 | Importes mínimo y máximo de una `preapproval` en ARS. | 9 | | |
-| S17 | Los usuarios de prueba tienen `tags: ["test_user", …]` en `/users/me`. | 1 | | |
+| S17 | Los usuarios de prueba tienen `tags: ["test_user", …]` en `/users/me`. | 1 | **confirmado** (2026-11-27) | `whoami`: `site_id: "MLA"`, `tags: ["user_product_seller", "test_user", "normal"]`. |
 
 ## 4. Compuertas G1–G4
 
