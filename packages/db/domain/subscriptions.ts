@@ -337,12 +337,16 @@ export async function getTenantSubscriptionView(
   const { mode } = ctx.config;
   const now = ctx.now();
 
+  const include = { plan: { select: { name: true } } } as const;
   const [latest, trialUsed, plans, offers] = await Promise.all([
-    prisma.tenantSubscription.findFirst({
-      where: { tenantId: t.tenantId, mode },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      include: { plan: { select: { name: true } } },
-    }),
+    // La no terminada si hay; si no, la última CANCELED.
+    prisma.tenantSubscription
+      .findFirst({ where: { tenantId: t.tenantId, mode, status: { in: OPEN_STATUSES } }, include })
+      .then(async (open) => open ?? prisma.tenantSubscription.findFirst({
+        where: { tenantId: t.tenantId, mode },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        include,
+      })),
     priorTrialUsed(t.tenantId, actor.userId, mode),
     prisma.subscriptionPlan.findMany({ where: { mode, active: true } }),
     prisma.subscriptionPlanOffer.findMany({
@@ -1156,16 +1160,16 @@ export async function reconcileOpenSubscriptions(
 // ---------------------------------------------------------------------------
 
 /** HU-026 la consulta para decidir si un consultorio nuevo puede operar. Solo lectura.
- *  not_required: cobro apagado. verified: la última del modo actual está autorizada (verificada contra MP por
+ *  not_required: cobro apagado. verified: la no terminada (o, si no hay, la última) del modo actual está autorizada (verificada contra MP por
  *  syncSubscriptionByPreapprovalId) y no está CANCELED. pending: el resto. Si la base falla, tira. */
 export async function getTenantSubscriptionGate(tenantId: string, deps?: SubscriptionDeps): Promise<TenantSubscriptionGate> {
   const config = billingConfig(deps?.env ?? process.env);
   if (config.status !== "enabled") return "not_required";
-  const latest = await prisma.tenantSubscription.findFirst({
-    where: { tenantId, mode: config.mode },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { status: true, authorizedAt: true },
-  });
+  // La no terminada si hay (como máximo una, índice parcial); si no, la última.
+  const select = { status: true, authorizedAt: true } as const;
+  const latest =
+    (await prisma.tenantSubscription.findFirst({ where: { tenantId, mode: config.mode, status: { in: OPEN_STATUSES } }, select })) ??
+    (await prisma.tenantSubscription.findFirst({ where: { tenantId, mode: config.mode }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select }));
   return latest && latest.authorizedAt !== null && latest.status !== "CANCELED" ? "verified" : "pending";
 }
 
