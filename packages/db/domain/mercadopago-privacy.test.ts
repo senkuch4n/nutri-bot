@@ -45,7 +45,9 @@ describe("privacidad de los tokens de Mercado Pago (HU-023)", () => {
   });
 
   it("MERCADOPAGO_ACCESS_TOKEN solo como respaldo de desarrollo (ya no en payments.ts)", () => {
-    expect(filesMentioning(/MERCADOPAGO_ACCESS_TOKEN/)).toEqual([
+    // HU-029b: ARZIUM_MERCADOPAGO_ACCESS_TOKEN es otra variable (la cuenta de cobro de Arzium); su propio
+    // chequeo está en subscriptions-privacy.test.ts.
+    expect(filesMentioning(/(?<!ARZIUM_)MERCADOPAGO_ACCESS_TOKEN/)).toEqual([
       "packages/core/src/mercadopago-oauth.ts",
       "packages/db/domain/mercadopagoAccount.ts",
     ]);

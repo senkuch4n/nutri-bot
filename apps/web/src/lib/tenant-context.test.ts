@@ -21,7 +21,7 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/headers", () => ({ headers: mocks.headers, cookies: mocks.cookies }));
 vi.mock("./onboarding-server", () => ({ loadOnboardedClinic: mocks.loadOnboardedClinic }));
 vi.mock("./onboarding-subscription-gate", () => ({ getTenantSubscriptionGate: mocks.getTenantSubscriptionGate }));
-const fakePrisma = vi.hoisted(() => ({ marker: "prisma" }));
+const fakePrisma = vi.hoisted(() => ({ marker: "prisma", professional: { findUnique: vi.fn() } }));
 vi.mock("@nutri-bot/db", () => ({ prisma: fakePrisma }));
 // HU-025b-2: getTenantAccess usa resolvePrimaryAgenda (tenantScope). `findAgenda` devuelve la agenda
 // principal ({ id, professionalId }) o null; el doble tira TenantScopeError como el real.
@@ -53,6 +53,10 @@ import {
   requireOwnerContext,
   requirePageContext,
   requireTenantContext,
+  getSubscriptionAccess,
+  requireSubscriptionOwnerContext,
+  requireSubscriptionPageContext,
+  requireSubscriptionReadContext,
 } from "./tenant-context";
 
 type Role = "OWNER" | "STAFF";
@@ -265,7 +269,7 @@ describe("HU-026: consultorios nuevos con política de onboarding y suscripción
     mocks.decide = null;
     mocks.auth.mockResolvedValue(session);
     mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "OWNER" }]));
-    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", setupComplete: true });
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", timeZone: "America/Montevideo", setupComplete: true });
     mocks.getTenantSubscriptionGate.mockResolvedValue("pending");
     mocks.findAgenda.mockResolvedValue(newAgenda);
   });
@@ -285,6 +289,9 @@ describe("HU-026: consultorios nuevos con política de onboarding y suscripción
       reason: "onboarding_pending",
       clinicName: "Consultorio Nuevo",
       email: "ana@example.test",
+      userId: "user-a",
+      tenantId: "clinic-new",
+      timeZone: "America/Montevideo",
     });
     expect(await getTenantContext()).toBeNull();
     expect(await codeOf(() => requireTenantContext("write"))).toBe("no_context");
@@ -319,5 +326,73 @@ describe("HU-026: consultorios nuevos con política de onboarding y suscripción
     expect(await getTenantAccess()).toEqual({ ok: true, ctx: ownerCtx });
     expect(mocks.loadOnboardedClinic).not.toHaveBeenCalled();
     expect(mocks.getTenantSubscriptionGate).not.toHaveBeenCalled();
+  });
+});
+
+// HU-029b (§B.6.7): la única puerta de /ajustes/suscripcion. Deja pasar a la OWNER en onboarding (alta
+// completa, suscripción pendiente) sin abrirle el resto del panel.
+describe("getSubscriptionAccess y requireSubscription*", () => {
+  const TZ = "America/Argentina/Buenos_Aires";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.decide = null;
+    mocks.auth.mockResolvedValue(session);
+    mocks.loadOnboardedClinic.mockResolvedValue(null);
+    mocks.getTenantSubscriptionGate.mockResolvedValue("pending");
+    mocks.findAgenda.mockResolvedValue(legacyAgenda);
+    fakePrisma.professional.findUnique.mockResolvedValue({ timezone: TZ });
+  });
+
+  it("OWNER en onboarding (alta completa, gate pending) → contexto de onboarding con su consultorio", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "OWNER" }]));
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", timeZone: "America/Montevideo", setupComplete: true });
+    const expected = { onboarding: true, isOwner: true, tenantId: "clinic-new", userId: "user-a", timeZone: "America/Montevideo" };
+    expect(await getSubscriptionAccess()).toEqual(expected);
+    expect(await requireSubscriptionPageContext()).toEqual(expected);
+    expect(await requireSubscriptionOwnerContext()).toEqual(expected);
+    expect(await requireSubscriptionReadContext()).toEqual(expected);
+    // El resto del panel sigue cerrado.
+    expect(await codeOf(() => requireOwnerContext())).toBe("no_context");
+    await expect(requirePageContext()).rejects.toMatchObject({ url: "/inicio" });
+    expect(fakePrisma.professional.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("onboarding_setup → null (redirect a /inicio y no_context)", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "OWNER" }]));
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", timeZone: "America/Montevideo", setupComplete: false });
+    expect(await getSubscriptionAccess()).toBeNull();
+    await expect(requireSubscriptionPageContext()).rejects.toMatchObject({ url: "/inicio" });
+    expect(await codeOf(() => requireSubscriptionOwnerContext())).toBe("no_context");
+    expect(await codeOf(() => requireSubscriptionReadContext())).toBe("no_context");
+  });
+
+  it("STAFF de un consultorio con la suscripción pendiente → null", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "clinic-new", role: "STAFF" }]));
+    mocks.loadOnboardedClinic.mockResolvedValue({ name: "Consultorio Nuevo", timeZone: "America/Montevideo", setupComplete: true });
+    expect(await getSubscriptionAccess()).toBeNull();
+    expect(await codeOf(() => requireSubscriptionOwnerContext())).toBe("no_context");
+  });
+
+  it("operativa OWNER → isOwner true, zona de la profesional de la agenda principal", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "legacy-tenant", role: "OWNER" }]));
+    expect(await getSubscriptionAccess()).toEqual({ onboarding: false, isOwner: true, tenantId: "legacy-tenant", userId: "user-a", timeZone: TZ });
+    expect(fakePrisma.professional.findUnique).toHaveBeenCalledWith({
+      where: { id_tenantId: { id: 1, tenantId: "legacy-tenant" } },
+      select: { timezone: true },
+    });
+  });
+
+  it("operativa STAFF → isOwner false: lee (refresh) pero no gestiona (owner_only)", async () => {
+    mocks.loadAccessFacts.mockResolvedValue(facts([{ tenantId: "legacy-tenant", role: "STAFF" }]));
+    expect(await getSubscriptionAccess()).toMatchObject({ onboarding: false, isOwner: false, tenantId: "legacy-tenant" });
+    expect(await requireSubscriptionReadContext()).toMatchObject({ isOwner: false });
+    expect(await codeOf(() => requireSubscriptionOwnerContext())).toBe("owner_only");
+  });
+
+  it("sin sesión → null", async () => {
+    mocks.auth.mockResolvedValue(null);
+    expect(await getSubscriptionAccess()).toBeNull();
+    expect(await codeOf(() => requireSubscriptionReadContext())).toBe("no_context");
   });
 });

@@ -94,6 +94,28 @@ describe("Mercado Pago webhook HTTP boundary", () => {
     await finishResponse();
     expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" }, { userId });
   });
+  it("HU-029b (§B.5.7): una notificación con el user_id de la cuenta de cobro de Arzium termina ignored sin sincronizar", async () => {
+    vi.stubEnv("ARZIUM_MERCADOPAGO_USER_ID", "424242");
+    // El resolver real (mercadopagoAccount.ts) corta el user_id de Arzium antes de buscar la fila o el .env.
+    const { resolveMercadoPagoWebhookAccount } = await vi.importActual<typeof import("../../../../../../../packages/db/domain/mercadopagoAccount")>(
+      "../../../../../../../packages/db/domain/mercadopagoAccount",
+    );
+    let outcome: string | null = null;
+    mocks.handle.mockImplementation(async (_q: unknown, n: { userId: string | null }) => {
+      const account = await resolveMercadoPagoWebhookAccount(n.userId, { ...process.env, MERCADOPAGO_ALLOW_ENV_TOKEN: "true", MERCADOPAGO_ACCESS_TOKEN: "TEST-x", NODE_ENV: "development" });
+      outcome = account ? "processed" : "ignored";
+      if (account) await mocks.sync(account.tenant, "123");
+      return outcome;
+    });
+    const req = new Request("http://localhost/api/webhooks/mercadopago?data.id=123&type=payment", {
+      method: "POST", headers: request(true, "data.id=123&type=payment").headers, body: JSON.stringify({ type: "payment", user_id: 424242 }),
+    });
+    expect((await POST(req)).status).toBe(200);
+    await finishResponse();
+    expect(mocks.handle).toHaveBeenCalledWith({ "data.id": "123", type: "payment" }, { userId: "424242" });
+    expect(outcome).toBe("ignored");
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
   it("HU-028a: nunca loguea el cuerpo ni el user_id si el procesamiento falla", async () => {
     mocks.handle.mockRejectedValue(new Error("x"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, listConnectedMercadoPagoTenants, listTenantsWithPendingMercadoPagoPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken } from "@nutri-bot/db/domain";
+import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, listConnectedMercadoPagoTenants, listTenantsWithPendingMercadoPagoPayments, purgeExpiredBotAiQuestions, reconcileOpenSubscriptions, reconcilePendingPayments, refreshMercadoPagoAccountToken } from "@nutri-bot/db/domain";
 import { listConnectedGoogleCalendarTenants, syncGoogleCalendar } from "@nutri-bot/db/domain/googleCalendar";
 import { outboxOwnershipWhere } from "@nutri-bot/db/domain/outbox";
 import { sendDocument, sendText } from "./whatsapp";
@@ -134,6 +134,8 @@ export function startCron(): void {
 
   // HU-023 (D4): renovación diaria del token de Mercado Pago (si faltan menos de 30 días).
   cron.schedule("0 6 * * *", () => runMercadoPagoRefresh());
+  // HU-029b: conciliación de las suscripciones de Arzium (respaldo del webhook de suscripciones).
+  cron.schedule("*/10 * * * *", () => runSubscriptionReconciliation());
 
   // Privacidad (HU-012/HU-013): el texto del paciente no queda guardado en sesiones vencidas.
   cron.schedule("*/5 * * * *", () => runSessionTextCleanup());
@@ -195,9 +197,28 @@ export async function runMercadoPagoRefresh(): Promise<void> {
   }
 }
 
+let subscriptionsRunning = false;
+/** HU-029: conciliación de suscripciones de Arzium (respaldo del webhook). No se solapa. Nunca loguea errores
+ *  crudos de MP ni ids de recursos de MP (solo el id interno de la suscripción). Con el cobro apagado el
+ *  dominio no consulta nada. No usa getConversationTenant(): las suscripciones son de todos los consultorios. */
+export async function runSubscriptionReconciliation(): Promise<void> {
+  if (subscriptionsRunning) return;
+  subscriptionsRunning = true;
+  try {
+    const r = await reconcileOpenSubscriptions((subscriptionId) =>
+      logger.warn({ subscriptionId }, "Error conciliando suscripción"));
+    if (r.processed || r.failed) logger.info(r, "Conciliación de suscripciones");
+  } catch {
+    logger.error("Error en conciliación de suscripciones");
+  } finally {
+    subscriptionsRunning = false;
+  }
+}
+
 /** Barre pendientes al arrancar, sin esperar al primer tick del cron. */
 export async function runStartupJobs(): Promise<void> {
   await reconcilePayments();
+  await runSubscriptionReconciliation();
   try {
     await runServiceReminders();
     await enqueuePrepInstructions(await getConversationTenant());

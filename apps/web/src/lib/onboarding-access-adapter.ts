@@ -13,7 +13,8 @@ type OnboardingAccessDependencies = {
 export type OnboardingAccess =
   | { kind: "operational"; grant: AccessGrant }
   | { kind: "setup"; tenantId: string; clinicName: string; timeZone: string }
-  | { kind: "onboarding"; clinicName: string }
+  /** HU-029b (§B.6.7): tenantId y timeZone para la puerta de /ajustes/suscripcion. */
+  | { kind: "onboarding"; tenantId: string; clinicName: string; timeZone: string }
   | { kind: "denied"; reason: AccessDenial | "unauthenticated" | "subscription_pending" };
 
 // The caller supplies trusted server dependencies; callers cannot select a tenant.
@@ -43,7 +44,9 @@ export function createOnboardingAccessAdapter(deps: OnboardingAccessDependencies
 
     const subscription = await resolveOnboardingSubscriptionAccess(grant.tenantId, deps.getTenantSubscriptionGate);
     if (subscription.canOperate) return { kind: "operational", grant };
-    if (grant.role === "OWNER") return { kind: "onboarding", clinicName: clinic.name };
+    if (grant.role === "OWNER") {
+      return { kind: "onboarding", tenantId: grant.tenantId, clinicName: clinic.name, timeZone: clinic.timeZone };
+    }
     return { kind: "denied", reason: "subscription_pending" };
   }
 

@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isValidElement, type ReactElement } from "react";
 
-const mocks = vi.hoisted(() => ({ ctx: vi.fn(), members: vi.fn(), botStatus: vi.fn(), logo: vi.fn(), mpView: vi.fn(), gcView: vi.fn() }));
+const mocks = vi.hoisted(() => ({ ctx: vi.fn(), members: vi.fn(), botStatus: vi.fn(), logo: vi.fn(), mpView: vi.fn(), gcView: vi.fn(), subView: vi.fn() }));
 const Null = vi.hoisted(() => () => null);
 const MP = vi.hoisted(() => ({
   MercadoPagoCallbackBanner: () => null,
@@ -28,6 +28,7 @@ const UI = vi.hoisted(() => ({
 vi.mock("@nutri-bot/db/domain", () => ({
   listTenantMembers: mocks.members,
   getMercadoPagoConnectionView: mocks.mpView,
+  getTenantSubscriptionView: mocks.subView,
 }));
 vi.mock("@nutri-bot/db/domain/googleCalendar", () => ({ getGoogleCalendarConnectionView: mocks.gcView }));
 vi.mock("@/lib/professional", () => ({
@@ -70,6 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.mpView.mockResolvedValue(MP_VIEW);
   mocks.gcView.mockResolvedValue(GC_VIEW);
+  mocks.subView.mockResolvedValue({ availability: "unavailable", plans: [], trialUsed: false, subscription: null });
   mocks.botStatus.mockResolvedValue(null);
   mocks.logo.mockResolvedValue(null);
   mocks.members.mockResolvedValue([
@@ -239,5 +241,35 @@ describe("Ajustes → Google Calendar (HU-028b)", () => {
     expect(text(alert!.props.children)).toContain("Google dejó de aceptar la conexión");
     const detail = elements(alert!.props.children).find((e) => e.type === UI.DetailDisclosure);
     expect(text(detail!.props.children)).toBe("Google Calendar respondió con error (status 401, invalid_grant)");
+  });
+});
+
+// HU-029b (§B.6.3): pestaña Suscripción para todos los miembros, con el estado corto y el enlace a la pantalla.
+describe("Ajustes → Suscripción", () => {
+  it.each(["OWNER", "STAFF"] as const)("%s ve la pestaña (después de Mercado Pago) con el resumen", async (role) => {
+    mocks.ctx.mockResolvedValue(ctx(role));
+    mocks.subView.mockResolvedValue({
+      availability: "enabled", plans: [], trialUsed: false,
+      subscription: { status: "TRIALING", authorized: true },
+    });
+    const el = (await AjustesPage()) as ReactElement<TabsProps>;
+    expect(el.props.tabs).toContain("suscripcion");
+    expect(el.props.tabs.indexOf("suscripcion")).toBe(el.props.tabs.indexOf("mercadopago") + 1);
+    expect(el.props.summaries.suscripcion).toBe("En prueba");
+    expect(isValidElement(el.props.panels.suscripcion)).toBe(true);
+    expect(mocks.subView).toHaveBeenCalledWith({ tenantId: "tenant-a" }, { userId: "u-1" });
+  });
+
+  it.each([
+    ["cobro apagado", { availability: "unavailable", plans: [], trialUsed: false, subscription: null }, "No disponible"],
+    ["sin suscripción", { availability: "enabled", plans: [], trialUsed: false, subscription: null }, "Sin suscripción"],
+    ["checkout abandonado", { availability: "enabled", plans: [], trialUsed: false, subscription: { status: "CANCELED", authorized: false } }, "Sin suscripción"],
+    ["cancelada", { availability: "enabled", plans: [], trialUsed: false, subscription: { status: "CANCELED", authorized: true } }, "Cancelada"],
+    ["pendiente", { availability: "enabled", plans: [], trialUsed: false, subscription: { status: "PENDING", authorized: false } }, "Pendiente"],
+  ])("%s → %s", async (_n, view, summary) => {
+    mocks.ctx.mockResolvedValue(ctx("OWNER"));
+    mocks.subView.mockResolvedValue(view);
+    const el = (await AjustesPage()) as ReactElement<TabsProps>;
+    expect(el.props.summaries.suscripcion).toBe(summary);
   });
 });

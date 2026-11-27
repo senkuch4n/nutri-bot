@@ -11,6 +11,10 @@ import { ENABLED_TENANT_IDS } from "@/lib/tenant-context";
 // request del matcher se lee la membresía en la base: revocarla corta la siguiente página, ruta API o
 // server action sin esperar a que venza la sesión. El tenant no se lee nunca de la request.
 
+/** HU-029b (§B.6.7): única ruta del panel abierta a la titular en onboarding (HU-026). Comparación exacta del
+ *  pathname (la query ?mp=volver no cuenta). */
+const SUBSCRIPTION_PATH = "/ajustes/suscripcion";
+
 const unauthorized = () => NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
 /** Server action: POST con el header `next-action` (lo pone el runtime de React/Next). */
@@ -38,6 +42,7 @@ export async function panelGate(req: NextRequest & { auth: Session | null }): Pr
     loadOnboardedClinic,
     getTenantSubscriptionGate,
   }).resolve();
+  if (access.kind === "onboarding" && pathname === SUBSCRIPTION_PATH) return NextResponse.next();
   if (access.kind !== "operational") {
     const reason =
       access.kind === "denied"
@@ -56,5 +61,5 @@ export default auth(panelGate);
 export const config = {
   runtime: "nodejs",
   // /portal no usa el login de Google: cada página valida la sesión del paciente (patient-session.ts).
-  matcher: ["/((?!numa-logo\\.png$|opengraph-image\\.png$|icon\\.png$|apple-icon\\.png$|api/webhooks/mercadopago$|api/auth|login|inicio|acerca|privacidad|portal|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!numa-logo\\.png$|opengraph-image\\.png$|icon\\.png$|apple-icon\\.png$|api/webhooks/mercadopago(?:-suscripciones)?$|api/auth|login|inicio|acerca|privacidad|portal|_next/static|_next/image|favicon.ico).*)"],
 };
