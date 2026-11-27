@@ -19,6 +19,7 @@ const REDACTED_KEYS = new Set([
   "token",
   "nickname",
   "address",
+  "authorization",
 ]);
 
 /** Claves con url cuyo query lleva el id completo de la preapproval. */

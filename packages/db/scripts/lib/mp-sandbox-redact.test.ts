@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { REDACTED, redactMercadoPagoResource, shortMercadoPagoId } from "./mp-sandbox-redact";
 
 describe("redactMercadoPagoResource", () => {
+  it("redacts authorization values (defense in depth for copied error causes)", () => {
+    expect(
+      redactMercadoPagoResource({ cause: { authorization: "Bearer APP_USR-123-secret", status: 400 } }),
+    ).toEqual({ cause: { authorization: REDACTED, status: 400 } });
+  });
+
   it("replaces personal data, card data and tokens with [redacted]", () => {
     const input = {
       payer_email: "test_user_123@testuser.com",
