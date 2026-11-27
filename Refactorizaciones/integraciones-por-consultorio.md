@@ -1845,3 +1845,707 @@ Ninguna bloqueante. Supuestos a confirmar durante la implementación (anotar en 
   `access_type=offline&prompt=consent` (comportamiento documentado). Si no viniera `refresh_token`, el
   resultado es `rejected` y se anota.
 - `npx --no-install tsx` funciona dentro de la imagen `nutribot-bot` (lo usa hoy `ta()` del README).
+
+---
+---
+
+# SDD · HU-028c · IA por consultorio
+
+HU: `docs/hu-integraciones-por-consultorio.md` (validada 2026-11-25; D1–D16 = recomendaciones). Issue #71 · rama
+`feat/HU-028c-ia-por-consultorio` (sale de `develop` con 028a y 028b mergeadas; worktree
+`../Nutri-Bot-HU028c`) · responsable `senkuch4n` · **lleva migración** (label `migración`; solo una HU con
+migración en `implementando` a la vez). Parte del esquema que deja 028b (`20261126010640_google_calendar_account`).
+Skills: `skills/migracion-prisma.md` y `skills/refactor.txt` (diagnóstico + radio de impacto + checklist; el plan
+vive acá). Decisiones que aplican: D1 (ver D-c1), D9a, D10a, D11b, D12, D13b, D14, D15, D16.
+
+## C0. Decisión previa para el usuario · D-c1 (relación con 025c)
+
+> **Resuelta (2026-11-27): opción (b).** El usuario eligió que la 028c absorba solo `runBotAiTool` con `tenantId`
+> y la línea de `handleIncoming`. El resto de 025c/025d quedó en el issue #91 (HU-033).
+
+**Hecho verificado en el código (2026-11-25, `develop` = `e7c0280`):** la 025c **no está hecha** y la 025d
+tampoco.
+
+- `packages/db/domain/botAi.ts`: `runBotAiTool` no recibe tenant; `servicios`/`disponibilidad` usan
+  `activeServices()` = `service.findMany({ where: { active: true } })` **sin filtro de consultorio**;
+  `disponibilidad` usa `LEGACY_TENANT_ID` fijo; `mis_turnos` filtra solo por `patientId`; los cuatro leen
+  `getProfessional()` (= `Professional(1)`).
+- `getProfessional()` sigue en `availability.ts` y se usa en `apps/bot/src/conversation.ts` (7 lugares),
+  `apps/bot/src/booking.ts`, 4 páginas del portal y scripts. `ENABLED_TENANT_IDS` sigue en
+  `apps/web/src/lib/tenant-context.ts` y `middleware.ts`. El token del portal sigue en v1 (no hay `p2.`).
+- No existe `SupportGrant`/`PlatformOperator` en el schema (025d sin hacer).
+- El issue #68 (HU-025) está **cerrado** y `backlog/HU-025.json` está `aprobada` con 025a-1…025b-2: **la 025c no
+  tiene issue, rama ni responsable**. Esperarla (D1a) es esperar algo que hoy nadie tiene en curso.
+
+**Opciones**
+
+- **(a) 028c solo hace lo que no depende de 025c** (tenant en `BotAiQuestion`, topes por consultorio, registro
+  del panel) y deja las tools del bot como están. Consecuencia: el escenario de la HU "La IA que trabaja para A
+  no lee datos de B" queda **sin cumplir** en 028c, y `servicios`/`disponibilidad` siguen devolviendo los
+  servicios activos **de todos los consultorios** (hoy ya pasa en cualquier base con un segundo tenant: los
+  probes y una futura alta de consultorio). La HU-028 no se puede cerrar completa hasta que alguien retome 025c.
+- **(b) 028c absorbe la parte mínima de 025c que toca la IA del bot** y nada más: `runBotAiTool` con `tenantId`
+  (las cuatro tools sobre el consultorio de la conversación, con `getTenantProfessional`), y en
+  `conversation.ts` **solo** la lectura de la profesional al inicio de `handleIncoming` (de donde salen
+  `botAiEnabled`, la zona horaria y el nombre que usa la IA). Quedan para 025c, sin tocar: portal (token v2,
+  sesión, descargas), `booking.ts`, los otros 6 `getProfessional()` de `conversation.ts`, borrar
+  `getProfessional`, y retirar `ENABLED_TENANT_IDS`.
+
+**Recomendación: (b).** Es chica (un archivo de dominio, una línea de `conversation.ts`, sus tests), es el
+mismo cambio que la SDD de 025c ya especifica (7.3, regla "IA del bot", así que no se diseña nada distinto), y
+cierra una fuga real (`activeServices()` sin tenant), no solo teórica. En producción el resultado es idéntico
+(un solo tenant: `getTenantProfessional("legacy-tenant")` resuelve la agenda principal `legacy-agenda` →
+`Professional(1)`, la misma fila que `getProfessional()`). D1a se decidió cuando se suponía que 025c estaba por
+arrancar; hoy no es así. Si el usuario elige (b), el orquestador anota en
+`Refactorizaciones/autenticacion-permisos-tenant.md` §7.3 que el ítem "db + bot: `runBotAiTool` con
+`tenantId`" quedó hecho en 028c (el architect no edita esa SDD).
+
+**Esta SDD está escrita para (b).** Si el usuario elige (a): se omiten §C5.3 (`runBotAiTool`), el cambio de
+línea de `handleIncoming` de §C6, los pasos 13 y 19 del checklist y los casos de tools de §C8.2/§C8.5; todo lo
+demás vale igual.
+
+## C1. Resumen funcional
+
+La IA del bot y la del panel pasan a medirse **por consultorio**. Cada pregunta de la IA del bot
+(`BotAiQuestion`) queda asociada al consultorio de su paciente (columna `tenantId` obligatoria, con backfill
+desde el paciente y FK compuesta que impide que una pregunta quede en otro consultorio que su paciente). El tope
+diario "global" pasa a ser **por consultorio** (el uso de A no consume el cupo de B) y el tope por paciente se
+cuenta dentro de su consultorio. Los dos topes del bot se guardan por consultorio en una tabla nueva
+(`TenantAiSettings`), los define Arzium **por script** (`ai-limits`), y mientras un consultorio no tenga valor
+propio usa el default del `.env` de hoy (D10a): Daiana arranca con los mismos topes efectivos. Las tools de la IA
+del bot leen solo servicios, disponibilidad, turnos y perfil del consultorio de la conversación (D-c1 b). El
+asistente del panel y "Generar con IA" de planes **registran su consumo** (`PanelAiUsage`: consultorio, función,
+fecha, proveedor, modelo, tokens, llamadas, resultado) **sin bloquear** (D11b) y sin guardar pregunta,
+respuesta ni datos de pacientes (D12). Proveedor, modelo y clave siguen globales por `.env` (D9a); la profesional
+no ve el consumo (D13b); la retención de 90 días sigue global (D14); ningún dato de Google Calendar llega a la IA
+(D15, se mantiene el test de 028b). Sin mensajes nuevos del bot.
+
+## C2. Diagnóstico (skill refactor)
+
+- `countBotAiQuestionsToday` cuenta el "global" con `where: { askedAt, outcome }`, **sin tenant**: con dos
+  consultorios, el uso de uno consume el cupo del otro. `BotAiQuestion` no tiene `tenantId`.
+- Los topes salen solo de `resolveBotAiEnv(process.env)` (`BOT_AI_DAILY_PER_PATIENT`, `BOT_AI_DAILY_GLOBAL`),
+  memoizados en `apps/bot/src/ai/runtime.ts`: no hay forma de dar un cupo distinto a un consultorio.
+- `runBotAiTool` lee `getProfessional()` (fila 1), `activeServices()` sin tenant, `LEGACY_TENANT_ID` fijo y
+  turnos solo por `patientId` (ver C0).
+- `handleIncoming` toma `botAiEnabled` (opción 5 del menú) de `getProfessional()`, no del consultorio de la
+  conversación.
+- Asistente (`asistente/actions.ts`) e IA de planes (`ai-actions.ts`) no registran nada: la respuesta de
+  DeepSeek trae `usage` y se descarta.
+- `markBotAiQuestionHandedOff` filtra por `id` + `patientId`; sin tenant (defensa en profundidad).
+
+## C3. Workspaces afectados
+
+| Workspace | ¿Se toca? | Qué |
+|---|---|---|
+| `packages/db` | **Sí** | `schema.prisma` + migración `ai_usage_per_tenant`; `domain/botAi.ts` (firmas con `tenantId`, tools por tenant); `domain/aiUsage.ts` nuevo; `domain/index.ts`; script `scripts/ai-limits.ts` (+ test) y npm `ai-limits`; probe en Postgres descartable `test:ai-tenants`; tests con mocks; `google-calendar-isolation.test.ts` y `gcal-and-ai-privacy.test.ts` ajustados. |
+| `packages/core` | **Sí** | `bot-ai.ts`: `BotAiLimits.globalDaily` → `tenantDaily`, `applyTenantBotAiLimits`, `parseTenantAiLimitArg`; `ai-usage.ts` nuevo (`addChatUsage`); tests vitest. |
+| `apps/bot` | **Sí** | `conversation.ts` (tenant en conteo, registro, derivación y tools; topes del consultorio; profesional del consultorio al inicio de `handleIncoming`), `ai/ask.ts` (contador `tenant`), tests (`ask.test.ts`, `conversation-*.test.ts`, `conversation-ai.test.ts` nuevo), scripts `test-bot-ai-questions.ts` y `test-booking-reason.ts`. `workers.ts` **no cambia** (purga global, D14). |
+| `apps/web` | **Sí** | `lib/deepseek.ts` (constante del proveedor), `asistente/actions.ts` y `pacientes/[id]/planes/[planId]/ai-actions.ts` (registro de consumo) + sus tests; `/privacidad` (una oración, D16). Sin rutas ni pantallas nuevas (D13b). |
+
+**Impacto cruzado (AGENTS.md, "El contrato"):** cambian firmas de `packages/db/domain` que consume **solo el bot**
+(`countBotAiQuestionsToday`, `recordBotAiQuestion`, `markBotAiQuestionHandedOff`, `runBotAiTool`) y de
+`packages/core` que consumen bot y db (`BotAiLimits`). Se agregan funciones que consume el bot
+(`getTenantAiSettings`) y la web (`recordPanelAiUsage`). La migración cambia `BotAiQuestion`, que escribe el
+bot. `npm run typecheck` tiene que pasar en **core, db, web y bot**.
+
+## C4. Esquema
+
+### C4.1 Prisma (cambios exactos)
+
+```prisma
+model Tenant {
+  // … campos actuales sin cambios …
+  /// HU-028c (D10a): topes de la IA del bot del consultorio (null/sin fila = default del .env).
+  aiSettings             TenantAiSettings?
+  /// HU-028c (D11b, D12): registro de consumo de la IA del panel.
+  panelAiUsage           PanelAiUsage[]
+}
+
+model Patient {
+  // … sin cambios salvo la relación con BotAiQuestion, que pasa a tener nombre (hay dos relaciones):
+  botAiQuestions       BotAiQuestion[] @relation("PatientBotAiQuestions")
+  tenantBotAiQuestions BotAiQuestion[] @relation("PatientBotAiQuestionTenant")
+}
+
+model BotAiQuestion {
+  id                  String       @id @default(cuid())
+  patient             Patient      @relation("PatientBotAiQuestions", fields: [patientId], references: [id], onDelete: Cascade)
+  patientId           String
+  /// HU-028c: consultorio de la pregunta = el del paciente (lo garantiza la FK compuesta). Base del tope
+  /// diario por consultorio y del consumo. Lo pone el bot, nunca la IA.
+  tenantId            String
+  tenantPatient       Patient      @relation("PatientBotAiQuestionTenant", fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: Restrict)
+  // … askedAt … handedOffAt, createdAt: sin cambios …
+
+  @@index([patientId, askedAt])
+  @@index([askedAt])
+  @@index([tenantId, askedAt])
+}
+
+/// HU-028c (D10a): configuración de IA del consultorio que define Arzium (script `ai-limits`, sin UI).
+/// null = se usa el default del .env (BOT_AI_DAILY_PER_PATIENT / BOT_AI_DAILY_GLOBAL). 0 = sin preguntas.
+/// HU-030 suma acá el cupo por plan; el tope del panel llega con el bloqueo (D11b).
+model TenantAiSettings {
+  tenantId           String   @id
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Preguntas por paciente por día (tz de la profesional).
+  botDailyPerPatient Int?
+  /// Preguntas del consultorio por día (tz de la profesional).
+  botDailyPerTenant  Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum PanelAiFeature {
+  /// Asistente del panel (/asistente).
+  ASSISTANT
+  /// "Generar con IA" de un plan alimentario.
+  PLAN_AI
+}
+
+enum PanelAiOutcome {
+  /// El proveedor respondió algo usable.
+  OK
+  /// Respondió, pero vacío, sin JSON válido, con otro formato o sin alimentos válidos.
+  INVALID_RESPONSE
+  /// El asistente agotó las vueltas de tools sin respuesta final.
+  TOOL_LIMIT
+  /// Error del proveedor (o de una tool) durante la llamada.
+  ERROR
+}
+
+/// HU-028c (D11b, D12): una fila por uso de la IA del panel. Nunca la pregunta, la respuesta, el prompt
+/// ni datos del paciente; sin usuario (D12). Sin purga: no tiene datos personales.
+model PanelAiUsage {
+  id           String         @id @default(cuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feature      PanelAiFeature
+  usedAt       DateTime       @default(now())
+  /// "deepseek" (D9a: proveedor global).
+  provider     String
+  model        String
+  /// Suma de `usage.prompt_tokens` / `usage.completion_tokens` de todas las respuestas recibidas.
+  inputTokens  Int            @default(0)
+  outputTokens Int            @default(0)
+  /// Respuestas recibidas del proveedor (vueltas del asistente; 1 en planes; 0 si falló la primera).
+  calls        Int            @default(0)
+  outcome      PanelAiOutcome
+  /// Solo el código o la clase del error (`errorCode`), nunca el mensaje. null si no hubo error.
+  errorCode    String?
+
+  @@index([tenantId, usedAt])
+}
+```
+
+Supuesto a confirmar al generar: si Prisma rechazara la relación **requerida** `tenantPatient` porque
+`Patient.tenantId` es `String?`, declararla `Patient?` (el SQL de la FK es el mismo y la columna sigue
+`NOT NULL`). Anotarlo en `impl`.
+
+### C4.2 Migración `ai_usage_per_tenant`
+
+Crear con `--create-only`. Prisma va a generar `ADD COLUMN "tenantId" TEXT NOT NULL`, que **falla** con filas:
+reemplazar el bloque de `BotAiQuestion` por el de abajo (nullable → backfill → `SET NOT NULL`). El resto
+(tipos, tablas, índices, FKs) se deja como lo genera Prisma, comparándolo con este SQL objetivo; si Prisma
+genera cualquier `DROP`, parar.
+
+```sql
+-- HU-028c: IA por consultorio. BotAiQuestion.tenantId (backfill desde el paciente), topes por
+-- consultorio y registro de consumo del panel. No borra ni cambia ninguna fila existente salvo el backfill.
+BEGIN;
+
+-- Fail closed: una pregunta de un paciente sin consultorio no se puede atribuir. No se adopta ni se borra.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM "BotAiQuestion" q JOIN "Patient" p ON p."id" = q."patientId" WHERE p."tenantId" IS NULL
+  ) THEN
+    RAISE EXCEPTION 'HU-028c: hay preguntas de la IA del bot de pacientes sin tenantId; resolver a mano antes de migrar';
+  END IF;
+END $$;
+
+ALTER TABLE "BotAiQuestion" ADD COLUMN "tenantId" TEXT;
+-- Producción: un solo tenant, todas quedan en 'legacy-tenant' (el tenant de sus pacientes desde HU-024).
+UPDATE "BotAiQuestion" q SET "tenantId" = p."tenantId" FROM "Patient" p WHERE p."id" = q."patientId";
+ALTER TABLE "BotAiQuestion" ALTER COLUMN "tenantId" SET NOT NULL;
+
+CREATE INDEX "BotAiQuestion_tenantId_askedAt_idx" ON "BotAiQuestion"("tenantId", "askedAt");
+ALTER TABLE "BotAiQuestion" ADD CONSTRAINT "BotAiQuestion_patientId_tenantId_fkey"
+  FOREIGN KEY ("patientId", "tenantId") REFERENCES "Patient"("id", "tenantId") ON DELETE CASCADE ON UPDATE RESTRICT;
+
+CREATE TYPE "PanelAiFeature" AS ENUM ('ASSISTANT', 'PLAN_AI');
+CREATE TYPE "PanelAiOutcome" AS ENUM ('OK', 'INVALID_RESPONSE', 'TOOL_LIMIT', 'ERROR');
+
+CREATE TABLE "TenantAiSettings" (
+    "tenantId" TEXT NOT NULL,
+    "botDailyPerPatient" INTEGER,
+    "botDailyPerTenant" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "TenantAiSettings_pkey" PRIMARY KEY ("tenantId")
+);
+-- Prisma no modela CHECK (no genera drift; mismo patrón que food_sara2/catalog_ownership).
+ALTER TABLE "TenantAiSettings" ADD CONSTRAINT "TenantAiSettings_limits_check"
+  CHECK (("botDailyPerPatient" IS NULL OR "botDailyPerPatient" BETWEEN 0 AND 100000)
+     AND ("botDailyPerTenant" IS NULL OR "botDailyPerTenant" BETWEEN 0 AND 100000));
+ALTER TABLE "TenantAiSettings" ADD CONSTRAINT "TenantAiSettings_tenantId_fkey"
+  FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+CREATE TABLE "PanelAiUsage" (
+    "id" TEXT NOT NULL,
+    "tenantId" TEXT NOT NULL,
+    "feature" "PanelAiFeature" NOT NULL,
+    "usedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "provider" TEXT NOT NULL,
+    "model" TEXT NOT NULL,
+    "inputTokens" INTEGER NOT NULL DEFAULT 0,
+    "outputTokens" INTEGER NOT NULL DEFAULT 0,
+    "calls" INTEGER NOT NULL DEFAULT 0,
+    "outcome" "PanelAiOutcome" NOT NULL,
+    "errorCode" TEXT,
+    CONSTRAINT "PanelAiUsage_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "PanelAiUsage_tenantId_usedAt_idx" ON "PanelAiUsage"("tenantId", "usedAt");
+ALTER TABLE "PanelAiUsage" ADD CONSTRAINT "PanelAiUsage_tenantId_fkey"
+  FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+COMMIT;
+```
+
+- Filas existentes: `BotAiQuestion` se completa en el mismo SQL (prod y dev: todas `legacy-tenant`; dev verificado
+  en solo lectura: 1 fila, 0 pacientes sin tenant). `TenantAiSettings` arranca **vacía**: sin fila = default del
+  `.env` = el comportamiento de hoy (criterio "los topes de A arrancan con los valores que hoy da el .env").
+- La FK simple existente `BotAiQuestion_patientId_fkey` (CASCADE) **se conserva**; borrar un paciente sigue
+  borrando sus preguntas (las dos FKs cascadean).
+- No hay `BEGIN/COMMIT` en las migraciones que genera Prisma por defecto; las de 028a/028b lo llevan: mantener.
+
+## C5. Contrato compartido
+
+### C5.1 `packages/core/src/bot-ai.ts` (cambia; consume bot y db)
+
+```ts
+export type BotAiLimits = {
+  perPatientDaily: number;
+  /** HU-028c: tope diario del CONSULTORIO (antes `globalDaily`). Default del .env: BOT_AI_DAILY_GLOBAL (nombre
+   *  de variable sin cambios, por compatibilidad con deploy/.env). */
+  tenantDaily: number;
+  // … resto sin cambios …
+};
+// BOT_AI_DEFAULT_LIMITS: `tenantDaily: 300`. LIMIT_ENV: `tenantDaily: "BOT_AI_DAILY_GLOBAL"`.
+
+/** HU-028c (D10a): topes guardados del consultorio. null = usar el default. */
+export type TenantBotAiLimits = { botDailyPerPatient: number | null; botDailyPerTenant: number | null };
+
+/** Límites efectivos del consultorio: `base` (del .env) con perPatientDaily/tenantDaily reemplazados por los
+ *  valores del consultorio que sean enteros entre 0 y 100000. null, `tenant` null o cualquier otro valor → el de
+ *  `base`. No toca las demás claves. Pura, no muta `base`. */
+export function applyTenantBotAiLimits(base: BotAiLimits, tenant: TenantBotAiLimits | null): BotAiLimits;
+
+export const TENANT_AI_LIMIT_MAX = 100_000;
+/** Para el script ai-limits: "default" → null; dígitos 0..100000 → número; cualquier otra cosa → undefined. */
+export function parseTenantAiLimitArg(raw: string): number | null | undefined;
+```
+
+El enum de base `LIMIT_GLOBAL` **no se renombra** (quitar un valor de enum es destructivo): pasa a significar
+"tope diario del consultorio"; actualizar su comentario `///` en el schema (solo comentario, sin migración).
+
+### C5.2 `packages/core/src/ai-usage.ts` (nuevo, puro; se reexporta desde `index.ts`; consume web)
+
+```ts
+export type ChatUsageTotals = { inputTokens: number; outputTokens: number; calls: number };
+export const EMPTY_CHAT_USAGE: ChatUsageTotals; // { 0, 0, 0 }
+/** Suma una respuesta recibida: calls + 1 y los tokens de `usage` (null/undefined/negativos/no finitos → 0,
+ *  enteros por Math.trunc). Devuelve un objeto nuevo. */
+export function addChatUsage(
+  acc: ChatUsageTotals,
+  usage: { prompt_tokens?: number | null; completion_tokens?: number | null } | null | undefined,
+): ChatUsageTotals;
+```
+
+### C5.3 `packages/db/domain/botAi.ts` (cambia; consume bot)
+
+```ts
+/** Preguntas de hoy (día en tz) que llamaron a la IA: del paciente y del consultorio. Las dos consultas
+ *  llevan `tenantId` en el where. */
+export async function countBotAiQuestionsToday(p: {
+  tenantId: string; patientId: string; now: Date; tz: string;
+}): Promise<{ patient: number; tenant: number }>;
+
+export type BotAiQuestionInput = { tenantId: string; patientId: string; /* … resto sin cambios … */ };
+/** Escribe también `tenantId`. Si no coincide con el del paciente, la FK compuesta rechaza el insert. */
+export async function recordBotAiQuestion(data: BotAiQuestionInput): Promise<{ id: string }>;
+
+/** where: { id, patientId, tenantId, handedOffAt: null }. */
+export async function markBotAiQuestionHandedOff(p: { id: string; patientId: string; tenantId: string; at: Date }): Promise<void>;
+
+/** (D-c1 b) Tools sobre el consultorio `tenantId` (lo pone el bot desde la conversación, nunca la IA; un
+ *  `tenantId` dentro de `input` se ignora). */
+export async function runBotAiTool(p: {
+  name: string; input: unknown; patientId: string; tenantId: string; now: Date; afterHours?: AfterHoursConfig;
+}): Promise<BotAiToolResult>;
+```
+
+Dentro de `runBotAiTool` (igual a la SDD de 025c, 7.3):
+- `activeServices(tenantId)` = `prisma.service.findMany({ where: { tenantId, active: true }, orderBy: { createdAt: "asc" } })`.
+- `pro` = `getTenantProfessional(tenantId)` (de `./tenantScope`) en las cuatro tools.
+- `disponibilidad`: `getAvailableSlotsForService({ tenantId }, …)`.
+- `mis_turnos`: `appointment.findMany({ where: { patientId, tenantId, status: …, startsAt: … }, … })`.
+- Se borran los imports de `getProfessional` y `LEGACY_TENANT_ID` de este archivo. El `catch` y su log no cambian.
+- `purgeExpiredBotAiQuestions` y `clearExpiredSessionText`: **sin cambios** (D14).
+
+### C5.4 `packages/db/domain/aiUsage.ts` (nuevo; `export *` en `domain/index.ts`)
+
+```ts
+import type { PanelAiFeature, PanelAiOutcome } from "@prisma/client";
+import type { TenantBotAiLimits } from "@nutri-bot/core";
+import type { TenantRef } from "./tenantScope";
+
+/** BOT. Topes guardados del consultorio; sin fila → { botDailyPerPatient: null, botDailyPerTenant: null }.
+ *  findUnique({ where: { tenantId }, select: { botDailyPerPatient: true, botDailyPerTenant: true } }). Puede tirar
+ *  (error de base): el llamador lo trata como hoy un error de conteo. */
+export async function getTenantAiSettings(t: TenantRef): Promise<TenantBotAiLimits>;
+
+export type PanelAiUsageInput = {
+  feature: PanelAiFeature;
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  calls: number;
+  outcome: PanelAiOutcome;
+  errorCode?: string | null;
+  /** SOLO pruebas; default: DEFAULT now() de la base. */
+  at?: Date;
+};
+
+/** WEB. Inserta una fila de PanelAiUsage con `tenantId = t.tenantId` y SOLO esos campos. **Nunca tira** (D11b:
+ *  registrar no puede romper la función): ante error hace `console.warn("[ai-usage] record_failed", code)` con
+ *  el código/clase del error (nunca el error ni su message) y resuelve. `errorCode` se guarda solo si cumple
+ *  /^[A-Za-z0-9_.:-]{1,64}$/; si no, "error". Tokens/calls negativos o no enteros → 0. */
+export async function recordPanelAiUsage(t: TenantRef, row: PanelAiUsageInput): Promise<void>;
+```
+
+### C5.5 Consumidores
+
+| Función | Web | Bot |
+|---|---|---|
+| `countBotAiQuestionsToday`, `recordBotAiQuestion`, `markBotAiQuestionHandedOff`, `runBotAiTool`, `getTenantAiSettings` | — | `conversation.ts`, scripts `test-bot-ai-questions.ts`, `test-booking-reason.ts` |
+| `recordPanelAiUsage` | `asistente/actions.ts`, `ai-actions.ts` | — |
+| `applyTenantBotAiLimits` | — | `conversation.ts` |
+| `addChatUsage` | `asistente/actions.ts`, `ai-actions.ts` | — |
+| `parseTenantAiLimitArg` | — | (script `packages/db/scripts/ai-limits.ts`) |
+
+## C6. Bot (`apps/bot`)
+
+`conversation.ts`:
+- `handleIncoming`: reemplazar `const pro = await getProfessional();` (línea ~168) por
+  `const tenant = await getConversationTenant(); const pro = await getTenantProfessional(tenant.tenantId);` y
+  reusar ese `tenant` en `findOrCreatePatientByJid(tenant, jid)` (línea ~185). En producción es la misma fila.
+  **Solo esa línea**: los otros `getProfessional()` del archivo y `booking.ts` quedan para 025c (D-c1).
+- `handleQuestionText`: recibe `tenant: TenantRef` (desde `handleIncoming`) y, **dentro** del `try` que ya
+  existe (así un error de base sigue dando `AI_ERROR` y logueando solo `errName`):
+  - `const limits = mergeBotAiLimits(applyTenantBotAiLimits(getBotAiConfig().limits, await getTenantAiSettings(tenant)), opts.aiLimits);`
+    (el override de pruebas sigue ganando).
+  - `countToday: () => countBotAiQuestionsToday({ tenantId: tenant.tenantId, patientId: patient.id, now, tz: pro.timezone })`
+  - `record: (row) => recordBotAiQuestion({ ...row, tenantId: tenant.tenantId, patientId: patient.id, askedAt: now })`
+  - `runTool: (name, input) => runBotAiTool({ name, input, patientId: patient.id, tenantId: tenant.tenantId, now, afterHours: opts.afterHours })`
+  - `trimHistory(…, limits.historyTurns)` sigue usando `limits` (hoy está fuera del `try`: declarar `limits`
+    antes con `let` o mover el cálculo; no cambiar el comportamiento).
+- Derivación con 0: `markBotAiQuestionHandedOff({ id, patientId, tenantId: (await getConversationTenant()).tenantId, at })`
+  (misma forma que las llamadas vecinas del archivo).
+
+`ai/ask.ts`: `countToday: () => Promise<{ patient: number; tenant: number }>`; condición
+`counts.patient >= limits.perPatientDaily || counts.tenant >= limits.tenantDaily`; log
+`log.warn({ tenant: counts.tenant }, "Tope diario del consultorio de preguntas a la IA")`. Outcomes y textos sin
+cambios (`LIMIT_PATIENT` → `AI_DAILY_LIMIT`; `LIMIT_GLOBAL` → `AI_UNAVAILABLE`).
+
+`ai/runtime.ts` y `workers.ts`: sin cambios (proveedor/modelo/clave globales, D9a; purga global, D14).
+
+## C7. Web (`apps/web`)
+
+- `lib/deepseek.ts`: `export const DEEPSEEK_PROVIDER = "deepseek";`. Nada más (la clave sigue solo en el
+  servidor; el `throw` de "Falta configurar…" no se loguea con su message, ya cae en `errorCode`).
+- `asistente/actions.ts` (`askAssistantAction`): `let usage = EMPTY_CHAT_USAGE;` antes del loop; después de cada
+  `create`, `usage = addChatUsage(usage, completion.usage)`. Un helper local
+  `track(outcome, errorCode?)` = `recordPanelAiUsage(ctx, { feature: "ASSISTANT", provider: DEEPSEEK_PROVIDER, model: DEEPSEEK_MODEL, ...usage, outcome, errorCode })`
+  con `await`. Se llama **una vez** por invocación que llegó a intentar el proveedor:
+  - respuesta final → `OK`;
+  - `!msg` (break) → `INVALID_RESPONSE`;
+  - 4 vueltas sin respuesta final → `TOOL_LIMIT`;
+  - `catch` → `ERROR` con `errorCode(err)` (el `console.error` actual queda igual).
+  - Pregunta vacía o sin contexto (`requireTenantContext` falla) → **no** registra (no se llamó al proveedor).
+  - Las respuestas al cliente no cambian (D11b: sin bloqueo ni mensaje nuevo).
+- `pacientes/[id]/planes/[planId]/ai-actions.ts` (`generateAiPlanAction`): un registro `PLAN_AI` por pedido al
+  proveedor, con `calls` = 1 si respondió (0 si tiró) y los tokens de `completion.usage`:
+  - `catch` del `create` → `ERROR` + `errorCode(err)`;
+  - `raw` null, JSON inválido, formato inválido o `proposal.length === 0` → `INVALID_RESPONSE`;
+  - propuesta válida → `OK`, **antes** de releer el plan y escribir comidas (lo que pase después ya no es del
+    proveedor).
+  - Datos inválidos, sin contexto, plan de otro consultorio, plan con comidas o sin SARA 2 → no llama al
+    proveedor y **no** registra.
+- `/privacidad` (D16): en "Cuánto tiempo se guardan", agregar al final del párrafo: "Del uso del asistente del
+  panel y de las propuestas de plan con inteligencia artificial guardamos solo un registro técnico (fecha,
+  función y cantidad de uso), sin el texto de la consulta ni datos de pacientes." y actualizar la fecha de la
+  página.
+- Sin rutas, server actions, pantallas ni textos nuevos en el panel (D11b, D13b). `guard-coverage.test.ts` no
+  cambia (no hay acciones nuevas).
+
+## C8. Tests
+
+### C8.1 `packages/core` (vitest)
+- `bot-ai.test.ts`: renombrar `globalDaily` → `tenantDaily` en lo existente; `resolveBotAiEnv` con
+  `BOT_AI_DAILY_GLOBAL=50` → `limits.tenantDaily === 50`. `applyTenantBotAiLimits`: `null` → igual a base (otro
+  objeto); `{5, null}` → perPatient 5, tenant base; `{null, 0}` → tenantDaily 0; `{-1, 2.5}` y `{100001, NaN}` →
+  base; no toca `maxTokens` ni `retentionDays`; no muta `base`. `parseTenantAiLimitArg`: `"default"` → null;
+  `"0"`, `"20"`, `"100000"` → número; `"100001"`, `"-1"`, `"2.5"`, `"abc"`, `""`, `" 5"` → undefined.
+- `ai-usage.test.ts`: suma dos respuestas; `usage` null/undefined → calls + 1 y tokens 0; negativos/NaN → 0;
+  no muta `acc`.
+
+### C8.2 `packages/db` (vitest, mocks)
+- `botAi.test.ts` (mock de `./tenantScope` con `getTenantProfessional`, en vez de `getProfessional`):
+  - `countBotAiQuestionsToday` con `tenantId: "tenant-a"`: las dos `count` llevan `tenantId: "tenant-a"`; devuelve
+    `{ patient, tenant }`.
+  - `recordBotAiQuestion` escribe `tenantId`; `markBotAiQuestionHandedOff` filtra por `tenantId`.
+  - `runBotAiTool` con `tenantId: "tenant-a"`: `servicios` llama `service.findMany` con `where: { tenantId: "tenant-a", active: true }`
+    y `getTenantProfessional("tenant-a")`; `disponibilidad` pasa `{ tenantId: "tenant-a" }`; `mis_turnos` filtra
+    `{ patientId, tenantId: "tenant-a", … }`; `datos_consultorio` devuelve el `botAiInfo` de la profesional de A;
+    un `input` con `tenantId: "tenant-b"` no cambia ningún where. Source check: `botAi.ts` no contiene
+    `getProfessional` ni `LEGACY_TENANT_ID`.
+- `aiUsage.test.ts`: `getTenantAiSettings` sin fila → nulls; con fila → valores; `recordPanelAiUsage` hace
+  `create` con `data` cuyas claves son **exactamente** `tenantId, feature, provider, model, inputTokens,
+  outputTokens, calls, outcome, errorCode` (+ `usedAt` solo si viene `at`); `errorCode` con espacios o largo → `"error"`;
+  `create` que tira un error con `message` sensible → resuelve `undefined`, `console.warn` recibe solo el código y
+  el message no aparece en ningún argumento.
+- `gcal-and-ai-privacy.test.ts`: ajustar el mock a `getTenantProfessional` y pasar `tenantId`; los asserts de
+  privacidad no cambian.
+- `google-calendar-isolation.test.ts`: sumar `"packages/db/domain/aiUsage.ts"` a `AI_FILES` (D15).
+- `scripts/ai-limits.test.ts`: parseo de argumentos (ver C9) — `show --tenant legacy-tenant`; `set` sin ningún
+  valor → error; `--per-patient abc` → error; tenant con caracteres inválidos → error; `--apply` solo en `set`.
+
+### C8.3 `apps/bot`
+- `ai/ask.test.ts`: renombrar `global` → `tenant`; tope del consultorio → `LIMIT_GLOBAL` + `AI_UNAVAILABLE` sin
+  llamar al proveedor; tope del paciente → `LIMIT_PATIENT` sin llamar.
+- `conversation-ai.test.ts` (nuevo, mismo estilo de mocks que `conversation-booking.test.ts`; `ai/ask` real con
+  un proveedor falso): en modo pregunta, con `getConversationTenant` → `tenant-a`:
+  - `countBotAiQuestionsToday`, `recordBotAiQuestion` y `runBotAiTool` reciben `tenantId: "tenant-a"`;
+  - `getTenantAiSettings` → `{ botDailyPerPatient: null, botDailyPerTenant: 1 }` y conteo `{ patient: 0, tenant: 1 }`
+    → responde `AI_UNAVAILABLE`, registra `LIMIT_GLOBAL` y el proveedor falso **no** se llama;
+  - `getTenantAiSettings` → nulls y conteo `{ patient: 0, tenant: 299 }` con env default 300 → llama al proveedor;
+  - `getTenantAiSettings` tira → `AI_ERROR`, el log lleva solo `errName`;
+  - profesional de A con `botAiEnabled: false` → el menú no ofrece la opción 5 (texto `messages.menu({ withQuestions: false })`).
+- `conversation-attendance.test.ts` y `conversation-booking.test.ts`: agregar `getTenantProfessional` al mock de
+  `@nutri-bot/db/domain` (y `getConversationTenant` si hace falta). Sin cambiar asserts.
+
+### C8.4 `apps/web`
+- `asistente/actions.test.ts` (mock de `@nutri-bot/db/domain` → `recordPanelAiUsage`): dos vueltas (tool + final)
+  con `usage` → un registro `{ feature: "ASSISTANT", outcome: "OK", calls: 2, inputTokens/outputTokens sumados }`
+  con el contexto de A; proveedor tira → `ERROR` con el código; 4 vueltas de tools → `TOOL_LIMIT`; sin contexto o
+  pregunta vacía → no registra; `JSON.stringify` de los argumentos del registro no contiene la pregunta ni la
+  respuesta; `recordPanelAiUsage` mockeado que rechaza no se usa (nunca tira por contrato), pero la respuesta al
+  cliente es la misma con o sin registro.
+- `ai-actions.test.ts`: propuesta válida → `PLAN_AI`/`OK`; JSON inválido → `INVALID_RESPONSE`; proveedor tira →
+  `ERROR`, `calls: 0`; plan de otro consultorio → ni proveedor ni registro; el registro no contiene datos de la
+  paciente (`antecedentes`, `peso_kg`, instrucciones).
+
+### C8.5 Probe en Postgres descartable — `bot-ai-per-tenant.integration.ts` + `test-bot-ai-per-tenant.sh`
+Copia del esqueleto de `test-google-calendar-per-tenant.sh` (contenedor, red y puerto propios, tmpfs, sin `.env`
+del repo, `--pull never`; copia `pre/` con las migraciones hasta antes de `ai_usage_per_tenant` y `full/`).
+npm: `"test:ai-tenants": "bash scripts/test-bot-ai-per-tenant.sh"` en `packages/db`.
+1. `pre/` + datos tipo producción (SQL): `legacy-tenant`, `legacy-agenda`, `Professional(1)`, un paciente y 2
+   `BotAiQuestion`. md5 de las filas (sin `tenantId`). Aplicar `full/` (`migrate deploy`): las 2 filas con
+   `tenantId = 'legacy-tenant'`, mismo md5, columna `NOT NULL`, `TenantAiSettings` y `PanelAiUsage` vacías.
+2. Fail closed: otra base `pre/` con un paciente con `tenantId` NULL y una pregunta → `migrate deploy` falla con
+   el mensaje `HU-028c:` y la tabla queda sin la columna (transacción revertida).
+3. Sobre la base migrada, tenant B sintético (agenda principal, profesional, paciente, servicio activo "Servicio B"):
+   - insertar una `BotAiQuestion` con paciente de A y `tenantId` B → error de FK;
+   - preguntas de A hasta el tope → `countBotAiQuestionsToday` de B da `tenant: 0`;
+   - `runBotAiTool` `servicios` con A no contiene "Servicio B"; con B no contiene los de A; `mis_turnos` de A no
+     ve turnos de B; `datos_consultorio` de B devuelve la profesional de B;
+   - `ai-limits set --tenant <B> --per-tenant 5 --apply` → `getTenantAiSettings(B)` = `{ null, 5 }`, A sin fila;
+     `UPDATE … SET "botDailyPerTenant" = -1` → viola el CHECK;
+   - `recordPanelAiUsage(A, …)` crea una fila de A; B no ve filas.
+4. Drift: base `gc_fresh` con `migrate deploy` y `prisma migrate diff --from-url <fresh> --to-schema-datamodel full/schema.prisma --exit-code`
+   (contra la base **descartable**, nunca la de desarrollo) → sin diferencias.
+
+## C9. Script `packages/db/scripts/ai-limits.ts` (D10a)
+
+Mismo estilo que `tenant-access.ts` (exporta `USAGE`, `parseArgs`, `run`; `PrismaClient` propio; `DATABASE_URL`
+explícita; errores con mensaje fijo, sin stacks). npm en `packages/db`: `"ai-limits": "tsx scripts/ai-limits.ts"`.
+
+```
+Usage: ai-limits <command> [options]
+  show --tenant <id>
+  set --tenant <id> [--per-patient <n|default>] [--per-tenant <n|default>] [--apply]
+Values: 0..100000, or "default" to use the .env value. Dry run by default; --apply writes.
+```
+
+- `show`: `{"tenantId":"…","botDailyPerPatient":null|n,"botDailyPerTenant":null|n}` (null = default del .env;
+  el script no lee las `BOT_AI_*`).
+- `set`: al menos uno de los dos valores (`parseTenantAiLimitArg`); tenant con `/^[A-Za-z0-9_-]{1,64}$/` y existente
+  (si no, `tenant_not_found`); dry-run imprime `{"mode":"dry-run","before":…,"after":…}`; `--apply` hace `upsert`
+  y imprime `{"mode":"apply",…}`. Un valor no indicado no cambia.
+- En producción: `docker compose run --rm migrate npx --no-install tsx packages/db/scripts/ai-limits.ts show --tenant legacy-tenant`.
+
+## C10. Mensajes del bot
+
+**Sin mensajes nuevos.** Tope del consultorio → `messages.AI_UNAVAILABLE` (el de hoy para el tope global); tope del
+paciente → `messages.AI_DAILY_LIMIT` (sin cambios); error de base o de configuración → `messages.AI_ERROR`. Opción
+5 del menú: `messages.menu({ withQuestions })` con `botAiEnabled` de la profesional del consultorio.
+
+## C11. Archivos y flujo (radio de impacto)
+
+| Archivo | Acción |
+|---|---|
+| `packages/db/prisma/schema.prisma` | Editar (C4.1) |
+| `packages/db/prisma/migrations/<ts>_ai_usage_per_tenant/migration.sql` | Crear con `--create-only` y ajustar (C4.2) |
+| `packages/core/src/bot-ai.ts`, `bot-ai.test.ts` | Editar |
+| `packages/core/src/ai-usage.ts`, `ai-usage.test.ts`, `index.ts` | Crear / exportar |
+| `packages/db/domain/botAi.ts`, `botAi.test.ts` | Editar |
+| `packages/db/domain/aiUsage.ts`, `aiUsage.test.ts`, `index.ts` | Crear / exportar |
+| `packages/db/domain/gcal-and-ai-privacy.test.ts`, `google-calendar-isolation.test.ts` | Ajustar |
+| `packages/db/scripts/ai-limits.ts`, `ai-limits.test.ts` | Crear |
+| `packages/db/scripts/bot-ai-per-tenant.integration.ts`, `test-bot-ai-per-tenant.sh` | Crear |
+| `packages/db/package.json` | Scripts `ai-limits`, `test:ai-tenants` |
+| `apps/bot/src/conversation.ts`, `ai/ask.ts`, `ai/ask.test.ts` | Editar |
+| `apps/bot/src/conversation-ai.test.ts` | Crear |
+| `apps/bot/src/conversation-attendance.test.ts`, `conversation-booking.test.ts` | Ajustar mocks |
+| `apps/bot/scripts/test-bot-ai-questions.ts` | `tenantId` en `countBotAiQuestionsToday`/`recordBotAiQuestion`; `aiLimits: { tenantDaily: 0 }` |
+| `apps/bot/scripts/test-booking-reason.ts` | `runBotAiTool({ …, tenantId })` (tenant legacy que ya resuelve el script) |
+| `apps/web/src/lib/deepseek.ts` | `DEEPSEEK_PROVIDER` |
+| `apps/web/src/app/(panel)/asistente/actions.ts`, `actions.test.ts` | Registro de consumo |
+| `apps/web/src/app/(panel)/pacientes/[id]/planes/[planId]/ai-actions.ts`, `ai-actions.test.ts` | Registro de consumo |
+| `apps/web/src/app/privacidad/page.tsx` | Una oración + fecha (D16) |
+| `.env.example`, `deploy/.env.example` (si tiene las `BOT_AI_*`), `README.md`, `deploy/README.md` | Comentario: `BOT_AI_DAILY_GLOBAL` = default del tope diario **por consultorio**; sección "IA por consultorio (HU-028c)" con el script y §C12 |
+
+Flujo (bot): mensaje → `handleIncoming` → `getConversationTenant()` → profesional del consultorio (opción 5) →
+modo pregunta → `getTenantAiSettings` + `.env` → límites → conteo por consultorio → proveedor (tools con
+`tenantId`) → `recordBotAiQuestion` con `tenantId`. Flujo (panel): acción → `requireTenantContext` → proveedor
+(acumulando `usage`) → `recordPanelAiUsage(ctx, …)` (nunca tira) → misma respuesta que hoy.
+
+## C12. Nota de deploy (028c)
+
+Orden real (`deploy/deploy.sh`): `pg_dump` → `build web bot` → `docker compose run --rm migrate` (**con web y bot
+viejos corriendo**) → `up -d`.
+
+**Antes de mergear a `main`**, en producción y solo lectura:
+- `SELECT count(*) FROM "BotAiQuestion" q JOIN "Patient" p ON p.id = q."patientId" WHERE p."tenantId" IS NULL;` → 0
+  (si no, el `migrate` corta a propósito y siguen los contenedores viejos).
+- `SELECT p."tenantId", count(*) FROM "BotAiQuestion" q JOIN "Patient" p ON p.id = q."patientId" GROUP BY 1;` →
+  solo `legacy-tenant` (anotar el número).
+- `grep -E '^BOT_AI_DAILY_(PER_PATIENT|GLOBAL)=' deploy/.env` → anotar los valores: siguen siendo los topes de
+  Daiana (no hace falta crear fila en `TenantAiSettings`).
+
+**Ventana entre `migrate` y `up -d` (segundos):** el bot viejo inserta `BotAiQuestion` sin `tenantId` → el insert
+falla (`NOT NULL`) y esa pregunta responde `AI_ERROR` (el paciente puede repetirla). Conteos, panel y el resto del
+bot no se afectan. Riesgo aceptado (mismo criterio que la ventana de OAuth de 028a); deployar fuera del horario de
+consultas.
+
+**Después del deploy:**
+- `SELECT "tenantId", count(*) FROM "BotAiQuestion" GROUP BY 1;` = el número anotado, todo `legacy-tenant`.
+- Una pregunta por WhatsApp (opción 5) responde igual que antes y su fila tiene `tenantId = 'legacy-tenant'`.
+- Usar el asistente y `SELECT feature, outcome, "inputTokens" > 0 FROM "PanelAiUsage" ORDER BY "usedAt" DESC LIMIT 3;`
+  → `ASSISTANT | OK | t`, `tenantId = 'legacy-tenant'`.
+- `docker compose run --rm migrate npx --no-install tsx packages/db/scripts/ai-limits.ts show --tenant legacy-tenant`
+  → nulls (= defaults del `.env`).
+
+**Rollback:** código y base juntos con el `pg_dump` del deploy. Volver **solo el código** con la base migrada
+rompe el registro de preguntas del bot viejo (`NOT NULL`): si hiciera falta, a mano
+`ALTER TABLE "BotAiQuestion" ALTER COLUMN "tenantId" DROP NOT NULL;` (las tablas nuevas no molestan al código viejo).
+
+Sin variables nuevas. `API_KEY_IA_DEEPSEEK`, `BOT_AI_PROVIDER`, `BOT_AI_MODEL`, `BOT_AI_*`: sin cambios de nombre;
+`BOT_AI_DAILY_GLOBAL` pasa a ser el default del tope **por consultorio** (con un solo consultorio, mismo efecto).
+
+## C13. Checklist atómico (028c)
+
+Antes de empezar: `git fetch && git status` en `feat/HU-028c-ia-por-consultorio`; confirmar que ninguna otra HU con
+label `migración` está en `implementando` (028b-2 tampoco). Reglas de AGENTS.md: en la base de desarrollo solo
+lecturas, la migración y las simulaciones que limpian por id (nunca crear/editar `TenantAiSettings` de
+`legacy-tenant` en dev); los probes de dos consultorios corren **solo** en Postgres descartable; nada de WhatsApp
+real ni llamadas reales a DeepSeek/Anthropic (proveedores falsos y mocks); no `db:seed`/`seed:demo`.
+
+### packages/db — esquema y migración
+- [ ] 1. `docker compose exec -T db pg_dump -U nutri -Fc nutribot > ~/nutribot-dev-pre-028c.dump` (fuera del repo).
+- [ ] 2. `cd packages/db && npx dotenv -e ../../.env -- prisma migrate status`: sin drift (si hay → `blocked`, nunca reset).
+- [ ] 3. Editar `schema.prisma` (C4.1), incluido el comentario de `LIMIT_GLOBAL`.
+- [ ] 4. `npx dotenv -e ../../.env -- prisma migrate dev --create-only --name ai_usage_per_tenant`.
+- [ ] 5. Reescribir el bloque de `BotAiQuestion` y agregar el CHECK y `BEGIN/COMMIT` (C4.2); confirmar que no hay `DROP`.
+- [ ] 6. `npm run db:migrate` y `npm run db:generate` (desde la raíz).
+- [ ] 7. Releer en dev (solo lectura): `SELECT "tenantId", count(*) FROM "BotAiQuestion" GROUP BY 1;` → todo `legacy-tenant`; tablas nuevas vacías.
+
+### packages/core
+- [ ] 8. RED: casos de C8.1 (`bot-ai.test.ts`, `ai-usage.test.ts`).
+- [ ] 9. GREEN: `tenantDaily`, `applyTenantBotAiLimits`, `parseTenantAiLimitArg`, `ai-usage.ts` + export. `npx vitest run packages/core`.
+
+### packages/db — dominio y script
+- [ ] 10. RED + GREEN: `aiUsage.ts` (`getTenantAiSettings`, `recordPanelAiUsage`) + `aiUsage.test.ts`; export en `domain/index.ts`.
+- [ ] 11. RED + GREEN: `botAi.ts` conteo/registro/derivación con `tenantId` + `botAi.test.ts`.
+- [ ] 12. `google-calendar-isolation.test.ts` (`aiUsage.ts` en `AI_FILES`).
+- [ ] 13. RED + GREEN (D-c1 b): `runBotAiTool` con `tenantId` (C5.3) + casos de tools en `botAi.test.ts`; `gcal-and-ai-privacy.test.ts`.
+- [ ] 14. `scripts/ai-limits.ts` + `ai-limits.test.ts` + npm `ai-limits`.
+- [ ] 15. `npx vitest run packages/db`. `npm run typecheck` (va a fallar en bot/web hasta los pasos siguientes: esperado).
+
+### packages/db — probe
+- [ ] 16. `bot-ai-per-tenant.integration.ts` + `test-bot-ai-per-tenant.sh` + npm `test:ai-tenants` (C8.5); `npm run test:ai-tenants --workspace packages/db`.
+
+### apps/bot
+- [ ] 17. `ai/ask.ts` + `ai/ask.test.ts` (contador `tenant`).
+- [ ] 18. `conversation.ts`: `handleQuestionText` y derivación con `tenantId` y topes del consultorio (C6).
+- [ ] 19. `conversation.ts`: profesional del consultorio al inicio de `handleIncoming` (D-c1 b); mocks de `conversation-attendance.test.ts`/`conversation-booking.test.ts`.
+- [ ] 20. `conversation-ai.test.ts` (C8.3). Scripts `test-bot-ai-questions.ts` y `test-booking-reason.ts`.
+
+### apps/web
+- [ ] 21. `lib/deepseek.ts`; RED + GREEN `asistente/actions.ts` + test (C7, C8.4).
+- [ ] 22. RED + GREEN `ai-actions.ts` + test.
+- [ ] 23. `/privacidad` (C7) con la fecha del día.
+
+### Cierre
+- [ ] 24. `.env.example`, `deploy/.env.example`, `README.md`, `deploy/README.md` (sección "IA por consultorio (HU-028c)" con §C9 y §C12).
+- [ ] 25. Verificación completa (§C14). Reporte en `progress/impl_HU-028c.md` (incluir la opción de D-c1 aplicada y la salida de `test:ai-tenants`).
+
+Commits sugeridos (Conventional Commits, uno por bloque): migración+schema (solo, riesgo alto: datos) · core · db
+dominio (consumo y conteo) · db tools por tenant (D-c1) · script ai-limits · probe · bot · web · privacidad+docs.
+
+## C14. Verificación (comandos exactos, desde la raíz)
+
+```bash
+npm run db:generate
+npm run typecheck                                   # core, db, web y bot: 0 errores
+npm run test                                        # vitest de todo el monorepo
+npx vitest run packages/core/src/bot-ai.test.ts packages/core/src/ai-usage.test.ts packages/db/domain/botAi.test.ts packages/db/domain/aiUsage.test.ts packages/db/domain/gcal-and-ai-privacy.test.ts packages/db/domain/google-calendar-isolation.test.ts packages/db/scripts/ai-limits.test.ts apps/bot/src/ai/ask.test.ts apps/bot/src/conversation-ai.test.ts apps/bot/src/conversation-attendance.test.ts apps/bot/src/conversation-booking.test.ts "apps/web/src/app/(panel)/asistente" "apps/web/src/app/(panel)/pacientes/[id]/planes/[planId]/ai-actions.test.ts"
+npm run test:ai-tenants --workspace packages/db     # migración con datos tipo prod + fail closed + probe A/B + drift (Postgres descartable)
+npm run test:gcal-tenants --workspace packages/db   # regresión 028b (Postgres descartable)
+npm run test:mp-tenants --workspace packages/db     # regresión 028a (Postgres descartable)
+bash packages/db/scripts/test-tenant-isolation.sh   # aislamiento 025b (Postgres descartable)
+(cd packages/db && npx dotenv -e ../../.env -- prisma migrate status)   # al día, sin drift
+npm run test:bot-ai --workspace apps/bot            # IA del bot simulada (proveedor falso, sin WhatsApp; limpia por id)
+npm run test:confirm-flow --workspace apps/bot      # regresión del flujo sí/no
+npm run test:booking-reason --workspace apps/bot    # regresión de reservas (incluye runBotAiTool mis_turnos)
+npm run build --workspace apps/web
+# Tools del bot sin consultorio fijo (D-c1 b): las dos tienen que dar vacío.
+grep -n "getProfessional\|LEGACY_TENANT_ID" packages/db/domain/botAi.ts
+grep -n "where: { active: true }" packages/db/domain/botAi.ts
+# Nombre viejo del tope: vacío.
+grep -rn "globalDaily" apps packages --include='*.ts' --include='*.tsx'
+./ops/harness/verify.sh
+```
+
+Ninguna verificación manda WhatsApp, arranca el bot, toca la sesión de Baileys ni llama a un proveedor de IA real
+(los scripts del bot borran las claves del entorno y pasan `aiProvider` falso). `ai-limits --apply` solo se corre
+en el probe descartable.
+
+## C15. Fuera de alcance de 028c (explícito)
+
+- Bloqueo por tope de la IA del panel y su mensaje "Llegaste al límite de uso de IA de tu consultorio para este
+  período." (D11b: llega con HU-030). Por eso no hay columna de tope del panel.
+- Vista "Uso de IA" para la profesional (D13b).
+- Proveedor/modelo/clave por consultorio, Gemini (D9a). Purga por consultorio (D14). UI de topes (D10a).
+- El resto de 025c (portal v2, `booking.ts`, demás `getProfessional()`, `ENABLED_TENANT_IDS`) y 025d.
+
+## C16. Dudas técnicas
+
+Ninguna bloqueante; la única decisión abierta es **D-c1** (de producto/alcance, §C0), con recomendación (b).
+Supuestos a confirmar durante la implementación (anotar en `impl` si fallan):
+- Prisma acepta la relación compuesta requerida contra `Patient.tenantId` opcional (si no, `Patient?`, C4.1).
+- `completion.usage` del SDK `openai` contra DeepSeek trae `prompt_tokens`/`completion_tokens` (documentado; si
+  viniera vacío, se registran 0 tokens y `calls` igual).

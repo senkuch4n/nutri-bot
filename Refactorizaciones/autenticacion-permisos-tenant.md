@@ -849,6 +849,10 @@ de las tools), ajustes/firma/logo leen la profesional del tenant, el test de gua
 
 ### 7.3 Entrega 025c · Portal, descargas del portal e IA del bot
 
+> **Nota (2026-11-27):** la parte de la IA del bot (`runBotAiTool` con `tenantId` y la profesional del consultorio
+> en `handleIncoming`) la hace la **028c** (decisión D-c1 b, `Refactorizaciones/integraciones-por-consultorio.md` §C0).
+> Lo demás de 025c y la 025d siguen pendientes en el issue #91 (HU-033).
+
 Sin migración. Toca db, web y bot.
 
 **Archivos:** `packages/db/domain/patientAuth.ts` (+ `patientAuth.test.ts` nuevo), `domain/botAi.ts` (+ test),
