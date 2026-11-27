@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# El build de Next supera el heap por defecto de Node (~2 GB) desde la HU-029b; el VPS tiene margen.
+ENV NODE_OPTIONS=--max-old-space-size=3072
 RUN npm run db:generate && npm run build --workspace apps/web
 
 # --- run ---

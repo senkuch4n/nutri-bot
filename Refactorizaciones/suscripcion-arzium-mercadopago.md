@@ -1650,6 +1650,19 @@ Commits sugeridos: schema+migración · core · domain · script de planes · pr
 
 # Parte C · 029c · Cobros y período pagado
 
+> **Pendientes heredados del review de la 029b (2026-11-27, `progress/review_HU-029b.md`, no bloqueantes).**
+> Entran en el checklist de la 029c, cada uno con su test:
+> - **P-b1 · Filtrar por `mode`.** `packages/db/domain/subscriptions.ts` (restart, ~l. 450, y paso 5, ~l. 465) busca
+>   la suscripción abierta sin filtrar por `mode`, mientras vista, resume, refresh y cancel sí filtran. Unificar
+>   con el mismo filtro. Hoy no tiene efecto en producción (sandbox no corre ahí), pero confunde en desarrollo.
+> - **P-b2 · `cancelRequestedAt` tras `restart_unconfirmed`.** `abandonPending` (~l. 704) marca
+>   `cancelRequestedAt` antes de cancelar en MP. Si termina en `restart_unconfirmed`, el campo queda puesto y una
+>   cancelación hecha desde la cuenta de MP en los 15 minutos siguientes se atribuye a `PANEL`. Limpiarlo (o no
+>   marcarlo) cuando la anulación no se confirma.
+> - **P-b3 · Lock en el abandono.** El abandono no toma el advisory lock del consultorio: otra pestaña que haga
+>   start en ese momento puede recibir el `checkoutUrl` viejo que se está anulando. Tomar el mismo advisory lock
+>   que start/resume.
+
 ## C.1 Resumen funcional
 
 Cada cobro de la suscripción (`authorized_payment` de MP) se registra una vez en
