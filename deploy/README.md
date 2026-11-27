@@ -142,6 +142,45 @@ el `pg_dump` del deploy): `DROP TABLE "GoogleCalendarOAuthState"; DROP TABLE "Go
 **Después, en otra publicación:** 028b-2 (contracción): borra las columnas viejas de `Professional`, el traslado
 y `GOOGLE_CALENDAR_OWNER_EMAIL`, y `migrate` vuelve al comando de una línea.
 
+## IA por consultorio (HU-028c)
+
+La migración `ai_usage_per_tenant` agrega `BotAiQuestion.tenantId` (backfill desde el paciente, `NOT NULL`, FK
+compuesta con `Patient(id, tenantId)`) y crea `TenantAiSettings` (topes del bot por consultorio, vacía) y
+`PanelAiUsage` (consumo de la IA del panel). No borra ni cambia filas salvo el backfill. Orden real
+(`deploy.sh`): `pg_dump` → `build web bot` → `docker compose run --rm migrate` (**con web y bot viejos
+corriendo**) → `up -d`.
+
+**Antes de mergear a `main`**, en producción y solo lectura:
+- `SELECT count(*) FROM "BotAiQuestion" q JOIN "Patient" p ON p.id = q."patientId" WHERE p."tenantId" IS NULL;` → 0
+  (si no, el `migrate` corta a propósito con `HU-028c: …` y siguen los contenedores viejos).
+- `SELECT p."tenantId", count(*) FROM "BotAiQuestion" q JOIN "Patient" p ON p.id = q."patientId" GROUP BY 1;` →
+  solo `legacy-tenant` (anotar el número).
+- `grep -E '^BOT_AI_DAILY_(PER_PATIENT|GLOBAL)=' deploy/.env` → anotar los valores: siguen siendo los topes de
+  Daiana (no hace falta crear fila en `TenantAiSettings`).
+
+**Ventana entre `migrate` y `up -d` (segundos):** el bot viejo inserta `BotAiQuestion` sin `tenantId` → el insert
+falla (`NOT NULL`) y esa pregunta responde `AI_ERROR` (el paciente puede repetirla). Conteos, panel y el resto del
+bot no se afectan. Deployar fuera del horario de consultas.
+
+**Después del deploy:**
+- `SELECT "tenantId", count(*) FROM "BotAiQuestion" GROUP BY 1;` = el número anotado, todo `legacy-tenant`.
+- Una pregunta por WhatsApp (opción 5) responde igual que antes y su fila tiene `tenantId = 'legacy-tenant'`.
+- Usar el asistente y `SELECT feature, outcome, "inputTokens" > 0 FROM "PanelAiUsage" ORDER BY "usedAt" DESC LIMIT 3;`
+  → `ASSISTANT | OK | t`, `tenantId = 'legacy-tenant'`.
+- `docker compose run --rm migrate npx --no-install tsx packages/db/scripts/ai-limits.ts show --tenant legacy-tenant`
+  → nulls (= defaults del `.env`).
+
+**Topes por consultorio (D10a):** `ai-limits` (dry-run por defecto, `--apply` escribe):
+`docker compose run --rm migrate npx --no-install tsx packages/db/scripts/ai-limits.ts set --tenant <id> --per-tenant <n|default> [--per-patient <n|default>] --apply`.
+`BOT_AI_DAILY_GLOBAL` pasa a ser el default del tope diario **por consultorio** (con un solo consultorio, mismo
+efecto). Sin variables nuevas.
+
+**Rollback:** código y base juntos con el `pg_dump` del deploy. Volver **solo el código** con la base migrada
+rompe el registro de preguntas del bot viejo (`NOT NULL`): si hiciera falta, a mano
+`ALTER TABLE "BotAiQuestion" ALTER COLUMN "tenantId" DROP NOT NULL;` (las tablas nuevas no molestan al código viejo).
+Si el `migrate` cortó por el fail closed, Prisma deja la migración marcada como fallida: después de resolver los
+datos, `prisma migrate resolve --rolled-back <carpeta>` antes de volver a deployar.
+
 ## Útiles
 
 ```bash
