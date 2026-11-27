@@ -22,6 +22,7 @@
     "generate": "prisma generate",
     "legacy-memberships": "tsx scripts/legacy-memberships.ts",
     "tenant-access": "tsx scripts/tenant-access.ts",
+    "ai-limits": "tsx scripts/ai-limits.ts",
     "migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
