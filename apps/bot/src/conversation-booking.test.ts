@@ -157,13 +157,13 @@ describe("WhatsApp booking confirmation without Baileys", () => {
     expect(message).not.toContain("Turno confirmado");
   });
 
-  it("HU-033: la confirmación usa la profesional del consultorio de la conversación (getProfessional solo al inicio, 028c)", async () => {
+  it("HU-033 + HU-028c: el inicio y la confirmación usan la profesional del consultorio de la conversación", async () => {
     mocks.createAppointment.mockResolvedValue({ id: "appointment", status: "CONFIRMED", startsAt });
     const send = vi.fn();
     await handleIncoming("fake-patient", "sí", send);
-    expect(mocks.tenantProfessional.mock.calls).toEqual([["legacy-tenant"]]);
-    // La única lectura de Professional(1) que queda es la del inicio de handleIncoming (la reemplaza 028c).
-    expect(mocks.professional).toHaveBeenCalledTimes(1);
+    // Inicio de handleIncoming (028c, D-c1 b) + confirmación (025c): nunca Professional(1).
+    expect(mocks.tenantProfessional.mock.calls).toEqual([["legacy-tenant"], ["legacy-tenant"]]);
+    expect(mocks.professional).not.toHaveBeenCalled();
   });
 
   it("reports checkout failure without logging provider credentials", async () => {

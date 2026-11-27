@@ -19,9 +19,10 @@ import { BotAiError, ZERO_USAGE, type AiUsage, type BotAiErrorKind, type BotAiPr
 export type AskDeps = {
   provider: BotAiProvider;
   limits: BotAiLimits;
-  countToday: () => Promise<{ patient: number; global: number }>;
-  /** `question` la pone answerQuestion (la recortada). */
-  record: (row: Omit<BotAiQuestionInput, "patientId" | "askedAt">) => Promise<{ id: string }>;
+  /** HU-028c: preguntas de hoy del paciente y de su consultorio. */
+  countToday: () => Promise<{ patient: number; tenant: number }>;
+  /** `question` la pone answerQuestion (la recortada); consultorio, paciente e instante los pone el llamador. */
+  record: (row: Omit<BotAiQuestionInput, "tenantId" | "patientId" | "askedAt">) => Promise<{ id: string }>;
   runTool: (name: string, input: Record<string, unknown>) => Promise<BotAiToolResult>;
   log: { warn: (obj: object, msg: string) => void; error: (obj: object, msg: string) => void };
   /** Default Date.now. */
@@ -56,11 +57,11 @@ export async function answerQuestion(
     return { reply: messages.AI_TOO_LONG, outcome: "TOO_LONG", logId: null, turn: null, question: null };
   }
 
-  // 2. Límites diarios.
+  // 2. Límites diarios (del paciente y del consultorio, HU-028c).
   const counts = await deps.countToday();
-  if (counts.patient >= limits.perPatientDaily || counts.global >= limits.globalDaily) {
+  if (counts.patient >= limits.perPatientDaily || counts.tenant >= limits.tenantDaily) {
     const byPatient = counts.patient >= limits.perPatientDaily;
-    if (!byPatient) log.warn({ global: counts.global }, "Tope global diario de preguntas a la IA");
+    if (!byPatient) log.warn({ tenant: counts.tenant }, "Tope diario del consultorio de preguntas a la IA");
     const { id } = await deps.record({
       question,
       answer: null,

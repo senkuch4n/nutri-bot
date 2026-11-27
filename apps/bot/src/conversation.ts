@@ -9,7 +9,7 @@ import {
   findPatientByJidOrThrow,
   findOrCreatePatientByJid,
   countBotAiQuestionsToday,
-  getProfessional,
+  getTenantAiSettings,
   getTenantProfessional,
   isMercadoPagoCheckoutAvailable,
   markBotAiQuestionHandedOff,
@@ -24,9 +24,14 @@ import {
   loadOrInitializeLegacyConversationState,
   saveLegacyConversationState,
 } from "@nutri-bot/db/domain/conversationState";
-import { resolveTenantSchedulingContext, type TenantProfessional } from "@nutri-bot/db/domain/tenantScope";
+import {
+  resolveTenantSchedulingContext,
+  type TenantProfessional,
+  type TenantRef,
+} from "@nutri-bot/db/domain/tenantScope";
 import {
   afterHoursConfigFrom,
+  applyTenantBotAiLimits,
   formatClock,
   formatServiceList,
   inquiryBodyFromAiQuestion,
@@ -171,8 +176,9 @@ export async function handleIncoming(
   opts: ConversationOptions = {},
 ): Promise<void> {
   const now = opts.now ?? new Date();
-  // 028c lo reemplaza (D-c1 b): única lectura de Professional(1) que queda en el bot fuera de botAi.ts.
-  const pro = await getProfessional();
+  // HU-028c (D-c1 b): la profesional del consultorio de la conversación (opción 5, zona y nombre de la IA).
+  const tenant = await getConversationTenant();
+  const pro = await getTenantProfessional(tenant.tenantId);
 
   // Interruptor global: la nutricionista puede apagar el bot desde el panel.
   if (pro.botPaused) return;
@@ -189,7 +195,7 @@ export async function handleIncoming(
     if (!isWakeWord(text)) return;
   }
 
-  const patient = await findOrCreatePatientByJid(await getConversationTenant(), jid);
+  const patient = await findOrCreatePatientByJid(tenant, jid);
   const state = await loadState(jid);
   const ctx = state.ctx;
   let step = state.step;
@@ -258,7 +264,7 @@ export async function handleIncoming(
       return handoffFromQuestion(jid, ctx, patient, pro, send, opts, now);
     }
     if (d !== null) return handleMenu(jid, d, send, pro, opts, now, menuText, ai);
-    return handleQuestionText(jid, text, ctx, patient, pro, send, opts, now, ai);
+    return handleQuestionText(jid, text, ctx, tenant, patient, pro, send, opts, now, ai);
   }
 
   // HU-013: paso del motivo. Texto libre: solo comandos estrictos (mensaje entero).
@@ -866,7 +872,12 @@ async function handoffFromQuestion(
     inquiryId: null,
   });
   if (ctx.lastQuestionLogId) {
-    await markBotAiQuestionHandedOff({ id: ctx.lastQuestionLogId, patientId: patient.id, at: now });
+    await markBotAiQuestionHandedOff({
+      id: ctx.lastQuestionLogId,
+      patientId: patient.id,
+      tenantId: (await getConversationTenant()).tenantId,
+      at: now,
+    });
   }
   let alerted = false;
   // De día: alerta inmediata (HU-011). De noche: va en el resumen de la mañana.
@@ -889,6 +900,7 @@ async function handleQuestionText(
   jid: string,
   text: string,
   ctx: Ctx,
+  tenant: TenantRef,
   patient: PatientRow,
   pro: Professional,
   send: Send,
@@ -902,19 +914,33 @@ async function handleQuestionText(
     await send(messages.AI_UNAVAILABLE);
     return;
   }
-  const limits = mergeBotAiLimits(getBotAiConfig().limits, opts.aiLimits);
   void opts.typing?.().catch(() => {}); // "escribiendo…" (no se espera)
   const title = pro.title?.trim();
+  let limits: BotAiLimits;
   let result: Awaited<ReturnType<typeof answerQuestion>>;
   try {
+    // HU-028c (D10a): topes del consultorio sobre los del .env; el override de pruebas sigue ganando.
+    limits = mergeBotAiLimits(
+      applyTenantBotAiLimits(getBotAiConfig().limits, await getTenantAiSettings(tenant)),
+      opts.aiLimits,
+    );
     result = await answerQuestion(
       {
         provider: ai.provider,
         limits,
-        countToday: () => countBotAiQuestionsToday({ patientId: patient.id, now, tz: pro.timezone }),
-        record: (row) => recordBotAiQuestion({ ...row, patientId: patient.id, askedAt: now }),
+        countToday: () =>
+          countBotAiQuestionsToday({ tenantId: tenant.tenantId, patientId: patient.id, now, tz: pro.timezone }),
+        record: (row) =>
+          recordBotAiQuestion({ ...row, tenantId: tenant.tenantId, patientId: patient.id, askedAt: now }),
         runTool: (name, input) =>
-          runBotAiTool({ name, input, patientId: patient.id, now, afterHours: opts.afterHours }),
+          runBotAiTool({
+            name,
+            input,
+            patientId: patient.id,
+            tenantId: tenant.tenantId,
+            now,
+            afterHours: opts.afterHours,
+          }),
         log: logger,
       },
       {
@@ -926,7 +952,7 @@ async function handleQuestionText(
       },
     );
   } catch (err) {
-    // Falla de base (conteo o registro). Solo el nombre del error: uno de Prisma puede traer los
+    // Falla de base (topes, conteo o registro). Solo el nombre del error: uno de Prisma puede traer los
     // argumentos, o sea el texto de la pregunta. El paciente sigue en el modo pregunta.
     logger.error({ errName: err instanceof Error ? err.name : typeof err }, "Error de base en el modo pregunta");
     await save(jid, STEP.AWAIT_QUESTION, ctx);
