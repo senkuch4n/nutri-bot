@@ -1,0 +1,40 @@
+{
+  "id": "HU-029",
+  "responsable": "senkuch4n",
+  "slug": "suscripcion-arzium-mercadopago",
+  "titulo": "Suscripción mensual Mercado Pago de Arzium con 7 días gratis",
+  "origen": "Backlog SaaS de NutriBot, issue #72.",
+  "estado": "arquitectura_lista",
+  "lote": "lote-1-mp",
+  "intentos_revision": 1,
+  "hu": "docs/hu-suscripcion-arzium-mercadopago.md",
+  "sdd": "Refactorizaciones/suscripcion-arzium-mercadopago.md",
+  "rama": "feat/HU-029a-sandbox-suscripciones",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/72",
+  "notas": "Lote con HU-028. Lleva migración: se implementa después de 028a. La SDD de 028a (§12) agrega ARZIUM_MERCADOPAGO_USER_ID para separar la cuenta de cobro de Arzium de las de los consultorios.",
+  "skills_architect": [
+    "migracion-prisma",
+    "ui"
+  ],
+  "entrega_actual": "029b",
+  "entregas": {
+    "029a": {
+      "estado": "aprobada",
+      "modelo": "opus",
+      "skills": [],
+      "impl": "progress/impl_HU-029a.md",
+      "pendiente": "corrida hecha 2026-11-27 (G1 abierta, G2 dedupe propio, G3 refutada→D8a, G4 sin confirmar); opcional: segundo cobro, devolución total, cancelación/pausa",
+      "review": "progress/review_HU-029a.md (revisión 2, Sonnet)",
+      "worktree": "../Nutri-Bot-HU029a"
+    },
+    "029b": {
+      "estado": "arquitectura_lista",
+      "depende_de": "029a G1: abierta (2026-11-27). Espera turno de migración.",
+      "nota_sdd": "SDD ajustada con el sandbox (R1–R16) el 2026-11-27; DP1 aceptada (prueba desde la fecha de MP, recrear checkout si perdió >1 h)."
+    },
+    "029c": {
+      "estado": "arquitectura_lista"
+    }
+  },
+  "modelo_reviewer": "sonnet"
+}
