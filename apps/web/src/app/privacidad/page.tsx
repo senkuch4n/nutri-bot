@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function PrivacidadPage() {
   const mail = <a href={`mailto:${ARZIUM_CONTACT_EMAIL}`}>{ARZIUM_CONTACT_EMAIL}</a>;
   return (
-    <PublicPage title="Política de privacidad" updated="25 de noviembre de 2026">
+    <PublicPage title="Política de privacidad" updated="27 de noviembre de 2026">
       <p>
         Esta política explica qué datos personales trata Numa, el sistema de turnos y seguimiento clínico para
         consultorios de nutrición, para qué los usa y cómo podés ejercer tus derechos. El responsable del sistema y de
@@ -128,7 +128,9 @@ export default function PrivacidadPage() {
       <p>
         Mientras la persona sea paciente del consultorio y durante el tiempo que la profesional deba conservar la
         historia clínica según la normativa vigente. Las consultas hechas al asistente de inteligencia artificial se
-        borran a los 90 días.
+        borran a los 90 días. Del uso del asistente del panel y de las propuestas de plan con inteligencia artificial
+        guardamos solo un registro técnico (fecha, función y cantidad de uso), sin el texto de la consulta ni datos de
+        pacientes.
       </p>
 
       <h2>Tus derechos</h2>
