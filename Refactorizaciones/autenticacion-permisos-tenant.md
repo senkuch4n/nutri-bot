@@ -925,6 +925,10 @@ producción no hay pacientes).
 
 ### 7.4 Entrega 025d · Acceso de plataforma, soporte y auditoría
 
+> **2026-11-27: esta sección y la 5.2 quedan como diseño original.** La spec vigente para implementar contra el
+> código actual de `develop` (después de 025a/b/c, 028a/b/c y HU-026) es la **sección 16** al final de este archivo.
+> Donde 16 contradice a 5.2, 6.3, 6.5, 7.4 o 9.3, manda 16.
+
 **Workspaces:** core, db, web. **Migración:** `platform_support_access` (5.2).
 
 **Archivos:** `packages/core/src/tenant-access.ts` (`supportGrantWindow`, `auditPath`, `SUPPORT_BLOCKED_PATH_PREFIXES`,
@@ -1258,3 +1262,594 @@ con una extensión `$extends` en una base descartable, medir latencia, y decidir
 **Sin mensajes nuevos** (HU 4.4). La opción 4 manda el mismo texto con el link; cambia solo el contenido del token.
 Si el paciente de la conversación no tiene dueño, se responde con el texto de error genérico que el bot ya usa ante
 una falla. La IA del bot responde igual, con datos del consultorio de la conversación.
+
+---
+
+## 16. 025d actualizada (2026-11-27) · Acceso de soporte acotado y auditado (`SupportGrant`)
+
+Issue #91 (HU-033). Rama `feat/HU-033-025d-soporte`, salida de `origin/develop` (`afe6e50`, lo publicado en
+producción). Las decisiones C1, C2, C4 y C6 de la sección 11 están **confirmadas** (2026-11-21) y se respetan acá:
+ventana 24 h por defecto y 7 días máximo; solo lectura por defecto; nunca WhatsApp, Mercado Pago, Google Calendar,
+firma ni Equipo para soporte; Equipo muestra el permiso vigente sin acciones; un operador no tiene membresía.
+
+### 16.1 Resumen funcional
+
+Un operador de Arzium (hoy Joel) entra al panel de **un** consultorio solo con un permiso de soporte (`SupportGrant`)
+que se crea por script en el VPS, con motivo obligatorio, modo `READ_ONLY` (default) o `READ_WRITE` y vencimiento de
+hasta 7 días. Mientras el permiso está vigente ve el panel de ese consultorio con una franja fija "modo soporte"; cada
+request de servidor (página, server action, API) queda en una auditoría append-only con ids, método, pathname y
+resultado, nunca contenido. El permiso no convierte al operador en `OWNER` ni en `STAFF`, no pasa por el alta de
+HU-026 y no se puede borrar: solo vence o se revoca. La responsable lo ve en Ajustes → Equipo.
+
+### 16.2 Workspaces afectados
+
+| Workspace | ¿Cambia? | Qué |
+|---|---|---|
+| `packages/core` | **sí** | `decideTenantAccess` (rama de soporte), `supportGrantWindow`, `auditPath`, `isSupportBlockedPath`, `SUPPORT_BLOCKED_PATH_PREFIXES`, `MUTATING_GET_PATHS` (+ callback de Google Calendar), textos de soporte en `access-text.ts`. Tests vitest. |
+| `packages/db` | **sí** | Schema + migración `platform_support_access`; `loadAccessFacts` con operador y permisos; `recordSupportRequest`, `listActiveSupportGrants`; `createOrResumeTenantOnboarding` rechaza operadores; subcomandos nuevos de `scripts/tenant-access.ts`; probe `test-support-access.sh`. |
+| `apps/web` | **sí** | Adapter de onboarding (soporte en consultorios dados de alta), middleware (modo soporte + auditoría), `tenant-context.ts` (auditoría de rechazos, `requireMemberContext`), firma, asistente, Equipo, franja, `NoAccessScreen`, acción de alta. |
+| `apps/bot` | **no** (solo `typecheck`) | Ningún archivo del bot cambia. Las relaciones nuevas en `User`/`Tenant` son aditivas; igual se corre `typecheck` del bot (regla del contrato). |
+
+### 16.3 Diferencias entre lo diseñado (5.2, 6.3, 6.5, 7.4) y el código actual, y cómo se resuelven
+
+| # | Diseño original | Código actual (`develop`) | Resolución en 025d |
+|---|---|---|---|
+| Δ1 | `decideTenantAccess` decide soporte con `enabledTenantIds`. | `packages/core/src/tenant-access.ts:39-57`: sin membresía devuelve siempre `no_membership` (025a falla cerrado; test `tenant-access.test.ts:90-95`). Ya **nadie** le pasa `enabledTenantIds`: el candado lo aplica el adapter (`apps/web/src/lib/onboarding-access-adapter.ts:27,31`). | Se agrega la rama de soporte (16.5.1). El test de 025a "hechos de plataforma sin membresía no dan acceso" se **reemplaza** por los casos de 16.9. `opts.enabledTenantIds` se conserva sin cambios (lo usa `tenant-access.integration.ts:48`). |
+| Δ2 | El middleware llama a `decideTenantAccess` y después aplica modo soporte. | `apps/web/src/middleware.ts:34-51`: llama a `createOnboardingAccessAdapter(...).resolve()` (HU-026) y solo distingue `operational` / no. `tenant-context.ts:44-61` hace lo mismo. | El modo soporte y la auditoría se agregan **después** de `access.kind === "operational"` en `panelGate`, mirando `access.grant.kind === "support"` (16.6.1). El adapter sigue siendo la única puerta de acceso. |
+| Δ3 | — (no existía el alta) | `onboarding-access-adapter.ts:34`: `if (grant.kind !== "member") return denied tenant_not_enabled`. Hoy un soporte solo podría entrar a un tenant de `ENABLED_TENANT_IDS` (`tenant-context.ts:31`, solo `legacy-tenant`). | Un grant de soporte sobre un consultorio **dado de alta** entra solo si el consultorio ya opera: `setupComplete` **y** `resolveOnboardingSubscriptionAccess(...).canOperate`. Si no, `denied tenant_not_enabled`. Soporte **nunca** recibe `setup` ni `onboarding` (no ve el formulario de alta ni la espera de suscripción). Ver 16.5.4 y duda Q2. |
+| Δ4 | — | `onboarding-subscription-gate.ts:5-7` es un stub que devuelve siempre `"pending"` hasta la 029b. | Con el stub, un soporte sobre un consultorio nuevo queda `tenant_not_enabled` (falla cerrado, correcto). **Dependencia explícita con 029b:** cuando 029b reemplace el stub por `getTenantSubscriptionGate` de `@nutri-bot/db/domain`, el soporte hereda su resultado sin cambios en 025d. Si 029b se mergea antes que 025d, 025d rebasea y resuelve conflictos en `onboarding-access-adapter.ts`, `middleware.ts` y `tenant-context.ts` (mismo lugar donde 029b inyecta el gate). 025d **no** importa nada de 029b. |
+| Δ5 | — | `apps/web/src/app/inicio/actions.ts:55-65` + `packages/db/domain/tenantOnboarding.ts:33-56`: con `NUTRIBOT_PUBLIC_ONBOARDING_ENABLED=true`, cualquier identidad **sin membresía** que invoque la server action crea un consultorio y queda `OWNER`. Un operador no tiene membresía → podría darse de alta y volverse `OWNER` (rompe C6 y "soporte nunca pasa por el alta"). | Dos barreras: (a) la acción solo llama a `server.submit(formData)` sin `resumeTenantId` si `current.kind === "denied" && current.reason === "no_membership"` (un operador da `support_*` o `operational`); (b) `createOrResumeTenantOnboarding`, dentro de su transacción y después del `FOR UPDATE` del `User`, rechaza si existe `PlatformOperator` con `revokedAt IS NULL` (`Error("Platform operators cannot own a clinic")`, mapeado al error genérico). |
+| Δ6 | Bloqueo por prefijo de `/api/professional/signature`. | La firma también se **sube/borra** por server action en `/ajustes` (`ajustes/signature-actions.ts:18,46`, `requireTenantContext("write")`) y se dibuja en los PDF (`lib/professional-pdf.ts:30-41`). Un prefijo de path no alcanza a la acción (la action postea a `/ajustes`). | Nuevo `requireMemberContext(mode)` en `tenant-context.ts` (soporte → `blocked_in_support`), usado en las dos acciones de firma. `loadProfessionalPdfBranding` omite la imagen de la firma cuando el contexto es de soporte (duda Q5). La sección de firma en Ajustes muestra un texto en lugar de la vista previa. |
+| Δ7 | Bloqueo por prefijo de `/api/mercadopago/oauth`. | Mercado Pago y Google Calendar (028a/b) ya son **owner-only**: acciones `ajustes/actions.ts:154,169,188,317,336` y callbacks `api/mercadopago/oauth/callback/route.ts:19`, `api/google-calendar/oauth/callback/route.ts:18` con `requireOwnerContext`. Equipo también (`team-actions.ts:21`). | Ya están cerrados para soporte. 025d agrega: auditoría `DENIED_BLOCKED` cuando `requireOwnerContext` rechaza a un soporte; `/api/google-calendar/oauth` a `SUPPORT_BLOCKED_PATH_PREFIXES`; `/api/google-calendar/oauth/callback` a `MUTATING_GET_PATHS` (GET que escribe, faltaba desde 028b). |
+| Δ8 | El middleware rechaza **toda** server action en `READ_ONLY` con 403. | Hay server actions de **solo lectura** que la UI usa para ver datos: `(panel)/actions.ts:157` (pacientes del modal de turno), `:259` (estado de recordatorios), `:330` (horarios), `recipe-picker-actions.ts:64,77`, `alimentos/actions.ts:115`; un 403 rompe esas vistas. El middleware hoy deja pasar las acciones al handler (`middleware.ts:24-29`). | El middleware **no** rechaza server actions por `READ_ONLY` (sí por prefijo bloqueado): las deja pasar y audita `ACTION`/`ALLOWED`. La barrera de escritura es `requireTenantContext("write")` (el default), que ya tira `read_only` (`tenant-context.ts:104-107`) y ahora además audita `DENIED_READ_ONLY`. Para que esto sea seguro, `guard-coverage.test.ts` gana una lista **cerrada** de llamadas `requireTenantContext("read")` permitidas (16.9.3). Las API y los métodos no-GET sí se rechazan en el middleware. |
+| Δ9 | — | `asistente/actions.ts:102` usa `requireTenantContext("read")`, pero consume cupo de IA del consultorio y escribe `PanelAiUsage` (028c), y manda datos clínicos a DeepSeek. | Pasa a `requireTenantContext("write")`: un soporte `READ_ONLY` no usa el asistente; `READ_WRITE` sí (auditado). Para miembros no cambia nada (duda Q4). |
+| Δ10 | `loadAccessFacts` con `PrismaClientLike`. | `packages/db/domain/tenantAccess.ts:71-92`: `AccessFactsClient = Pick<TransactionClient, "user">`, `void now`, devuelve `platformOperator: false, activeSupportGrants: []`. | Se completa con un solo `findUnique` del `User` que incluye `platformOperator { revokedAt, supportGrants(vigentes, take 2) }`. El tipo del cliente **no cambia** (sigue `"user"`). |
+| Δ11 | Textos `support_no_grant` en 9.1. | `packages/core/src/access-text.ts:31-43`: `support_*` cae en el aviso genérico. | Textos propios (16.8). |
+| Δ12 | Script con `--hours` opcional. | `scripts/tenant-access.ts:44-90`: `parseArgs` exige **todos** los flags del spec (`values.size !== spec.values.length`); `pending` lista Users sin membresía (`:119-130`); lock `"User", "TenantMembership"` (`:191`). | `FLAGS` gana `optional: string[]` (solo `--hours`); `pending` excluye operadores activos; el lock agrega `"PlatformOperator", "SupportGrant"` cuando el subcomando es de 025d; `grant` rechaza operadores activos (C6 en las dos direcciones). |
+| Δ13 | `ENABLED_TENANT_IDS` "se borra al final de 025c". | HU-026 lo resignificó: consultorios existentes que operan sin alta ni suscripción (`tenant-context.ts:30-31`). | No se toca. Para soporte vale igual: un grant sobre `legacy-tenant` es `operational` sin mirar alta ni suscripción. |
+| Δ14 | Probe de 025d dentro de `test-tenant-access.sh`. | `test-tenant-access.sh:18-19,80-82` está atado a `*_tenant_access_identity` como "migración nueva". | Probe nuevo `test-support-access.sh` + `support-access.integration.ts`, mismo patrón (Postgres descartable). `test-tenant-access.sh` no se toca. |
+| Δ15 | Franja con `<nombre de la profesional>` y vencimiento. | `(panel)/layout.tsx:16-27` ya trae `getProfessionalDisplayName(ctx.tenantId)`; `findTenantProfessionalSummary` (`tenantScope.ts:100-111`) no trae `timezone`. | Se agrega `timezone` (campo nuevo, aditivo) al select de `findTenantProfessionalSummary` y un helper `getSupportBannerData` en `lib/shell.ts`. |
+
+**Invariantes que 025d no puede romper** (cada una con test en 16.9):
+
+1. Un grant de soporte nunca produce `kind: "member"`, nunca da `role`, y `requireOwnerContext` lo rechaza siempre.
+2. El tenant del soporte sale **solo** del grant vigente leído en la base; ningún parámetro de request lo elige.
+3. Soporte nunca recibe `setup`/`onboarding` del adapter ni puede crear un consultorio.
+4. Con membresía, manda la membresía (aunque C6 lo impide por script, la decisión pura lo tolera sin ambigüedad).
+5. Grant vencido, revocado, aún no iniciado, de operador revocado, o dos grants vigentes → sin acceso.
+
+### 16.4 Esquema Prisma y migración `platform_support_access`
+
+**Turno de migración:** orden acordado **029b → HU-027 (Leo) → 032a-1 → 025d** (ver duda Q1). Antes de crear la
+migración: `git fetch && git rebase origin/develop` y confirmar que no hay otra HU con label `migración` en
+`implementando`. Si al rebasear aparece una migración nueva de otra HU con timestamp posterior, se borra la carpeta
+de 025d (todavía no está en `develop`) y se regenera.
+
+```prisma
+enum SupportAccessMode { READ_ONLY READ_WRITE }
+enum PlatformAuditAction { SUPPORT_REQUEST GRANT_CREATED GRANT_REVOKED OPERATOR_GRANTED OPERATOR_REVOKED }
+enum SupportRequestKind { PAGE ACTION API }
+enum SupportRequestOutcome { ALLOWED DENIED_READ_ONLY DENIED_BLOCKED }
+
+/// HU-025 (D2): operador de Arzium. Separado de TenantRole: por sí solo no da acceso a ningún consultorio.
+/// Solo lo crea/revoca scripts/tenant-access.ts. Un operador no puede tener membresía (C6).
+model PlatformOperator {
+  userId        String         @id
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt     DateTime       @default(now())
+  revokedAt     DateTime?
+  supportGrants SupportGrant[]
+}
+
+/// HU-025 (D2): permiso temporal de soporte sobre un consultorio. No se borra ni se edita: vence o se revoca
+/// una vez (trigger SQL). Ventana máx. 7 días (CHECK). Un vigente por operador (lo impone el script).
+model SupportGrant {
+  id          String               @id @default(cuid())
+  userId      String
+  operator    PlatformOperator     @relation(fields: [userId], references: [userId], onDelete: Restrict)
+  tenantId    String
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  mode        SupportAccessMode    @default(READ_ONLY)
+  /// Motivo corto, sin datos de pacientes: 3 a 200 caracteres, sin saltos de línea (CHECK + script).
+  reason      String               @db.VarChar(200)
+  startsAt    DateTime
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime             @default(now())
+  auditEvents PlatformAuditEvent[]
+
+  /// Destino de la FK compuesta (grantId, tenantId) de PlatformAuditEvent (agregada a mano en el SQL).
+  @@unique([id, tenantId])
+  @@index([userId, expiresAt])
+  @@index([tenantId, expiresAt])
+}
+
+/// HU-025 (D2): auditoría append-only (trigger SQL). Solo ids, acción y pathname sin query. Nunca contenido
+/// clínico, cuerpos, headers, query strings ni tokens.
+model PlatformAuditEvent {
+  id          BigInt                 @id @default(autoincrement())
+  occurredAt  DateTime               @default(now())
+  actorUserId String
+  actor       User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  tenantId    String?
+  tenant      Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  grantId     String?
+  grant       SupportGrant?          @relation(fields: [grantId], references: [id], onDelete: Restrict)
+  action      PlatformAuditAction
+  requestKind SupportRequestKind?
+  outcome     SupportRequestOutcome?
+  method      String?                @db.VarChar(10)
+  /// auditPath(): pathname sin query ni fragmento, máx. 300. Puede contener ids opacos (cuid), nunca texto.
+  path        String?                @db.VarChar(300)
+
+  @@index([tenantId, occurredAt])
+  @@index([actorUserId, occurredAt])
+  @@index([grantId, occurredAt])
+}
+```
+
+Relaciones inversas (aditivas): en `User`: `platformOperator PlatformOperator?` y
+`platformAuditEvents PlatformAuditEvent[]`; en `Tenant`: `supportGrants SupportGrant[]` y
+`platformAuditEvents PlatformAuditEvent[]`.
+
+**SQL:** el que genera `--create-only` (4 `CREATE TYPE`, 3 `CREATE TABLE`, índices, unique `(id, tenantId)`, FKs
+`ON DELETE RESTRICT ON UPDATE CASCADE`) **más** este bloque, agregado a mano al final del mismo `migration.sql` antes
+de aplicarlo. Prisma no modela CHECKs, triggers ni la FK compuesta: no los borra en migraciones futuras, pero el
+`migration.sql` no se edita después de aplicado (skill `migracion-prisma`).
+
+```sql
+-- ---------------------------------------------------------------------------------------------
+-- HU-025 / 025d: invariantes que Prisma no modela. Conservarlas en migraciones futuras.
+-- ---------------------------------------------------------------------------------------------
+
+-- Ventana de soporte acotada (C1: máximo 7 días) e iniciada al crearse (no se pre-fecha ni se agenda).
+ALTER TABLE "SupportGrant" ADD CONSTRAINT "SupportGrant_window_check"
+  CHECK ("expiresAt" > "startsAt" AND "expiresAt" <= "startsAt" + INTERVAL '7 days');
+ALTER TABLE "SupportGrant" ADD CONSTRAINT "SupportGrant_starts_check"
+  CHECK ("startsAt" BETWEEN "createdAt" - INTERVAL '5 minutes' AND "createdAt" + INTERVAL '5 minutes');
+ALTER TABLE "SupportGrant" ADD CONSTRAINT "SupportGrant_reason_check"
+  CHECK (length(btrim("reason")) BETWEEN 3 AND 200 AND "reason" !~ '[\r\n]');
+ALTER TABLE "SupportGrant" ADD CONSTRAINT "SupportGrant_revoked_check"
+  CHECK ("revokedAt" IS NULL OR "revokedAt" >= "createdAt");
+ALTER TABLE "PlatformOperator" ADD CONSTRAINT "PlatformOperator_revoked_check"
+  CHECK ("revokedAt" IS NULL OR "revokedAt" >= "createdAt");
+
+-- Forma de cada evento: un SUPPORT_REQUEST tiene consultorio, permiso, tipo, resultado y método; un evento de
+-- permiso tiene consultorio y permiso sin datos de request; uno de operador no tiene ni consultorio ni permiso.
+ALTER TABLE "PlatformAuditEvent" ADD CONSTRAINT "PlatformAuditEvent_shape_check" CHECK (
+  CASE "action"
+    WHEN 'SUPPORT_REQUEST' THEN "tenantId" IS NOT NULL AND "grantId" IS NOT NULL
+      AND "requestKind" IS NOT NULL AND "outcome" IS NOT NULL AND "method" IS NOT NULL
+    WHEN 'GRANT_CREATED' THEN "tenantId" IS NOT NULL AND "grantId" IS NOT NULL
+      AND "requestKind" IS NULL AND "outcome" IS NULL AND "method" IS NULL AND "path" IS NULL
+    WHEN 'GRANT_REVOKED' THEN "tenantId" IS NOT NULL AND "grantId" IS NOT NULL
+      AND "requestKind" IS NULL AND "outcome" IS NULL AND "method" IS NULL AND "path" IS NULL
+    ELSE "tenantId" IS NULL AND "grantId" IS NULL
+      AND "requestKind" IS NULL AND "outcome" IS NULL AND "method" IS NULL AND "path" IS NULL
+  END);
+-- Nunca query string ni fragmento (defensa en la base además de auditPath).
+ALTER TABLE "PlatformAuditEvent" ADD CONSTRAINT "PlatformAuditEvent_path_check"
+  CHECK ("path" IS NULL OR ("path" LIKE '/%' AND "path" !~ '[?#\s]'));
+-- El consultorio del evento es el del permiso (MATCH SIMPLE: con alguno nulo no se chequea).
+ALTER TABLE "PlatformAuditEvent" ADD CONSTRAINT "PlatformAuditEvent_grant_tenant_fkey"
+  FOREIGN KEY ("grantId", "tenantId") REFERENCES "SupportGrant" ("id", "tenantId")
+  ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- Auditoría append-only.
+CREATE FUNCTION "platform_audit_append_only"() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'PlatformAuditEvent is append-only' USING ERRCODE = '42501';
+END $$;
+CREATE TRIGGER "PlatformAuditEvent_no_update_delete" BEFORE UPDATE OR DELETE ON "PlatformAuditEvent"
+  FOR EACH ROW EXECUTE FUNCTION "platform_audit_append_only"();
+CREATE TRIGGER "PlatformAuditEvent_no_truncate" BEFORE TRUNCATE ON "PlatformAuditEvent"
+  FOR EACH STATEMENT EXECUTE FUNCTION "platform_audit_append_only"();
+
+-- Un permiso no se borra ni se edita: solo se revoca, una vez.
+CREATE FUNCTION "support_grant_revoke_only"() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'SupportGrant cannot be deleted' USING ERRCODE = '42501';
+  END IF;
+  IF OLD."revokedAt" IS NOT NULL OR NEW."revokedAt" IS NULL
+     OR (to_jsonb(NEW) - 'revokedAt') IS DISTINCT FROM (to_jsonb(OLD) - 'revokedAt') THEN
+    RAISE EXCEPTION 'SupportGrant can only be revoked once' USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER "SupportGrant_revoke_only" BEFORE UPDATE OR DELETE ON "SupportGrant"
+  FOR EACH ROW EXECUTE FUNCTION "support_grant_revoke_only"();
+CREATE TRIGGER "SupportGrant_no_truncate" BEFORE TRUNCATE ON "SupportGrant"
+  FOR EACH STATEMENT EXECUTE FUNCTION "platform_audit_append_only"();
+```
+
+- Tablas nuevas sin filas: no hay backfill ni `NOT NULL` sobre tablas existentes. El binario anterior no las lee:
+  deploy sin ventana (el deploy migra y después reinicia web y bot).
+- `ON DELETE RESTRICT`: borrar un `User` o `Tenant` con operador, permisos o auditoría falla (intencional). Ningún
+  camino de la app borra `User`/`Tenant` hoy; `forget-pending` lo rechaza explícito (16.7).
+- `PlatformOperator` no tiene trigger: `operator-revoke` pone `revokedAt`, y un `operator-grant` posterior lo vuelve a
+  `NULL` (queda en la auditoría como `OPERATOR_REVOKED` → `OPERATOR_GRANTED`).
+- "Un permiso vigente por operador" no se expresa con índice (depende de `now()`): lo impone el script bajo lock y
+  `decideTenantAccess` rechaza si ve dos (`support_multiple_grants`).
+- Se respalda con `pg_dump` fuera del repo antes de aplicar. Nunca `migrate reset` ni `db push`; si hay drift, parar.
+
+### 16.5 Contrato compartido
+
+#### 16.5.1 `packages/core/src/tenant-access.ts` (modificado)
+
+Tipos `AccessFacts`, `AccessDenial`, `AccessGrant`, `AccessDecision`, `SupportMode` **sin cambios de forma** (ya
+tienen los campos de soporte). Cambia el comportamiento y se agregan exports:
+
+```ts
+/** Precedencia (sin cambios para miembros):
+ *  1. sin facts o !linked → unlinked
+ *  2. >1 membresía → multiple_memberships; 1 membresía → como hoy (rol desconocido → no_membership; enabled)
+ *  3. sin membresía y !platformOperator → no_membership
+ *  4. sin membresía y platformOperator:
+ *     - 0 grants → support_no_grant; >1 → support_multiple_grants
+ *     - mode distinto de READ_ONLY/READ_WRITE (defensa) → support_no_grant
+ *     - opts.enabledTenantIds definido y no incluye grant.tenantId → tenant_not_enabled
+ *     - si no: { ok: true, grant: { kind: "support", tenantId, grantId: id, mode, expiresAt } }
+ *  La vigencia (startsAt ≤ now < expiresAt, revokedAt null, operador no revocado) la filtra loadAccessFacts. */
+export function decideTenantAccess(facts: AccessFacts | null, opts?: { enabledTenantIds?: readonly string[] }): AccessDecision;
+
+/** C1. */
+export const SUPPORT_GRANT_DEFAULT_HOURS = 24;
+export const SUPPORT_GRANT_MAX_HOURS = 168;
+/** hours entero en [1, 168]; startsAt = now; expiresAt = now + hours. */
+export function supportGrantWindow(p: { now: Date; hours: number }):
+  { ok: true; startsAt: Date; expiresAt: Date } | { ok: false; reason: "invalid_hours" };
+
+/** Motivo del permiso: trim; 3..200 caracteres; sin \r ni \n. Misma regla que el CHECK. */
+export function validateSupportReason(raw: string): { ok: true; reason: string } | { ok: false; reason: "invalid_reason" };
+
+/** Pathname sin query ni fragmento (acepta URL completa o path; el de nextUrl ya viene percent-encoded),
+ *  máx. 300 (trunca), siempre empieza con "/", sin espacios. Nunca devuelve "?" ni "#". */
+export function auditPath(pathnameOrUrl: string): string;
+
+/** C2: vedadas en modo soporte aunque sea READ_WRITE (además de lo owner-only, que ya rechaza requireOwnerContext). */
+export const SUPPORT_BLOCKED_PATH_PREFIXES: readonly string[] =
+  ["/ajustes/whatsapp", "/api/professional/signature", "/api/mercadopago/oauth", "/api/google-calendar/oauth"];
+/** Coincidencia por segmento: "/ajustes/whatsapp" y "/ajustes/whatsapp/x" sí; "/ajustes/whatsappx" no.
+ *  Normaliza barras finales y mayúsculas no (Next distingue mayúsculas). */
+export function isSupportBlockedPath(pathname: string): boolean;
+
+export type SupportRequestKind = "PAGE" | "ACTION" | "API";
+/** Decisión pura del middleware para un request de soporte ya autorizado por el adapter.
+ *  - blocked si isSupportBlockedPath (cualquier modo) → DENIED_BLOCKED
+ *  - READ_ONLY y kind !== "ACTION" y isMutatingPanelRequest → DENIED_READ_ONLY
+ *  - si no → ALLOWED (las server actions en READ_ONLY pasan al handler: requireTenantContext("write") decide) */
+export function decideSupportRequest(r: {
+  mode: SupportMode; kind: SupportRequestKind; method: string; pathname: string;
+}): "ALLOWED" | "DENIED_READ_ONLY" | "DENIED_BLOCKED";
+```
+
+`MUTATING_GET_PATHS` (`tenant-access.ts:65`) gana `"/api/google-calendar/oauth/callback"`. `isMutatingPanelRequest`
+hoy no tiene consumidores de producción (solo tests), así que el cambio no afecta a otro proceso.
+
+Consume: web (adapter, middleware, tenant-context), db (script). Bot: no.
+
+#### 16.5.2 `packages/core/src/access-text.ts` (modificado)
+
+```ts
+// en ACCESS_TEXT:
+supportNoGrantTitle: "Tu cuenta de soporte no tiene un acceso vigente.",
+supportNoGrantBody: "Pedí un permiso de soporte para el consultorio que tenés que revisar.",
+// noAccessCopy: "support_no_grant" y "support_multiple_grants" → { supportNoGrantTitle, supportNoGrantBody, pendingNote: null }
+
+export const SUPPORT_TEXT = {
+  bannerTitle: (name: string) => `Estás viendo el consultorio ${name} como soporte de Arzium. Cada acción queda registrada.`,
+  bannerTitleNoName: "Estás viendo este consultorio como soporte de Arzium. Cada acción queda registrada.",
+  bannerReadOnly: (until: string) => `Solo lectura · vence el ${until}`,
+  bannerReadWrite: (until: string) => `Con permiso para editar · vence el ${until}`,
+  readOnlyDenied: "En modo soporte de solo lectura no se pueden hacer cambios.",
+  blockedDenied: "Esta sección no está disponible en modo soporte.",
+  signatureHidden: "La firma no se muestra en modo soporte.",
+  teamTitle: "Soporte de Arzium",
+  teamRowReadOnly: (until: string) => `Acceso de solo lectura hasta el ${until}`,
+  teamRowReadWrite: (until: string) => `Acceso con permiso para editar hasta el ${until}`,
+  teamFooter: "Arzium puede entrar a tu consultorio solo con un permiso temporal. Cada acción queda registrada.",
+} as const;
+/** "dd/MM HH:mm" en la zona del consultorio (Intl es-AR, 24 h). */
+export function formatSupportUntil(expiresAt: Date, timeZone: string): string;
+```
+
+#### 16.5.3 `packages/db/domain/tenantAccess.ts` (modificado)
+
+```ts
+/** Una sola lectura: User + membresías (take 2) + operador. Si el operador no existe o está revocado:
+ *  platformOperator false y activeSupportGrants []. Grants: revokedAt null, startsAt <= now, expiresAt > now,
+ *  orderBy expiresAt asc, take 2. AccessFactsClient sigue siendo Pick<TransactionClient, "user">. */
+export function loadAccessFacts(userId: string, now: Date, db?: AccessFactsClient): Promise<AccessFacts | null>;
+
+export type SupportAuditClient = Pick<Prisma.TransactionClient, "platformAuditEvent">;
+/** Inserta un SUPPORT_REQUEST. path pasa por auditPath (o null). method en mayúsculas, máx. 10.
+ *  Nunca tira: devuelve false ante error y loguea `[support] audit_write_failed code=<código Prisma o "unknown">`.
+ *  Consume: web (middleware y tenant-context). */
+export function recordSupportRequest(p: {
+  actorUserId: string; tenantId: string; grantId: string;
+  kind: "PAGE" | "ACTION" | "API"; method: string; path: string | null;
+  outcome: "ALLOWED" | "DENIED_READ_ONLY" | "DENIED_BLOCKED";
+}, db?: SupportAuditClient): Promise<boolean>;
+
+/** Equipo (C4). Solo modo y vencimiento: ni operador, ni email, ni motivo. Consume: web (Ajustes). */
+export function listActiveSupportGrants(tenantId: string, now: Date, db?: Pick<Prisma.TransactionClient, "supportGrant">):
+  Promise<{ mode: "READ_ONLY" | "READ_WRITE"; expiresAt: Date }[]>;
+```
+
+Exportadas desde `packages/db/domain/index.ts` (como el resto de `tenantAccess`).
+
+#### 16.5.4 `packages/db/domain/tenantOnboarding.ts` (modificado)
+
+`createOrResumeTenantOnboarding` (firma sin cambios): después del `SELECT ... FOR UPDATE` del `User`, si existe
+`PlatformOperator` con ese `userId` y `revokedAt IS NULL` → `throw new Error("Platform operators cannot own a clinic")`.
+Consume: web (alta). Bot: no.
+
+#### 16.5.5 `apps/web/src/lib/onboarding-access-adapter.ts` (modificado; forma pública sin cambios)
+
+Reemplaza la línea 34. Para `grant.kind === "support"` y tenant fuera de `existingEnabledTenantIds`:
+`clinic = loadOnboardedClinic(tenantId)`; si `!clinic || !clinic.setupComplete` → `denied tenant_not_enabled`; si
+`resolveOnboardingSubscriptionAccess(...).canOperate` → `operational`; si no → `denied tenant_not_enabled`. Nunca
+`setup` ni `onboarding` para soporte. La rama de miembros queda idéntica.
+
+#### 16.5.6 `apps/web/src/lib/tenant-context.ts` (modificado)
+
+```ts
+/** Igual que hoy; además, si ctx es de soporte y el modo es "write" con READ_ONLY: recordSupportRequest
+ *  (kind "ACTION", method "POST", path null, outcome "DENIED_READ_ONLY") y throw TenantAccessError("read_only"). */
+export function requireTenantContext(mode?: "read" | "write"): Promise<TenantContext>;
+/** Igual que hoy; si ctx es de soporte: recordSupportRequest(... "DENIED_BLOCKED") y throw "owner_only". */
+export function requireOwnerContext(): Promise<TenantContext>;
+/** Nuevo. Cualquier miembro (OWNER o STAFF), nunca soporte (→ audita DENIED_BLOCKED y throw "blocked_in_support").
+ *  mode "write" igual que requireTenantContext. Consume: ajustes/signature-actions.ts. */
+export function requireMemberContext(mode?: "read" | "write"): Promise<TenantContext>;
+```
+
+El rechazo en el handler deja una **segunda** fila (la del middleware dice `ACTION`/`ALLOWED` con el path: pasó la
+puerta; la del handler dice `DENIED_*` con `path` null). El archivo sigue sin leer headers, query ni body.
+
+`guard-coverage.test.ts`: `ACTION_GUARDS` suma `"requireMemberContext("`.
+
+### 16.6 Rutas, middleware, server actions y UI
+
+#### 16.6.1 Middleware (`apps/web/src/middleware.ts`, `panelGate`)
+
+Después de `access.kind === "operational"` (hoy línea 51), si `access.grant.kind === "support"`:
+
+1. `kind` = `isServerAction(req)` ? `"ACTION"` : `isApi` ? `"API"` : `"PAGE"`.
+2. `outcome = decideSupportRequest({ mode, kind, method: req.method, pathname })`.
+3. `ok = await recordSupportRequest({ actorUserId: userId, tenantId, grantId, kind, method, path: pathname, outcome })`.
+4. Si `!ok` (no se pudo auditar) → **falla cerrado** (duda Q3): API y acciones `503 {"error":"support_audit_unavailable"}`;
+   páginas, `new Response("No pudimos registrar el acceso de soporte. Probá de nuevo en unos minutos.", { status: 503 })`
+   (no redirect a `/inicio`: `/inicio` con acceso ok redirige a `/` y haría un bucle).
+5. `DENIED_BLOCKED` / `DENIED_READ_ONLY`: API → `403 {"error":"blocked_in_support"|"read_only"}`; páginas → redirect
+   a `/?soporte=bloqueado` o `/?soporte=solo-lectura`; server action (solo `DENIED_BLOCKED` puede llegar acá) →
+   `403`. Log: `[support] denied reason=<blocked|read_only> kind=<PAGE|ACTION|API>` (sin path, sin ids).
+6. `ALLOWED` → `NextResponse.next()`.
+
+Miembros: sin cambios (no se audita ni se loguea nada nuevo). El matcher no cambia.
+
+#### 16.6.2 Server actions y rutas que cambian
+
+| Archivo | Cambio |
+|---|---|
+| `app/inicio/actions.ts` | Δ5 (a): alta nueva solo si `current.kind === "denied" && current.reason === "no_membership"`; otro caso → `{ error: "No pudimos guardar la configuración. Intentá de nuevo en unos momentos.", values }`. |
+| `app/(panel)/ajustes/signature-actions.ts` | `requireTenantContext("write")` → `requireMemberContext("write")` en las dos acciones. |
+| `app/(panel)/asistente/actions.ts:102` | `requireTenantContext("read")` → `requireTenantContext("write")` (Δ9). |
+| `app/(panel)/ajustes/page.tsx` | `isSupport = ctx.access.kind === "support"`; `listActiveSupportGrants` solo si `isOwner`; a `SignatureForm` se le pasa `hiddenInSupport={isSupport}` (muestra `SUPPORT_TEXT.signatureHidden`, sin `<img>` a `/api/professional/signature`). |
+| `app/(panel)/ajustes/team-section.tsx` | Prop nueva `supportGrants: { label: string }[]`; si hay, segundo `GroupedList` con título `SUPPORT_TEXT.teamTitle`, una fila por permiso (`teamRowReadOnly`/`teamRowReadWrite` con `formatSupportUntil` en la zona de la profesional), sin acciones, pie `teamFooter`. |
+| `lib/professional-pdf.ts` | `loadProfessionalPdfBranding(t: TenantRef & { access?: AccessGrant })`: con `access.kind === "support"`, `signature.image = null` (las líneas de nombre y matrícula se mantienen). Los llamadores ya pasan el `TenantContext`. |
+| `app/(panel)/layout.tsx` | Si `ctx.access.kind === "support"`, `<SupportModeBanner>` arriba de todo (9.3), con `getSupportBannerData(ctx)`. |
+| `components/shell/support-mode-banner.tsx` (nuevo) | Server component: 9.3 (sticky, `role="status"`, `ShieldAlert`, no se cierra). Incluye `SupportDeniedNotice` (client, `useSearchParams`): con `soporte=solo-lectura` o `soporte=bloqueado` muestra un `Alert` warning con `readOnlyDenied`/`blockedDenied`. |
+| `lib/shell.ts` | `getSupportBannerData(ctx): Promise<{ name: string | null; until: string; mode: SupportMode }>` (usa `findTenantProfessionalSummary` + `formatSupportUntil`). |
+| `components/no-access-screen.tsx` (o donde viva `NoAccessScreen`) | Sin cambios de lógica: toma el texto de `noAccessCopy`, que ahora tiene el de soporte. |
+
+Server actions con `requireTenantContext()` sin argumento ya son `"write"`: en `READ_ONLY` devuelven su error
+genérico actual (no se reescriben sus mensajes; 9.3 pide el toast `readOnlyDenied`, que se muestra solo donde la
+acción ya mapea `TenantAccessError` a un estado: ver duda Q6).
+
+#### 16.6.3 Mensajes del bot
+
+Sin mensajes nuevos. El bot no cambia.
+
+### 16.7 Cómo se crea y revoca un permiso (`packages/db/scripts/tenant-access.ts`)
+
+**Quién lo autoriza:** quien tiene acceso SSH al VPS y a `deploy/.env` (hoy Joel y Leo). No hay UI, ni variable de
+entorno, ni endpoint. El permiso se pide por un canal fuera de la app (p. ej. Daiana por WhatsApp) y el motivo lo
+referencia. No hay consentimiento en la app (D2 confirmada): la transparencia es la fila de Equipo y la franja.
+
+Producción: `cd /opt/nutribot/deploy && docker compose run --rm migrate npx --no-install tsx packages/db/scripts/tenant-access.ts <subcomando>`.
+
+| Subcomando | Qué hace (con `--apply`; sin él, dry-run con los mismos chequeos) | Rechaza (mensaje fijo, exit 1) |
+|---|---|---|
+| `operator-grant --email <e> [--apply]` | Crea `PlatformOperator` (o pone `revokedAt = NULL` si estaba revocado). Audita `OPERATOR_GRANTED` (actor = ese User). Salida `applied operators_granted=1`. | `User not found.`; `googleSubject` nulo (`User is not linked.`); tiene membresía (`User has a clinic membership.`, C6); ya activo (`Already an operator.`). |
+| `operator-revoke --email <e> [--apply]` | `revokedAt = now` y revoca en la misma transacción **todos** sus grants vigentes (un `GRANT_REVOKED` por cada uno). Audita `OPERATOR_REVOKED`. Salida `applied operators_revoked=1 grants_revoked=<n>`. | no es operador activo. |
+| `support-grant --email <e> --tenant <id> --mode read-only\|read-write --reason "<texto>" [--hours <n>] [--apply]` | `supportGrantWindow({ now, hours ?? 24 })`, `validateSupportReason`; crea `SupportGrant`; audita `GRANT_CREATED`. Imprime `grant=<id> tenant=<id> mode=<m> expiresAt=<ISO>`. | no operador activo; tenant inexistente; tenant sin agenda principal; ya tiene un grant vigente (`Operator already has an active grant.`); `Invalid hours.` (no entero o fuera de 1..168); `Invalid reason.`. |
+| `support-revoke --grant <id> [--apply]` | `revokedAt = now`; audita `GRANT_REVOKED` (actor = el operador del grant). | grant inexistente; ya revocado; ya vencido (`Grant already expired.`). |
+| `support-list [--tenant <id>]` | Lista grants vigentes: `id`, email del operador, tenant, modo, `startsAt`, `expiresAt`, motivo. | tenant inexistente. |
+| `audit --tenant <id> [--since <n>h\|<n>d]` | Eventos del tenant desde hace N (default 24h, máx. 90d), orden por `occurredAt`: `occurredAt`, `action`, email del actor, `grantId`, `requestKind`, `outcome`, `method`, `path`. Nada más. | tenant inexistente; `--since` inválido. |
+
+Cambios a lo existente: `FLAGS` gana `optional` (solo `--hours` de `support-grant` y `--tenant` de `support-list`,
+`--since` de `audit`); `grant` (membresía) rechaza a un operador activo (`User is a platform operator.`, C6);
+`pending` excluye operadores activos; `forget-pending` rechaza si es operador o tiene filas en la auditoría
+(`User has platform access history.`). Con `--apply`, los subcomandos de 025d toman
+`LOCK TABLE "User", "TenantMembership", "PlatformOperator", "SupportGrant" IN SHARE ROW EXCLUSIVE MODE` (mismo
+orden siempre, para no tener deadlocks con `grant`/`revoke`). Nunca imprime `sub` completo, ni stacks.
+
+**Qué queda auditado:** quién (`actorUserId`), qué consultorio, qué permiso, cuándo, qué acción (`SUPPORT_REQUEST`,
+`GRANT_*`, `OPERATOR_*`), tipo de request, método, pathname sin query y resultado. **Nunca:** query string, cuerpo,
+headers, IP, user agent, nombres, contenido clínico, tokens. El pathname puede traer ids opacos (cuid) de pacientes
+o consultas: es lo mínimo para reconstruir "a qué ficha entró". La retención y una UI de auditoría son de HU-031.
+
+**Cómo se ve en logs:** miembros, nada nuevo. Soporte: solo rechazos y fallas, sin ids de pacientes ni path:
+`[support] denied reason=read_only kind=API`, `[support] denied reason=blocked kind=PAGE`,
+`[support] audit_write_failed code=P1001`, y el existente `[auth] access_denied reason=support_no_grant` (de
+`middleware.ts:48`). Los `ALLOWED` no se loguean (están en la tabla).
+
+**Fase 5 de producción** (reemplaza la de 6.4): (1) Joel entra con Google a `https://numa.arzium.com.ar` para que
+exista su `User` (`tenant-access.ts pending` lo lista); (2) `operator-grant --email <Joel>` dry-run → `--apply`;
+(3) `support-grant --email <Joel> --tenant legacy-tenant --mode read-only --reason "<motivo>"` dry-run → `--apply`;
+(4) Joel recarga → franja; `audit --tenant legacy-tenant --since 1h` muestra sus requests; Daiana ve la fila en
+Equipo; (5) al terminar, `support-revoke --grant <id> --apply`. Se documenta en `deploy/README.md`.
+
+### 16.8 UX (resumen; detalle visual en 9.3)
+
+- `/inicio` de un operador sin permiso: título "Tu cuenta de soporte no tiene un acceso vigente.", cuerpo "Pedí un
+  permiso de soporte para el consultorio que tenés que revisar.", sin nota de pedido y sin formulario de alta.
+- Franja: textos de `SUPPORT_TEXT`; vencimiento en la zona de la profesional.
+- Equipo (solo OWNER): grupo "Soporte de Arzium" si hay permisos vigentes; si no hay, no aparece.
+- Ajustes en soporte: firma con `signatureHidden`; los botones de Mercado Pago, Google Calendar y la sección Equipo
+  ya no se ven para quien no es OWNER (`ajustes/page.tsx:83,185,198,226,262`): soporte los ve igual que `STAFF`, sin
+  cambios. La fila de WhatsApp lleva a `/ajustes/whatsapp`, que redirige a `/?soporte=bloqueado`.
+
+### 16.9 Tests
+
+#### 16.9.1 `packages/core` (vitest)
+
+- `decideTenantAccess`: operador sin grants → `support_no_grant`; operador con 1 grant → `support` con `grantId`,
+  `mode`, `expiresAt` y **sin** `role`; dos grants → `support_multiple_grants`; `platformOperator: false` con grants
+  (hechos inconsistentes) → `no_membership`; membresía + operador + grant de otro tenant → `member` del suyo
+  (invariante 4); grant con `mode` desconocido → `support_no_grant`; `enabledTenantIds` sin el tenant del grant →
+  `tenant_not_enabled`; `!linked` con grant → `unlinked`. Se borra el test de 025a `tenant-access.test.ts:90-95`.
+- `supportGrantWindow`: 24 → +24 h; 168 ok; 0, -1, 169, 1.5, NaN → `invalid_hours`.
+- `validateSupportReason`: `"  ab "` → inválido; 3 y 200 ok; 201 inválido; con `\n` o `\r` inválido; trim aplicado.
+- `auditPath`: `/pacientes/abc?token=x#y` → `/pacientes/abc`; URL completa → solo path; 400 caracteres → 300;
+  `""` → `/`; nunca contiene `?`/`#`/espacios.
+- `isSupportBlockedPath`: los 4 prefijos y sus subrutas sí; `/ajustes`, `/ajustes/whatsappx`, `/api/professional/logo` no.
+- `decideSupportRequest`: `READ_ONLY` + `PAGE GET` → ALLOWED; `READ_ONLY` + `API POST` → DENIED_READ_ONLY;
+  `READ_ONLY` + `ACTION` → ALLOWED (lo decide el handler); `READ_ONLY` + `GET /api/mercadopago/oauth/callback` →
+  DENIED_BLOCKED; `READ_WRITE` + `/ajustes/whatsapp` → DENIED_BLOCKED; `READ_WRITE` + `API POST` → ALLOWED;
+  `READ_ONLY` + `GET /api/google-calendar/oauth/callback` → DENIED_BLOCKED.
+- `isMutatingPanelRequest`: GET del callback de Google Calendar → true; los casos previos siguen iguales.
+- `noAccessCopy("support_no_grant")` / `("support_multiple_grants")` → textos de soporte (`access-text.test.ts:14`
+  se ajusta); `formatSupportUntil` con zona `America/Argentina/Buenos_Aires`.
+
+#### 16.9.2 `packages/db` con mocks (vitest)
+
+- `loadAccessFacts`: el `where` de grants tiene `revokedAt: null`, `startsAt: { lte: now }`, `expiresAt: { gt: now }`,
+  `take: 2`; operador revocado → `platformOperator: false` y `[]` aunque el mock traiga grants; sin operador → igual.
+- `recordSupportRequest`: path con query → guarda sin query; error de Prisma → `false`, no tira, log sin path.
+- `listActiveSupportGrants`: devuelve solo `mode` y `expiresAt` (no `reason` ni `userId`), filtra vigentes del tenant.
+- `createOrResumeTenantOnboarding`: operador activo → tira y no crea `Tenant` ni membresía; operador revocado → sigue
+  el flujo normal (test en `tenantOnboarding.test.ts`).
+- `scripts/tenant-access.test.ts`: `parseArgs` de los subcomandos nuevos (`--hours` opcional, `--mode` inválido,
+  `--reason` vacío, `--since 91d` inválido, flag repetido).
+
+#### 16.9.3 `apps/web` con mocks (vitest)
+
+- `onboarding-access-adapter.test.ts`: soporte en `legacy-tenant` → `operational`; soporte en consultorio dado de
+  alta, `setupComplete` y gate `verified` → `operational`; mismo con gate `pending` (stub actual) → `denied
+  tenant_not_enabled`; consultorio sin terminar alta → `denied` (nunca `setup`); `loadOnboardedClinic` null → denied.
+- `middleware.test.ts`: página en soporte `READ_ONLY` → `next()` + una fila `PAGE/ALLOWED` con path sin query;
+  `POST /api/appointments` en `READ_ONLY` → 403 + fila `API/DENIED_READ_ONLY`; server action en `READ_ONLY` → pasa
+  + fila `ACTION/ALLOWED`; `/ajustes/whatsapp` en `READ_WRITE` → redirect `/?soporte=bloqueado` + `DENIED_BLOCKED`;
+  auditoría que falla → 503 (página) y 503 JSON (API), nunca `next()`; miembro → `recordSupportRequest` no se llama.
+- `tenant-context.test.ts`: `requireTenantContext("write")` con soporte `READ_ONLY` → `read_only` + fila
+  `DENIED_READ_ONLY`; con `READ_WRITE` → ok; `requireOwnerContext` con soporte `READ_WRITE` → `owner_only` + fila
+  `DENIED_BLOCKED`; `requireMemberContext` con soporte → `blocked_in_support`; con STAFF → ok. Grant vencido,
+  revocado o de otro consultorio: `loadAccessFacts` mockeado sin grants → `getTenantContext()` null (no hay forma de
+  pedir otro tenant: el test pasa un `?tenant=` y headers falsos y comprueba que el contexto no cambia).
+- `guard-coverage.test.ts`: regla nueva (d): las llamadas `requireTenantContext("read")` en archivos `"use server"`
+  tienen que estar en una lista cerrada (`listAppointmentPatientsAction`, `getAppointmentRemindersAction`, la de
+  horarios de `actions.ts:330`, `listPickerRecipesAction` y la de `recipe-picker-actions.ts:77`, `createOwnFoodAction`);
+  cualquier otra falla con "acción de lectura nueva: confirmar que no escribe y agregarla a la lista". `asistente` ya
+  no está.
+- `inicio/actions.test.ts`: operador (adapter `denied support_no_grant`) con alta pública habilitada → no llama a
+  `submit`, devuelve el error genérico.
+- `ajustes/signature-actions.test.ts`: soporte `READ_WRITE` → no sube ni borra.
+- `lib/professional-pdf` (test nuevo o en `pdf-common.test.tsx`): soporte → `signature.image` null.
+- Render: `support-mode-banner` (texto, `role="status"`, modo y vencimiento); `team-section` con y sin permisos;
+  `ajustes/page.test.tsx` (soporte no llama a `listTenantMembers` ni a `listActiveSupportGrants`; OWNER sí).
+
+#### 16.9.4 Postgres descartable: `packages/db/scripts/test-support-access.sh` + `support-access.integration.ts`
+
+Mismo patrón que `test-tenant-access.sh` (contenedor y red propios, tmpfs, puerto aleatorio en 127.0.0.1, nunca el
+`.env` del repo, `--pull never`). Pasos: (1) todas las migraciones menos `*_platform_support_access` + fixture
+(`legacy-tenant` con agenda, `tenant-b` con agenda, una OWNER en cada uno, un User operador vinculado, un User con
+membresía); (2) aplica `platform_support_access` (upgrade); (3) instalación desde cero en otra base; (4) integración:
+
+- Operador sin grant → `support_no_grant`; `support-grant` → `support` en `legacy-tenant`; `audit` lo lista.
+- Grant vencido (insert con `startsAt`/`expiresAt` en el pasado vía `createdAt` ajustado en el mismo INSERT) →
+  `support_no_grant`; revocado → `support_no_grant`; operador revocado con grant vigente → `no_membership`.
+- Grant de `tenant-b`: el contexto es `tenant-b`; ningún camino devuelve datos de `legacy-tenant`.
+- Segundo `support-grant` con uno vigente → rechazo; `support-grant --hours 169` → rechazo; INSERT directo con 8 días
+  → `SupportGrant_window_check`; motivo con `\n` → `SupportGrant_reason_check`.
+- `UPDATE` de `reason`/`mode`/`expiresAt` de un grant → `42501`; revocar dos veces → `42501`; `DELETE` y `TRUNCATE`
+  de `SupportGrant` → `42501`.
+- `UPDATE`/`DELETE`/`TRUNCATE` de `PlatformAuditEvent` → `42501`; INSERT con `path` que tiene `?` → CHECK; evento con
+  `tenantId` distinto del de su grant → FK `PlatformAuditEvent_grant_tenant_fkey`; `SUPPORT_REQUEST` sin `grantId` →
+  `PlatformAuditEvent_shape_check`.
+- `operator-grant` a un User con membresía → rechazo; `grant` (membresía) a un operador → rechazo;
+  `createOrResumeTenantOnboarding` con el operador → tira y no deja `Tenant` nuevo; `forget-pending` del operador →
+  rechazo; `DELETE FROM "User"` del operador → FK RESTRICT.
+- `operator-revoke` revoca sus grants vigentes y deja `OPERATOR_REVOKED` + `GRANT_REVOKED`.
+
+`package.json` de `packages/db`: `"test:support-access": "bash scripts/test-support-access.sh"`.
+
+### 16.10 Checklist atómico (rama `feat/HU-033-025d-soporte`, un commit por ítem)
+
+**packages/core**
+- [ ] `decideTenantAccess` con rama de soporte + reemplazo del test de 025a + casos de 16.9.1.
+- [ ] `supportGrantWindow`, `validateSupportReason`, `auditPath`, `SUPPORT_BLOCKED_PATH_PREFIXES`,
+      `isSupportBlockedPath`, `decideSupportRequest`, `MUTATING_GET_PATHS` + tests. Exportar en `index.ts`.
+- [ ] `access-text.ts`: textos de soporte, `SUPPORT_TEXT`, `formatSupportUntil` + tests.
+
+**packages/db** (esperar el turno de migración, 16.4)
+- [ ] `git fetch && git rebase origin/develop`; confirmar que ninguna otra HU con `migración` está en `implementando`.
+- [ ] Schema 16.4 → `pg_dump` fuera del repo → `--create-only --name platform_support_access` → agregar el bloque SQL
+      a mano → revisar (ningún `DROP`; ningún `ALTER` de tablas existentes salvo las FKs nuevas) → `npm run db:migrate` → `npm run db:generate`.
+- [ ] `loadAccessFacts`, `recordSupportRequest`, `listActiveSupportGrants` + tests con mocks.
+- [ ] `createOrResumeTenantOnboarding` rechaza operadores + test.
+- [ ] Script: `optional` en `FLAGS`; subcomandos de 16.7; cambios a `grant`/`pending`/`forget-pending`; lock; tests de
+      `parseArgs`.
+- [ ] `test-support-access.sh` + `support-access.integration.ts` + script en `package.json`; correrlo en verde.
+
+**apps/web**
+- [ ] `onboarding-access-adapter.ts` (16.5.5) + tests.
+- [ ] `tenant-context.ts`: auditoría de rechazos, `requireMemberContext` + tests; `guard-coverage` (`ACTION_GUARDS` y
+      regla (d)).
+- [ ] `middleware.ts` (16.6.1) + tests.
+- [ ] `inicio/actions.ts` (Δ5 a) + test.
+- [ ] Firma: `signature-actions.ts`, `professional-pdf.ts`, `SignatureForm` `hiddenInSupport` + tests.
+- [ ] `asistente/actions.ts` a `"write"`.
+- [ ] `findTenantProfessionalSummary` + `timezone`; `lib/shell.ts` `getSupportBannerData`; `SupportModeBanner` +
+      `SupportDeniedNotice`; layout + tests de render.
+- [ ] Ajustes → Equipo con `listActiveSupportGrants` + tests de render.
+- [ ] `deploy/README.md`: fase 5 (16.7).
+- [ ] Verificación 16.11; `progress/impl_HU-033-025d.md`.
+
+### 16.11 Verificación (el implementer la corre antes de declararse `done`)
+
+```bash
+npm run db:generate
+npm run typecheck --workspace apps/web && npm run typecheck --workspace apps/bot && npm run typecheck
+npm run test
+npm run build --workspace apps/web
+bash packages/db/scripts/test-support-access.sh
+bash packages/db/scripts/test-tenant-access.sh
+bash packages/db/scripts/test-tenant-isolation.sh
+bash packages/db/scripts/test-tenant-onboarding.sh
+(cd packages/db && npx dotenv -e ../../.env -- prisma migrate status)
+./ops/harness/verify.sh
+```
+
+Ningún paso escribe en la base de desarrollo salvo `db:migrate` (con `pg_dump` previo). Ninguno manda WhatsApp.
+
+**Hecho 025d** cuando: los dos escenarios del Gherkin "Acceso de plataforma" tienen test (16.9.3 y 16.9.4); las
+invariantes 1-5 de 16.3 tienen test; un operador sin permiso no ve datos; con permiso, cada request queda auditada sin
+query ni contenido; la auditoría y los permisos no se pueden modificar ni borrar por SQL; la franja se ve en todo el
+panel; un operador no puede darse de alta; y la fase 5 está en `deploy/README.md`.
+
+### 16.12 Dudas para el usuario
+
+> **Resueltas (2026-11-27):** el usuario aceptó todas las recomendaciones (Q1–Q7): "acepto todas las recomendadas".
+
+| Id | Pregunta | Recomendación |
+|---|---|---|
+| **Q1** | Turno de la migración `platform_support_access`: ¿se mantiene **029b → HU-027 (Leo) → 032a-1 → 025d**, o 025d entra antes de 032a-1? 025d no depende funcionalmente de ninguna de las tres. | Mantener el orden. Adelantarla solo si Joel necesita entrar al panel de producción antes de que salga 032a-1 (hoy opera por SSH). |
+| **Q2** | ¿Un soporte puede entrar a un consultorio que todavía no terminó el alta o no tiene la suscripción verificada (029b)? | **No.** Solo consultorios que ya operan (`ENABLED_TENANT_IDS`, o alta completa + gate `canOperate`). Los problemas del alta se resuelven por script. Así soporte nunca ve el formulario de alta ni la espera de suscripción. |
+| **Q3** | Si no se puede escribir la fila de auditoría de un request de soporte, ¿se corta el request (503) o se deja pasar y se loguea? | **Cortar (falla cerrado).** Solo afecta a soporte; a la responsable no. Es lo que garantiza "cada acción queda registrada". |
+| **Q4** | Asistente IA del panel en modo soporte: consume el cupo del consultorio y manda datos clínicos a DeepSeek. | Bloqueado en `READ_ONLY`, permitido en `READ_WRITE` (auditado). |
+| **Q5** | PDFs generados en modo soporte (plan, informe antropométrico): ¿llevan la imagen de la firma? | **No**: sin imagen, con nombre y matrícula. Coherente con C2 (soporte nunca ve la firma). |
+| **Q6** | Server actions en `READ_ONLY`: hoy cada una muestra su error genérico ("No se pudo guardar"). 9.3 pedía el toast "En modo soporte de solo lectura no se pueden hacer cambios." en todas. ¿Alcanza con el genérico + la franja, o se mapea `read_only` en cada una de las ~28 acciones? | **Genérico + franja** en 025d (cero cambios en 28 archivos). Si molesta en uso real, una tarea chica después que mapee `TenantAccessError("read_only")` en el helper común de errores de acciones. |
+| **Q7** | ¿Avisar a la responsable (WhatsApp o mail) cuando se crea un permiso de soporte? | **No en 025d**: la fila en Equipo alcanza (C4 confirmada). Un aviso activo cae en HU-031 o en una HU de notificaciones. |
