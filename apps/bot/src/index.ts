@@ -1,10 +1,11 @@
 import "./env";
 import { logger } from "./logger";
-import { sendText, sendTyping, startWhatsApp } from "./whatsapp";
-import { handleIncoming, handleIncomingMedia } from "./conversation";
+import { startWhatsAppSessions } from "./whatsapp-sessions";
+import { receiveText, receiveMedia } from "./whatsapp-conversation";
 import { getBotAiConfig } from "./ai/runtime";
-import { runSerialByJid } from "./jid-queue";
-import { runStartupJobs, startCron, startOutboxConsumer } from "./workers";
+import { runStartupJobs, startCron } from "./workers";
+
+let stopSessions: (() => void) | undefined;
 
 async function main(): Promise<void> {
   logger.info("Iniciando NutriBot (bot de WhatsApp)…");
@@ -13,16 +14,7 @@ async function main(): Promise<void> {
   const ai = getBotAiConfig();
   logger.info({ provider: ai.provider, model: ai.model, hasKey: ai.hasKey }, "IA del bot");
 
-  // HU-012 (D14): los mensajes de un mismo contacto se procesan de a uno, en orden.
-  await startWhatsApp(
-    (jid, text) =>
-      runSerialByJid(jid, () =>
-        handleIncoming(jid, text, (t) => sendText(jid, t), { typing: () => sendTyping(jid) }),
-      ),
-    (jid) => runSerialByJid(jid, () => handleIncomingMedia(jid, (t) => sendText(jid, t))),
-  );
-
-  startOutboxConsumer();
+  stopSessions = startWhatsAppSessions(receiveText, receiveMedia);
   startCron();
   void runStartupJobs();
 
@@ -37,6 +29,7 @@ main().catch((err) => {
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     logger.info(`Recibido ${sig}, cerrando…`);
+    stopSessions?.();
     process.exit(0);
   });
 }

@@ -1,9 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ gcalTenants: vi.fn(), schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), clearSessions: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn(), connected: vi.fn(), pending: vi.fn(), warn: vi.fn() }));
+const mocks = vi.hoisted(() => ({ gcalTenants: vi.fn(), schedule: vi.fn(), reconcile: vi.fn(), expire: vi.fn(), error: vi.fn(), digest: vi.fn(), purge: vi.fn(), aiTenants: vi.fn(), aiCutoff: vi.fn(), clearSessions: vi.fn(), cleanupTenants: vi.fn(), serviceReminders: vi.fn(), prep: vi.fn(), gcal: vi.fn(), mpRefresh: vi.fn(), info: vi.fn(), connected: vi.fn(), pending: vi.fn(), warn: vi.fn() }));
 vi.mock("node-cron", () => ({ default: { schedule: mocks.schedule } }));
 const outbox = vi.hoisted(() => ({ findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), resolveScope: vi.fn() }));
-vi.mock("@nutri-bot/db", () => ({ prisma: { outboundMessage: outbox } }));
+const agenda = vi.hoisted(() => ({ findFirst: vi.fn() }));
+const botStatus = vi.hoisted(() => ({ findMany: vi.fn() }));
+const deliveryDb = vi.hoisted(() => ({ transaction: vi.fn(), queryRaw: vi.fn() }));
+vi.mock("@nutri-bot/db", () => ({ prisma: {
+  outboundMessage: outbox, agenda, botStatus, $transaction: deliveryDb.transaction,
+} }));
+
+function mockDeliveryTransaction() {
+  deliveryDb.queryRaw.mockResolvedValue([{ locked: true }]);
+  deliveryDb.transaction.mockImplementation(async (run) => run({ $queryRaw: deliveryDb.queryRaw, outboundMessage: outbox }));
+}
+
+function expectDeliveryLock(call: number, tenantId: string, messageId: string) {
+  expect(deliveryDb.queryRaw).toHaveBeenNthCalledWith(call, expect.any(Array), JSON.stringify(["nutri-bot:outbox", tenantId, messageId]));
+  expect(deliveryDb.queryRaw.mock.calls[call - 1]?.[0].join("?")).toMatch(/pg_try_advisory_xact_lock\(hashtextextended\(\?::text, 0\)\)/);
+}
 vi.mock("@nutri-bot/db/domain/legacySchedulingScope", () => ({ resolveLegacySchedulingScope: outbox.resolveScope }));
 vi.mock("@nutri-bot/db/domain", () => ({
   reconcilePendingPayments: mocks.reconcile, expireStalePendingPayments: mocks.expire,
@@ -11,7 +26,11 @@ vi.mock("@nutri-bot/db/domain", () => ({
   enqueuePrepInstructions: mocks.prep,
   enqueueAfterHoursDigest: mocks.digest,
   purgeExpiredBotAiQuestions: mocks.purge,
-  clearExpiredSessionText: mocks.clearSessions,
+  purgeExpiredBotAiQuestionsForTenant: mocks.purge,
+  listTenantsWithExpiredBotAiQuestions: mocks.aiTenants,
+  botAiRetentionCutoff: mocks.aiCutoff,
+  clearExpiredConversationText: mocks.clearSessions,
+  listTenantsWithExpiredConversationText: mocks.cleanupTenants,
   refreshMercadoPagoAccountToken: mocks.mpRefresh,
   listConnectedMercadoPagoTenants: mocks.connected,
   listTenantsWithPendingMercadoPagoPayments: mocks.pending,
@@ -30,6 +49,100 @@ import { runGoogleCalendarSync, runServiceReminders, runStartupJobs, startCron, 
 import { sendDocument, sendText } from "./whatsapp";
 import { OUTBOX_INCLUDE } from "./outbound-payload";
 
+describe("outbox bound to a WhatsApp connection", () => {
+  it("fails closed when the bound tenant has no primary agenda, without looking up the legacy installation", async () => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    try {
+      agenda.findFirst.mockResolvedValue(null);
+      const sendText = vi.fn();
+      const sendDocument = vi.fn();
+      const stop = startOutboxConsumer({ tenantId: "a", sendText, sendDocument });
+      await vi.advanceTimersByTimeAsync(4800);
+      stop();
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(agenda.findFirst.mock.calls).toEqual([[expect.objectContaining({ where: { tenantId: "a", isPrimary: true } })]]);
+      expect(outbox.resolveScope).not.toHaveBeenCalled();
+      expect(outbox.findMany).not.toHaveBeenCalled();
+      expect(outbox.findFirst).not.toHaveBeenCalled();
+      expect(outbox.update).not.toHaveBeenCalled();
+      expect(outbox.updateMany).not.toHaveBeenCalled();
+      expect(sendText).not.toHaveBeenCalled();
+      expect(sendDocument).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves A pending if disconnected and sends B only through its own transport, even for the same JID", async () => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    try {
+      mockDeliveryTransaction();
+      const jid = "shared-jid";
+      const rows = {
+        a: { id: "a-row", tenantId: "a", attempts: 0, kind: "MANUAL", body: "A", toJid: jid },
+        b: { id: "b-row", tenantId: "b", attempts: 0, kind: "MANUAL", body: "B", toJid: jid },
+      };
+      const disconnected = vi.fn().mockRejectedValue(new Error("WhatsApp no está conectado"));
+      const connected = vi.fn().mockResolvedValue(undefined);
+      agenda.findFirst.mockImplementation(async ({ where }) => ({ id: `${where.tenantId}-agenda`, tenantId: where.tenantId }));
+      outbox.findMany.mockImplementation(async ({ where }) => {
+        const tenantId: unknown = where.OR?.[0]?.tenantId;
+        const row = tenantId === "a" || tenantId === "b" ? rows[tenantId] : undefined;
+        return row ? [{ id: row.id }] : [];
+      });
+      outbox.findFirst.mockImplementation(async ({ where }) => Object.values(rows).find(row => row.id === where.id));
+      outbox.updateMany.mockResolvedValue({ count: 1 });
+      startOutboxConsumer({ tenantId: "a", sendText: disconnected, sendDocument: vi.fn() });
+      startOutboxConsumer({ tenantId: "b", sendText: connected, sendDocument: vi.fn() });
+      await vi.advanceTimersByTimeAsync(4800);
+      expect(outbox.resolveScope).not.toHaveBeenCalled();
+      expectDeliveryLock(1, "a", "a-row");
+      expectDeliveryLock(2, "b", "b-row");
+      expect(disconnected.mock.calls).toEqual([[jid, "A"]]);
+      expect(connected.mock.calls).toEqual([[jid, "B"]]);
+      expect(sendText).not.toHaveBeenCalled();
+      expect(sendDocument).not.toHaveBeenCalled();
+      expect(outbox.update).not.toHaveBeenCalled();
+      expect(outbox.updateMany.mock.calls).toEqual([[expect.objectContaining({
+        where: expect.objectContaining({ id: "b-row" }),
+        data: expect.objectContaining({ status: "SENT" }),
+      })]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("outbox consumer stop", () => {
+  it("does not send a payload fetched after stop or consume another poll", async () => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    try {
+      mockDeliveryTransaction();
+      agenda.findFirst.mockResolvedValue({ id: "a-agenda", tenantId: "a" });
+      outbox.findMany.mockResolvedValue([{ id: "m" }]);
+      let release!: (row: unknown) => void;
+      outbox.findFirst.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+      const sendText = vi.fn();
+      const sendDocument = vi.fn();
+      const stop = startOutboxConsumer({ tenantId: "a", sendText, sendDocument });
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(outbox.findFirst).toHaveBeenCalledTimes(1);
+      stop();
+      release({ id: "m", attempts: 0, kind: "MANUAL", body: "synthetic", toJid: "synthetic" });
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(outbox.findMany).toHaveBeenCalledTimes(1);
+      expect(outbox.updateMany).not.toHaveBeenCalled();
+      expect(sendText).not.toHaveBeenCalled();
+      expect(sendDocument).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("single legacy outbox consumer", () => {
   const tenantId = "legacy-tenant";
   const appointment = { appointment: { tenantId } };
@@ -43,26 +156,76 @@ describe("single legacy outbox consumer", () => {
   ] }] };
   const row = { id: "msg", attempts: 0, kind: "MANUAL", body: "fresh text", toJid: "synthetic-jid" };
 
+  let stop: () => void;
   beforeEach(() => {
     vi.resetAllMocks();
     vi.useFakeTimers();
     outbox.resolveScope.mockResolvedValue({ scope: { tenantId } });
+    mockDeliveryTransaction();
     outbox.findMany.mockResolvedValue([row]);
     outbox.findFirst.mockResolvedValue(row);
     outbox.updateMany.mockResolvedValue({ count: 1 });
-    startOutboxConsumer();
+    stop = startOutboxConsumer({ tenantId: "legacy-tenant", sendText, sendDocument });
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    stop();
+    vi.useRealTimers();
+  });
   const poll = () => vi.advanceTimersByTimeAsync(4800);
 
   it("fails closed without a verified original installation", async () => {
     outbox.resolveScope.mockRejectedValue(new Error("original agenda missing"));
     await poll();
+    expect(outbox.resolveScope).toHaveBeenCalledTimes(1);
+    expect(agenda.findFirst).not.toHaveBeenCalled();
     expect(outbox.findMany).not.toHaveBeenCalled();
+    expect(outbox.findFirst).not.toHaveBeenCalled();
     expect(sendText).not.toHaveBeenCalled();
     expect(sendDocument).not.toHaveBeenCalled();
     expect(outbox.update).not.toHaveBeenCalled();
     expect(outbox.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("skips a row locked by another process without reading its payload, writing, or sending", async () => {
+    deliveryDb.queryRaw.mockResolvedValue([{ locked: false }]);
+    await poll();
+    expect(outbox.findMany).toHaveBeenCalledTimes(1);
+    expect(deliveryDb.transaction).toHaveBeenCalledTimes(1);
+    expect(deliveryDb.queryRaw).toHaveBeenCalledTimes(1);
+    expectDeliveryLock(1, tenantId, row.id);
+    expect(outbox.findFirst).not.toHaveBeenCalled();
+    expect(outbox.updateMany).not.toHaveBeenCalled();
+    expect(outbox.update).not.toHaveBeenCalled();
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sendDocument).not.toHaveBeenCalled();
+  });
+
+  it("keeps the transaction open through the send and write, then releases it before batch spacing", async () => {
+    let finishSend!: () => void;
+    let active = false;
+    const findFirst = vi.fn((args: unknown) => outbox.findFirst(args));
+    const updateMany = vi.fn((args: unknown) => outbox.updateMany(args));
+    deliveryDb.transaction.mockImplementation(async (run) => {
+      active = true;
+      try {
+        return await run({ $queryRaw: deliveryDb.queryRaw, outboundMessage: { findFirst, updateMany } });
+      } finally {
+        active = false;
+      }
+    });
+    outbox.findMany.mockResolvedValue([row, { id: "next" }]);
+    outbox.findFirst.mockResolvedValueOnce(row).mockResolvedValue(null);
+    vi.mocked(sendText).mockImplementation(() => new Promise<void>((resolve) => { finishSend = resolve; }));
+    await vi.advanceTimersByTimeAsync(4000);
+    const duringSend = { active, reads: findFirst.mock.calls.length, writes: outbox.updateMany.mock.calls.length };
+    finishSend?.();
+    await vi.advanceTimersByTimeAsync(799);
+    const beforeSpacingEnds = { active, writes: updateMany.mock.calls.length, transactions: deliveryDb.transaction.mock.calls.length };
+    await vi.advanceTimersByTimeAsync(1);
+    expect(duringSend).toEqual({ active: true, reads: 1, writes: 0 });
+    expect(beforeSpacingEnds).toEqual({ active: false, writes: 1, transactions: 1 });
+    expect(deliveryDb.transaction).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sendText).mock.calls).toEqual([[row.toJid, row.body]]);
   });
 
   it("filters before taking the ordered batch; skips rows that no longer match without sending or writing", async () => {
@@ -212,7 +375,7 @@ describe("payment cron without Baileys or database", () => {
 describe("after-hours digest cron (HU-011)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
+    botStatus.findMany.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
   });
   it("is the last schedule, runs every minute and calls enqueueAfterHoursDigest once per tick", async () => {
     mocks.digest.mockResolvedValue({ digested: 2, outboundId: "out1" });
@@ -248,8 +411,12 @@ describe("after-hours digest cron (HU-011)", () => {
 });
 
 describe("bot AI retention cron (HU-012)", () => {
+  const cutoff = new Date("2026-07-04T12:00:00Z");
+  const tenants = [{ tenantId: "no-status" }, { tenantId: "stopped" }];
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.aiCutoff.mockReturnValue(cutoff);
+    mocks.aiTenants.mockResolvedValue(tenants);
   });
   it("runs daily at 04:30 with the configured retention, before the digest", async () => {
     mocks.purge.mockResolvedValue(3);
@@ -258,38 +425,79 @@ describe("bot AI retention cron (HU-012)", () => {
     expect(idx).toBeGreaterThan(0);
     expect(idx).toBe(mocks.schedule.mock.calls.length - 2);
     await mocks.schedule.mock.calls[idx]![1]();
-    expect(mocks.purge).toHaveBeenCalledWith({ retentionDays: 90 });
+    expect(mocks.aiCutoff.mock.calls).toEqual([[90]]);
+    expect(mocks.aiTenants.mock.calls).toEqual([[cutoff]]);
+    expect(mocks.purge.mock.calls).toEqual(tenants.map(tenant => [tenant, cutoff]));
+    expect(botStatus.findMany).not.toHaveBeenCalled();
   });
-  it("contains errors and runs again on the next tick", async () => {
-    mocks.purge.mockRejectedValueOnce(new Error("db down")).mockResolvedValueOnce(0);
+  it("isolates a tenant error, does not log the raw error, and retries next tick", async () => {
+    mocks.purge.mockRejectedValueOnce(new Error("private query details")).mockResolvedValue(0);
     startCron();
     const tick = mocks.schedule.mock.calls.find((c) => c[0] === "30 4 * * *")![1];
     await expect(tick()).resolves.toBeUndefined();
-    expect(mocks.error).toHaveBeenCalled();
+    expect(mocks.purge.mock.calls).toEqual(tenants.map(tenant => [tenant, cutoff]));
+    expect(mocks.error.mock.calls).toEqual([[tenants[0], "Error borrando preguntas a la IA vencidas"]]);
+    expect(mocks.info).not.toHaveBeenCalled();
     await tick();
-    expect(mocks.purge).toHaveBeenCalledTimes(2);
+    expect(mocks.purge.mock.calls).toEqual([...tenants, ...tenants].map(tenant => [tenant, cutoff]));
+  });
+  it("releases the overlap guard after discovery fails without deleting anything", async () => {
+    mocks.aiTenants.mockRejectedValueOnce(new Error("private query details"));
+    mocks.purge.mockResolvedValue(0);
+    startCron();
+    const tick = mocks.schedule.mock.calls.find((c) => c[0] === "30 4 * * *")![1];
+    await expect(tick()).resolves.toBeUndefined();
+    expect(mocks.purge).not.toHaveBeenCalled();
+    expect(mocks.error.mock.calls).toEqual([["Error borrando preguntas a la IA vencidas"]]);
+    await tick();
+    expect(mocks.purge.mock.calls).toEqual(tenants.map(tenant => [tenant, cutoff]));
   });
 });
 
 describe("expired session text cleanup cron (HU-012/HU-013)", () => {
+  const tenants = [{ tenantId: "no-status" }, { tenantId: "stopped" }];
+  const now = new Date("2026-11-20T12:05:00Z");
+  const cutoff = new Date(now.getTime() - 20 * 60_000);
+  const tick = () => mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *").at(-1)![1]();
+
   beforeEach(() => {
     vi.resetAllMocks();
-  });
-  it("runs every 5 minutes with the session timeout", async () => {
-    mocks.clearSessions.mockResolvedValue(1);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    mocks.cleanupTenants.mockResolvedValue(tenants);
+    mocks.clearSessions.mockResolvedValue(0);
     startCron();
-    const call = mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *").at(-1);
-    expect(call).toBeDefined();
-    await call![1]();
-    expect(mocks.clearSessions).toHaveBeenCalledWith({ sessionTimeoutMs: 20 * 60_000 });
   });
-  it("contains errors and runs again on the next tick", async () => {
-    mocks.clearSessions.mockRejectedValueOnce(new Error("db down")).mockResolvedValueOnce(0);
-    startCron();
-    const tick = mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *").at(-1)![1];
-    await expect(tick()).resolves.toBeUndefined();
-    expect(mocks.error).toHaveBeenCalled();
+  afterEach(() => vi.useRealTimers());
+
+  it("runs every 5 minutes with one cutoff and no WhatsApp intent lookup", async () => {
+    mocks.clearSessions.mockResolvedValueOnce(1);
     await tick();
+    expect(mocks.cleanupTenants.mock.calls).toEqual([[cutoff]]);
+    expect(mocks.clearSessions.mock.calls).toEqual(tenants.map((tenant) => [tenant, cutoff]));
+    expect(botStatus.findMany).not.toHaveBeenCalled();
+    expect(mocks.info.mock.calls).toEqual([[{ ...tenants[0], n: 1 }, "Texto de sesiones vencidas borrado"]]);
+  });
+  it("isolates a tenant failure and retries on the next tick", async () => {
+    mocks.clearSessions.mockRejectedValueOnce(new Error("db down"));
+    await expect(tick()).resolves.toBeUndefined();
+    expect(mocks.error.mock.calls).toEqual([[tenants[0], "Error borrando el texto de sesiones vencidas"]]);
+    expect(mocks.clearSessions.mock.calls).toEqual(tenants.map((tenant) => [tenant, cutoff]));
+    await tick();
+    expect(mocks.clearSessions).toHaveBeenCalledTimes(4);
+  });
+  it("skips a concurrent tick while tenant discovery is pending", async () => {
+    let finish!: (value: typeof tenants) => void;
+    mocks.cleanupTenants.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const first = tick();
+    try {
+      await tick();
+      expect(mocks.cleanupTenants).toHaveBeenCalledTimes(1);
+      expect(mocks.clearSessions).not.toHaveBeenCalled();
+    } finally {
+      finish?.(tenants);
+      await first;
+    }
     expect(mocks.clearSessions).toHaveBeenCalledTimes(2);
   });
 });
@@ -297,8 +505,7 @@ describe("expired session text cleanup cron (HU-012/HU-013)", () => {
 describe("service reminders cron (HU-014)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    // HU-025b-1: los crons pasan el consultorio de getConversationTenant() (hoy, el original).
-    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
+    botStatus.findMany.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
   });
   const remindersTick = () => mocks.schedule.mock.calls.filter((c) => c[0] === "*/5 * * * *")[0]![1];
 
@@ -325,7 +532,6 @@ describe("service reminders cron (HU-014)", () => {
     mocks.serviceReminders.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const first = runServiceReminders();
     await runServiceReminders();
-    // El primero espera getConversationTenant() antes de llamar al dominio.
     await vi.waitFor(() => expect(mocks.serviceReminders).toHaveBeenCalledTimes(1));
     finish({ reminders: 0, confirmations: 0 });
     await first;
@@ -350,13 +556,105 @@ describe("service reminders cron (HU-014)", () => {
     mocks.gcal.mockResolvedValue({ processed: 0 });
     mocks.gcalTenants.mockResolvedValue([{ tenantId: "legacy-tenant" }]);
     mocks.digest.mockResolvedValue({ digested: 0, outboundId: null });
-    mocks.purge.mockResolvedValue(0);
+    mocks.aiTenants.mockResolvedValue([]);
     await runStartupJobs();
     expect(mocks.serviceReminders).toHaveBeenCalledTimes(1);
     expect(mocks.prep).toHaveBeenCalledTimes(1);
     // HU-028b: el arranque sincroniza Google Calendar por consultorio.
     expect(mocks.gcalTenants).toHaveBeenCalledTimes(1);
     expect(mocks.gcal).toHaveBeenCalledWith({ tenantId: "legacy-tenant" });
+  });
+});
+
+describe("WhatsApp-intent sweeps", () => {
+  const a = { tenantId: "a" };
+  const b = { tenantId: "b" };
+  const schedules = [
+    { name: "reminders", index: 1, expression: "*/5 * * * *", run: mocks.serviceReminders, result: { reminders: 0, confirmations: 0 } },
+    { name: "prep", index: 2, expression: "*/15 * * * *", run: mocks.prep, result: 0 },
+    { name: "digest", index: 7, expression: "* * * * *", run: mocks.digest, result: { digested: 0, outboundId: null } },
+  ];
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    // Ensure the former implicit legacy route would invoke the domain, not fail in setup.
+    outbox.resolveScope.mockResolvedValue({ scope: { tenantId: "legacy-tenant" } });
+    const statuses = [
+      { ...a, sessionKey: "key-a", connected: false },
+      { ...a, sessionKey: "key-a", connected: false },
+      { ...b, sessionKey: "key-b", connected: true },
+      { tenantId: "legacy-tenant", sessionKey: null, connected: true },
+      { tenantId: null, sessionKey: "unowned", connected: true },
+    ];
+    botStatus.findMany.mockImplementation(async (query) => {
+      expect(query).toEqual({
+        where: { tenantId: { not: null }, sessionKey: { not: null } },
+        select: { tenantId: true },
+      });
+      return statuses.filter(row => row.tenantId !== null && row.sessionKey !== null)
+        .map(({ tenantId }) => ({ tenantId }));
+    });
+    for (const { run, result } of schedules) run.mockResolvedValue(result);
+  });
+
+  it.each(schedules)("$name isolates failures, deduplicates discovery and retries on a later tick", async ({ index, expression, run }) => {
+    startCron();
+    const [cadence, tick] = mocks.schedule.mock.calls[index]!;
+    expect(cadence).toBe(expression);
+    run.mockRejectedValueOnce(new Error("tenant A failed"));
+    await expect(tick()).resolves.toBeUndefined();
+    expect(run.mock.calls).toEqual([[a], [b]]);
+    expect(mocks.error.mock.calls).toEqual([[a, expect.any(String)]]);
+    await tick();
+    expect(run.mock.calls).toEqual([[a], [b], [a], [b]]);
+    expect(botStatus.findMany).toHaveBeenCalledTimes(2);
+    expect(outbox.resolveScope).not.toHaveBeenCalled();
+  });
+
+  it.each(schedules)("$name shares its overlap guard across schedule registrations", async ({ index, run, result }) => {
+    startCron();
+    startCron();
+    const firstTick = mocks.schedule.mock.calls[index]![1];
+    const secondTick = mocks.schedule.mock.calls[8 + index]![1];
+    let release!: () => void;
+    run.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve(result); }));
+    const first = firstTick();
+    const second = secondTick();
+    try {
+      await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+      await second;
+      expect(botStatus.findMany).toHaveBeenCalledTimes(1);
+    } finally {
+      release?.();
+      await Promise.all([first, second]);
+    }
+    expect(run.mock.calls).toEqual([[a], [b]]);
+    await secondTick();
+    expect(run.mock.calls).toEqual([[a], [b], [a], [b]]);
+  });
+
+  it("sweeps all three jobs at startup in the established order even when prep fails for one tenant", async () => {
+    mocks.connected.mockResolvedValue([a]);
+    mocks.pending.mockResolvedValue([]);
+    mocks.reconcile.mockResolvedValue({ processed: 0, failed: 0, skipped: 0 });
+    mocks.gcalTenants.mockResolvedValue([a]);
+    mocks.gcal.mockResolvedValue({ processed: 0 });
+    const aiTenant = { tenantId: "legacy-tenant" }; // status exists, but session intent is disabled
+    const cutoff = new Date("2026-07-04T12:00:00Z");
+    mocks.aiCutoff.mockReturnValue(cutoff);
+    mocks.aiTenants.mockResolvedValue([aiTenant]);
+    mocks.purge.mockResolvedValue(0);
+    mocks.prep.mockRejectedValueOnce(new Error("tenant A failed"));
+    await runStartupJobs();
+    for (const { run } of schedules) expect(run.mock.calls).toEqual([[a], [b]]);
+    expect(mocks.aiTenants.mock.calls).toEqual([[cutoff]]);
+    expect(mocks.purge.mock.calls).toEqual([[aiTenant, cutoff]]);
+    expect(mocks.error.mock.calls).toEqual([[a, expect.any(String)]]);
+    expect(outbox.resolveScope).not.toHaveBeenCalled();
+    const order = [mocks.expire, mocks.serviceReminders, mocks.prep, mocks.gcal, mocks.digest, mocks.purge];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1]!.mock.invocationCallOrder.at(-1)).toBeLessThan(order[i]!.mock.invocationCallOrder[0]!);
+    }
   });
 });
 

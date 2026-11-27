@@ -1,9 +1,11 @@
 import cron from "node-cron";
 import { prisma } from "@nutri-bot/db";
-import { enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredSessionText, expireStalePendingPayments, listConnectedMercadoPagoTenants, listTenantsWithPendingMercadoPagoPayments, purgeExpiredBotAiQuestions, reconcilePendingPayments, refreshMercadoPagoAccountToken } from "@nutri-bot/db/domain";
+import { botAiRetentionCutoff, enqueueAfterHoursDigest, enqueuePrepInstructions, enqueueServiceReminders, clearExpiredConversationText, expireStalePendingPayments, listConnectedMercadoPagoTenants, listTenantsWithExpiredBotAiQuestions, listTenantsWithExpiredConversationText, listTenantsWithPendingMercadoPagoPayments, purgeExpiredBotAiQuestionsForTenant, reconcilePendingPayments, refreshMercadoPagoAccountToken } from "@nutri-bot/db/domain";
 import { listConnectedGoogleCalendarTenants, syncGoogleCalendar } from "@nutri-bot/db/domain/googleCalendar";
 import { outboxOwnershipWhere } from "@nutri-bot/db/domain/outbox";
-import { sendDocument, sendText } from "./whatsapp";
+import { LEGACY_TENANT_ID } from "@nutri-bot/db/domain/tenantAccess";
+import { resolveTenantSchedulingContext, TenantScopeError } from "@nutri-bot/db/domain/tenantScope";
+import type { WhatsAppConnection } from "./whatsapp";
 import { OUTBOX_INCLUDE, resolveOutboundPayload } from "./outbound-payload";
 import { env } from "./env";
 import { logger } from "./logger";
@@ -11,7 +13,10 @@ import { getBotAiConfig } from "./ai/runtime";
 import { getConversationTenant } from "./tenant";
 
 const MAX_ATTEMPTS = 5;
-let outboxRunning = false;
+// Prisma's 5s default is shorter than one Baileys query (60s by default). A send
+// can include several queries, media upload and socket writes, with no end-to-end bound.
+const OUTBOX_ATTEMPT_TIMEOUT_MS = 5 * 60_000;
+const runningOutboxTenants = new Set<string>();
 let paymentsRunning = false;
 
 /** Une listas de consultorios sin repetir, conservando el primer orden de aparición. */
@@ -51,17 +56,31 @@ async function reconcilePayments(): Promise<void> {
   }
 }
 
-/** Consume la tabla OutboundMessage y envía por WhatsApp. */
-export function startOutboxConsumer(): void {
-  setInterval(() => void tick(), env.pollIntervalMs);
+type OutboxTransport = Pick<WhatsAppConnection, "tenantId" | "sendText" | "sendDocument">;
+
+/** Consume solo el outbox del consultorio asociado al transporte. */
+export function startOutboxConsumer(transport: OutboxTransport): () => void {
+  let stopped = false;
+  const timer = setInterval(() => void tick(transport, () => stopped), env.pollIntervalMs);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }
 
-async function tick(): Promise<void> {
-  if (outboxRunning) return;
-  outboxRunning = true;
+async function tick(delivery: OutboxTransport, isStopped: () => boolean): Promise<void> {
+  let runningTenant: string | undefined;
   try {
-    // HU-025: el consultorio de la instalación de WhatsApp (único punto, getConversationTenant).
-    const { tenantId } = await getConversationTenant();
+    const { tenantId } = delivery;
+    if (isStopped() || runningOutboxTenants.has(tenantId)) return;
+    runningOutboxTenants.add(tenantId);
+    runningTenant = tenantId;
+    // Validate the binding on every poll without selecting a transport or tenant from the lookup.
+    const verified = tenantId === LEGACY_TENANT_ID
+      ? await getConversationTenant()
+      : (await resolveTenantSchedulingContext(prisma, tenantId)).scope;
+    if (isStopped()) return;
+    if (verified.tenantId !== tenantId) throw new TenantScopeError();
     const pendingWhere = { ...outboxOwnershipWhere(tenantId), status: "PENDING" as const };
     const pending = await prisma.outboundMessage.findMany({
       where: pendingWhere,
@@ -71,48 +90,70 @@ async function tick(): Promise<void> {
     });
 
     for (const { id } of pending) {
-      // Earlier sends can delay this row. Fetch its current payload only if it is still eligible.
-      const where = { ...pendingWhere, id };
-      const msg = await prisma.outboundMessage.findFirst({ where, include: OUTBOX_INCLUDE });
-      if (!msg) continue;
-      const updateWhere = { ...where, attempts: msg.attempts };
-      try {
-        const payload = resolveOutboundPayload(msg);
-        if (payload.type === "document") {
-          await sendDocument(msg.toJid, payload.buffer, payload.fileName);
-        } else {
-          await sendText(msg.toJid, payload.body);
+      if (isStopped()) return;
+      const outcome = await prisma.$transaction(async (tx) => {
+        if (isStopped()) return;
+        // The lock only coordinates consumers while this transaction/connection survives.
+        // Expiry or loss can release it while WhatsApp is still in flight. An ambiguous
+        // external send or an uncommitted result can be retried; this is not exactly-once.
+        const key = JSON.stringify(["nutri-bot:outbox", tenantId, id]);
+        const [lock] = await tx.$queryRaw<{ locked: boolean }[]>`
+          SELECT pg_try_advisory_xact_lock(hashtextextended(${key}::text, 0)) AS locked
+        `;
+        if (!lock?.locked || isStopped()) return;
+
+        // The polled ID can be stale. Read current eligibility and payload under the lock.
+        const where = { ...pendingWhere, id };
+        const msg = await tx.outboundMessage.findFirst({ where, include: OUTBOX_INCLUDE });
+        if (isStopped() || !msg) return;
+        const updateWhere = { ...where, attempts: msg.attempts };
+        try {
+          const payload = resolveOutboundPayload(msg);
+          if (payload.type === "document") {
+            await delivery.sendDocument(msg.toJid, payload.buffer, payload.fileName);
+          } else {
+            await delivery.sendText(msg.toJid, payload.body);
+          }
+        } catch (err) {
+          if (isStopped()) return;
+          const message = err instanceof Error ? err.message : "error desconocido";
+          if (message.includes("no está conectado")) return { type: "disconnected" } as const;
+          const attempts = msg.attempts + 1;
+          const { count } = await tx.outboundMessage.updateMany({
+            where: updateWhere,
+            data: {
+              status: attempts >= MAX_ATTEMPTS ? "FAILED" : "PENDING",
+              attempts,
+              lastError: message.slice(0, 300),
+            },
+          });
+          return { type: "failed", count, attempts } as const;
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "error desconocido";
-        if (message.includes("no está conectado")) {
-          logger.warn("WhatsApp no conectado; se pausa el envío hasta reconectar");
-          break;
-        }
-        const attempts = msg.attempts + 1;
-        const { count } = await prisma.outboundMessage.updateMany({
+        const { count } = await tx.outboundMessage.updateMany({
           where: updateWhere,
-          data: {
-            status: attempts >= MAX_ATTEMPTS ? "FAILED" : "PENDING",
-            attempts,
-            lastError: message.slice(0, 300),
-          },
+          data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 }, lastError: null },
         });
-        if (count) logger.warn({ id: msg.id, attempts }, "Fallo al enviar mensaje");
+        return { type: "sent", count, kind: msg.kind, to: msg.toJid } as const;
+      }, { timeout: OUTBOX_ATTEMPT_TIMEOUT_MS, isolationLevel: "ReadCommitted" });
+
+      if (!outcome) continue;
+      if (outcome.type === "disconnected") {
+        logger.warn("WhatsApp no conectado; se pausa el envío hasta reconectar");
+        break;
+      }
+      if (outcome.type === "failed") {
+        if (outcome.count) logger.warn({ id, attempts: outcome.attempts }, "Fallo al enviar mensaje");
         continue;
       }
-      const { count } = await prisma.outboundMessage.updateMany({
-        where: updateWhere,
-        data: { status: "SENT", sentAt: new Date(), attempts: { increment: 1 }, lastError: null },
-      });
-      if (count) logger.info({ id: msg.id, kind: msg.kind, to: msg.toJid }, "Mensaje enviado");
-      else logger.warn({ id: msg.id }, "Mensaje enviado sin poder actualizar el outbox");
+      if (outcome.count) logger.info({ id, kind: outcome.kind, to: outcome.to }, "Mensaje enviado");
+      else logger.warn({ id }, "Mensaje enviado sin poder actualizar el outbox");
+      if (isStopped()) return;
       await new Promise((r) => setTimeout(r, 800));
     }
   } catch (err) {
     logger.error({ err }, "Error en el consumidor de outbox");
   } finally {
-    outboxRunning = false;
+    if (runningTenant !== undefined) runningOutboxTenants.delete(runningTenant);
   }
 }
 
@@ -121,14 +162,7 @@ export function startCron(): void {
   // HU-014: recordatorios por servicio (incluye el pedido de confirmación de asistencia).
   cron.schedule("*/5 * * * *", () => runServiceReminders());
 
-  cron.schedule("*/15 * * * *", async () => {
-    try {
-      const n = await enqueuePrepInstructions(await getConversationTenant());
-      if (n > 0) logger.info({ n }, "Instrucciones previas encoladas");
-    } catch (err) {
-      logger.error({ err }, "Error encolando instrucciones previas");
-    }
-  });
+  cron.schedule("*/15 * * * *", () => runPrepInstructions());
 
   cron.schedule("* * * * *", () => runGoogleCalendarSync());
 
@@ -200,7 +234,7 @@ export async function runStartupJobs(): Promise<void> {
   await reconcilePayments();
   try {
     await runServiceReminders();
-    await enqueuePrepInstructions(await getConversationTenant());
+    await runPrepInstructions();
     await runGoogleCalendarSync();
   } catch (err) {
     logger.error({ err }, "Error en tareas de arranque");
@@ -219,38 +253,51 @@ export async function runStartupJobs(): Promise<void> {
   }
 }
 
-let remindersRunning = false;
-
-/** HU-014: encola los recordatorios por servicio que correspondan ahora. Idempotente; no se solapa. */
-export async function runServiceReminders(): Promise<void> {
-  if (remindersRunning) return;
-  remindersRunning = true;
-  try {
-    const { reminders, confirmations } = await enqueueServiceReminders(await getConversationTenant());
-    if (reminders > 0) logger.info({ n: reminders }, "Recordatorios encolados");
-    if (confirmations > 0) logger.info({ n: confirmations }, "Confirmaciones de asistencia encoladas");
-  } catch (err) {
-    logger.error({ err }, "Error encolando recordatorios");
-  } finally {
-    remindersRunning = false;
-  }
+function whatsappSweep(errorMessage: string, run: (tenant: { tenantId: string }) => Promise<void>): () => Promise<void> {
+  let running = false;
+  return async () => {
+    if (running) return;
+    running = true;
+    try {
+      // Declared intent only: connectivity doesn't gate enqueuing. The session manager
+      // owns legacy bootstrap; an absent or unlinked row is not an implicit request.
+      const rows = await prisma.botStatus.findMany({
+        where: { tenantId: { not: null }, sessionKey: { not: null } },
+        select: { tenantId: true },
+      });
+      const tenants = uniqueTenants(rows.flatMap(({ tenantId }) => tenantId ? [{ tenantId }] : []));
+      for (const tenant of tenants) {
+        try {
+          await run(tenant);
+        } catch {
+          logger.error(tenant, errorMessage);
+        }
+      }
+    } catch {
+      logger.error(errorMessage);
+    } finally {
+      running = false;
+    }
+  };
 }
 
-let digestRunning = false;
+/** HU-014: el dominio conserva la deduplicación persistente de recordatorios y confirmaciones. */
+export const runServiceReminders = whatsappSweep("Error encolando recordatorios", async (tenant) => {
+  const { reminders, confirmations } = await enqueueServiceReminders(tenant);
+  if (reminders > 0) logger.info({ ...tenant, n: reminders }, "Recordatorios encolados");
+  if (confirmations > 0) logger.info({ ...tenant, n: confirmations }, "Confirmaciones de asistencia encoladas");
+});
 
-/** HU-011: resumen de fin de franja. Idempotente (digestedAt + transacción); no se solapa. */
-export async function runAfterHoursDigest(): Promise<void> {
-  if (digestRunning) return;
-  digestRunning = true;
-  try {
-    const { digested, outboundId } = await enqueueAfterHoursDigest(await getConversationTenant());
-    if (digested > 0) logger.info({ digested, outboundId }, "Resumen de consultas fuera de horario");
-  } catch (err) {
-    logger.error({ err }, "Error en el resumen de consultas fuera de horario");
-  } finally {
-    digestRunning = false;
-  }
-}
+const runPrepInstructions = whatsappSweep("Error encolando instrucciones previas", async (tenant) => {
+  const n = await enqueuePrepInstructions(tenant);
+  if (n > 0) logger.info({ ...tenant, n }, "Instrucciones previas encoladas");
+});
+
+/** HU-011: el dominio deduplica el resumen con digestedAt y una transacción. */
+export const runAfterHoursDigest = whatsappSweep("Error en el resumen de consultas fuera de horario", async (tenant) => {
+  const { digested, outboundId } = await enqueueAfterHoursDigest(tenant);
+  if (digested > 0) logger.info({ ...tenant, digested, outboundId }, "Resumen de consultas fuera de horario");
+});
 
 let aiPurgeRunning = false;
 
@@ -259,10 +306,18 @@ export async function runBotAiPurge(): Promise<void> {
   if (aiPurgeRunning) return;
   aiPurgeRunning = true;
   try {
-    const n = await purgeExpiredBotAiQuestions({ retentionDays: getBotAiConfig().limits.retentionDays });
-    if (n > 0) logger.info({ n }, "Preguntas a la IA vencidas borradas");
-  } catch (err) {
-    logger.error({ err }, "Error borrando preguntas a la IA vencidas");
+    const cutoff = botAiRetentionCutoff(getBotAiConfig().limits.retentionDays);
+    const tenants = await listTenantsWithExpiredBotAiQuestions(cutoff);
+    for (const tenant of tenants) {
+      try {
+        const n = await purgeExpiredBotAiQuestionsForTenant(tenant, cutoff);
+        if (n > 0) logger.info({ ...tenant, n }, "Preguntas a la IA vencidas borradas");
+      } catch {
+        logger.error(tenant, "Error borrando preguntas a la IA vencidas");
+      }
+    }
+  } catch {
+    logger.error("Error borrando preguntas a la IA vencidas");
   } finally {
     aiPurgeRunning = false;
   }
@@ -278,10 +333,22 @@ export async function runSessionTextCleanup(): Promise<void> {
   if (sessionTextCleanupRunning) return;
   sessionTextCleanupRunning = true;
   try {
-    const n = await clearExpiredSessionText({ sessionTimeoutMs: SESSION_TIMEOUT_MS });
-    if (n > 0) logger.info({ n }, "Texto de sesiones vencidas borrado");
-  } catch (err) {
-    logger.error({ err }, "Error borrando el texto de sesiones vencidas");
+    if (!Number.isFinite(SESSION_TIMEOUT_MS) || SESSION_TIMEOUT_MS <= 0) {
+      logger.error("BOT_SESSION_TIMEOUT_MIN tiene que ser > 0 para limpiar el texto de sesiones vencidas");
+      return;
+    }
+    const cutoff = new Date(Date.now() - SESSION_TIMEOUT_MS);
+    const tenants = await listTenantsWithExpiredConversationText(cutoff);
+    for (const tenant of tenants) {
+      try {
+        const n = await clearExpiredConversationText(tenant, cutoff);
+        if (n > 0) logger.info({ ...tenant, n }, "Texto de sesiones vencidas borrado");
+      } catch {
+        logger.error(tenant, "Error borrando el texto de sesiones vencidas");
+      }
+    }
+  } catch {
+    logger.error("Error listando consultorios con texto de sesiones vencidas");
   } finally {
     sessionTextCleanupRunning = false;
   }
