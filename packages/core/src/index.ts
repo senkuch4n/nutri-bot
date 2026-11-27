@@ -35,6 +35,7 @@ export * from "./isak-report";
 export * from "./isak-report-charts";
 export * from "./after-hours";
 export * from "./bot-ai";
+export * from "./ai-usage";
 export * from "./bot-ai-tools";
 export * from "./booking-reason";
 export * from "./service-reminders";

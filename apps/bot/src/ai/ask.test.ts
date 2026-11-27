@@ -41,7 +41,7 @@ const res = (kind: AiAnswer["kind"], text: string): AiAnswer => ({ kind, text, u
 
 beforeEach(() => {
   vi.resetAllMocks();
-  countToday.mockResolvedValue({ patient: 0, global: 0 });
+  countToday.mockResolvedValue({ patient: 0, tenant: 0 });
   record.mockResolvedValue({ id: "log-1" });
   ticks = [1000, 1850];
 });
@@ -56,7 +56,7 @@ describe("answerQuestion", () => {
   });
 
   it("tope del paciente → AI_DAILY_LIMIT, fila LIMIT_PATIENT, sin proveedor", async () => {
-    countToday.mockResolvedValue({ patient: 20, global: 0 });
+    countToday.mockResolvedValue({ patient: 20, tenant: 0 });
     const r = await run();
     expect(r.reply).toBe(messages.AI_DAILY_LIMIT);
     expect(r.outcome).toBe("LIMIT_PATIENT");
@@ -72,14 +72,22 @@ describe("answerQuestion", () => {
     expect(answer).not.toHaveBeenCalled();
   });
 
-  it("tope global → AI_UNAVAILABLE, LIMIT_GLOBAL y log.warn", async () => {
-    countToday.mockResolvedValue({ patient: 0, global: 300 });
+  it("tope del consultorio → AI_UNAVAILABLE, LIMIT_GLOBAL y log.warn, sin proveedor (HU-028c)", async () => {
+    countToday.mockResolvedValue({ patient: 0, tenant: 300 });
     const r = await run();
     expect(r.reply).toBe(messages.AI_UNAVAILABLE);
     expect(r.outcome).toBe("LIMIT_GLOBAL");
     expect(record.mock.calls[0]![0].outcome).toBe("LIMIT_GLOBAL");
-    expect(log.warn).toHaveBeenCalledWith({ global: 300 }, "Tope global diario de preguntas a la IA");
+    expect(log.warn).toHaveBeenCalledWith({ tenant: 300 }, "Tope diario del consultorio de preguntas a la IA");
     expect(answer).not.toHaveBeenCalled();
+  });
+
+  it("debajo del tope del consultorio llama al proveedor (HU-028c)", async () => {
+    countToday.mockResolvedValue({ patient: 0, tenant: 299 });
+    answer.mockResolvedValue(res("answer", "Sale $ 25.000."));
+    const r = await run();
+    expect(r.outcome).toBe("ANSWERED");
+    expect(answer).toHaveBeenCalledTimes(1);
   });
 
   it("respuesta: limpia el formato, clasifica y registra tokens y latencia", async () => {

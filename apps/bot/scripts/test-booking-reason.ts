@@ -521,7 +521,7 @@ async function main(): Promise<void> {
     const appts = await apptsOf(ana.id);
     const reasons = appts.map((a) => a.reason).filter((r): r is string => Boolean(r));
     assert.ok(reasons.length >= 2);
-    const r = await runBotAiTool({ name: "mis_turnos", input: {}, patientId: ana.id, now: new Date() });
+    const r = await runBotAiTool({ name: "mis_turnos", input: {}, patientId: ana.id, tenantId, now: new Date() });
     assert.equal(r.isError, false);
     for (const reason of reasons) assert.ok(!r.content.includes(reason), "mis_turnos filtró un motivo");
     assert.ok(r.content.includes(sCon.name));

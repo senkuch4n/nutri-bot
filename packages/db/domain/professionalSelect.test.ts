@@ -1,14 +1,15 @@
-// HU-016 (D10): getProfessional() no trae los bytes de la firma ni del logo.
+// HU-016 (D10): la profesional que leen web, bot e IA (getTenantProfessional) no trae los bytes de la firma ni del logo.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 
 const mocks = vi.hoisted(() => ({
-  prisma: { professional: { findUnique: vi.fn() } },
+  prisma: { agenda: { findFirst: vi.fn() } },
 }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 
 import { PROFESSIONAL_SELECT } from "./professionalSelect";
-import { getProfessional } from "./availability";
+import * as availability from "./availability";
+import { getTenantProfessional } from "./tenantScope";
 
 describe("PROFESSIONAL_SELECT", () => {
   it("no pide los bytes de imágenes ni metadata de ownership", () => {
@@ -36,17 +37,21 @@ describe("PROFESSIONAL_SELECT", () => {
   });
 });
 
-describe("getProfessional", () => {
+describe("getTenantProfessional", () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it("consulta con el select explícito", async () => {
-    mocks.prisma.professional.findUnique.mockResolvedValue({ id: 1, name: "Daiana Ponce" });
-    await expect(getProfessional()).resolves.toEqual({ id: 1, name: "Daiana Ponce" });
-    expect(mocks.prisma.professional.findUnique).toHaveBeenCalledWith({ where: { id: 1 }, select: PROFESSIONAL_SELECT });
+  it("lee la profesional de la agenda principal del consultorio con el select explícito", async () => {
+    mocks.prisma.agenda.findFirst.mockResolvedValue({
+      id: "agenda-a", tenantId: "tenant-a", professionalId: 7, professional: { id: 7, name: "Prof A" },
+    });
+    await expect(getTenantProfessional("tenant-a")).resolves.toEqual({ id: 7, name: "Prof A" });
+    expect(mocks.prisma.agenda.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-a", isPrimary: true },
+      select: { id: true, tenantId: true, professionalId: true, professional: { select: PROFESSIONAL_SELECT } },
+    });
   });
 
-  it("sin fila sigue tirando el error de siempre", async () => {
-    mocks.prisma.professional.findUnique.mockResolvedValue(null);
-    await expect(getProfessional()).rejects.toThrow("Falta la ficha de la profesional");
+  it("HU-028c: ya no existe la lectura fija de Professional(1)", () => {
+    expect("getProfessional" in availability).toBe(false);
   });
 });

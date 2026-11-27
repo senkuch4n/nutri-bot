@@ -359,7 +359,7 @@ async function main(): Promise<void> {
   });
 
   await scenario("9. Límite diario del paciente", async () => {
-    const counted = await countBotAiQuestionsToday({ patientId: ana.id, now: base, tz });
+    const counted = await countBotAiQuestionsToday({ tenantId: scope.tenantId, patientId: ana.id, now: base, tz });
     const n = callsBefore();
     const r = await say(JID_ANA, "y la consulta común?", { aiLimits: { perPatientDaily: counted.patient } });
     assert.deepEqual(r, [messages.AI_DAILY_LIMIT]);
@@ -369,9 +369,9 @@ async function main(): Promise<void> {
     assert.equal(last.answer, null);
   });
 
-  await scenario("10. Límite global", async () => {
+  await scenario("10. Límite del consultorio", async () => {
     const n = callsBefore();
-    assert.deepEqual(await say(JID_ANA, "y la consulta común?", { aiLimits: { globalDaily: 0 } }), [messages.AI_UNAVAILABLE]);
+    assert.deepEqual(await say(JID_ANA, "y la consulta común?", { aiLimits: { tenantDaily: 0 } }), [messages.AI_UNAVAILABLE]);
     assert.equal(calls.length, n);
     assert.equal((await questionsOf(ana.id)).at(-1)!.outcome, "LIMIT_GLOBAL");
   });
@@ -464,6 +464,7 @@ async function main(): Promise<void> {
   await scenario("18. Retención: borra solo lo vencido de los pacientes TEST", async () => {
     const recent = (await questionsOf(ana.id)).length;
     await recordBotAiQuestion({
+      tenantId: scope.tenantId,
       patientId: ana.id,
       askedAt: new Date(base.getTime() - 91 * DAY_MS),
       question: "pregunta vieja (TEST)",

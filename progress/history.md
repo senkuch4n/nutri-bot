@@ -524,3 +524,5 @@ Token v2 del portal con tenant, getPortalSession por tenant (archivados siguen e
 
 ## HU-029 · 029a — Prueba en sandbox de suscripciones de Mercado Pago (2026-11-27, senkuch4n)
 Script `mp:subs-sandbox` con compuertas (solo test_user, MP_SUBS_SANDBOX, capturas fuera del repo, salida redactada) y corrida real: G1 abierta (D4(c)), G2 con deduplicación propia (MP no respeta X-Idempotency-Key), G3 refutada (payer_email obligatorio → D8(a)), G4 sin confirmar (packs apagados). Implementer Opus; reviewer Opus (lote-1-mp) rechazó el informe; corrección Sonnet; re-revisión Sonnet: aprobada.
+## HU-028 · 028c — IA por consultorio (2026-11-27, senkuch4n)
+Migración `ai_usage_per_tenant` (BotAiQuestion.tenantId con backfill y corte si hay huérfanos, FK compuesta, TenantAiSettings con topes por consultorio y fallback al .env, PanelAiUsage sin contenido). Las 4 tools de la IA del bot leen el consultorio de la conversación (D-c1 b; cierra la fuga entre consultorios). Se borró `getProfessional()`. Implementer Opus + migracion-prisma; reviewer Opus (lote-1-mp): aprobada.

@@ -6,5 +6,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["index.ts", "domain/**/*.ts", "media/**/*.ts", "prisma/**/*.ts", "scripts/sara2/**/*.ts", "scripts/test-foods-sara2.ts", "scripts/recipes/**/*.ts", "scripts/lib/**/*.ts", "scripts/mp-subscriptions-sandbox.ts", "scripts/plans/**/*.ts", "scripts/tenant-access*.ts", "scripts/tenant-isolation*.ts", "scripts/google-calendar-*.ts"]
+  "include": ["index.ts", "domain/**/*.ts", "media/**/*.ts", "prisma/**/*.ts", "scripts/sara2/**/*.ts", "scripts/test-foods-sara2.ts", "scripts/recipes/**/*.ts", "scripts/lib/**/*.ts", "scripts/mp-subscriptions-sandbox.ts", "scripts/plans/**/*.ts", "scripts/tenant-access*.ts", "scripts/tenant-isolation*.ts", "scripts/google-calendar-*.ts", "scripts/ai-limits*.ts", "scripts/bot-ai-per-tenant*.ts"]
 }

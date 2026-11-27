@@ -1,18 +1,21 @@
-// HU-016 (D10): la firma no llega a la IA del bot aunque getProfessional() la trajera por error.
+// HU-016 (D10): la firma no llega a la IA del bot aunque la profesional del consultorio la trajera por error.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const SECRET = "FIRMA-SECRETA-XYZ";
 const SECRET_BYTES = Buffer.from(SECRET);
 
 const mocks = vi.hoisted(() => ({
-  getProfessional: vi.fn(),
+  getTenantProfessional: vi.fn(),
   getAvailableSlotsForService: vi.fn(),
   prisma: {},
 }));
 vi.mock("../index", () => ({ prisma: mocks.prisma }));
 vi.mock("./availability", () => ({
-  getProfessional: mocks.getProfessional,
   getAvailableSlotsForService: mocks.getAvailableSlotsForService,
+}));
+vi.mock("./tenantScope", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./tenantScope")>()),
+  getTenantProfessional: mocks.getTenantProfessional,
 }));
 
 import { runBotAiTool } from "./botAi";
@@ -20,7 +23,7 @@ import { runBotAiTool } from "./botAi";
 describe("privacidad de la firma (HU-016, D10)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getProfessional.mockResolvedValue({
+    mocks.getTenantProfessional.mockResolvedValue({
       id: 1,
       name: "Daiana Ponce",
       title: "Lic.",
@@ -42,6 +45,7 @@ describe("privacidad de la firma (HU-016, D10)", () => {
       name: "datos_consultorio",
       input: {},
       patientId: "p1",
+      tenantId: "legacy-tenant",
       now: new Date("2026-10-03T15:00:00Z"),
     });
     expect(r.isError).toBe(false);

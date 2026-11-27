@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getPlan: vi.fn(), addMeal: vi.fn(), addMealItem: vi.fn(), deleteMeal: vi.fn(), completion: vi.fn(),
+  recordPanelAiUsage: vi.fn(),
 }));
 
 // HU-025b-1: el consultorio sale del contexto de la sesión.
@@ -25,12 +26,16 @@ vi.mock("@nutri-bot/db/domain", () => ({
   getLatestFormulaMeasurements: vi.fn().mockResolvedValue({ weightKg: null, heightCm: null }),
   getTenantProfessional: vi.fn().mockResolvedValue({ timezone: "UTC" }),
 }));
-vi.mock("@nutri-bot/db", () => ({ prisma: {
+const db = vi.hoisted(() => ({
   patient: { findUnique: vi.fn().mockResolvedValue(null) },
   clinicalRecord: { findUnique: vi.fn().mockResolvedValue(null) },
-} }));
+}));
+vi.mock("@nutri-bot/db", () => ({ prisma: db }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/deepseek", () => ({ DEEPSEEK_MODEL: "test", deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }) }));
+vi.mock("@/lib/deepseek", () => ({
+  DEEPSEEK_MODEL: "test", DEEPSEEK_PROVIDER: "deepseek",
+  deepseekClient: () => ({ chat: { completions: { create: mocks.completion } } }),
+}));
 
 import { generateAiPlanAction } from "./ai-actions";
 
@@ -111,5 +116,69 @@ describe("HU-025 (D11): logs de la IA de planes", () => {
     } finally {
       log.mockRestore();
     }
+  });
+});
+
+describe("generateAiPlanAction: registro de consumo (HU-028c, D11b, D12)", () => {
+  const VALID = JSON.stringify({ meals: [{ name: "Desayuno", items: [{ ref: 1, quantityGrams: 100 }] }] });
+  const reply = (content: string | null) => ({
+    choices: [{ message: { content } }],
+    usage: { prompt_tokens: 900, completion_tokens: 120 },
+  });
+  const withInstructions = () => {
+    const data = form();
+    data.set("instructions", "sin TACC (INSTRUCCION-PRIVADA)");
+    return data;
+  };
+
+  beforeEach(() => {
+    mocks.getPlan.mockReset();
+    mocks.getPlan.mockResolvedValue({ id: "plan", patientId: "patient", meals: [] });
+    db.patient.findUnique.mockResolvedValue({ birthDate: null, sex: "FEMALE", activityLevel: null, nutritionGoal: null });
+    db.clinicalRecord.findUnique.mockResolvedValue({ goals: "bajar", background: "ANTECEDENTE-PRIVADO" });
+  });
+
+  it("propuesta válida → PLAN_AI / OK con los tokens de la respuesta, sin datos de la paciente", async () => {
+    mocks.completion.mockResolvedValue(reply(VALID));
+    expect(await generateAiPlanAction({ ok: false }, withInstructions())).toEqual({ ok: true });
+    expect(mocks.recordPanelAiUsage.mock.calls).toEqual([[TENANT_CTX, {
+      feature: "PLAN_AI", provider: "deepseek", model: "test",
+      inputTokens: 900, outputTokens: 120, calls: 1, outcome: "OK", errorCode: undefined,
+    }]]);
+    const recorded = JSON.stringify(mocks.recordPanelAiUsage.mock.calls);
+    expect(recorded).not.toMatch(/ANTECEDENTE-PRIVADO|INSTRUCCION-PRIVADA|antecedentes|peso_kg|instrucciones/);
+  });
+
+  it("JSON inválido → INVALID_RESPONSE", async () => {
+    mocks.completion.mockResolvedValue(reply("no es json"));
+    expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: false, error: "La respuesta de la IA no fue un JSON válido" });
+    expect(mocks.recordPanelAiUsage.mock.calls[0]![1]).toMatchObject({ feature: "PLAN_AI", outcome: "INVALID_RESPONSE", calls: 1 });
+  });
+
+  it("respuesta vacía, formato inválido o sin alimentos válidos → INVALID_RESPONSE", async () => {
+    mocks.completion
+      .mockResolvedValueOnce(reply(null))
+      .mockResolvedValueOnce(reply(JSON.stringify({ meals: [] })))
+      .mockResolvedValueOnce(reply(JSON.stringify({ meals: [{ name: "Cena", items: [{ ref: 99, quantityGrams: 10 }] }] })));
+    for (let i = 0; i < 3; i++) await generateAiPlanAction({ ok: false }, form());
+    expect(mocks.recordPanelAiUsage.mock.calls.map((c) => c[1].outcome)).toEqual(["INVALID_RESPONSE", "INVALID_RESPONSE", "INVALID_RESPONSE"]);
+  });
+
+  it("el proveedor tira → ERROR con el código y calls 0", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.completion.mockRejectedValue(Object.assign(new Error("timeout con ANTECEDENTE-PRIVADO"), { name: "APIConnectionTimeoutError" }));
+    expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: false, error: "Error consultando a la IA" });
+    expect(mocks.recordPanelAiUsage.mock.calls).toEqual([[TENANT_CTX, {
+      feature: "PLAN_AI", provider: "deepseek", model: "test",
+      inputTokens: 0, outputTokens: 0, calls: 0, outcome: "ERROR", errorCode: "APIConnectionTimeoutError",
+    }]]);
+  });
+
+  it("plan de otro consultorio → ni proveedor ni registro", async () => {
+    mocks.getPlan.mockReset();
+    mocks.getPlan.mockResolvedValue(null);
+    expect(await generateAiPlanAction({ ok: false }, form())).toEqual({ ok: false, error: "Plan no encontrado" });
+    expect(mocks.completion).not.toHaveBeenCalled();
+    expect(mocks.recordPanelAiUsage).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,10 @@ model Tenant {
   recipes                Recipe[]
   planTemplates          PlanTemplate[]
   conversationStates     ConversationState[]
+  /// HU-028c (D10a): topes de la IA del bot del consultorio (null/sin fila = default del .env).
+  aiSettings             TenantAiSettings?
+  /// HU-028c (D11b, D12): registro de consumo de la IA del panel.
+  panelAiUsage           PanelAiUsage[]
 }
 
 model User {
@@ -171,7 +175,8 @@ model Patient {
   consultations Consultation[] @relation("PatientConsultationLegacy")
   tenantConsultationAnchors Consultation[] @relation("PatientConsultationTenant")
   inquiries    PatientInquiry[]
-  botAiQuestions BotAiQuestion[]
+  botAiQuestions       BotAiQuestion[] @relation("PatientBotAiQuestions")
+  tenantBotAiQuestions BotAiQuestion[] @relation("PatientBotAiQuestionTenant")
 
   @@unique([id, tenantId])
   @@unique([tenantId, whatsappJid])
@@ -1297,7 +1302,7 @@ enum BotAiOutcome {
   ERROR
   /// Tope diario del paciente: no se llamó a la IA.
   LIMIT_PATIENT
-  /// Tope diario global: no se llamó a la IA.
+  /// Tope diario del consultorio (HU-028c; antes "global", el nombre se conserva): no se llamó a la IA.
   LIMIT_GLOBAL
 }
 
@@ -1305,8 +1310,12 @@ enum BotAiOutcome {
 /// (cron del bot) y borrado en cascada con el paciente.
 model BotAiQuestion {
   id                  String       @id @default(cuid())
-  patient             Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient             Patient      @relation("PatientBotAiQuestions", fields: [patientId], references: [id], onDelete: Cascade)
   patientId           String
+  /// HU-028c: consultorio de la pregunta = el del paciente (lo garantiza la FK compuesta). Base del tope
+  /// diario por consultorio y del consumo. Lo pone el bot, nunca la IA.
+  tenantId            String
+  tenantPatient       Patient      @relation("PatientBotAiQuestionTenant", fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: Restrict)
   /// Instante de la pregunta (lo pone el bot: inyectable en pruebas). Base del límite diario y de la retención.
   askedAt             DateTime
   /// Texto de la pregunta tal como se mandó a la IA (trim, ≤ 500 caracteres).
@@ -1334,6 +1343,63 @@ model BotAiQuestion {
 
   @@index([patientId, askedAt])
   @@index([askedAt])
+  @@index([tenantId, askedAt])
+}
+
+/// HU-028c (D10a): configuración de IA del consultorio que define Arzium (script `ai-limits`, sin UI).
+/// null = se usa el default del .env (BOT_AI_DAILY_PER_PATIENT / BOT_AI_DAILY_GLOBAL). 0 = sin preguntas.
+/// HU-030 suma acá el cupo por plan; el tope del panel llega con el bloqueo (D11b).
+/// CHECK en SQL (TenantAiSettings_limits_check): cada tope null o entre 0 y 100000.
+model TenantAiSettings {
+  tenantId           String   @id
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// Preguntas por paciente por día (tz de la profesional).
+  botDailyPerPatient Int?
+  /// Preguntas del consultorio por día (tz de la profesional).
+  botDailyPerTenant  Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum PanelAiFeature {
+  /// Asistente del panel (/asistente).
+  ASSISTANT
+  /// "Generar con IA" de un plan alimentario.
+  PLAN_AI
+}
+
+enum PanelAiOutcome {
+  /// El proveedor respondió algo usable.
+  OK
+  /// Respondió, pero vacío, sin JSON válido, con otro formato o sin alimentos válidos.
+  INVALID_RESPONSE
+  /// El asistente agotó las vueltas de tools sin respuesta final.
+  TOOL_LIMIT
+  /// Error del proveedor (o de una tool) durante la llamada.
+  ERROR
+}
+
+/// HU-028c (D11b, D12): una fila por uso de la IA del panel. Nunca la pregunta, la respuesta, el prompt
+/// ni datos del paciente; sin usuario (D12). Sin purga: no tiene datos personales.
+model PanelAiUsage {
+  id           String         @id @default(cuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  feature      PanelAiFeature
+  usedAt       DateTime       @default(now())
+  /// "deepseek" (D9a: proveedor global).
+  provider     String
+  model        String
+  /// Suma de `usage.prompt_tokens` / `usage.completion_tokens` de todas las respuestas recibidas.
+  inputTokens  Int            @default(0)
+  outputTokens Int            @default(0)
+  /// Respuestas recibidas del proveedor (vueltas del asistente; 1 en planes; 0 si falló la primera).
+  calls        Int            @default(0)
+  outcome      PanelAiOutcome
+  /// Solo el código o la clase del error (`errorCode`), nunca el mensaje. null si no hubo error.
+  errorCode    String?
+
+  @@index([tenantId, usedAt])
 }
 
 /// HU-028b (D5a): conexión de Google Calendar de UN consultorio. Sincronización de una vía app → Google,
