@@ -1,10 +1,13 @@
 # impl HU-029a · Prueba en sandbox de suscripciones de Mercado Pago
 
-**Estado: done (código, tests y runbook).** La corrida contra el sandbox la tiene que hacer el
-usuario: `docs/mp-suscripciones-sandbox.md` queda en **"pendiente de corrida"** con las tablas de
-S1–S17, G1–G4 y los valores para 029b vacíos. Hasta que se complete, **029b sigue bloqueada**
-(SDD §A.1). Checklist §A.6: ítems 1–6 y 9 hechos; 7–8 (corrida y resolución de compuertas) son del
-usuario.
+**Estado: done (código, tests, runbook e informe de la corrida).** La corrida en sandbox se hizo el
+2026-11-27 (Joel, con el orquestador): `docs/mp-suscripciones-sandbox.md` tiene S1–S17, G1–G4 y los
+valores para 029b completos (S8 y S14 "no verificado"). **029b ya no está bloqueada** (G1 abierta).
+Checklist §A.6: ítems 1–9 hechos (el 7 y el 8 con la corrida y el informe).
+
+Rama actual: `feat/HU-029a-sandbox-suscripciones` (worktree `Nutri-Bot-HU029a`, desde `origin/develop`; los
+commits de abajo son cherry-pick de `feat/HU-028-integraciones-por-consultorio`, hashes nuevos). No se tocó
+`schema.prisma`, migraciones, `domain/`, la base, web, bot ni WhatsApp. El script no se corrió contra MP en la corrección.
 
 Rama `feat/HU-028-integraciones-por-consultorio` (sin cambiar). No se tocó `schema.prisma`,
 migraciones, `domain/`, la base, nada de la 028a, ni WhatsApp. Ninguna llamada a Mercado Pago.
@@ -17,6 +20,11 @@ migraciones, `domain/`, la base, nada de la 028a, ni WhatsApp. Ninguna llamada a
 | `69d9f8e` feat(db): compuertas del sandbox de suscripciones | `mp-sandbox-guard.ts` + test |
 | `684db71` feat(db): script de sandbox de suscripciones de Mercado Pago (mp:subs-sandbox) | script, libs de payloads/ids/webhook + tests, script npm, `tsconfig` |
 | `2763420` docs: runbook e informe de la prueba en sandbox | `docs/mp-suscripciones-sandbox.md` |
+| fix(db): import con nombre de MercadoPagoConfig… | fix hallado en la corrida real |
+| 5 commits `docs:` (primera parte de la corrida, variantes, cobro inmediato y rechazo, devolución parcial, compuertas G1-G4) | resultados de la corrida del 2026-11-27 |
+| `docs: HU, SDD, implementación y review de la HU-029a` | documentos de respaldo que estaban sin trackear |
+| `fix(db): redactar authorization…` | `authorization` en `REDACTED_KEYS` + test |
+| `docs: corregir informe del sandbox tras review 1` | ver "Corrección tras review 1" |
 
 Sin trailer `Co-Authored-By`. Solo se agregaron archivos propios (los cambios ajenos del árbol no se tocaron).
 
@@ -115,3 +123,24 @@ Todo el detalle está en `docs/mp-suscripciones-sandbox.md`. Resumen:
 `assertSandboxEnv(env)`; script npm `mp:subs-sandbox` con el comando exacto; archivos en las rutas
 de la tabla §A.3. Migraciones creadas: ninguna.
 - 2026-11-27: corrida real: el import por defecto de MercadoPagoConfig fallaba con tsx ("is not a constructor"); se corrigió a import con nombre.
+
+## Corrección tras review 1
+
+Review: `progress/review_HU-029a.md` (CHANGES_REQUESTED, intento 1 de 2).
+
+- Rama nueva `feat/HU-029a-sandbox-suscripciones` desde `origin/develop` (worktree), cherry-pick de
+  `995e4da^..5526ebd`. Conflictos en `packages/db/package.json` y `packages/db/tsconfig.json`: se
+  conservaron las dos líneas (`gcal:*` y `test:gcal-tenants` de 028b/028c junto con `mp:subs-sandbox`;
+  `scripts/google-calendar-*.ts` junto con `scripts/mp-subscriptions-sandbox.ts`).
+- Informe: encabezado actualizado (corrida 2026-11-27, Joel con el orquestador; 029b desbloqueada); filas de
+  §3 con exactamente 5 celdas (verificado contando); conclusiones: S1 confirmado, S6 confirmado, S9
+  **refutado** (con el matiz del `card_validation` de $0), S8 y S14 "no verificado" con motivo; ids con
+  prefijo de 6 caracteres; §5 y §6 completos con la evidencia de §3 (sin valores inventados; lo no visto figura
+  "no verificado").
+- Opcional: `authorization` en `REDACTED_KEYS` con test.
+
+### Verificación de la corrección
+- `npm run typecheck` (core, db, bot, web) → exit 0.
+- `npm run test` → 256 archivos passed, 1 skipped; 4280 tests passed, 1 skipped.
+- `./ops/harness/verify.sh` → "Arnés OK".
+- Tabla de §3 del informe: las 17 filas tienen 5 celdas.
