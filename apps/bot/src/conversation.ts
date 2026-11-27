@@ -10,6 +10,7 @@ import {
   findOrCreatePatientByJid,
   countBotAiQuestionsToday,
   getProfessional,
+  getTenantProfessional,
   isMercadoPagoCheckoutAvailable,
   markBotAiQuestionHandedOff,
   notifyMercadoPagoMissingForBooking,
@@ -23,7 +24,7 @@ import {
   loadOrInitializeLegacyConversationState,
   saveLegacyConversationState,
 } from "@nutri-bot/db/domain/conversationState";
-import { resolveTenantSchedulingContext } from "@nutri-bot/db/domain/tenantScope";
+import { resolveTenantSchedulingContext, type TenantProfessional } from "@nutri-bot/db/domain/tenantScope";
 import {
   afterHoursConfigFrom,
   formatClock,
@@ -61,7 +62,12 @@ import { getConversationTenant } from "./tenant";
 
 type Send = (text: string) => Promise<void>;
 
-type Professional = Awaited<ReturnType<typeof getProfessional>>;
+type Professional = TenantProfessional;
+
+/** HU-033 (025c): la profesional del consultorio de la conversación (antes se leía Professional(1)). */
+async function conversationProfessional(): Promise<Professional> {
+  return getTenantProfessional((await getConversationTenant()).tenantId);
+}
 type PatientRow = Awaited<ReturnType<typeof findOrCreatePatientByJid>>;
 
 /** Opciones inyectables. En producción no se pasan. */
@@ -165,6 +171,7 @@ export async function handleIncoming(
   opts: ConversationOptions = {},
 ): Promise<void> {
   const now = opts.now ?? new Date();
+  // 028c lo reemplaza (D-c1 b): única lectura de Professional(1) que queda en el bot fuera de botAi.ts.
   const pro = await getProfessional();
 
   // Interruptor global: la nutricionista puede apagar el bot desde el panel.
@@ -463,7 +470,7 @@ async function handleBookDay(jid: string, text: string, ctx: Ctx, send: Send): P
     slots: iso,
     ...(ctx.reason ? { reason: ctx.reason } : {}), // HU-013: motivo conservado tras SLOT_TAKEN
   });
-  const pro = await getProfessional();
+  const pro = await conversationProfessional();
   await send(messages.askSlot(slots, pro.timezone));
 }
 
@@ -495,7 +502,7 @@ async function sendBookingSummary(
 ): Promise<void> {
   const [service, pro] = await Promise.all([
     prisma.service.findUniqueOrThrow({ where: { id: b.serviceId } }),
-    getProfessional(),
+    conversationProfessional(),
   ]);
   await save(jid, STEP.BOOK_CONFIRM, {
     serviceId: b.serviceId,
@@ -573,7 +580,7 @@ async function handleBookConfirm(
   try {
     const [service, pro] = await Promise.all([
       prisma.service.findUniqueOrThrow({ where: { id: ctx.serviceId } }),
-      getProfessional(),
+      conversationProfessional(),
     ]);
     serviceName = service.name;
     const tenant = await getConversationTenant();
@@ -655,7 +662,7 @@ async function handleCancelPick(jid: string, text: string, ctx: Ctx, send: Send)
     await save(jid, STEP.MENU);
     return;
   }
-  const pro = await getProfessional();
+  const pro = await conversationProfessional();
   await save(jid, STEP.CANCEL_CONFIRM, { apptId });
   await send(
     messages.confirmCancel({
@@ -694,7 +701,7 @@ async function handleCancelConfirm(
   });
   if (appt && appt.status === "CONFIRMED") {
     await cancelAppointment(await getConversationTenant(), { id: ctx.apptId, by: "PATIENT", notifyPatient: false });
-    const pro = await getProfessional();
+    const pro = await conversationProfessional();
     await send(
       messages.cancelDone({
         serviceName: appt.service.name,
@@ -811,7 +818,7 @@ export async function handleIncomingMedia(
   opts: ConversationOptions = {},
 ): Promise<void> {
   const now = opts.now ?? new Date();
-  const pro = await getProfessional();
+  const pro = await conversationProfessional();
   if (pro.botPaused) return;
   // Una lectura sin inicialización no crea pacientes ni estado para contactos desconocidos.
   const row = await findLegacyConversationState(jid);

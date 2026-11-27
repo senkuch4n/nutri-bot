@@ -17,6 +17,7 @@ vi.mock("../../../packages/db/domain/reminders", () => ({}));
 vi.mock("@nutri-bot/db/domain", async () => ({
   ...await import("../../../packages/db/domain/appointments"),
   getProfessional: async () => ({ botPaused: false, botAiEnabled: false, timezone: "UTC" }),
+  getTenantProfessional: async () => ({ botPaused: false, botAiEnabled: false, timezone: "UTC" }),
   findOrCreatePatientByJid: mocks.createPatient,
 }));
 vi.mock("./booking", () => ({}));
