@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(__dirname, "../../..");
 const DIRS = ["packages", "apps"];
+// Los *.integration.ts (probes en Postgres descartable) usan un token falso de prueba: cuentan como tests.
 const SKIP = new Set(["node_modules", ".next", "dist", "media", "data"]);
 
 function sourceFiles(dir: string): string[] {
@@ -14,7 +15,7 @@ function sourceFiles(dir: string): string[] {
     if (SKIP.has(name) || name.startsWith(".")) continue;
     const full = join(dir, name);
     if (statSync(full).isDirectory()) out.push(...sourceFiles(full));
-    else if (/\.(ts|tsx)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name)) out.push(full);
+    else if (/\.(ts|tsx)$/.test(name) && !/\.(test|integration)\.(ts|tsx)$/.test(name)) out.push(full);
   }
   return out;
 }
