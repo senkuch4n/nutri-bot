@@ -1,0 +1,19 @@
+{
+  "id": "HU-032",
+  "responsable": "senkuch4n",
+  "slug": "nutribot-studio",
+  "titulo": "NutriBot Studio: editor visual de documentos clínico-nutricionales",
+  "origen": "Issue #90 (creado por imleticio, tomado por senkuch4n el 2026-11-27).",
+  "estado": "arquitectura_lista",
+  "lote": "lote-2-studio",
+  "intentos_revision": 0,
+  "hu": "docs/hu-nutribot-studio.md",
+  "sdd": "Refactorizaciones/nutribot-studio.md",
+  "rama": "feat/HU-032-nutribot-studio",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/90",
+  "notas": "HU paraguas: T0/T1 sin migración; la primera migración (T2) espera el candado del equipo (HU-026 de Leo, 028c). 2026-11-27: el usuario pidió diseño en Figma de la 032a antes de validar (lo validan Joel y Leo); diseño → progress/diseno_HU-032a.md.",
+  "skills_architect": [
+    "migracion-prisma",
+    "ui"
+  ]
+}
