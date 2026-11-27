@@ -32,6 +32,7 @@
     "typecheck": "tsc --noEmit",
     "test:mp-tenants": "bash scripts/test-mercadopago-per-tenant.sh",
     "test:gcal-tenants": "bash scripts/test-google-calendar-per-tenant.sh",
+    "test:ai-tenants": "bash scripts/test-bot-ai-per-tenant.sh",
     "gcal:transfer": "dotenv -e ../../.env -- tsx scripts/google-calendar-transfer.ts",
     "sara2:read": "tsx scripts/sara2/read-pdf.ts",
     "sara2:load": "dotenv -e ../../.env -- tsx scripts/sara2/load.ts",
