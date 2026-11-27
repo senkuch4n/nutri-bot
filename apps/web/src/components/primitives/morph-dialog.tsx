@@ -18,6 +18,7 @@ import {
 import { closeButtonClass } from "@/components/primitives/dialog"
 import { ModalScrim } from "@/components/primitives/modal-scrim"
 import {
+  ANCHOR_MARGIN,
   MORPH_RADIUS,
   anchorOnOrigin,
   ORIGIN_BLUR,
@@ -565,6 +566,8 @@ const MorphPanel = React.forwardRef<
         )
         anchorShell.style.left = `${at.x}px`
         anchorShell.style.top = `${at.y}px`
+        // Los cuerpos que adoptan este límite pueden crecer después de abrir sin cruzar el borde.
+        anchorShell.style.setProperty("--morph-anchor-available-height", `calc(100dvh - ${at.y + ANCHOR_MARGIN}px)`)
       }
       const resumed = phase.current === "closing"
       stopAnimations()
@@ -908,6 +911,7 @@ const MorphPanel = React.forwardRef<
             <m.div className={cn("relative", docked && "h-full")} style={{ scaleX: invSx, scaleY: invSy, originX: 0, originY: 0 }}>
               <m.div
                 ref={bodyRef}
+                data-morph-scroll-body=""
                 className={cn("relative max-h-[85dvh] overflow-y-auto overscroll-contain p-6", docked && "h-full max-h-none")}
                 style={{
                   opacity: contentOpacity,
