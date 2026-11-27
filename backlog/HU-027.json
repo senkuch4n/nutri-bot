@@ -1,0 +1,14 @@
+{
+  "id": "HU-027",
+  "responsable": "imleticio",
+  "slug": "whatsapp-multi-sesion",
+  "titulo": "WhatsApp multi-sesión, colas y workers aislados por tenant",
+  "origen": "Backlog SaaS de NutriBot, issue #70.",
+  "estado": "en_revision",
+  "intentos_revision": 0,
+  "hu": "docs/hu-whatsapp-multi-sesion.md",
+  "sdd": "Refactorizaciones/whatsapp-multi-sesion.md",
+  "rama": "feat/hu-027-whatsapp-review",
+  "lock": "https://github.com/senkuch4n/nutri-bot/issues/70",
+  "notas": "Candidato parcial de los cortes de aislamiento, sesiones/QR y crons/outbox. Pendientes revisión independiente, contrato de suspensión con HU-030 (#73) y capacidad en staging. No aprobado ni desplegado."
+}
