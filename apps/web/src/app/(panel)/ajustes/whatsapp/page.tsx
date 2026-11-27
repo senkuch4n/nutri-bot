@@ -2,34 +2,34 @@ import { CircleCheck, CircleSlash } from "lucide-react";
 import { prisma } from "@nutri-bot/db";
 import { SETTINGS_TEXT as T, formatInTimeZone } from "@nutri-bot/core";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { Alert, ButtonLink, PageHeader } from "@/components/ui";
+import { Alert, Button, ButtonLink, PageHeader } from "@/components/ui";
 import { getTenantProfessional } from "@/lib/professional";
 import { requirePageContext } from "@/lib/tenant-context";
-import { DetailDisclosure } from "../../pacientes/[id]/detail-disclosure";
+import { connectWhatsAppAction, disconnectWhatsAppAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/**
- * Vinculación de WhatsApp (HU-017b-4, §4.8): estado grande, pasos con números de 28 px y el código de al
- * menos 264 px. Solo lee `BotStatus`: no pide un código nuevo ni desvincula nada.
- */
 export default async function WhatsAppStatusPage() {
-  // HU-025: el QR es solo el de la fila BotStatus del consultorio de la sesión. Mostrar el de otro
-  // consultorio sería entregarle su número. 025d veda esta pantalla en modo soporte (C2).
   const ctx = await requirePageContext();
+  const canLink = ctx.access.kind === "member" && ctx.access.role === "OWNER";
   const [pro, status] = await Promise.all([
     getTenantProfessional(ctx.tenantId),
-    prisma.botStatus.findUnique({ where: { tenantId: ctx.tenantId } }),
+    prisma.botStatus.findUnique({
+      where: { tenantId: ctx.tenantId },
+      select: { sessionKey: true, connected: true, qr: canLink, lastConnectedAt: true },
+    }),
   ]);
 
-  const connected = status?.connected ?? false;
-  const qr = !connected ? (status?.qr ?? null) : null;
+  // Status and intent come from the same row snapshot. The bot may publish only for its current key.
+  const active = status?.sessionKey != null;
+  const connected = active && status.connected;
+  const qr = canLink && active && !connected ? status.qr : null;
   const StatusIcon = connected ? CircleCheck : CircleSlash;
 
   return (
     <div className="max-w-3xl">
-      <AutoRefresh seconds={5} />
+      {active ? <AutoRefresh seconds={5} /> : null}
 
       <PageHeader title={T.linkTitle} description={T.linkDescription} back={{ href: "/ajustes?tab=whatsapp", label: T.back }} />
 
@@ -49,6 +49,14 @@ export default async function WhatsAppStatusPage() {
             ) : null}
           </div>
         </div>
+
+        {canLink ? (
+          <form action={active ? disconnectWhatsAppAction : connectWhatsAppAction}>
+            <Button type="submit" variant={active ? "secondary" : "primary"}>
+              {active ? "Desvincular WhatsApp" : "Vincular WhatsApp"}
+            </Button>
+          </form>
+        ) : null}
 
         {connected ? (
           <div className="space-y-4">
@@ -107,14 +115,9 @@ export default async function WhatsAppStatusPage() {
           </div>
         ) : null}
 
-        {!connected && !qr ? (
+        {canLink && active && !connected && !qr ? (
           <Alert tone="warning">
-            <p>{T.botNotRunning}</p>
-            <DetailDisclosure label={T.technicalDetail}>
-              <p className="text-footnote text-muted-foreground">
-                <code translate="no">{T.botNotRunningDetail}</code>
-              </p>
-            </DetailDisclosure>
+            <p>Esperando el código QR para vincular WhatsApp. Esta pantalla se actualiza sola.</p>
           </Alert>
         ) : null}
       </div>
