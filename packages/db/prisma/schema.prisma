@@ -1245,8 +1245,10 @@ model ConversationState {
 
 /// Estado de conexión y último QR del bot. Los consumidores legacy siguen usando id = 1.
 model BotStatus {
-  id              Int       @id @default(1)
+  id              Int       @id @default(autoincrement())
   tenantId        String?   @unique
+  /// Null when stopped; each explicit linking request gets a fresh key.
+  sessionKey      String?
   tenant          Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   connected       Boolean   @default(false)
   qr              String?
