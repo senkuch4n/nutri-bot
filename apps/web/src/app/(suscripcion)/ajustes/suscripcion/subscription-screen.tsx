@@ -26,6 +26,8 @@ const MERCADO_PAGO_HOME = "https://www.mercadopago.com.ar/";
 
 type ErrorCode = keyof typeof T.errors;
 const errorText = (code: string) => T.errors[code as ErrorCode] ?? T.errors.mp_unavailable;
+/** Foco al campo cuando la acción rechaza el email (después de que se vuelva a habilitar). */
+const focusEmail = (id: string) => requestAnimationFrame(() => document.getElementById(id)?.focus());
 const isEmailError = (code: string) => code === "invalid_payer_email" || code === "payer_email_rejected";
 
 const STATUS_ICON: Record<SubscriptionStatusValue | "none", { icon: LucideIcon; className: string }> = {
@@ -121,7 +123,7 @@ function StateBody({ model }: { model: ScreenModel }) {
                 href={MERCADO_PAGO_HOME}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-callout font-semibold text-primary-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-callout font-semibold text-primary-foreground transition-opacity duration-hover hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {T.goToMercadoPago}
               </a>
@@ -169,7 +171,10 @@ function StartForm({
       const result = await startSubscriptionAction({ planId, payerEmail: email });
       // Si salió bien, la acción redirige a Mercado Pago y no vuelve acá.
       if (result?.error) {
-        if (isEmailError(result.error)) setEmailError(errorText(result.error));
+        if (isEmailError(result.error)) {
+          setEmailError(errorText(result.error));
+          focusEmail("payer-email-start");
+        }
         notify.error(errorText(result.error));
       }
     });
@@ -191,7 +196,7 @@ function StartForm({
         </div>
       )}
       {selected ? <p className="text-body">{selected.offerText}</p> : null}
-      <PayerEmailField value={email} onChange={setEmail} error={emailError} disabled={pending} />
+      <PayerEmailField id="payer-email-start" value={email} onChange={setEmail} error={emailError} disabled={pending} />
       <Button type="submit" size="lg" loading={pending} disabled={!planId}>
         {label}
       </Button>
@@ -215,7 +220,10 @@ function PendingCheckoutActions({ planId, defaultPayerEmail }: { planId: string;
       try {
         const result = await action();
         if (result?.error) {
-          if (isEmailError(result.error)) setEmailError(errorText(result.error));
+          if (isEmailError(result.error)) {
+            setEmailError(errorText(result.error));
+            focusEmail("payer-email-restart");
+          }
           notify.error(errorText(result.error));
           router.refresh();
         }
@@ -242,7 +250,7 @@ function PendingCheckoutActions({ planId, defaultPayerEmail }: { planId: string;
         {T.continueCheckout}
       </Button>
       <div className="space-y-4 border-t border-border pt-6">
-        <PayerEmailField value={email} onChange={setEmail} error={emailError} hint={T.restartEmailHelp} disabled={busy !== null} />
+        <PayerEmailField id="payer-email-restart" value={email} onChange={setEmail} error={emailError} hint={T.restartEmailHelp} disabled={busy !== null} />
         <Button variant="secondary" loading={busy === "restart"} disabled={busy !== null} onClick={restart}>
           {T.restart}
         </Button>

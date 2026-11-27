@@ -18,7 +18,7 @@ export function PlanOptionCard({
     <label
       className={cn(
         "flex min-h-11 cursor-pointer items-start gap-3 rounded-xl bg-card px-4 py-3.5 shadow-card transition-colors duration-hover",
-        "ring-1 ring-inset ring-input has-[:checked]:bg-primary-soft has-[:checked]:ring-2 has-[:checked]:ring-primary",
+        "ring-1 ring-inset ring-input hover:ring-primary/50 has-[:checked]:bg-primary-soft has-[:checked]:ring-2 has-[:checked]:ring-primary",
         "has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
       )}
     >

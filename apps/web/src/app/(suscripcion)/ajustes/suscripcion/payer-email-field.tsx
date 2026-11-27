@@ -9,16 +9,20 @@ export function PayerEmailField({
   error,
   hint = T.payerEmailHelp,
   disabled,
+  id,
 }: {
   value: string;
   onChange: (value: string) => void;
   error: string | null;
   hint?: string;
   disabled?: boolean;
+  /** Para devolverle el foco cuando la acción rechaza el email. */
+  id?: string;
 }) {
   return (
     <Field label={T.payerEmailLabel} hint={hint} error={error ?? undefined}>
       <Input
+        id={id}
         type="email"
         name="payerEmail"
         required

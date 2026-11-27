@@ -19,6 +19,12 @@ export default async function SubscriptionLayout({ children }: { children: React
   return (
     <ConfirmProvider>
       <div className="min-h-[100dvh] bg-grouped">
+        <a
+          href="#contenido"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-background focus:px-3 focus:py-2 focus:text-callout focus:shadow-float"
+        >
+          Saltar al contenido
+        </a>
         <header className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-6 pt-6">
           <div className="min-w-0">
             <Wordmark />
