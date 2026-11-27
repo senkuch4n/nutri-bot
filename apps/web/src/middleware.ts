@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { Session } from "next-auth";
-import { decideTenantAccess } from "@nutri-bot/core";
 import { loadAccessFacts } from "@nutri-bot/db/domain";
 import { auth } from "@/auth";
+import { createOnboardingAccessAdapter } from "@/lib/onboarding-access-adapter";
+import { loadOnboardedClinic } from "@/lib/onboarding-server";
+import { getTenantSubscriptionGate } from "@/lib/onboarding-subscription-gate";
 import { ENABLED_TENANT_IDS } from "@/lib/tenant-context";
 
 // HU-025 (6.3 de la SDD, opción A): puerta central por request, en runtime Node (Prisma). En cada
@@ -29,11 +31,21 @@ export async function panelGate(req: NextRequest & { auth: Session | null }): Pr
   const userId = req.auth?.userId;
   if (!userId) return deny();
 
-  const decision = decideTenantAccess(await loadAccessFacts(userId, new Date()), {
-    enabledTenantIds: ENABLED_TENANT_IDS,
-  });
-  if (!decision.ok) {
-    console.warn(`[auth] access_denied reason=${decision.reason}`);
+  const access = await createOnboardingAccessAdapter({
+    readSession: async () => ({ userId }),
+    loadAccessFacts: (uid) => loadAccessFacts(uid, new Date()),
+    existingEnabledTenantIds: ENABLED_TENANT_IDS,
+    loadOnboardedClinic,
+    getTenantSubscriptionGate,
+  }).resolve();
+  if (access.kind !== "operational") {
+    const reason =
+      access.kind === "denied"
+        ? access.reason
+        : access.kind === "setup"
+          ? "onboarding_setup"
+          : "onboarding_pending";
+    console.warn(`[auth] access_denied reason=${reason}`);
     return deny();
   }
   return NextResponse.next();

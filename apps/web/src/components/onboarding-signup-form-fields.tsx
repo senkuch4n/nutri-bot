@@ -1,0 +1,84 @@
+"use client";
+
+import { useActionState } from "react";
+import type { OnboardingSignupFormState } from "@/app/inicio/actions";
+import { Button } from "@/components/ui";
+
+const fieldClass = "mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-body";
+
+export type OnboardingSignupFormAction = (
+  prev: OnboardingSignupFormState | null,
+  formData: FormData,
+) => Promise<OnboardingSignupFormState>;
+
+export function OnboardingSignupFormFields({
+  action,
+  timeZones,
+  initialState = null,
+  savedClinic,
+}: {
+  action: OnboardingSignupFormAction;
+  timeZones: readonly string[];
+  initialState?: OnboardingSignupFormState | null;
+  savedClinic?: { name: string; timeZone: string };
+}) {
+  const [state, formAction, pending] = useActionState(action, initialState);
+
+  return (
+    <form action={formAction} className="mt-6 space-y-4">
+      {state?.error ? (
+        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-footnote text-destructive">
+          {state.error}
+        </p>
+      ) : null}
+      {savedClinic && (
+        <p className="text-body text-muted-foreground">El nombre del consultorio y la zona horaria ya se guardaron. Solo podés editar tu nombre profesional.</p>
+      )}
+      <div>
+        <label htmlFor="onboarding-clinic-name" className="text-body font-semibold">Nombre del consultorio</label>
+        <input
+          id="onboarding-clinic-name"
+          name="name"
+          autoComplete="organization"
+          defaultValue={savedClinic?.name ?? state?.values?.name ?? ""}
+          readOnly={Boolean(savedClinic)}
+          required={!savedClinic}
+          className={fieldClass}
+        />
+      </div>
+      <div>
+        <label htmlFor="onboarding-professional-name" className="text-body font-semibold">Nombre profesional que querés mostrar</label>
+        <input
+          id="onboarding-professional-name"
+          name="professionalName"
+          autoComplete="name"
+          defaultValue={state?.values?.professionalName ?? ""}
+          required
+          className={fieldClass}
+        />
+      </div>
+      <div>
+        <label htmlFor="onboarding-time-zone" className="text-body font-semibold">Zona horaria del consultorio</label>
+        {savedClinic ? (
+          <input id="onboarding-time-zone" name="timeZone" value={savedClinic.timeZone} readOnly className={fieldClass} />
+        ) : (
+          <select
+            id="onboarding-time-zone"
+            name="timeZone"
+            defaultValue={state?.values?.timeZone ?? ""}
+            required
+            className={fieldClass}
+          >
+            <option value="" disabled>Elegí una zona horaria</option>
+            {timeZones.map((timeZone) => (
+              <option key={timeZone} value={timeZone}>{timeZone.replaceAll("_", " ")}</option>
+            ))}
+          </select>
+        )}
+      </div>
+      <Button type="submit" size="lg" className="w-full" disabled={pending}>
+        {pending ? "Guardando…" : "Guardar y continuar"}
+      </Button>
+    </form>
+  );
+}
