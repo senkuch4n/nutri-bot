@@ -23,9 +23,6 @@ const API_EXEMPT = [join(API, "auth"), join(API, "webhooks")];
 
 /** Excepciones de (c), cada una con su motivo y la entrega que la cierra. */
 const LEGACY_EXEMPT: Record<string, string> = {
-  // Funciones del PORTAL (getProfessionalPortalName/Contact, getPortalDocumentTitle): 025c las pasa al tenant
-  // del paciente. Las del panel (nombre, estado del bot, consultas) ya reciben tenantId.
-  "lib/shell.ts": "funciones del portal hasta 025c",
   // Reexporta getProfessional para el portal (025c lo elimina); no lo llama.
   "lib/professional.ts": "reexport para el portal hasta 025c",
 };
